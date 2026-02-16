@@ -5,16 +5,13 @@
 #define PYTRACK_POS_HPP
 
 #include <vector>
-#include <pybind11/pybind11.h>
-#include <pybind11/numpy.h>
+#include "dtype.hpp"
 #include "pytrack.hpp"
-
-namespace py = pybind11;
 
 class PyTrackPos : public PyTrack<PyTrackPos,std::vector<int> > {
 public:
-  PyTrackPos(int printFreq);
-  void track(int time, const NucPosModel& model);
+  PyTrackPos(lint printFreq);
+  void track(lint time, const NucPosModel& model);
 };
 
 #endif

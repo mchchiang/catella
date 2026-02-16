@@ -2,18 +2,21 @@
 
 #include <string>
 #include <memory>
-#include "dump.hpp"
-#include "dump_factory.hpp"
+#include "dtype.hpp"
+#include "dump_dat.hpp"
 #include "dump_pos.hpp"
 #include "dump_energy.hpp"
+#include "dump_factory.hpp"
 
 using std::string;
 using std::shared_ptr;
 
-shared_ptr<Dump> DumpFactory::createPosDump(int printFreq, string outFile) {
+shared_ptr<DumpDat> DumpFactory::createPosDump(lint printFreq,
+					       const string& outFile) {
   return std::make_shared<DumpPos>(printFreq, outFile);
 }
 
-shared_ptr<Dump> DumpFactory::createEnergyDump(int printFreq, string outFile) {
+shared_ptr<DumpDat> DumpFactory::createEnergyDump(lint printFreq,
+						  const string& outFile) {
   return std::make_shared<DumpEnergy>(printFreq, outFile);
 }

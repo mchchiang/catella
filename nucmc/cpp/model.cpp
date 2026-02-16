@@ -3,13 +3,14 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
-#include <set>
 #include <cmath>
 #include <random>
 #include <algorithm>
 #include <memory>
+#include "dtype.hpp"
 #include "model.hpp"
 #include "tracker.hpp"
 
@@ -27,9 +28,13 @@ using std::shared_ptr;
 double min(double a, double b);
 
 NucPosModel::NucPosModel(int _nucbp, int _nbp, int _llink, double _mu,
-			 long _seed) :
+			 ulint _seed) :
   nucbp(_nucbp), nbp(_nbp), llink(_llink), mu(_mu), seed(_seed) {
-
+  params.nucbp = nucbp;
+  params.nbp = nbp;
+  params.llink = llink;
+  params.mu = mu;
+  params.seed = seed;
   // Precompute repulsion strengths - WCA repulsion
   erep = vector<double>(llink, 0.0);
   double sigma = llink/(pow(2.0,(1.0/6.0)));
@@ -39,14 +44,30 @@ NucPosModel::NucPosModel(int _nucbp, int _nbp, int _llink, double _mu,
   }
   maxNumOfNuc = nbp/nucbp;
   npos = nbp-nucbp;
+  emeth = vector<double>(nbp);
+  reset();
+}
 
+NucPosModel::NucPosModel(const Params& p) :
+  params(p), nucbp(p.nucbp), nbp(p.nbp), llink(p.llink), mu(p.mu),
+  seed(p.seed) {
+  // Precompute repulsion strengths - WCA repulsion
+  erep = vector<double>(llink, 0.0);
+  double sigma = llink/(pow(2.0,(1.0/6.0)));
+  for (int i = 0; i < llink; i++) {
+    double sr6 = pow(sigma/(i+1.0),6.0);
+    erep[i] = 4*(sr6*sr6-sr6+0.25);
+  }
+  maxNumOfNuc = nbp/nucbp;
+  npos = nbp-nucbp;
+  emeth = vector<double>(nbp);
   reset();
 }
 
 NucPosModel::~NucPosModel() {}
 
 void NucPosModel::reset() {
-  // No nucleosomes on the fibre initially
+  // No nucleosomes on the fiber initially
   nucpos = vector<int>();
 
   // Set up random generator
@@ -59,7 +80,7 @@ void NucPosModel::reset() {
   temp = 1.0;
 
   // Reset energy landscape
-  emeth = vector<double>(nbp, 0.0);  
+  std::fill(emeth.begin(), emeth.end(), 0.0);  
 }
 
 void NucPosModel::initByMethData(string dataFile) {
@@ -67,8 +88,7 @@ void NucPosModel::initByMethData(string dataFile) {
   ifstream reader;
   reader.open(dataFile);
   if (!reader) {
-    cout << "ERROR: cannot open the file " << dataFile << endl;
-    exit(1);
+    throw std::runtime_error("Cannot open the file " + dataFile);
   }
   string line;
   stringstream ss;
@@ -86,6 +106,15 @@ void NucPosModel::initByMethData(string dataFile) {
   reader.close();
 }
 
+void NucPosModel::initMeth(const std::vector<double>& data) {
+  if (static_cast<int>(data.size()) != nbp) {
+    throw std::runtime_error("Methylation data array size does not match "
+			     "the size of the simulated fiber");
+  }
+  emeth = vector<double>(nbp, 0.0);
+  std::copy(data.begin(), data.end(), emeth.begin());
+}
+
 void NucPosModel::update() {
   int mode = randMode(mt);
   double p = rand(mt);
@@ -101,7 +130,7 @@ void NucPosModel::update() {
     int dir = randDir(mt)*2-1;
     int nxt = pos+dir;
 
-    // Skip if shifting the nucleosome causes it to move off the fibre
+    // Skip if shifting the nucleosome causes it to move off the fiber
     if (nxt < 0 || nxt >= npos) return;
 
     // Get the position of the nearest left/right nucleosomes
@@ -175,39 +204,39 @@ void NucPosModel::update() {
   }
 }
 
-void NucPosModel::run(int nsweeps, double startTemp, double endTemp,
-		      int nincs) {
+void NucPosModel::run(lint nsweep, double startTemp, double endTemp,
+		      int ninc) {
   double tempInc;
-  int nsweepsPerTemp;
-  if (nincs <= 0) {
+  int nsweepPerTemp;
+  if (ninc <= 0) {
     tempInc = 0.0;
     startTemp = endTemp;
-    nsweepsPerTemp = nsweeps;
+    nsweepPerTemp = nsweep;
   } else {
-    tempInc = (endTemp-startTemp)/(nincs+1.0);
+    tempInc = (endTemp-startTemp)/(ninc+1.0);
     // Allow time for the start and end temp    
-    nsweepsPerTemp = static_cast<int>(ceil(nsweeps/(nincs+1.0)));
+    nsweepPerTemp = static_cast<int>(ceil(nsweep/(ninc+1.0)));
   }
   temp = startTemp;
-  for (int n = 0; n < nsweeps; n++) {
-    if (n % 100 == 0) {
-      cout << "Working on t = " << n << " T = " << temp << endl;
-    }
-    output(n);
+  for (auto& t : trackers) t->initialize(0, *this);
+  output(0);
+  for (int n = 1; n <= nsweep; n++) {
     for (int i = 0; i < maxNumOfNuc; i++) {
       update();
     }
-    if ((n+1) % nsweepsPerTemp == 0) {
+    output(n);
+    if (n % 100 == 0) {
+      cout << "Working on t = " << n << endl;
+    }
+    if ((n+1) % nsweepPerTemp == 0) {
       temp += tempInc;
-    }    
+    }
   }
-  if (nsweeps % 100 == 0) {
-    cout << "Working on t = " << nsweeps << " T = " << temp << endl;
-  }  
-  output(nsweeps);
+  output(nsweep);
+  for (auto& t : trackers) t->finalize(nsweep, *this); 
 }
 
-void NucPosModel::output(int time) {
+void NucPosModel::output(lint time) {
   for (auto& t : trackers) {
     t->track(time, *this);
   }
@@ -215,10 +244,6 @@ void NucPosModel::output(int time) {
 
 const vector<int>& NucPosModel::getNucPos() const {
   return nucpos;
-}
-
-int NucPosModel::getNucbp() const {
-  return nucbp;
 }
 
 double NucPosModel::getEnergy() const {
@@ -233,6 +258,14 @@ double NucPosModel::getEnergy() const {
     }
   }
   return totalEmeth + totalErep - mu*nucpos.size();
+}
+
+double NucPosModel::getTemp() const {
+  return temp;
+}
+
+const NucPosModel::Params& NucPosModel::getParams() const {
+  return params;
 }
 
 void NucPosModel::addTracker(std::shared_ptr<Tracker> tracker) {

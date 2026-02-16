@@ -5,12 +5,13 @@
 #define PYTRACK_ENERGY_HPP
 
 #include <vector>
+#include "dtype.hpp"
 #include "pytrack.hpp"
 
 class PyTrackEnergy : public PyTrack<PyTrackEnergy,double> {
 public:
-  PyTrackEnergy(int printFreq);
-  void track(int time, const NucPosModel& model);
+  PyTrackEnergy(lint printFreq);
+  void track(lint time, const NucPosModel& model);
 };
 
 #endif

@@ -1,7 +1,7 @@
 // pytrack_factory.cpp
 
-#include <string>
 #include <memory>
+#include "dtype.hpp"
 #include "pytrack.hpp"
 #include "pytrack_factory.hpp"
 #include "pytrack_pos.hpp"
@@ -9,10 +9,10 @@
 
 using std::shared_ptr;
 
-shared_ptr<PyTrackBase> PyTrackFactory::createPosTrack(int printFreq) {
+shared_ptr<PyTrackBase> PyTrackFactory::createPosTrack(lint printFreq) {
   return std::make_shared<PyTrackPos>(printFreq);
 }
 
-shared_ptr<PyTrackBase> PyTrackFactory::createEnergyTrack(int printFreq) {
+shared_ptr<PyTrackBase> PyTrackFactory::createEnergyTrack(lint printFreq) {
   return std::make_shared<PyTrackEnergy>(printFreq);
 }

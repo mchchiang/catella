@@ -8,19 +8,31 @@
 #include <set>
 #include <random>
 #include <memory>
+#include "dtype.hpp"
 #include "tracker.hpp"
 
 //class Dump;
 class Tracker;
 
 class NucPosModel {
+
+public:
+  struct Params {
+    int nucbp;
+    int nbp;  
+    int llink;
+    double mu;
+    ulint seed;
+  };
+  
 private:
   // Required parameters
+  Params params;
   int nucbp;
   int nbp;  
   int llink;
   double mu;
-  long seed;
+  ulint seed;
   
   // Other variables
   int npos;
@@ -40,16 +52,19 @@ private:
   std::vector<std::shared_ptr<Tracker> > trackers;
 
 public:
-  NucPosModel(int nucbp, int nbp, int llink, double mu, long seed);
+  NucPosModel(int nucbp, int nbp, int llink, double mu, ulint seed);
+  NucPosModel(const Params& params);
   ~NucPosModel();
   void initByMethData(std::string dataFile);
+  void initMeth(const std::vector<double>& meth);
   void update();
   void reset();
-  void output(int time);
-  void run(int nsweeps, double startTemp, double endTemp, int nincs);
+  void output(lint time);
+  void run(lint nsweep, double startTemp, double endTemp, int ninc);
   const std::vector<int>& getNucPos() const;
-  int getNucbp() const;
   double getEnergy() const;
+  double getTemp() const;
+  const Params& getParams() const;
   void addTracker(std::shared_ptr<Tracker> tracker);
 };
 

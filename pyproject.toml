@@ -1,3 +1,17 @@
 [build-system]
-requires = ["setuptools>=42", "wheel", "pybind11"]
+requires = ["setuptools>=61.0", "wheel", "pybind11"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "nucmc"
+version = "0.1.0"
+description = "Nucleosome Positioning Monte Carlo Simulation Suite"
+dependencies = [
+    "numpy",
+    "pandas",
+    "h5py",
+    "typer[all]"
+]
+
+[project.scripts]
+nucmc = "nucmc.cli:app"

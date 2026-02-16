@@ -6,6 +6,7 @@
 #include <vector>
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
+#include "dtype.hpp"
 #include "model.hpp"
 #include "tracker.hpp"
 
@@ -16,7 +17,7 @@ class NucPosModel;
 class PyTrackBase : public Tracker {
 
 public:
-  PyTrackBase(int freq) : Tracker(freq) {};
+  PyTrackBase(lint freq) : Tracker(freq) {};
   virtual ~PyTrackBase() = default;
   virtual void reset() = 0;
   virtual py::object values() = 0;
@@ -31,13 +32,17 @@ protected:
 public:
   using value_type = T;
 
-  PyTrack(int freq) : PyTrackBase(freq) {};
+  PyTrack(lint freq) : PyTrackBase(freq) {};
   
   void reset() override {data.clear();}
+
+  void initialize(lint time, const NucPosModel& model) override final {}
   
-  void update(int time, const NucPosModel& model) override final {
+  void update(lint time, const NucPosModel& model) override final {
     static_cast<Derived*>(this)->track(time, model);
   }
+
+  void finalize(lint time, const NucPosModel& model) override final {}  
 
   py::object values() override {
     if constexpr (std::is_arithmetic<T>::value) {

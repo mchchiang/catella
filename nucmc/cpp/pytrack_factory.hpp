@@ -5,14 +5,15 @@
 
 #include <string>
 #include <memory>
+#include "dtype.hpp"
 #include "pytrack.hpp"
 #include "pytrack_pos.hpp"
 #include "pytrack_energy.hpp"
 
 class PyTrackFactory {
 public:
-  std::shared_ptr<PyTrackBase> createPosTrack(int printFreq);  
-  std::shared_ptr<PyTrackBase> createEnergyTrack(int printFreq);
+  std::shared_ptr<PyTrackBase> createPosTrack(lint printFreq);  
+  std::shared_ptr<PyTrackBase> createEnergyTrack(lint printFreq);
 };
 
 #endif

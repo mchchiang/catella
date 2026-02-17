@@ -2,6 +2,9 @@
 requires = ["setuptools>=61.0", "wheel", "pybind11"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools]
+packages = ["nucmc"]
+
 [project]
 name = "nucmc"
 version = "0.1.0"

@@ -1,0 +1,702 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>API Reference &mdash; nucmc 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=01f34227"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Examples" href="examples.html" />
+    <link rel="prev" title="Theory" href="theory.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            nucmc
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="theory.html">Theory</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">API Reference</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#module-nucmc.seq_data">seq_data</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#nucmc.seq_data.FiberSeqRawData"><code class="docutils literal notranslate"><span class="pre">FiberSeqRawData</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.seq_data.FiberSeqRawData.chrom"><code class="docutils literal notranslate"><span class="pre">FiberSeqRawData.chrom</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.seq_data.FiberSeqRawData.nbp"><code class="docutils literal notranslate"><span class="pre">FiberSeqRawData.nbp</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.seq_data.FiberSeqRawData.meth_data"><code class="docutils literal notranslate"><span class="pre">FiberSeqRawData.meth_data</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.seq_data.FiberSeqRawData.meth_mol_id"><code class="docutils literal notranslate"><span class="pre">FiberSeqRawData.meth_mol_id</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.seq_data.FiberSeqRawData.test_data"><code class="docutils literal notranslate"><span class="pre">FiberSeqRawData.test_data</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.seq_data.FiberSeqRawData.test_mol_id"><code class="docutils literal notranslate"><span class="pre">FiberSeqRawData.test_mol_id</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.seq_data.FiberSeqRawData.unmeth_data"><code class="docutils literal notranslate"><span class="pre">FiberSeqRawData.unmeth_data</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.seq_data.FiberSeqRawData.unmeth_mol_id"><code class="docutils literal notranslate"><span class="pre">FiberSeqRawData.unmeth_mol_id</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#nucmc.seq_data.FiberSeqExperiment"><code class="docutils literal notranslate"><span class="pre">FiberSeqExperiment</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.seq_data.FiberSeqExperiment.load_raw"><code class="docutils literal notranslate"><span class="pre">FiberSeqExperiment.load_raw()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.seq_data.FiberSeqExperiment.save"><code class="docutils literal notranslate"><span class="pre">FiberSeqExperiment.save()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.seq_data.FiberSeqExperiment.load"><code class="docutils literal notranslate"><span class="pre">FiberSeqExperiment.load()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.seq_data.FiberSeqExperiment.chroms"><code class="docutils literal notranslate"><span class="pre">FiberSeqExperiment.chroms</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.seq_data.FiberSeqExperiment.raw"><code class="docutils literal notranslate"><span class="pre">FiberSeqExperiment.raw</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.seq_data.FiberSeqExperiment.analysis"><code class="docutils literal notranslate"><span class="pre">FiberSeqExperiment.analysis</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.seq_data.FiberSeqExperiment.global_analysis"><code class="docutils literal notranslate"><span class="pre">FiberSeqExperiment.global_analysis</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#module-nucmc.sim_data">sim_data</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#nucmc.sim_data.SimData"><code class="docutils literal notranslate"><span class="pre">SimData</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim_data.SimData.nucbp"><code class="docutils literal notranslate"><span class="pre">SimData.nucbp</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim_data.SimData.nbp"><code class="docutils literal notranslate"><span class="pre">SimData.nbp</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim_data.SimData.llink"><code class="docutils literal notranslate"><span class="pre">SimData.llink</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim_data.SimData.mu"><code class="docutils literal notranslate"><span class="pre">SimData.mu</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim_data.SimData.seed"><code class="docutils literal notranslate"><span class="pre">SimData.seed</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim_data.SimData.idx"><code class="docutils literal notranslate"><span class="pre">SimData.idx()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim_data.SimData.energy_at"><code class="docutils literal notranslate"><span class="pre">SimData.energy_at()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim_data.SimData.position_at"><code class="docutils literal notranslate"><span class="pre">SimData.position_at()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim_data.SimData.save"><code class="docutils literal notranslate"><span class="pre">SimData.save()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim_data.SimData.load"><code class="docutils literal notranslate"><span class="pre">SimData.load()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim_data.SimData.extract"><code class="docutils literal notranslate"><span class="pre">SimData.extract()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim_data.SimData.energy"><code class="docutils literal notranslate"><span class="pre">SimData.energy</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim_data.SimData.position"><code class="docutils literal notranslate"><span class="pre">SimData.position</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim_data.SimData.temp"><code class="docutils literal notranslate"><span class="pre">SimData.temp</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim_data.SimData.time"><code class="docutils literal notranslate"><span class="pre">SimData.time</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim_data.SimData.time_to_idx"><code class="docutils literal notranslate"><span class="pre">SimData.time_to_idx</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#nucmc.sim_data.SimPathMapper"><code class="docutils literal notranslate"><span class="pre">SimPathMapper</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim_data.SimPathMapper.params_to_path"><code class="docutils literal notranslate"><span class="pre">SimPathMapper.params_to_path()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim_data.SimPathMapper.path_to_params"><code class="docutils literal notranslate"><span class="pre">SimPathMapper.path_to_params()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#nucmc.sim_data.SimDataset"><code class="docutils literal notranslate"><span class="pre">SimDataset</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim_data.SimDataset.path"><code class="docutils literal notranslate"><span class="pre">SimDataset.path</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim_data.SimDataset.SimDataAccessor"><code class="docutils literal notranslate"><span class="pre">SimDataset.SimDataAccessor</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim_data.SimDataset.create_from_sim"><code class="docutils literal notranslate"><span class="pre">SimDataset.create_from_sim()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim_data.SimDataset.load"><code class="docutils literal notranslate"><span class="pre">SimDataset.load()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim_data.SimDataset.save"><code class="docutils literal notranslate"><span class="pre">SimDataset.save()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim_data.SimDataset.generate_sim_paths"><code class="docutils literal notranslate"><span class="pre">SimDataset.generate_sim_paths()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim_data.SimDataset.extract"><code class="docutils literal notranslate"><span class="pre">SimDataset.extract()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim_data.SimDataset.get_sim_path"><code class="docutils literal notranslate"><span class="pre">SimDataset.get_sim_path()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim_data.SimDataset.chroms"><code class="docutils literal notranslate"><span class="pre">SimDataset.chroms</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim_data.SimDataset.nmol"><code class="docutils literal notranslate"><span class="pre">SimDataset.nmol</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim_data.SimDataset.nsim"><code class="docutils literal notranslate"><span class="pre">SimDataset.nsim</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim_data.SimDataset.raw"><code class="docutils literal notranslate"><span class="pre">SimDataset.raw</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim_data.SimDataset.analysis"><code class="docutils literal notranslate"><span class="pre">SimDataset.analysis</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim_data.SimDataset.global_analysis"><code class="docutils literal notranslate"><span class="pre">SimDataset.global_analysis</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#module-nucmc.sim">sim</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#nucmc.sim.SimParams"><code class="docutils literal notranslate"><span class="pre">SimParams</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim.SimParams.chrom"><code class="docutils literal notranslate"><span class="pre">SimParams.chrom</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim.SimParams.mol"><code class="docutils literal notranslate"><span class="pre">SimParams.mol</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim.SimParams.run"><code class="docutils literal notranslate"><span class="pre">SimParams.run</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim.SimParams.nsweep"><code class="docutils literal notranslate"><span class="pre">SimParams.nsweep</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim.SimParams.start_temp"><code class="docutils literal notranslate"><span class="pre">SimParams.start_temp</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim.SimParams.end_temp"><code class="docutils literal notranslate"><span class="pre">SimParams.end_temp</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim.SimParams.ninc_temp"><code class="docutils literal notranslate"><span class="pre">SimParams.ninc_temp</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim.SimParams.print_freq"><code class="docutils literal notranslate"><span class="pre">SimParams.print_freq</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim.SimParams.seed"><code class="docutils literal notranslate"><span class="pre">SimParams.seed</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim.SimParams.meth"><code class="docutils literal notranslate"><span class="pre">SimParams.meth</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim.SimParams.out_type"><code class="docutils literal notranslate"><span class="pre">SimParams.out_type</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim.SimParams.out_path"><code class="docutils literal notranslate"><span class="pre">SimParams.out_path</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#nucmc.sim.SimManager"><code class="docutils literal notranslate"><span class="pre">SimManager</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim.SimManager.run"><code class="docutils literal notranslate"><span class="pre">SimManager.run()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#nucmc.sim.SimAnalysis"><code class="docutils literal notranslate"><span class="pre">SimAnalysis</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim.SimAnalysis.compute_occupancy"><code class="docutils literal notranslate"><span class="pre">SimAnalysis.compute_occupancy()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim.SimAnalysis.compute_accessibility"><code class="docutils literal notranslate"><span class="pre">SimAnalysis.compute_accessibility()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.sim.SimAnalysis.sort_by_occupancy"><code class="docutils literal notranslate"><span class="pre">SimAnalysis.sort_by_occupancy()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#module-nucmc.prep">prep</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#nucmc.prep.FiberSeqAnalysis"><code class="docutils literal notranslate"><span class="pre">FiberSeqAnalysis</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#nucmc.prep.FiberSeqAnalysis.normalize"><code class="docutils literal notranslate"><span class="pre">FiberSeqAnalysis.normalize()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">nucmc</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">API Reference</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/api.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="api-reference">
+<h1>API Reference<a class="headerlink" href="#api-reference" title="Link to this heading"></a></h1>
+<section id="module-nucmc.seq_data">
+<span id="seq-data"></span><h2>seq_data<a class="headerlink" href="#module-nucmc.seq_data" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nucmc.seq_data.FiberSeqRawData">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">nucmc.seq_data.</span></span><span class="sig-name descname"><span class="pre">FiberSeqRawData</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nucmc.seq_data.FiberSeqRawData" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nucmc.seq_data.FiberSeqRawData.chrom">
+<span class="sig-name descname"><span class="pre">chrom</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></span><a class="headerlink" href="#nucmc.seq_data.FiberSeqRawData.chrom" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nucmc.seq_data.FiberSeqRawData.nbp">
+<span class="sig-name descname"><span class="pre">nbp</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></span><a class="headerlink" href="#nucmc.seq_data.FiberSeqRawData.nbp" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="nucmc.seq_data.FiberSeqRawData.meth_data">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">meth_data</span></span><a class="headerlink" href="#nucmc.seq_data.FiberSeqRawData.meth_data" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="nucmc.seq_data.FiberSeqRawData.meth_mol_id">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">meth_mol_id</span></span><a class="headerlink" href="#nucmc.seq_data.FiberSeqRawData.meth_mol_id" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="nucmc.seq_data.FiberSeqRawData.test_data">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">test_data</span></span><a class="headerlink" href="#nucmc.seq_data.FiberSeqRawData.test_data" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="nucmc.seq_data.FiberSeqRawData.test_mol_id">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">test_mol_id</span></span><a class="headerlink" href="#nucmc.seq_data.FiberSeqRawData.test_mol_id" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="nucmc.seq_data.FiberSeqRawData.unmeth_data">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">unmeth_data</span></span><a class="headerlink" href="#nucmc.seq_data.FiberSeqRawData.unmeth_data" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="nucmc.seq_data.FiberSeqRawData.unmeth_mol_id">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">unmeth_mol_id</span></span><a class="headerlink" href="#nucmc.seq_data.FiberSeqRawData.unmeth_mol_id" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nucmc.seq_data.FiberSeqExperiment">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">nucmc.seq_data.</span></span><span class="sig-name descname"><span class="pre">FiberSeqExperiment</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nucmc.seq_data.FiberSeqExperiment" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nucmc.seq_data.FiberSeqExperiment.load_raw">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">load_raw</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">chromsize</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">test_file</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">unmeth_file</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Path</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">meth_file</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Path</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">wrap</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">colidx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nucmc.seq_data.FiberSeqExperiment.load_raw" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nucmc.seq_data.FiberSeqExperiment.save">
+<span class="sig-name descname"><span class="pre">save</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Path</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nucmc.seq_data.FiberSeqExperiment.save" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nucmc.seq_data.FiberSeqExperiment.load">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">load</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Path</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nucmc.seq_data.FiberSeqExperiment.load" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="nucmc.seq_data.FiberSeqExperiment.chroms">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">chroms</span></span><a class="headerlink" href="#nucmc.seq_data.FiberSeqExperiment.chroms" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="nucmc.seq_data.FiberSeqExperiment.raw">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">raw</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference internal" href="#nucmc.seq_data.FiberSeqRawData" title="nucmc.seq_data.FiberSeqRawData"><span class="pre">FiberSeqRawData</span></a><span class="p"><span class="pre">]</span></span></span><a class="headerlink" href="#nucmc.seq_data.FiberSeqExperiment.raw" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="nucmc.seq_data.FiberSeqExperiment.analysis">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">analysis</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Mapping</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">DataFrameMap</span><span class="p"><span class="pre">]</span></span></span><a class="headerlink" href="#nucmc.seq_data.FiberSeqExperiment.analysis" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="nucmc.seq_data.FiberSeqExperiment.global_analysis">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">global_analysis</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">DataFrameMap</span></span><a class="headerlink" href="#nucmc.seq_data.FiberSeqExperiment.global_analysis" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-nucmc.sim_data">
+<span id="sim-data"></span><h2>sim_data<a class="headerlink" href="#module-nucmc.sim_data" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimData">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">nucmc.sim_data.</span></span><span class="sig-name descname"><span class="pre">SimData</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nucmc.sim_data.SimData" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Container for a single simulation result.</p>
+<p>A <code class="docutils literal notranslate"><span class="pre">SimData</span></code> object stores:</p>
+<ul class="simple">
+<li><p>simulation parameters</p></li>
+<li><p>raw data arrays</p></li>
+</ul>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>nucbp</strong> (<em>int</em>) – The number of base pairs occupied by a nucleosome.</p></li>
+<li><p><strong>nbp</strong> (<em>int</em>) – The number of base pairs of the chromatin fiber.</p></li>
+<li><p><strong>llink</strong> (<em>int</em>) – The DNA linker length between nucleosomes.</p></li>
+<li><p><strong>mu</strong> (<em>float</em>) – The <a href="#id1"><span class="problematic" id="id2">``</span></a>chemical potential’’ - the energy gained by adding a nucleosome
+to the fiber (a positive mu favours nucleosome binding).</p></li>
+<li><p><strong>seed</strong> (<em>int</em>) – The seed for initializing the random generator needed for running the
+Monte Carlo simulation.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>Some notes.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimData.nucbp">
+<span class="sig-name descname"><span class="pre">nucbp</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></span><a class="headerlink" href="#nucmc.sim_data.SimData.nucbp" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimData.nbp">
+<span class="sig-name descname"><span class="pre">nbp</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></span><a class="headerlink" href="#nucmc.sim_data.SimData.nbp" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimData.llink">
+<span class="sig-name descname"><span class="pre">llink</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></span><a class="headerlink" href="#nucmc.sim_data.SimData.llink" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimData.mu">
+<span class="sig-name descname"><span class="pre">mu</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></span><a class="headerlink" href="#nucmc.sim_data.SimData.mu" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimData.seed">
+<span class="sig-name descname"><span class="pre">seed</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></span><a class="headerlink" href="#nucmc.sim_data.SimData.seed" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimData.idx">
+<span class="sig-name descname"><span class="pre">idx</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">t</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">int</span></span></span><a class="headerlink" href="#nucmc.sim_data.SimData.idx" title="Link to this definition"></a></dt>
+<dd><p>Return the frame index for a specific time point.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>t</strong> (<em>int</em>) – Time point of interest.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Frame index.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimData.energy_at">
+<span class="sig-name descname"><span class="pre">energy_at</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">t</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nucmc.sim_data.SimData.energy_at" title="Link to this definition"></a></dt>
+<dd><p>Return the system’s energy at a specific time point.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>t</strong> (<em>int</em>) – Time point of interest for the system’s energy.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The system’s energy at time t.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimData.position_at">
+<span class="sig-name descname"><span class="pre">position_at</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">t</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nucmc.sim_data.SimData.position_at" title="Link to this definition"></a></dt>
+<dd><p>Return the nucleosome positions at a specific time point.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>t</strong> (<em>int</em>) – Time point of interest for the positions.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Tuple of nucleosome positions (left-aligned) at time t.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Tuple</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimData.save">
+<span class="sig-name descname"><span class="pre">save</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Path</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nucmc.sim_data.SimData.save" title="Link to this definition"></a></dt>
+<dd><p>Save simulation data to an HDF5 file.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>path</strong> (<em>str</em><em> | </em><em>pathlib.Path</em>) – Output file path.</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>OSError</strong> – If file cannot be written.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimData.load">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">load</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Path</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Self</span></span></span><a class="headerlink" href="#nucmc.sim_data.SimData.load" title="Link to this definition"></a></dt>
+<dd><p>Load simulation data from an HDF5 file.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>path</strong> (<em>str</em><em> or </em><em>pathlib.Path</em>) – Simulation data file path.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Loaded simulation object.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#nucmc.sim_data.SimData" title="nucmc.sim_data.SimData">SimData</a></p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>OSError</strong> – If file cannot be open.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimData.extract">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">extract</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">obs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">ndarray</span></span></span><a class="headerlink" href="#nucmc.sim_data.SimData.extract" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimData.energy">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">energy</span></span><a class="headerlink" href="#nucmc.sim_data.SimData.energy" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimData.position">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">position</span></span><a class="headerlink" href="#nucmc.sim_data.SimData.position" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimData.temp">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">temp</span></span><a class="headerlink" href="#nucmc.sim_data.SimData.temp" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimData.time">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">time</span></span><a class="headerlink" href="#nucmc.sim_data.SimData.time" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimData.time_to_idx">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">time_to_idx</span></span><a class="headerlink" href="#nucmc.sim_data.SimData.time_to_idx" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimPathMapper">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">nucmc.sim_data.</span></span><span class="sig-name descname"><span class="pre">SimPathMapper</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">root_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">total_mols</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_mols_per_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">100</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nucmc.sim_data.SimPathMapper" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimPathMapper.params_to_path">
+<span class="sig-name descname"><span class="pre">params_to_path</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">chrom</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">molidx</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">run</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Path</span></span></span><a class="headerlink" href="#nucmc.sim_data.SimPathMapper.params_to_path" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimPathMapper.path_to_params">
+<span class="sig-name descname"><span class="pre">path_to_params</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Path</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nucmc.sim_data.SimPathMapper.path_to_params" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimDataset">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">nucmc.sim_data.</span></span><span class="sig-name descname"><span class="pre">SimDataset</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nucmc.sim_data.SimDataset" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Filesystem-backed collection of simulation results.</p>
+<p>Provides lazy access to stored simulations via
+tuple-based indexing:</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">dataset</span> <span class="o">=</span> <span class="n">SimDataset</span><span class="p">(</span><span class="s2">&quot;results/dataset.h5&quot;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">sim</span> <span class="o">=</span> <span class="n">dataset</span><span class="o">.</span><span class="n">sim</span><span class="p">[</span><span class="s2">&quot;chr1&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">10</span><span class="p">]</span>
+</pre></div>
+</div>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimDataset.path">
+<span class="sig-name descname"><span class="pre">path</span></span><a class="headerlink" href="#nucmc.sim_data.SimDataset.path" title="Link to this definition"></a></dt>
+<dd><p>Base directory containing simulation files.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pathlib.Path</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimDataset.SimDataAccessor">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">SimDataAccessor</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">parent</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nucmc.sim_data.SimDataset.SimDataAccessor" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Lazy accessor for simulation data.</p>
+<p>Enables access using:</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">dataset</span><span class="o">.</span><span class="n">sim</span><span class="p">[</span><span class="n">chrom</span><span class="p">,</span> <span class="n">mol</span><span class="p">,</span> <span class="n">run</span><span class="p">]</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimDataset.create_from_sim">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">create_from_sim</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">chroms</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Iterable</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nmol</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Mapping</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nsim</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">out_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Path</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nucmc.sim_data.SimDataset.create_from_sim" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimDataset.load">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">load</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Path</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nucmc.sim_data.SimDataset.load" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimDataset.save">
+<span class="sig-name descname"><span class="pre">save</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Path</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nucmc.sim_data.SimDataset.save" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimDataset.generate_sim_paths">
+<span class="sig-name descname"><span class="pre">generate_sim_paths</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">chroms</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Iterable</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nucmc.sim_data.SimDataset.generate_sim_paths" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimDataset.extract">
+<span class="sig-name descname"><span class="pre">extract</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">time</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">obs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nworker</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">100</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">5000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">chroms</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Iterable</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">agg_func</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Callable</span><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">agg_kwargs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Any</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nucmc.sim_data.SimDataset.extract" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimDataset.get_sim_path">
+<span class="sig-name descname"><span class="pre">get_sim_path</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">chrom</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mol</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">run</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Path</span></span></span><a class="headerlink" href="#nucmc.sim_data.SimDataset.get_sim_path" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimDataset.chroms">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">chroms</span></span><a class="headerlink" href="#nucmc.sim_data.SimDataset.chroms" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimDataset.nmol">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">nmol</span></span><a class="headerlink" href="#nucmc.sim_data.SimDataset.nmol" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimDataset.nsim">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">nsim</span></span><a class="headerlink" href="#nucmc.sim_data.SimDataset.nsim" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimDataset.raw">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">raw</span></span><a class="headerlink" href="#nucmc.sim_data.SimDataset.raw" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimDataset.analysis">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">analysis</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Mapping</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">DataFrameMap</span><span class="p"><span class="pre">]</span></span></span><a class="headerlink" href="#nucmc.sim_data.SimDataset.analysis" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="nucmc.sim_data.SimDataset.global_analysis">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">global_analysis</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">DataFrameMap</span></span><a class="headerlink" href="#nucmc.sim_data.SimDataset.global_analysis" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-nucmc.sim">
+<span id="sim"></span><h2>sim<a class="headerlink" href="#module-nucmc.sim" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nucmc.sim.SimParams">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">nucmc.sim.</span></span><span class="sig-name descname"><span class="pre">SimParams</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">chrom</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mol</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">run</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nsweep</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start_temp</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">end_temp</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ninc_temp</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">print_freq</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">meth</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">numpy.ndarray</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">out_type</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">nucmc_cpp.Dump.OutputType</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">out_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">pathlib.Path</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nucmc.sim.SimParams" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nucmc.sim.SimParams.chrom">
+<span class="sig-name descname"><span class="pre">chrom</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></span><a class="headerlink" href="#nucmc.sim.SimParams.chrom" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nucmc.sim.SimParams.mol">
+<span class="sig-name descname"><span class="pre">mol</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></span><a class="headerlink" href="#nucmc.sim.SimParams.mol" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nucmc.sim.SimParams.run">
+<span class="sig-name descname"><span class="pre">run</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></span><a class="headerlink" href="#nucmc.sim.SimParams.run" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nucmc.sim.SimParams.nsweep">
+<span class="sig-name descname"><span class="pre">nsweep</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></span><a class="headerlink" href="#nucmc.sim.SimParams.nsweep" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nucmc.sim.SimParams.start_temp">
+<span class="sig-name descname"><span class="pre">start_temp</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></span><a class="headerlink" href="#nucmc.sim.SimParams.start_temp" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nucmc.sim.SimParams.end_temp">
+<span class="sig-name descname"><span class="pre">end_temp</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></span><a class="headerlink" href="#nucmc.sim.SimParams.end_temp" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nucmc.sim.SimParams.ninc_temp">
+<span class="sig-name descname"><span class="pre">ninc_temp</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></span><a class="headerlink" href="#nucmc.sim.SimParams.ninc_temp" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nucmc.sim.SimParams.print_freq">
+<span class="sig-name descname"><span class="pre">print_freq</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></span><a class="headerlink" href="#nucmc.sim.SimParams.print_freq" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nucmc.sim.SimParams.seed">
+<span class="sig-name descname"><span class="pre">seed</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></span><a class="headerlink" href="#nucmc.sim.SimParams.seed" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nucmc.sim.SimParams.meth">
+<span class="sig-name descname"><span class="pre">meth</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ndarray</span></span><a class="headerlink" href="#nucmc.sim.SimParams.meth" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nucmc.sim.SimParams.out_type">
+<span class="sig-name descname"><span class="pre">out_type</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">OutputType</span></span><a class="headerlink" href="#nucmc.sim.SimParams.out_type" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nucmc.sim.SimParams.out_path">
+<span class="sig-name descname"><span class="pre">out_path</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Path</span></span><a class="headerlink" href="#nucmc.sim.SimParams.out_path" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nucmc.sim.SimManager">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">nucmc.sim.</span></span><span class="sig-name descname"><span class="pre">SimManager</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">nucbp</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">llink</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mu</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nucmc.sim.SimManager" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nucmc.sim.SimManager.run">
+<span class="sig-name descname"><span class="pre">run</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">chroms</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Iterable</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nsim</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nsweep</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start_temp</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">end_temp</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ninc_temp</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">print_freq</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">meth</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ndarray</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Mapping</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">ndarray</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">DataFrame</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">out_types</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Iterable</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">out_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Path</span></span></em>, <em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">nworker</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mols</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">slice</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Sequence</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Mapping</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">slice</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Sequence</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">slice(None,</span> <span class="pre">None,</span> <span class="pre">None)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#nucmc.sim_data.SimDataset" title="nucmc.sim_data.SimDataset"><span class="pre">SimDataset</span></a></span></span><a class="headerlink" href="#nucmc.sim.SimManager.run" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nucmc.sim.SimAnalysis">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">nucmc.sim.</span></span><span class="sig-name descname"><span class="pre">SimAnalysis</span></span><a class="headerlink" href="#nucmc.sim.SimAnalysis" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nucmc.sim.SimAnalysis.compute_occupancy">
+<span class="sig-name descname"><span class="pre">compute_occupancy</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">nucbp</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dataset</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#nucmc.sim_data.SimDataset" title="nucmc.sim_data.SimDataset"><span class="pre">SimDataset</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">chroms</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Iterable</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'occup'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">record_time</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nucmc.sim.SimAnalysis.compute_occupancy" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nucmc.sim.SimAnalysis.compute_accessibility">
+<span class="sig-name descname"><span class="pre">compute_accessibility</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">nucbp</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dataset</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#nucmc.sim_data.SimDataset" title="nucmc.sim_data.SimDataset"><span class="pre">SimDataset</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">chroms</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Iterable</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">occup_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'occup'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">access_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'access'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">record_time</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nucmc.sim.SimAnalysis.compute_accessibility" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nucmc.sim.SimAnalysis.sort_by_occupancy">
+<span class="sig-name descname"><span class="pre">sort_by_occupancy</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dataset</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#nucmc.sim_data.SimDataset" title="nucmc.sim_data.SimDataset"><span class="pre">SimDataset</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'occup'</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nucmc.sim.SimAnalysis.sort_by_occupancy" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-nucmc.prep">
+<span id="prep"></span><h2>prep<a class="headerlink" href="#module-nucmc.prep" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="nucmc.prep.FiberSeqAnalysis">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">nucmc.prep.</span></span><span class="sig-name descname"><span class="pre">FiberSeqAnalysis</span></span><a class="headerlink" href="#nucmc.prep.FiberSeqAnalysis" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nucmc.prep.FiberSeqAnalysis.normalize">
+<span class="sig-name descname"><span class="pre">normalize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">binsize</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exp</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#nucmc.seq_data.FiberSeqExperiment" title="nucmc.seq_data.FiberSeqExperiment"><span class="pre">FiberSeqExperiment</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'norm'</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#nucmc.prep.FiberSeqAnalysis.normalize" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="theory.html" class="btn btn-neutral float-left" title="Theory" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="examples.html" class="btn btn-neutral float-right" title="Examples" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Michael Chiang.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

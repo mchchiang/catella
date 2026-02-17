@@ -2,7 +2,7 @@
 
 from collections.abc import MutableMapping
 from dataclasses import fields
-from typing import Dict, Any, Iterator, Sequence
+from typing import List, Dict, Any, Iterator, Iterable, Sequence
 import pandas as pd
 import numpy as np
 import h5py
@@ -132,7 +132,7 @@ def load_df(name, group):
 
         # Reorder to the original state
         order = [c.decode() if isinstance(c,bytes) else c
-                 for c in g["_columns_order"][:]]
+                 for c in g["_column_order"][:]]
         df = df[order]
 
         # Convert column names to their original type
@@ -141,3 +141,14 @@ def load_df(name, group):
         except: pass
         return df
     return None
+
+# Standard utility to normalize chromosome inputs into a list
+def normalize_chroms(chroms: str | Iterable[str] | None = None, 
+                     default_chroms: Iterable[str] | None = None) -> List[str]:
+    if chroms is None:
+        return list(default_chroms) if default_chroms is not None else []
+    if isinstance(chroms, str):
+        return [chroms]
+    if not isinstance(chroms, Iterable):
+        raise TypeError("chroms must be a str or an iterable")
+    return list(chroms)

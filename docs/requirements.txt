@@ -1,0 +1,6 @@
+sphinx
+sphix-rtd-theme
+pandas
+h5py
+matplotlib
+numpy

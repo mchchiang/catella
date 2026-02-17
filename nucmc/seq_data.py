@@ -5,13 +5,13 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import List, Mapping, Dict, Self, Any
 from .util import DataFrameMap, FixedKeyMap
-from .util import save_df, load_df, copy_array_properties
+from . import util
 import numpy as np
 import pandas as pd
 import inspect
 import h5py
 
-@copy_array_properties
+@util.copy_array_properties
 @dataclass(frozen=True, slots=True, init=False)
 class FiberSeqRawData:
     chrom : str
@@ -43,7 +43,7 @@ class FiberSeqRawData:
         def save_data(name, mol_id, df, gdata):
             if mol_id is not None and df is not None:
                 gdata.create_dataset(name+"_mol_id", data=mol_id, dtype=dt)
-                save_df(name+"_data", df, gdata)
+                util.save_df(name+"_data", df, gdata)
         save_data("test", self._test_mol_id, self._test_data, gdata)
         save_data("unmeth", self._unmeth_mol_id, self._unmeth_data, gdata)
         save_data("meth", self._meth_mol_id, self._meth_data, gdata)        
@@ -61,7 +61,7 @@ class FiberSeqRawData:
             data_name = name+"_data"
             if id_name in gdata and data_name in gdata:
                 mol_id = gdata[id_name].asstr()[()]
-                df = load_df(data_name, gdata)
+                df = util.load_df(data_name, gdata)
                 return mol_id, df
             return None, None
         gdata = gchrom["data"]
@@ -118,10 +118,13 @@ class FiberSeqExperiment:
     
         
     @classmethod
-    def load_raw(cls, chromsize : str | Path, test_file : str | Path,
-                 unmeth_file : str | Path = None,
-                 meth_file : str | Path = None,
-                 wrap : bool = False, colidx : List = None):
+    def load_raw(cls,
+                 chromsize : str | Path,
+                 test_file : str | Path,
+                 unmeth_file : str | Path | None = None,
+                 meth_file : str | Path | None = None,
+                 wrap : bool = False,
+                 colidx : List | None = None):
     
         # Read chromosome sizes
         df_size = pd.read_csv(chromsize, header=None, sep="\t",
@@ -209,11 +212,11 @@ class FiberSeqExperiment:
             for chrom, data in self._analysis.items():
                 gchrom = gana.create_group(chrom)
                 for name, df in data.items():
-                    save_df(name, df, gchrom)
+                    util.save_df(name, df, gchrom)
             if "global_analysis" in h5stream: del h5stream["global_analysis"]
             gana = h5stream.create_group("global_analysis")
             for name, df in self._global_analysis.items():
-                save_df(name, df, gana)
+                util.save_df(name, df, gana)
                 
     @classmethod
     def load(cls, path: str | Path):
@@ -230,10 +233,10 @@ class FiberSeqExperiment:
             for chrom in gana:
                 gchrom = gana[chrom]
                 for name in gchrom:
-                    obj._analysis[chrom][name] = load_df(name, gchrom)
+                    obj._analysis[chrom][name] = util.load_df(name, gchrom)
             gana = h5stream["global_analysis"]
             for name in gana:
-                obj._global_analysis[name] = load_df(name, gana)
+                obj._global_analysis[name] = util.load_df(name, gana)
             return obj
                 
     @classmethod

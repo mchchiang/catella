@@ -225,9 +225,6 @@ void NucPosModel::run(lint nsweep, double startTemp, double endTemp,
       update();
     }
     output(n);
-    if (n % 100 == 0) {
-      cout << "Working on t = " << n << endl;
-    }
     if ((n+1) % nsweepPerTemp == 0) {
       temp += tempInc;
     }

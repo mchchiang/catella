@@ -1,0 +1,12 @@
+image: python:3.11
+
+pages:
+  script:
+    - pip install -r docs/requirements.txt
+    - pip install .
+    - sphinx-build docs/source public
+  artifacts:
+    paths:
+      - public
+  only:
+    - main

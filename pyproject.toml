@@ -5,12 +5,16 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "nucmc"
 version = "0.1.0"
+requires-python = ">=3.11"
 description = "Nucleosome Positioning Monte Carlo Simulation Suite"
 dependencies = [
     "numpy",
     "pandas",
     "h5py",
-    "typer[all]"
+    "typer",
+    "rich",
+    "pybind11",
+    "matplotlib"
 ]
 
 [project.scripts]

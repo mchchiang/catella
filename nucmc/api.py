@@ -1,27 +1,33 @@
 # api.py
 
+# High-level interface for processing fiber-seq data and running simulations
+
 from collections.abc import Iterable, Mapping
-from typing import List, Dict
 from pathlib import Path
 import numpy as np
+import pandas as pd
 from .prep import FiberSeqAnalysis
 from .sim import SimManager
 from .seq_data import FiberSeqExperiment
 from .sim_data import SimDataset
 from .util import IndexType
 
-def preprocess(binsize : int,
+def preprocess(*, binsize : int,
                chromsize : str,
-               test_file : str| Path,
-               out_path : str | Path = None,
-               unmeth_file : str = None,
-               meth_file : str = None,
+               test_file : str | Path,
+               out_path : str | Path | None = None,
+               unmeth_file : str | Path | None = None,
+               meth_file : str | Path | None = None,
                wrap : bool = False,
-               colidx : List = None) -> FiberSeqExperiment:
+               colidx : Iterable | None = None) -> FiberSeqExperiment:
 
     # Load the raw data (generated from modkit)
-    exp = FiberSeqExperiment.load_raw(chromsize, test_file, unmeth_file,
-                                      meth_file, wrap=wrap, colidx=colidx)
+    exp = FiberSeqExperiment.load_raw(chromsize=chromsize,
+                                      test_file=test_file,
+                                      unmeth_file=unmeth_file,
+                                      meth_file=meth_file,
+                                      wrap=wrap,
+                                      colidx=colidx)
 
     # Normalize the data as required
     ana = FiberSeqAnalysis()
@@ -34,7 +40,7 @@ def preprocess(binsize : int,
     return exp
 
 
-def run(nucbp : int,
+def run(*, nucbp : int,
         llink : int,
         mu : float,
         chroms : str | Iterable[str],
@@ -45,20 +51,18 @@ def run(nucbp : int,
         ninc_temp : int,
         print_freq : int,
         seed : int,
-        meth : np.ndarray | Mapping[str,np.ndarray],
+        meth : np.ndarray | Mapping[str,np.ndarray|pd.DataFrame],
         out_types : str | Path,
         out_path : str | Path,
-        nproc : int = 1,
+        nworker : int = 1,
         mols : IndexType | Mapping[str,IndexType] = slice(None),
         extract_final_pos : bool = True) -> SimDataset:
 
     manager = SimManager(nucbp, llink, mu)
     dataset = manager.run(chroms, nsim, nsweep, start_temp, end_temp,
                           ninc_temp, print_freq, seed, meth, out_types,
-                          out_path, mols)
-
-    # Store the final positions of the nucleosomes as a separate analysis
-    if extract_final_pos:
-        pos = dataset.position(chroms=chroms, time_idx=-1)
-        
+                          out_path, nworker=nworker, mols=mols)
     return dataset
+
+def occupancy():
+    pass

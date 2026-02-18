@@ -41,7 +41,7 @@
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="theory.html">Theory</a></li>
+<li class="toctree-l1"><a class="reference internal" href="theory.html">Monte Carlo Simulations of Nucleosome Positions</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
 </ul>
@@ -76,13 +76,11 @@
  <a href="#A"><strong>A</strong></a>
  | <a href="#C"><strong>C</strong></a>
  | <a href="#E"><strong>E</strong></a>
- | <a href="#F"><strong>F</strong></a>
  | <a href="#G"><strong>G</strong></a>
  | <a href="#I"><strong>I</strong></a>
  | <a href="#L"><strong>L</strong></a>
  | <a href="#M"><strong>M</strong></a>
  | <a href="#N"><strong>N</strong></a>
- | <a href="#O"><strong>O</strong></a>
  | <a href="#P"><strong>P</strong></a>
  | <a href="#R"><strong>R</strong></a>
  | <a href="#S"><strong>S</strong></a>
@@ -93,10 +91,10 @@
 <h2 id="A">A</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api.html#nucmc.seq_data.FiberSeqExperiment.analysis">analysis (nucmc.seq_data.FiberSeqExperiment property)</a>
+      <li><a href="api.html#nucmc.experiment.methydata.MethyPrintExperiment.analysis">analysis (nucmc.experiment.methydata.MethyPrintExperiment property)</a>
 
       <ul>
-        <li><a href="api.html#nucmc.sim_data.SimDataset.analysis">(nucmc.sim_data.SimDataset property)</a>
+        <li><a href="api.html#nucmc.simulation.results.SimDataset.analysis">(nucmc.simulation.results.SimDataset property)</a>
 </li>
       </ul></li>
   </ul></td>
@@ -105,25 +103,21 @@
 <h2 id="C">C</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api.html#nucmc.seq_data.FiberSeqRawData.chrom">chrom (nucmc.seq_data.FiberSeqRawData attribute)</a>
-
-      <ul>
-        <li><a href="api.html#nucmc.sim.SimParams.chrom">(nucmc.sim.SimParams attribute)</a>
+      <li><a href="api.html#nucmc.experiment.methydata.MethyPrintData.chrom">chrom (nucmc.experiment.methydata.MethyPrintData attribute)</a>
 </li>
-      </ul></li>
-      <li><a href="api.html#nucmc.seq_data.FiberSeqExperiment.chroms">chroms (nucmc.seq_data.FiberSeqExperiment property)</a>
+      <li><a href="api.html#nucmc.experiment.methydata.MethyPrintExperiment.chroms">chroms (nucmc.experiment.methydata.MethyPrintExperiment property)</a>
 
       <ul>
-        <li><a href="api.html#nucmc.sim_data.SimDataset.chroms">(nucmc.sim_data.SimDataset property)</a>
+        <li><a href="api.html#nucmc.simulation.results.SimDataset.chroms">(nucmc.simulation.results.SimDataset property)</a>
 </li>
       </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api.html#nucmc.sim.SimAnalysis.compute_accessibility">compute_accessibility() (nucmc.sim.SimAnalysis method)</a>
+      <li><a href="api.html#nucmc.simulation.analysis.SimAnalysis.compute_accessibility">compute_accessibility() (nucmc.simulation.analysis.SimAnalysis method)</a>
 </li>
-      <li><a href="api.html#nucmc.sim.SimAnalysis.compute_occupancy">compute_occupancy() (nucmc.sim.SimAnalysis method)</a>
+      <li><a href="api.html#nucmc.simulation.analysis.SimAnalysis.compute_occupancy">compute_occupancy() (nucmc.simulation.analysis.SimAnalysis method)</a>
 </li>
-      <li><a href="api.html#nucmc.sim_data.SimDataset.create_from_sim">create_from_sim() (nucmc.sim_data.SimDataset class method)</a>
+      <li><a href="api.html#nucmc.simulation.results.SimDataset.create">create() (nucmc.simulation.results.SimDataset class method)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -131,50 +125,28 @@
 <h2 id="E">E</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api.html#nucmc.sim.SimParams.end_temp">end_temp (nucmc.sim.SimParams attribute)</a>
+      <li><a href="api.html#nucmc.simulation.results.SimData.energy">energy (nucmc.simulation.results.SimData property)</a>
 </li>
-      <li><a href="api.html#nucmc.sim_data.SimData.energy">energy (nucmc.sim_data.SimData property)</a>
+      <li><a href="api.html#nucmc.simulation.results.SimData.energy_at">energy_at() (nucmc.simulation.results.SimData method)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api.html#nucmc.sim_data.SimData.energy_at">energy_at() (nucmc.sim_data.SimData method)</a>
-</li>
-      <li><a href="api.html#nucmc.sim_data.SimData.extract">extract() (nucmc.sim_data.SimData class method)</a>
+      <li><a href="api.html#nucmc.simulation.results.SimData.extract">extract() (nucmc.simulation.results.SimData class method)</a>
 
       <ul>
-        <li><a href="api.html#nucmc.sim_data.SimDataset.extract">(nucmc.sim_data.SimDataset method)</a>
+        <li><a href="api.html#nucmc.simulation.results.SimDataset.extract">(nucmc.simulation.results.SimDataset method)</a>
 </li>
       </ul></li>
-  </ul></td>
-</tr></table>
-
-<h2 id="F">F</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api.html#nucmc.prep.FiberSeqAnalysis">FiberSeqAnalysis (class in nucmc.prep)</a>
-</li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api.html#nucmc.seq_data.FiberSeqExperiment">FiberSeqExperiment (class in nucmc.seq_data)</a>
-</li>
-      <li><a href="api.html#nucmc.seq_data.FiberSeqRawData">FiberSeqRawData (class in nucmc.seq_data)</a>
-</li>
   </ul></td>
 </tr></table>
 
 <h2 id="G">G</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api.html#nucmc.sim_data.SimDataset.generate_sim_paths">generate_sim_paths() (nucmc.sim_data.SimDataset method)</a>
-</li>
-      <li><a href="api.html#nucmc.sim_data.SimDataset.get_sim_path">get_sim_path() (nucmc.sim_data.SimDataset method)</a>
-</li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api.html#nucmc.seq_data.FiberSeqExperiment.global_analysis">global_analysis (nucmc.seq_data.FiberSeqExperiment property)</a>
+      <li><a href="api.html#nucmc.experiment.methydata.MethyPrintExperiment.global_analysis">global_analysis (nucmc.experiment.methydata.MethyPrintExperiment property)</a>
 
       <ul>
-        <li><a href="api.html#nucmc.sim_data.SimDataset.global_analysis">(nucmc.sim_data.SimDataset property)</a>
+        <li><a href="api.html#nucmc.simulation.results.SimDataset.global_analysis">(nucmc.simulation.results.SimDataset property)</a>
 </li>
       </ul></li>
   </ul></td>
@@ -183,7 +155,11 @@
 <h2 id="I">I</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api.html#nucmc.sim_data.SimData.idx">idx() (nucmc.sim_data.SimData method)</a>
+      <li><a href="api.html#nucmc.simulation.results.SimData.idx">idx() (nucmc.simulation.results.SimData method)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api.html#nucmc.simulation.results.SimDataset.iter_runs">iter_runs() (nucmc.simulation.results.SimDataset method)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -191,19 +167,19 @@
 <h2 id="L">L</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api.html#nucmc.sim_data.SimData.llink">llink (nucmc.sim_data.SimData attribute)</a>
+      <li><a href="api.html#nucmc.simulation.results.SimData.llink">llink (nucmc.simulation.results.SimData attribute)</a>
 </li>
-      <li><a href="api.html#nucmc.seq_data.FiberSeqExperiment.load">load() (nucmc.seq_data.FiberSeqExperiment class method)</a>
+      <li><a href="api.html#nucmc.experiment.methydata.MethyPrintExperiment.load">load() (nucmc.experiment.methydata.MethyPrintExperiment class method)</a>
 
       <ul>
-        <li><a href="api.html#nucmc.sim_data.SimData.load">(nucmc.sim_data.SimData class method)</a>
+        <li><a href="api.html#nucmc.simulation.results.SimData.load">(nucmc.simulation.results.SimData class method)</a>
 </li>
-        <li><a href="api.html#nucmc.sim_data.SimDataset.load">(nucmc.sim_data.SimDataset class method)</a>
+        <li><a href="api.html#nucmc.simulation.results.SimDataset.load">(nucmc.simulation.results.SimDataset class method)</a>
 </li>
       </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api.html#nucmc.seq_data.FiberSeqExperiment.load_raw">load_raw() (nucmc.seq_data.FiberSeqExperiment class method)</a>
+      <li><a href="api.html#nucmc.experiment.methydata.MethyPrintExperiment.load_raw">load_raw() (nucmc.experiment.methydata.MethyPrintExperiment class method)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -211,30 +187,34 @@
 <h2 id="M">M</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api.html#nucmc.sim.SimParams.meth">meth (nucmc.sim.SimParams attribute)</a>
+      <li><a href="api.html#nucmc.experiment.methydata.MethyPrintData.meth_data">meth_data (nucmc.experiment.methydata.MethyPrintData property)</a>
 </li>
-      <li><a href="api.html#nucmc.seq_data.FiberSeqRawData.meth_data">meth_data (nucmc.seq_data.FiberSeqRawData property)</a>
+      <li><a href="api.html#nucmc.experiment.methydata.MethyPrintData.meth_mol_id">meth_mol_id (nucmc.experiment.methydata.MethyPrintData property)</a>
 </li>
-      <li><a href="api.html#nucmc.seq_data.FiberSeqRawData.meth_mol_id">meth_mol_id (nucmc.seq_data.FiberSeqRawData property)</a>
+      <li><a href="api.html#nucmc.experiment.preprocessing.MethyPrintAnalysis">MethyPrintAnalysis (class in nucmc.experiment.preprocessing)</a>
+</li>
+      <li><a href="api.html#nucmc.experiment.methydata.MethyPrintData">MethyPrintData (class in nucmc.experiment.methydata)</a>
+</li>
+      <li><a href="api.html#nucmc.experiment.methydata.MethyPrintExperiment">MethyPrintExperiment (class in nucmc.experiment.methydata)</a>
 </li>
       <li>
     module
 
       <ul>
-        <li><a href="api.html#module-nucmc.prep">nucmc.prep</a>
+        <li><a href="api.html#module-nucmc.experiment.methydata">nucmc.experiment.methydata</a>
 </li>
-        <li><a href="api.html#module-nucmc.seq_data">nucmc.seq_data</a>
+        <li><a href="api.html#module-nucmc.experiment.preprocessing">nucmc.experiment.preprocessing</a>
 </li>
-        <li><a href="api.html#module-nucmc.sim">nucmc.sim</a>
+        <li><a href="api.html#module-nucmc.simulation.analysis">nucmc.simulation.analysis</a>
 </li>
-        <li><a href="api.html#module-nucmc.sim_data">nucmc.sim_data</a>
+        <li><a href="api.html#module-nucmc.simulation.engine">nucmc.simulation.engine</a>
+</li>
+        <li><a href="api.html#module-nucmc.simulation.results">nucmc.simulation.results</a>
 </li>
       </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api.html#nucmc.sim.SimParams.mol">mol (nucmc.sim.SimParams attribute)</a>
-</li>
-      <li><a href="api.html#nucmc.sim_data.SimData.mu">mu (nucmc.sim_data.SimData attribute)</a>
+      <li><a href="api.html#nucmc.simulation.results.SimData.mu">mu (nucmc.simulation.results.SimData attribute)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -242,85 +222,68 @@
 <h2 id="N">N</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api.html#nucmc.seq_data.FiberSeqRawData.nbp">nbp (nucmc.seq_data.FiberSeqRawData attribute)</a>
+      <li><a href="api.html#nucmc.experiment.methydata.MethyPrintData.nbp">nbp (nucmc.experiment.methydata.MethyPrintData attribute)</a>
 
       <ul>
-        <li><a href="api.html#nucmc.sim_data.SimData.nbp">(nucmc.sim_data.SimData attribute)</a>
+        <li><a href="api.html#nucmc.simulation.results.SimData.nbp">(nucmc.simulation.results.SimData attribute)</a>
 </li>
       </ul></li>
-      <li><a href="api.html#nucmc.sim.SimParams.ninc_temp">ninc_temp (nucmc.sim.SimParams attribute)</a>
+      <li><a href="api.html#nucmc.simulation.results.SimDataset.nmol">nmol (nucmc.simulation.results.SimDataset property)</a>
 </li>
-      <li><a href="api.html#nucmc.sim_data.SimDataset.nmol">nmol (nucmc.sim_data.SimDataset property)</a>
+      <li><a href="api.html#nucmc.experiment.preprocessing.MethyPrintAnalysis.normalize">normalize() (nucmc.experiment.preprocessing.MethyPrintAnalysis method)</a>
 </li>
-      <li><a href="api.html#nucmc.prep.FiberSeqAnalysis.normalize">normalize() (nucmc.prep.FiberSeqAnalysis method)</a>
+      <li><a href="api.html#nucmc.simulation.results.SimDataset.nsim">nsim (nucmc.simulation.results.SimDataset property)</a>
 </li>
-      <li><a href="api.html#nucmc.sim_data.SimDataset.nsim">nsim (nucmc.sim_data.SimDataset property)</a>
+      <li><a href="api.html#nucmc.simulation.results.SimData.nucbp">nucbp (nucmc.simulation.results.SimData attribute)</a>
 </li>
-      <li><a href="api.html#nucmc.sim.SimParams.nsweep">nsweep (nucmc.sim.SimParams attribute)</a>
+      <li>
+    nucmc.experiment.methydata
+
+      <ul>
+        <li><a href="api.html#module-nucmc.experiment.methydata">module</a>
 </li>
-      <li><a href="api.html#nucmc.sim_data.SimData.nucbp">nucbp (nucmc.sim_data.SimData attribute)</a>
-</li>
+      </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li>
-    nucmc.prep
+    nucmc.experiment.preprocessing
 
       <ul>
-        <li><a href="api.html#module-nucmc.prep">module</a>
+        <li><a href="api.html#module-nucmc.experiment.preprocessing">module</a>
 </li>
       </ul></li>
       <li>
-    nucmc.seq_data
+    nucmc.simulation.analysis
 
       <ul>
-        <li><a href="api.html#module-nucmc.seq_data">module</a>
+        <li><a href="api.html#module-nucmc.simulation.analysis">module</a>
 </li>
       </ul></li>
       <li>
-    nucmc.sim
+    nucmc.simulation.engine
 
       <ul>
-        <li><a href="api.html#module-nucmc.sim">module</a>
+        <li><a href="api.html#module-nucmc.simulation.engine">module</a>
 </li>
       </ul></li>
       <li>
-    nucmc.sim_data
+    nucmc.simulation.results
 
       <ul>
-        <li><a href="api.html#module-nucmc.sim_data">module</a>
+        <li><a href="api.html#module-nucmc.simulation.results">module</a>
 </li>
       </ul></li>
-  </ul></td>
-</tr></table>
-
-<h2 id="O">O</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api.html#nucmc.sim.SimParams.out_path">out_path (nucmc.sim.SimParams attribute)</a>
-</li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api.html#nucmc.sim.SimParams.out_type">out_type (nucmc.sim.SimParams attribute)</a>
-</li>
   </ul></td>
 </tr></table>
 
 <h2 id="P">P</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api.html#nucmc.sim_data.SimPathMapper.params_to_path">params_to_path() (nucmc.sim_data.SimPathMapper method)</a>
-</li>
-      <li><a href="api.html#nucmc.sim_data.SimDataset.path">path (nucmc.sim_data.SimDataset attribute)</a>
-</li>
-      <li><a href="api.html#nucmc.sim_data.SimPathMapper.path_to_params">path_to_params() (nucmc.sim_data.SimPathMapper method)</a>
+      <li><a href="api.html#nucmc.simulation.results.SimData.position">position (nucmc.simulation.results.SimData property)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api.html#nucmc.sim_data.SimData.position">position (nucmc.sim_data.SimData property)</a>
-</li>
-      <li><a href="api.html#nucmc.sim_data.SimData.position_at">position_at() (nucmc.sim_data.SimData method)</a>
-</li>
-      <li><a href="api.html#nucmc.sim.SimParams.print_freq">print_freq (nucmc.sim.SimParams attribute)</a>
+      <li><a href="api.html#nucmc.simulation.results.SimData.position_at">position_at() (nucmc.simulation.results.SimData method)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -328,17 +291,15 @@
 <h2 id="R">R</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api.html#nucmc.seq_data.FiberSeqExperiment.raw">raw (nucmc.seq_data.FiberSeqExperiment property)</a>
+      <li><a href="api.html#nucmc.experiment.methydata.MethyPrintExperiment.raw">raw (nucmc.experiment.methydata.MethyPrintExperiment property)</a>
 
       <ul>
-        <li><a href="api.html#nucmc.sim_data.SimDataset.raw">(nucmc.sim_data.SimDataset property)</a>
+        <li><a href="api.html#nucmc.simulation.results.SimDataset.raw">(nucmc.simulation.results.SimDataset property)</a>
 </li>
       </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api.html#nucmc.sim.SimParams.run">run (nucmc.sim.SimParams attribute)</a>
-</li>
-      <li><a href="api.html#nucmc.sim.SimManager.run">run() (nucmc.sim.SimManager method)</a>
+      <li><a href="api.html#nucmc.simulation.engine.SimManager.run">run() (nucmc.simulation.engine.SimManager method)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -346,39 +307,31 @@
 <h2 id="S">S</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api.html#nucmc.seq_data.FiberSeqExperiment.save">save() (nucmc.seq_data.FiberSeqExperiment method)</a>
+      <li><a href="api.html#nucmc.experiment.methydata.MethyPrintExperiment.save">save() (nucmc.experiment.methydata.MethyPrintExperiment method)</a>
 
       <ul>
-        <li><a href="api.html#nucmc.sim_data.SimData.save">(nucmc.sim_data.SimData method)</a>
+        <li><a href="api.html#nucmc.simulation.results.SimData.save">(nucmc.simulation.results.SimData method)</a>
 </li>
-        <li><a href="api.html#nucmc.sim_data.SimDataset.save">(nucmc.sim_data.SimDataset method)</a>
-</li>
-      </ul></li>
-      <li><a href="api.html#nucmc.sim.SimParams.seed">seed (nucmc.sim.SimParams attribute)</a>
-
-      <ul>
-        <li><a href="api.html#nucmc.sim_data.SimData.seed">(nucmc.sim_data.SimData attribute)</a>
+        <li><a href="api.html#nucmc.simulation.results.SimDataset.save">(nucmc.simulation.results.SimDataset method)</a>
 </li>
       </ul></li>
-      <li><a href="api.html#nucmc.sim.SimAnalysis">SimAnalysis (class in nucmc.sim)</a>
+      <li><a href="api.html#nucmc.simulation.results.SimData.seed">seed (nucmc.simulation.results.SimData attribute)</a>
 </li>
-      <li><a href="api.html#nucmc.sim_data.SimData">SimData (class in nucmc.sim_data)</a>
+      <li><a href="api.html#nucmc.simulation.results.SimDataset.sim_path">sim_path() (nucmc.simulation.results.SimDataset method)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api.html#nucmc.sim_data.SimDataset">SimDataset (class in nucmc.sim_data)</a>
+      <li><a href="api.html#nucmc.simulation.analysis.SimAnalysis">SimAnalysis (class in nucmc.simulation.analysis)</a>
 </li>
-      <li><a href="api.html#nucmc.sim_data.SimDataset.SimDataAccessor">SimDataset.SimDataAccessor (class in nucmc.sim_data)</a>
+      <li><a href="api.html#nucmc.simulation.results.SimData">SimData (class in nucmc.simulation.results)</a>
 </li>
-      <li><a href="api.html#nucmc.sim.SimManager">SimManager (class in nucmc.sim)</a>
+      <li><a href="api.html#nucmc.simulation.results.SimDataset">SimDataset (class in nucmc.simulation.results)</a>
 </li>
-      <li><a href="api.html#nucmc.sim.SimParams">SimParams (class in nucmc.sim)</a>
+      <li><a href="api.html#nucmc.simulation.results.SimDataset.SimDataAccessor">SimDataset.SimDataAccessor (class in nucmc.simulation.results)</a>
 </li>
-      <li><a href="api.html#nucmc.sim_data.SimPathMapper">SimPathMapper (class in nucmc.sim_data)</a>
+      <li><a href="api.html#nucmc.simulation.engine.SimManager">SimManager (class in nucmc.simulation.engine)</a>
 </li>
-      <li><a href="api.html#nucmc.sim.SimAnalysis.sort_by_occupancy">sort_by_occupancy() (nucmc.sim.SimAnalysis method)</a>
-</li>
-      <li><a href="api.html#nucmc.sim.SimParams.start_temp">start_temp (nucmc.sim.SimParams attribute)</a>
+      <li><a href="api.html#nucmc.simulation.analysis.SimAnalysis.sort_by_occupancy">sort_by_occupancy() (nucmc.simulation.analysis.SimAnalysis method)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -386,17 +339,17 @@
 <h2 id="T">T</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api.html#nucmc.sim_data.SimData.temp">temp (nucmc.sim_data.SimData property)</a>
+      <li><a href="api.html#nucmc.simulation.results.SimData.temp">temp (nucmc.simulation.results.SimData property)</a>
 </li>
-      <li><a href="api.html#nucmc.seq_data.FiberSeqRawData.test_data">test_data (nucmc.seq_data.FiberSeqRawData property)</a>
+      <li><a href="api.html#nucmc.experiment.methydata.MethyPrintData.test_data">test_data (nucmc.experiment.methydata.MethyPrintData property)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api.html#nucmc.seq_data.FiberSeqRawData.test_mol_id">test_mol_id (nucmc.seq_data.FiberSeqRawData property)</a>
+      <li><a href="api.html#nucmc.experiment.methydata.MethyPrintData.test_mol_id">test_mol_id (nucmc.experiment.methydata.MethyPrintData property)</a>
 </li>
-      <li><a href="api.html#nucmc.sim_data.SimData.time">time (nucmc.sim_data.SimData property)</a>
+      <li><a href="api.html#nucmc.simulation.results.SimData.time">time (nucmc.simulation.results.SimData property)</a>
 </li>
-      <li><a href="api.html#nucmc.sim_data.SimData.time_to_idx">time_to_idx (nucmc.sim_data.SimData property)</a>
+      <li><a href="api.html#nucmc.simulation.results.SimData.time_to_idx">time_to_idx (nucmc.simulation.results.SimData property)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -404,11 +357,11 @@
 <h2 id="U">U</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api.html#nucmc.seq_data.FiberSeqRawData.unmeth_data">unmeth_data (nucmc.seq_data.FiberSeqRawData property)</a>
+      <li><a href="api.html#nucmc.experiment.methydata.MethyPrintData.unmeth_data">unmeth_data (nucmc.experiment.methydata.MethyPrintData property)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api.html#nucmc.seq_data.FiberSeqRawData.unmeth_mol_id">unmeth_mol_id (nucmc.seq_data.FiberSeqRawData property)</a>
+      <li><a href="api.html#nucmc.experiment.methydata.MethyPrintData.unmeth_mol_id">unmeth_mol_id (nucmc.experiment.methydata.MethyPrintData property)</a>
 </li>
   </ul></td>
 </tr></table>

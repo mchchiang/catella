@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Theory &mdash; nucmc 0.1.0 documentation</title>
+  <title>Monte Carlo Simulations of Nucleosome Positions &mdash; nucmc 0.1.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
 
@@ -16,7 +16,8 @@
       <script src="_static/documentation_options.js?v=01f34227"></script>
       <script src="_static/doctools.js?v=fd6eb6e6"></script>
       <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
-      <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
+      <script type="text/x-mathjax-config">MathJax.Hub.Config({"tex2jax": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "displayMath": [["$$", "$$"], ["\\[", "\\]"]], "processEscapes": true}})</script>
+      <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
@@ -45,12 +46,10 @@
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul class="current">
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Theory</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#model-overview">Model Overview</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#energy-function">Energy Function</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#metropolis-sampling-dynamics">Metropolis Sampling Dynamics</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#mean-occupancy">Mean Occupancy</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#relationship-to-output">Relationship to Output</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Monte Carlo Simulations of Nucleosome Positions</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#the-energy-of-the-system">The Energy of the System</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#monte-carlo-sampling-moves">Monte Carlo Sampling Moves</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#observables">Observables</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
@@ -71,7 +70,7 @@
           <div role="navigation" aria-label="Page navigation">
   <ul class="wy-breadcrumbs">
       <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
-      <li class="breadcrumb-item active">Theory</li>
+      <li class="breadcrumb-item active">Monte Carlo Simulations of Nucleosome Positions</li>
       <li class="wy-breadcrumbs-aside">
             <a href="_sources/theory.rst.txt" rel="nofollow"> View page source</a>
       </li>
@@ -81,72 +80,114 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <section id="theory">
-<h1>Theory<a class="headerlink" href="#theory" title="Link to this heading"></a></h1>
-<section id="model-overview">
-<h2>Model Overview<a class="headerlink" href="#model-overview" title="Link to this heading"></a></h2>
-<p>The system consists of a one-dimensional lattice of length <span class="math notranslate nohighlight">\(L\)</span>,
-representing DNA base-pair positions. Nucleosomes occupy a footprint
-of size <span class="math notranslate nohighlight">\(w\)</span>.</p>
-<p>The configuration of the system at time <span class="math notranslate nohighlight">\(t\)</span> is described by
-the occupancy field:</p>
-<div class="math notranslate nohighlight" id="equation-occupancy">
-<span class="eqno">(1)<a class="headerlink" href="#equation-occupancy" title="Link to this equation"></a></span>\[n_i(t) \in \{0,1\}, \quad i = 1, \dots, L\]</div>
-<p>where <span class="math notranslate nohighlight">\(n_i = 1\)</span> indicates that site <span class="math notranslate nohighlight">\(i\)</span> is covered
-by a nucleosome.</p>
-</section>
-<section id="energy-function">
-<h2>Energy Function<a class="headerlink" href="#energy-function" title="Link to this heading"></a></h2>
-<p>The total energy of a configuration is defined as:</p>
-<div class="math notranslate nohighlight" id="equation-energy">
-<span class="eqno">(2)<a class="headerlink" href="#equation-energy" title="Link to this equation"></a></span>\[E = \sum_{i=1}^{L} V_i n_i
-    + \sum_{i&lt;j} U(|i-j|) n_i n_j\]</div>
-<p>where:</p>
-<ul class="simple">
-<li><p><span class="math notranslate nohighlight">\(V_i\)</span> is the sequence-dependent potential</p></li>
-<li><p><span class="math notranslate nohighlight">\(U(r)\)</span> is an interaction potential</p></li>
-</ul>
-</section>
-<section id="metropolis-sampling-dynamics">
-<h2>Metropolis Sampling Dynamics<a class="headerlink" href="#metropolis-sampling-dynamics" title="Link to this heading"></a></h2>
-<p>We evolve the system using a Metropolis Monte Carlo scheme.</p>
-<p>For a proposed move with energy change <span class="math notranslate nohighlight">\(\Delta E\)</span>,
-the acceptance probability is:</p>
-<div class="math notranslate nohighlight" id="equation-metropolis">
-<span class="eqno">(3)<a class="headerlink" href="#equation-metropolis" title="Link to this equation"></a></span>\[P_{\mathrm{acc}} =
-\min \left( 1, e^{-\beta \Delta E} \right)\]</div>
-<p>where:</p>
+  <section id="monte-carlo-simulations-of-nucleosome-positions">
+<h1>Monte Carlo Simulations of Nucleosome Positions<a class="headerlink" href="#monte-carlo-simulations-of-nucleosome-positions" title="Link to this heading"></a></h1>
+<p>We model the DNA fiber as a one-dimensional (1D) lattice array given by
+coordinates <span class="math notranslate nohighlight">\(x \in \{0,\ldots,L-1\}\)</span>, where <span class="math notranslate nohighlight">\(L\)</span> is the total
+length of the DNA fiber (in units of bp). Within the simulations, nucleosomes
+of size <span class="math notranslate nohighlight">\(\ell_{\text{nuc}}\)</span> are considered.</p>
+<section id="the-energy-of-the-system">
+<h2>The Energy of the System<a class="headerlink" href="#the-energy-of-the-system" title="Link to this heading"></a></h2>
+<p>The effective Hamiltonian of the system has three contributions:</p>
 <div class="math notranslate nohighlight">
-\[\beta = \frac{1}{k_B T}\]</div>
-<p>The algorithm ensures detailed balance with respect to the
-Boltzmann distribution:</p>
-<div class="math notranslate nohighlight" id="equation-boltzmann">
-<span class="eqno">(4)<a class="headerlink" href="#equation-boltzmann" title="Link to this equation"></a></span>\[P(\{n_i\}) \propto e^{-\beta E}\]</div>
+\[H = E - \mu N \equiv E_{\text{seq}} + E_{\text{rep}} -\mu N \;,\]</div>
+<p>where <span class="math notranslate nohighlight">\(E_{\text{seq}}\)</span> is an energy associated with the methylation
+footprinting signal (related to a sequence-specific nucleosomal binding
+energy), and <span class="math notranslate nohighlight">\(E_{\text{rep}}\)</span> is a pairwise repulsion energy due to the
+excluded volume of the nucleosomes (i.e., they cannot overlap). The last term
+is a chemical energy associated with a non-sequence-specific nucleosomal
+binding energy to the DNA fiber, with <span class="math notranslate nohighlight">\(\mu\)</span> being the chemical potential
+(note that a positive <span class="math notranslate nohighlight">\(\mu\)</span> means it is favourable for nucleosomes to
+bind to the fiber) and <span class="math notranslate nohighlight">\(N\)</span> the total number of nucleosomes on the fiber.</p>
+<p>More specifically, we define <span class="math notranslate nohighlight">\(E_{\text{seq}}\)</span> via the normalized
+methylation score <span class="math notranslate nohighlight">\(M(x)\)</span>, which is given by</p>
+<div class="math notranslate nohighlight">
+\[M(x) = \frac{\langle S_{\text{test}} \rangle_{\text{bin}}(x)-\langle S_{\text{unmeth}} \rangle_{\text{bin}}(x)}{\langle S_{\text{meth}} \rangle_{\text{bin}}(x)-\langle S_{\text{unmeth}} \rangle_{\text{bin}}(x)} \;,\]</div>
+<p>where <span class="math notranslate nohighlight">\(S_{\text{test}}\)</span> is the methylation score (defined for each bp)
+for the test condition (e.g., chromatinized DNA), while <span class="math notranslate nohighlight">\(S_{\text{meth}}\)</span>
+and <span class="math notranslate nohighlight">\(S_{\text{unmeth}}\)</span> are the methylation scores for the cases of a
+fully methylated and unmethylated DNA fiber, respectively.</p>
+<p>Here, the operation <span class="math notranslate nohighlight">\(\langle\cdot\rangle_{\text{bin}}\)</span> denotes that we
+have first smoothed the signal by doing a rolling average with a bin size of
+<span class="math notranslate nohighlight">\(\ell_{\text{bin}}\)</span>. Typically, we take <span class="math notranslate nohighlight">\(\ell_{\text{bin}} = 147\)</span>
+bp, which is the typically length of DNA wrapped around a nucleosome <a class="footnote-reference brackets" href="#f1" id="id1" role="doc-noteref"><span class="fn-bracket">[</span>1<span class="fn-bracket">]</span></a>.</p>
+<p>With a set of <span class="math notranslate nohighlight">\(N\)</span> nucleosomes occupying positions
+<span class="math notranslate nohighlight">\(x_0, ..., x_{N-1}\)</span>, the energy associated with the methylation
+footprinting data is</p>
+<div class="math notranslate nohighlight">
+\[E_{\text{seq}} = k_BT\sum_{i=0}^{N-1}\widetilde{M}(x) \equiv k_BT\sum_{i=0}^{N-1} \left[M(x_i)-\langle M \rangle \right] \;,\]</div>
+<p>where <span class="math notranslate nohighlight">\(k_B\)</span> is the Boltzmann constant, <span class="math notranslate nohighlight">\(T\)</span> is the temperature of
+the system, and <span class="math notranslate nohighlight">\(\langle M \rangle\)</span> is the averaged normalized
+methylation score over all molecules sequenced for the test condition (i.e.,
+an ensemble average).</p>
+<p>To model the pairwise repulsion between two nucleosomes (say <span class="math notranslate nohighlight">\(i\)</span> and
+<span class="math notranslate nohighlight">\(j\)</span>), we consider the following potential:</p>
+<div class="math notranslate nohighlight">
+\[\begin{split}E_{\text{rep}}^{ij}(x_{ij}) =
+\begin{cases}
+  \infty &amp; \text{if } x_{ij} &lt; \ell_{\text{nuc}} \\
+  k_BT\left[\left(\frac{\ell_{\text{link}}}{x_{ij}-\ell_{\text{nuc}}}\right)^{12} - 2\left(\frac{\ell_{\text{link}}}{x_{ij}-\ell_{\text{nuc}}}\right)^6 + 1\right] &amp; \text{if } \ell_{\text{nuc}} \leq x_{ij} \leq \ell_{\text{nuc}}+\ell_{\text{link}} \\
+  0 &amp; \text{otherwise} \;,
+\end{cases}\end{split}\]</div>
+<p>where <span class="math notranslate nohighlight">\(x_{ij} = |x_i-x_j|\)</span> is the separation between the nucleosomes,
+<span class="math notranslate nohighlight">\(\ell_{\text{nuc}} = 147\)</span> bp, and <span class="math notranslate nohighlight">\(\ell_{\text{link}}\)</span> is the
+typical length of the linker DNA between nucleosomes (set to 50 bp). Under
+the condition <span class="math notranslate nohighlight">\(\ell_{\text{link}} &lt; \ell_{\text{nuc}}\)</span>, only nearest
+neighbour interactions are effective, and so</p>
+<div class="math notranslate nohighlight">
+\[E_{\text{rep}} = \sum_{i=0}^{N-2}E_{\text{rep}}^{i,i+1}\]</div>
+<p>for <span class="math notranslate nohighlight">\(N \geq 2\)</span> and 0 otherwise.</p>
 </section>
-<section id="mean-occupancy">
-<h2>Mean Occupancy<a class="headerlink" href="#mean-occupancy" title="Link to this heading"></a></h2>
-<p>The mean occupancy profile is defined as:</p>
+<section id="monte-carlo-sampling-moves">
+<h2>Monte Carlo Sampling Moves<a class="headerlink" href="#monte-carlo-sampling-moves" title="Link to this heading"></a></h2>
+<p>Since we allow the number of nucleosomes to vary, the statistical ensemble
+sampled is the <strong>grand canonical ensemble</strong>. In thermal equilibrium, the
+probability of observing a configuration <span class="math notranslate nohighlight">\(\mathcal{C}\)</span> is</p>
+<div class="math notranslate nohighlight">
+\[P(\mathcal{C}) = \frac{1}{\mathcal{Z}}\exp[-\beta H(\mathcal{C})] \;,\]</div>
+<p>where <span class="math notranslate nohighlight">\(\beta = 1/(k_BT)\)</span> and <span class="math notranslate nohighlight">\(\mathcal{Z}\)</span> is the partition
+function. We perform one of the following three moves in each step:</p>
+<ol class="arabic">
+<li><p><strong>Shifting a nucleosome</strong>
+We randomly select the <span class="math notranslate nohighlight">\(i\)</span>-th nucleosome and move its position
+<span class="math notranslate nohighlight">\(x_i \to x_i' = x_i \pm 1\)</span> bp. The acceptance probability is:</p>
+<div class="math notranslate nohighlight">
+\[p(x_i\to x_i') = \min\left[1,\exp[-\beta(E(x_i')-E(x_i))]\right] \;.\]</div>
+</li>
+<li><p><strong>Adding a nucleosome</strong>
+We randomly select a position <span class="math notranslate nohighlight">\(x\)</span>. The probability of accepting a new
+nucleosome at that position is:</p>
+<div class="math notranslate nohighlight">
+\[p(\text{add at } x) = \min\left[1,\frac{L}{(N+1)\ell_{\text{nuc}}}\exp[\beta\mu-\beta\Delta E_{\text{add}}(x)]\right] \;,\]</div>
+</li>
+<li><p><strong>Removing a nucleosome</strong>
+We randomly select and remove the <span class="math notranslate nohighlight">\(i\)</span>-th nucleosome. The acceptance
+probability is:</p>
+<div class="math notranslate nohighlight">
+\[p(\text{remove } i) = \min\left[1,\frac{N\ell_{\text{nuc}}}{L}\exp[-\beta\mu-\beta\Delta E_{\text{remove}}(x_i)]\right] \;.\]</div>
+</li>
+</ol>
+<p>These moves follow the <strong>Metropolis algorithm</strong>, ensuring detailed balance and
+thermal equilibrium.</p>
+</section>
+<section id="observables">
+<h2>Observables<a class="headerlink" href="#observables" title="Link to this heading"></a></h2>
+<p>The mean occupancy profile is defined as follows:</p>
 <div class="math notranslate nohighlight" id="equation-mean-occ">
-<span class="eqno">(5)<a class="headerlink" href="#equation-mean-occ" title="Link to this equation"></a></span>\[\langle n_i \rangle
-=
-\frac{1}{T}
-\sum_{t=1}^{T}
-n_i(t)\]</div>
-<p>This quantity corresponds to the time-averaged coverage
-at base-pair <span class="math notranslate nohighlight">\(i\)</span>.</p>
-</section>
-<section id="relationship-to-output">
-<h2>Relationship to Output<a class="headerlink" href="#relationship-to-output" title="Link to this heading"></a></h2>
-<p>In the implementation:</p>
-<ul class="simple">
-<li><p><span class="math notranslate nohighlight">\(\langle n_i \rangle\)</span> is stored in
-<code class="docutils literal notranslate"><span class="pre">analysis[&quot;occupancy&quot;]</span></code></p></li>
-<li><p>the energy trajectory
-<span class="math notranslate nohighlight">\(E(t)\)</span> is stored in
-<code class="docutils literal notranslate"><span class="pre">analysis[&quot;energy&quot;]</span></code></p></li>
-</ul>
-<p>Equation <a class="reference internal" href="#equation-metropolis">(3)</a> is implemented in the C++ core
-of the simulation engine.</p>
+<span class="eqno">(1)<a class="headerlink" href="#equation-mean-occ" title="Link to this equation"></a></span>\[\langle n(x) \rangle = \frac{1}{T}\sum_{t=1}^{T} n(x,t)\]</div>
+<p>This quantity corresponds to the time-averaged coverage at base-pair <span class="math notranslate nohighlight">\(x\)</span>.</p>
+<p class="rubric">Footnotes</p>
+<aside class="footnote-list brackets">
+<aside class="footnote brackets" id="f1" role="doc-footnote">
+<span class="label"><span class="fn-bracket">[</span><a role="doc-backlink" href="#id1">1</a><span class="fn-bracket">]</span></span>
+<p>We perform the rolling average in a left-aligned manner, so
+<span class="math notranslate nohighlight">\(\langle S \rangle_{\text{bin}}(0) = \frac{1}{\ell_{\text{bin}}}
+\sum_{x=0}^{\ell_{\text{bin}}-1}S(x)\)</span>. For
+<span class="math notranslate nohighlight">\(x \geq L-\ell_{\text{bin}}\)</span>, we set the score to be same as
+<span class="math notranslate nohighlight">\(\langle S \rangle_{\text{bin}}(L-\ell_{\text{bin}}-1)\)</span>. This
+has no effect as the nucleosome cannot “fall off” the fiber.</p>
+</aside>
+</aside>
 </section>
 </section>
 

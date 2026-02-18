@@ -26,6 +26,14 @@ extensions = [
     'sphinx.ext.mathjax',
 ]
 
+mathjax_config = {
+    'tex2jax': {
+        'inlineMath': [ ["$","$"], ["\\(","\\)"] ],
+        'displayMath': [ ["$$","$$"], ["\\[","\\]"] ],
+        'processEscapes': True,
+    },
+}
+
 templates_path = ['_templates']
 exclude_patterns = []
 

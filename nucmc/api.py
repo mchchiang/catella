@@ -1,41 +1,43 @@
 # api.py
 
-# High-level interface for processing fiber-seq data and running simulations
+# A high-level interface for processing methylation footprinting data and
+# running simulations
 
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 import numpy as np
 import pandas as pd
-from .prep import FiberSeqAnalysis
-from .sim import SimManager
-from .seq_data import FiberSeqExperiment
-from .sim_data import SimDataset
-from .util import IndexType
+from .experiment.preprocessing import MethyPrintAnalysis
+from .simulation.engine import SimManager
+from .experiment.methydata import MethyPrintExperiment
+from .simulation.results import SimDataset
+from .utils import IndexType
 
 def preprocess(*, binsize : int,
                chromsize : str,
                test_file : str | Path,
-               out_path : str | Path | None = None,
+               out_file : str | Path | None = None,
                unmeth_file : str | Path | None = None,
                meth_file : str | Path | None = None,
                wrap : bool = False,
-               colidx : Iterable | None = None) -> FiberSeqExperiment:
+               colidx : Iterable | None = None) -> MethyPrintExperiment:
 
     # Load the raw data (generated from modkit)
-    exp = FiberSeqExperiment.load_raw(chromsize=chromsize,
-                                      test_file=test_file,
-                                      unmeth_file=unmeth_file,
-                                      meth_file=meth_file,
-                                      wrap=wrap,
-                                      colidx=colidx)
+    exp = MethyPrintExperiment.load_raw(chromsize=chromsize,
+                                        test_file=test_file,
+                                        unmeth_file=unmeth_file,
+                                        meth_file=meth_file,
+                                        wrap=wrap,
+                                        colidx=colidx)
 
     # Normalize the data as required
-    ana = FiberSeqAnalysis()
-    ana.normalize(binsize, exp)
+    if meth_file is not None and unmeth_file is not None:
+        ana = MethyPrintAnalysis()
+        ana.normalize(binsize, exp)
     
     # Save the results
-    if (out_path is not None):
-        exp.save(out_path)
+    if out_file is not None:
+        exp.save(out_file)
 
     return exp
 

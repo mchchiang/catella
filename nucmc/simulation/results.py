@@ -1,4 +1,4 @@
-# sim_data.py
+# results.py
 
 import numpy as np
 import inspect
@@ -12,56 +12,60 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Tuple, Self, Dict, Any, Callable, List
 from collections import Counter
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterator, Iterable, Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed, Future
-from .util import DataFrameMap, FixedKeyMap
-from . import util
+from ..containers import DataFrameMap, FixedKeyMap
+from .. import utils
+from .. import h5_utils
 
 # Limit the concurrent open files to stay under OS limits
 MAX_OPEN_FILES = Semaphore(500)
 
-@util.copy_array_properties
+@utils.copy_array_properties
 @dataclass(frozen=True, slots=True, init=False)
 class SimData:
     """
-    Container for a single simulation result.
+    Container for results and parameters of a single simulation run.
 
-    A ``SimData`` object stores:
+    This class provides a read-only, memory-efficient representation of 
+    Monte Carlo simulation data, including physical parameters (chemical 
+    potential, fiber length) and recorded observables (energy, positions).
 
-    - simulation parameters
-    - raw data arrays
-
-    Parameters
-    ----------
-    nucbp : int
-        The number of base pairs occupied by a nucleosome.
-    nbp : int
-        The number of base pairs of the chromatin fiber.
-    llink : int
-        The DNA linker length between nucleosomes.
-    mu : float
-        The ``chemical potential'' - the energy gained by adding a nucleosome
-        to the fiber (a positive mu favours nucleosome binding).
-    seed : int
-        The seed for initializing the random generator needed for running the
-        Monte Carlo simulation.
-
-    Notes
-    -----
-    Some notes.
+    .. note::
+       Direct instantiation is disabled to ensure data integrity. Use the 
+       factory method :meth:`SimData.load` to create instances from HDF5 files.
     """
     
     nucbp : int
+    """The number of base pairs occupied by a single nucleosome."""
+     
     nbp : int
+    """The total number of base pairs in the chromatin fiber."""
+    
     llink : int
-    mu : float
-    seed : int
-    _time : np.ndarray
-    _energy : np.ndarray
-    _position : Tuple[np.ndarray,...]
-    _temp : np.ndarray
+    """The DNA linker length between nucleosomes."""
 
-    # Internal fields
+    mu : float
+    """The chemical potential (energy gained by adding a nucleosome)."""
+
+    seed : int
+    """The seed used for initializing the random number generator."""
+
+    _time : np.ndarray = field(
+        metadata={"doc": "np.ndarray: The simulation time points."})
+
+    _energy : np.ndarray = field(
+        metadata={"doc": "np.ndarray: The system energy recorded at each time "
+                  "point."})
+
+    _position : Tuple[np.ndarray,...] = field(
+        metadata={"doc": "tuple of np.ndarray: Nucleosome positions for each "
+                  "time frame."})
+
+    _temp : np.ndarray = field(
+        metadata={"doc": "np.ndarray: The system temperature recorded at each "
+                  "time point."})
+
     _time_to_idx : dict[int,int] = field(repr=False)
 
     def __init__(self, *args : Any, **kwargs : Any):
@@ -79,66 +83,72 @@ class SimData:
 
     def idx(self, t: int) -> int:
         """
-        Return the frame index for a specific time point.
+        Retrieve the internal frame index for a given time point.
 
         Parameters
         ----------
         t : int
-            Time point of interest.
+            The simulation time point to look up.
 
         Returns
         -------
         int
-            Frame index.
-        """        
+            The integer index corresponding to time `t` in the data arrays.
+
+        Raises
+        ------
+        KeyError
+            If the specified time point does not exist in the dataset.
+        """
         return self._time_to_idx[t]
 
-    def energy_at(self, t: int):
+    def energy_at(self, t: int) -> float | None:
         """
-        Return the system's energy at a specific time point.
+        Retrieve the system's energy at a specific time point.
 
         Parameters
         ----------
         t : int
-            Time point of interest for the system's energy.
+            The time point of interest.
 
         Returns
         -------
-        float
-            The system's energy at time t.
-        """        
+        float or None
+            The system energy at time `t`, or None if energy data is missing.
+        """
         return None if self._energy is None else self._energy[self.idx(t)]
 
-    def position_at(self, t: int):
+    def position_at(self, t: int) -> tuple[int] | None:
         """
-        Return the nucleosome positions at a specific time point.
+        Retrieve nucleosome positions at a specific time point.
 
         Parameters
         ----------
         t : int
-            Time point of interest for the positions.
+            The time point of interest.
 
         Returns
         -------
-        Tuple
-            Tuple of nucleosome positions (left-aligned) at time t.
+        tuple of np.ndarray or None
+            A tuple of arrays representing nucleosome positions (left-aligned) 
+            at time `t`. Returns None if position data is missing.
         """
         return None if self._position is None else \
             tuple(self._position[self.idx(t)])
     
     def save(self, path : str | Path):
         """
-        Save simulation data to an HDF5 file.
+        Save the simulation data and parameters to an HDF5 file.
 
         Parameters
         ----------
-        path : str | pathlib.Path
-            Output file path.
+        path : str or pathlib.Path
+            The output file path. Existing files will be overwritten.
 
         Raises
         ------
         OSError
-            If file cannot be written.
+            If the file cannot be opened or written to disk.
         """
         with h5py.File(path, "w") as f:
             # Store model parameters
@@ -161,23 +171,23 @@ class SimData:
     @classmethod
     def load(cls, path : str | Path) -> Self:
         """
-        Load simulation data from an HDF5 file.
+        Load simulation data from a persistent HDF5 file.
 
         Parameters
         ----------
         path : str or pathlib.Path
-            Simulation data file path.
+            The path to the HDF5 file containing simulation results.
 
         Returns
         -------
         SimData
-            Loaded simulation object.
+            A new instance populated with the loaded parameters and data.
 
         Raises
         ------
         OSError
-            If file cannot be open.
-        """        
+            If the file cannot be opened or does not follow the SimData schema.
+        """
         with h5py.File(path, "r") as f:
             # Load model parameters
             g = f["params"]
@@ -210,6 +220,28 @@ class SimData:
     # Extract the data for a specific obesrvable for a single time point
     @classmethod
     def extract(cls, path : str | Path, time : int, obs : str) -> np.ndarray:
+        """
+        Extract a specific observable from a file without loading the full
+        dataset.
+
+        This method is optimized for batch processing and utilizes an internal 
+        LRU cache to speed up repeated access to the same file.
+
+        Parameters
+        ----------
+        path : str or pathlib.Path
+            The path to the simulation HDF5 file.
+        time : int
+            The target simulation time point.
+        obs : str
+            The name of the observable to extract (e.g., 'energy', 'position').
+
+        Returns
+        -------
+        np.ndarray
+            The extracted data for the specified observable and time. Returns 
+            ``np.nan`` (or an array of nan for 'position') if extraction fails.
+        """
         norm_path = str(Path(path).resolve())
         try:
             return cls._cached_extract(norm_path, time, obs)
@@ -247,6 +279,18 @@ class SimData:
         return cls(nucbp, nbp, llink, mu, seed, _time, _energy, _position,
                    _temp, _internal=True)
 
+    def __repr__(self):
+        # Get all public attributes by filtering out private attributes
+        # (those starting with '_')
+        public_attrs = [attr for attr in self.__slots__ if
+                        not attr.startswith('_')]
+        # Add public properties explicitly (we check for them in __dict__)
+        for attr, value in self.__class__.__dict__.items():
+            if isinstance(value, property) and not attr.startswith('_'):
+                public_attrs.append(attr)
+        # Create a string of the public attribute names (not values)
+        repr_str = f"{self.__class__.__name__}({', '.join(public_attrs)})"
+        return repr_str
     
 class SimPathMapper:
     def __init__(self, root_dir : str, total_mols : int,
@@ -281,18 +325,24 @@ class SimPathMapper:
 @dataclass(slots=True, init=False)
 class SimDataset:
     """
-    Filesystem-backed collection of simulation results.
+    A collection of simulation results and analyses across multiple
+    chromosomes.
 
-    Provides lazy access to stored simulations via
-    tuple-based indexing:
+    This class acts as a central hub for managing simulation metadata, 
+    performing parallel data extraction, and storing analysis results. It 
+    uses a lazy accessor for retrieving raw simulation data from disk.
 
-    >>> dataset = SimDataset("results/dataset.h5")
-    >>> sim = dataset.sim["chr1", 0, 10]
+    .. note::
+       Direct instantiation is disabled. Use the factory methods 
+       :meth:`SimDataset.create` or :meth:`SimDataset.load` to initialize 
+       this class.
 
-    Attributes
-    ----------
-    path : pathlib.Path
-        Base directory containing simulation files.
+    Examples
+    --------
+    Accessing raw simulation data using tuple-based indexing:
+
+    >>> dataset = SimDataset.load("results/dataset.h5")
+    >>> sim_data = dataset.raw["chr1", 0, 9]  # [chrom, molecule, run]
     """
     
     class SimDataAccessor:
@@ -301,14 +351,14 @@ class SimDataset:
 
         Enables access using:
 
-        >>> dataset.sim[chrom, mol, run]
+        >>> dataset.raw[chrom, mol, run]
         """
         def __init__(self, parent):
             self._parent = parent
             
         def __getitem__(self, keys):
             chrom, mol, run = keys
-            path = self._parent.get_sim_path(chrom, mol, run)
+            path = self._parent.sim_path(chrom, mol, run)
             if path.exists():
                 return self._load_sim_data(path)
             else:
@@ -361,46 +411,133 @@ class SimDataset:
         return cls(_chroms, _nmol, _nsim, _raw_path, _path_map, _internal=True)
         
     @classmethod
-    def create_from_sim(cls, chroms : Iterable[str],
-                        nmol : Mapping[str,int],
-                        nsim : int,
-                        out_path : str | Path):
-        # Get the path mapper
+    def create(cls,
+               chroms : str | Iterable[str],
+               nmol : int | Mapping[str,int],
+               nsim : int,
+               out_path : str | Path) -> Self:
+        """
+        Create a new simulation dataset with the specified parameters.
+
+        This factory method initializes the dataset structure, sets up the 
+        internal mapping for molecules per chromosome, and defines the 
+        total number of simulations per molecule.
+
+        Parameters
+        ----------
+        chroms : str or iterable of str
+            The chromosome identifier(s) to include in the dataset.
+        nmol : int or dict of {str: int}
+            The number of molecules per chromosome. If an integer is provided, 
+            the same count is applied to all chromosomes. If a mapping is 
+            provided, it must specify the count for each chromosome name.
+        nsim : int
+            The number of simulation runs to perform for each molecule.
+        out_path : str or pathlib.Path
+            The directory path where the dataset and raw data will be stored.
+        
+        Returns
+        -------
+        SimDataset
+            A newly initialized instance of the simulation dataset.
+
+        Raises
+        ------
+        ValueError
+            If the `raw_data` subdirectory already exists in `out_path`, or 
+            if the chromosome keys in `nmol` do not match `chroms`.
+        """        
         # Find the maximum number of molecules
         max_nmol = 0
         for chrom in chroms:
             if max_nmol < nmol[chrom]:
                 max_nmol = nmol[chrom]
-        raw_path = Path(out_path)/"raw_data"
-        raw_path.mkdir(exist_ok=True, parents=True)
+        raw_path = (Path(out_path)/"raw_data").resolve()
+        if raw_path.exists():
+            raise ValueError("")
+        else:
+            raw_path.mkdir(exist_ok=True, parents=True)
         path_map = SimPathMapper(raw_path, max_nmol)
         return cls._create(chroms, nmol, nsim, raw_path, path_map)
 
     @classmethod
-    def load(cls, path : str | Path):
+    def load(cls,
+             path : str | Path,
+             new_raw_path : str | Path | None = None) -> Self:
+        """
+        Load a simulation dataset and its analysis from an HDF5 file.
+
+        Parameters
+        ----------
+        path : str or pathlib.Path
+            The path to the HDF5 file containing the dataset metadata and 
+            stored analysis results.
+        new_raw_path : str or pathlib.Path, optional
+            An updated path to the 'raw_data' directory. Use this if the 
+            simulation files have been moved since the dataset was saved. 
+            The default is None.
+        
+        Returns
+        -------
+        SimData
+            The loaded simulation dataset object with all analysis maps 
+            populated.
+
+        Raises
+        ------
+        OSError
+            If the HDF5 file cannot be opened or if the raw data directory 
+            cannot be located at the expected path.
+        """        
         with h5py.File(path, "r") as h5stream:
             # Load metadata associated with raw simulation data
             gmeta = h5stream["metadata"]
-            raw_path = Path(gmeta.attrs["raw_path"])
+            if new_raw_path is None:                
+                raw_path = Path(gmeta.attrs["raw_path"])
+                if not raw_path.exists():
+                    raise OSError("The raw simulation data directory cannot "
+                                  "be found.")
+            else:
+                if not new_raw_path.exists():
+                    raise OSError("The raw simulation data directory cannot "
+                                  "be found.")
+                raw_path = new_raw_path
             nsim = gmeta.attrs["nsim"]
             chroms = [c.decode() for c in gmeta["chroms"][:]]
             nmol_arr = gmeta["nmol"][:]
             nmol = {chrom:nmol_arr[i] for i,chrom in enumerate(chroms)}
             path_map = SimPathMapper(raw_path, max(nmol_arr))            
             obj = cls._create(chroms, nmol, nsim, raw_path, path_map)
-            
             # Load any analysis data
             gana = h5stream["analysis"]
             for chrom in gana:
                 gchrom = gana[chrom]
                 for name in gchrom:
-                    obj._analysis[chrom][name] = util.load_df(name, gchrom)
+                    obj._analysis[chrom][name] = h5_utils.load_df(name, gchrom)
             gana = h5stream["global_analysis"]
             for name in gana:
-                obj._global_analysis[name] = util.load_df(name, gana)
+                obj._global_analysis[name] = h5_utils.load_df(name, gana)
             return obj
 
     def save(self, path : str | Path):
+        """
+        Save the dataset metadata and analysis results to an HDF5 file.
+
+        This method serializes the current state of all chromosome-specific 
+        and global analysis :class:`DataFrameMap` objects into a persistent 
+        HDF5 format.
+        
+        Parameters
+        ----------
+        path : str | pathlib.Path
+            The output file path. If the file already exists, analysis 
+            groups will be overwritten.
+        
+        Raises
+        ------
+        OSError
+            If the file cannot be written to disk.
+        """        
         dt = h5py.string_dtype(encoding="utf-8")
         with h5py.File(path, "a") as h5stream:
             # Save metadata asssociated with raw simulation data
@@ -419,22 +556,50 @@ class SimDataset:
             for chrom, data in self._analysis.items():
                 gchrom = gana.create_group(chrom)
                 for name, df in data.items():
-                    util.save_df(name, df, gchrom)
+                    h5_utils.save_df(name, df, gchrom)
             if "global_analysis" in h5stream: del h5stream["global_analysis"]
             gana = h5stream.create_group("global_analysis")
             for name, df in self._global_analysis.items():
-                util.save_df(name, df, gana)
+                h5_utils.save_df(name, df, gana)
             
-    def generate_sim_paths(self,
-                           chroms : str | Iterable[str] | None = None):
-        chroms = util.normalize_chroms(chroms, default_chroms=self._chroms)
+    def iter_runs(self,
+                  chroms : str | Iterable[str] | None = None) \
+                  -> Iterator[Tuple[str,int,int]]:
+        """
+        Yield simulation identifiers across specified chromosomes and
+        molecules.
+
+        This generator traverses the dataset hierarchy, filtering by chromosome
+        and verifying the existence of data files before yielding.
+
+        Parameters
+        ----------
+        chroms : str or iterable of str, optional
+            The chromosome(s) to iterate over. If None (default), all 
+            available chromosomes in the dataset are processed.
+
+        Yields
+        ------
+        chrom : str
+            The chromosome identifier.
+        mol : int
+            The molecule index.
+        run : int
+            The simulation run index.
+
+        Notes
+        -----
+        Only triplets (chrom, mol, run) that have an existing path on disk 
+        according to the internal path map are yielded.
+        """
+        chroms = utils.normalize_chroms(chroms, default_chroms=self._chroms)
         for chrom in chroms:
             if chrom not in self._chroms: continue
             for mol in range(self._nmol[chrom]):
                 for run in range(self._nsim):
                     path = self._path_map.params_to_path(chrom, mol, run)
                     if path.exists():
-                        yield path, (chrom, mol, run)
+                        yield (chrom, mol, run)
 
     def extract(self,
                 time : int,
@@ -444,13 +609,56 @@ class SimDataset:
                 chroms : str | Iterable[str] | None = None,
                 agg_func : Callable[...,Any] | None = None,
                 **agg_kwargs : Any):
-        chroms = util.normalize_chroms(chroms, default_chroms=self._chroms)
+        """
+        Extract and optionally aggregate simulation observables across the
+        dataset.
+
+        This method uses a :class:`ThreadPoolExecutor` to extract data from
+        HDF5 files in parallel. Results are organized by chromosome and can be 
+        processed via a custom aggregation function as they complete.
+
+        Parameters
+        ----------
+        time : int
+            The specific time point to extract from the simulation.
+        obs : str
+            The name of the observable to extract (e.g., 'position', 'energy').
+        nworker : int, default 100
+            The maximum number of threads to use for parallel extraction.
+        batch_size : int, default 5000
+            The number of simulation files to queue in a single processing
+            batch to manage memory and thread overhead.
+        chroms : str or iterable of str, optional
+            Specific chromosome(s) to process. If None (default), all 
+            chromosomes in the dataset are included.
+        agg_func : callable, optional
+            A function used to aggregate results once all runs for a specific 
+            molecule are finished. If provided, it is called as:
+            ``agg_func(chrom, mol, raw_runs, **agg_kwargs)``.
+        **agg_kwargs : Any
+            Additional keyword arguments passed directly to `agg_func`.
+        
+        Returns
+        -------
+        dict
+            A dictionary keyed by chromosome name. If `agg_func` is None,
+            values are :class:`numpy.ndarray` (or lists for 'position'). If
+            `agg_func` is provided, values are the output of the aggregation
+            function.
+
+        Notes
+        -----
+        When `obs` is not 'position' and no `agg_func` is provided, the data 
+        for each chromosome is automatically converted into a NumPy array with 
+        shape ``(n_molecules, n_simulations, ...)``.
+        """
+        chroms = utils.normalize_chroms(chroms, default_chroms=self._chroms)
         results = {}
         finished_counts = Counter()
         for chrom in chroms:
             results[chrom] = [[None for _ in range(self._nsim)] 
                               for _ in range(self._nmol[chrom])]
-        path_gen = self.generate_sim_paths(chroms)
+        path_gen = self.iter_runs(chroms)
         with ThreadPoolExecutor(max_workers=nworker) as executor:        
             while True:
                 # Grab a chunk of work
@@ -458,8 +666,9 @@ class SimDataset:
                 if not batch: break
                 # Submit only this batch
                 tasks : Dict[Future,Tuple] = {
-                    executor.submit(SimData.extract, path, time, obs): sim_id 
-                    for path, sim_id in batch}
+                    executor.submit(SimData.extract,
+                                    self._path_map.parmas_to_path(*sim_id),
+                                    time, obs): sim_id for sim_id in batch}
                 # Process this batch as it completes
                 for future in as_completed(tasks):
                     chrom, mol, run = tasks[future]
@@ -485,36 +694,110 @@ class SimDataset:
             for chrom in chroms:
                 results[chrom] = np.asarray(results[chrom])
         return results
+    
+    def sim_path(self, chrom : str, mol : int, run : int) -> Path:
+        """
+        Retrieve the file path for a specific simulation run.
+        
+        Parameters
+        ----------
+        chrom : str
+            The identifier of the simulated chromosome.
+        mol : int
+            The index of the simulated molecule.
+        run : int
+            The index of the simulation run.
 
-    def get_sim_path(self,
-                     chrom : str,
-                     mol : int,
-                     run : int) -> Path:
+        Returns
+        -------
+        pathlib.Path
+            The filesystem path of the simulation data.
+
+        Notes
+        -----
+        This method returns the expected path based on the dataset mapping
+        structure, regardless of whether the file actually exists on disk.
+        """        
         return self._path_map.params_to_path(chrom, mol, run)
-
+    
     @property
-    def chroms(self):
-        # Return an immutable view
+    def chroms(self) -> Iterable[str]:
+        """
+        List the identifiers of all chromosomes in the dataset.
+
+        Returns
+        -------
+        iterable of str
+            The chromosome names [e.g., ('chr1', 'chr2')].
+        """
         return tuple(self._chroms)
 
     @property
-    def nmol(self):
+    def nmol(self) -> Mapping[str,int]:
+        """
+        The number of molecules simulated for each chromosome.
+
+        Returns
+        -------
+        types.MappingProxyType
+            A read-only mapping of chromosome names to their molecule 
+            counts. This view is immutable; neither keys nor counts 
+            can be modified.
+        """
         return MappingProxyType(self._nmol)
 
     @property
     def nsim(self):
+        """
+        The total number of simulation runs performed per molecule.
+
+        Returns
+        -------
+        int
+            The count of independent simulation trajectories for each 
+            molecule-chromosome pair.
+        """
         return self._nsim
     
     @property
-    def raw(self):
+    def raw(self) -> SimDataAccessor:
+        """
+        Provide lazy access to the raw simulation data files.
+
+        This property returns an accessor object that supports tuple-based 
+        indexing to load individual :class:`SimData` objects on demand.
+
+        Returns
+        -------
+        SimDataAccessor
+            A coordinate-based accessor. Use ``dataset.raw[chrom, mol, run]`` 
+        """
         return self._raw_accessor
 
     @property
     def analysis(self) -> Mapping[str, DataFrameMap]:
+        """
+        Access the analysis results for each simulated chromosome.
+
+        Returns
+        -------
+        FixedKeyMap
+            A mapping of chromosome names to :class:`DataFrameMap` objects. 
+            The chromosome keys are fixed, but the data within each 
+            map remains mutable.
+        """
         return FixedKeyMap(self._analysis)
 
     @property
     def global_analysis(self) -> DataFrameMap:
+        """
+        Access analysis results aggregated across the entire dataset.
+
+        Returns
+        -------
+        DataFrameMap
+            A mutable map containing global analysis results.
+        """
         return self._global_analysis
 
     def __repr__(self):

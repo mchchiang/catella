@@ -3,7 +3,7 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - python>=3.11
+  - python=3.13
   - pip
   # Build-time and C++ dependencies
   - pybind11
@@ -17,9 +17,12 @@ dependencies:
   - matplotlib
   - typer
   - rich
+  - multiprocess
   # Documentation dependencies
   - sphinx
   - sphinx-rtd-theme
   - myst-parser
   - pip:
     - -e .
+variables:
+  PYTHON_BASIC_REPL: "1"

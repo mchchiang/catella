@@ -1,15 +1,40 @@
-# prep.py
+# preprocessing.py
 
 import numpy as np
 import pandas as pd
 from pathlib import Path
 from typing import List
-from .seq_data import FiberSeqExperiment
+from .methydata import MethyPrintExperiment
 
-class FiberSeqAnalysis:
+class MethyPrintAnalysis:
+    """
+    A suite of normalization tools for MethyPrint experimental data.
 
-    def normalize(self, binsize : int, exp : FiberSeqExperiment,
+    This class provides methods to process raw methylation signals, including 
+    rolling average smoothing and normalization against unmethylated and 
+    fully methylated control samples.
+    """
+    
+    def normalize(self, binsize : int, exp : MethyPrintExperiment,
                   name : str = "norm"):
+        """
+        Normalize and smooth methylation signals across an experiment.
+
+        This method processes the test data for each chromosome in the 
+        experiment. If control samples (unmethylated and methylated) are 
+        available, it performs a relative normalization. Results are stored 
+        directly in the experiment's analysis map.
+
+        Parameters
+        ----------
+        binsize : int
+            The window size (in base pairs) for the rolling average smoothing.
+        exp : MethyPrintExperiment
+            The experiment object containing the raw data and analysis maps.
+        name : str, default "norm"
+            The key name used to store the resulting DataFrame in 
+            `exp.analysis`.
+        """
         for chrom in exp.chroms:
             df_test = exp.raw[chrom].test_data
             df_unmeth = exp.raw[chrom].unmeth_data
@@ -19,7 +44,45 @@ class FiberSeqAnalysis:
             exp.analysis[chrom][name] = pd.DataFrame(norm)
         
     def _normalize(self, binsize, nbp, df_test, df_unmeth=None, df_meth=None):
-        # Helper functions
+        """
+        Internal normalization engine for processing methylation dataframes.
+
+        This method handles the pivot operations, rolling averages, and 
+        the optional control-based scaling.
+
+        Parameters
+        ----------
+        binsize : int
+            The window size for rolling average smoothing.
+        nbp : int
+            The total number of base pairs in the chromatin fiber.
+        df_test : pd.DataFrame
+            The test data to be normalized.
+        df_unmeth : pd.DataFrame, optional
+            The unmethylated control data.
+        df_meth : pd.DataFrame, optional
+            The fully methylated control data.
+
+        Returns
+        -------
+        np.ndarray
+            A 2D NumPy array of normalized and smoothed methylation scores 
+            with shape (n_molecules, n_base_pairs).
+
+        Notes
+        -----
+        If both `df_unmeth` and `df_meth` are provided, the test data is 
+        scaled using the formula:
+        
+        .. math::
+           T_{norm} = \\frac{T - U_{avg}}{M_{avg} - U_{avg}}
+
+        where :math:`T` is the test signal, :math:`U_{avg}` is the 
+        unmethylated average, and :math:`M_{avg}` is the methylated average.
+        Finally, the global mean is subtracted from the results.
+        """
+        
+        # Some helper functions
         # Pivot data by position
         def piv(df):    
             pivot = df.pivot(

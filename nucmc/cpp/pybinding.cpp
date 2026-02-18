@@ -17,38 +17,33 @@ namespace py = pybind11;
 using std::shared_ptr;
 using std::string;
 
-using release_gil = py::call_guard<py::gil_scoped_release>;
-
 PYBIND11_MODULE(nucmc_cpp, m) {
   py::class_<NucPosModel>(m, "NucPosModel")
     .def(py::init<int,int,int,double,ulint>(),
 	 py::arg("nucbp"), py::arg("nbp"), py::arg("llink"), py::arg("mu"),
-	 py::arg("seed"), release_gil())
-    .def("run", &NucPosModel::run, release_gil())
-    .def("reset", &NucPosModel::reset, release_gil())
-    .def("initMeth", [](NucPosModel& self, py::array_t<double> array) {
-      py::buffer_info info = array.request();
-      std::vector<double> data(static_cast<double*>(info.ptr),
-			       static_cast<double*>(info.ptr) + info.size);
+	 py::arg("seed"))
+    .def("run", &NucPosModel::run)
+    .def("reset", &NucPosModel::reset)
+    .def("addTracker", &NucPosModel::addTracker)
+    .def("initMeth", [](NucPosModel& self, std::vector<double> data) {
       self.initMeth(data);
-    }, py::arg("data"), release_gil())
-    .def("addTracker", &NucPosModel::addTracker, release_gil());
-
+    }, py::arg("data"));
+  
   py::class_<Tracker, shared_ptr<Tracker> >(m, "Tracker");
   
   py::class_<PyTrackBase, Tracker, shared_ptr<PyTrackBase> >(m, "PyTracker")
-    .def("values", &PyTrackBase::values, release_gil())
-    .def("reset", &PyTrackBase::reset, release_gil());
+    .def("values", &PyTrackBase::values)
+    .def("reset", &PyTrackBase::reset);
   
   m.def("createPositionTracker", [](lint freq) {
     PyTrackFactory factory;
     return factory.createPosTrack(freq);
-  }, py::arg("freq"), release_gil());
+  }, py::arg("freq"));
   
   m.def("createEnergyTracker", [](lint freq) {
     PyTrackFactory factory;
     return factory.createEnergyTrack(freq);
-  }, py::arg("freq"), release_gil());
+  }, py::arg("freq"));
 
   py::class_<DumpH5, Tracker, shared_ptr<DumpH5> > dumpcls(m, "Dump");
   
@@ -62,6 +57,5 @@ PYBIND11_MODULE(nucmc_cpp, m) {
 			 DumpH5::OutputType otype) ->
 	shared_ptr<Tracker> {
 	  return std::make_shared<DumpH5>(freq, file, otype);
-	}, py::arg("freq"), py::arg("file"), py::arg("out_type"),
-	release_gil());
+	}, py::arg("freq"), py::arg("file"), py::arg("out_type"));
 }

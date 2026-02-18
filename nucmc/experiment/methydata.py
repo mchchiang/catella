@@ -1,31 +1,67 @@
-# seq_data.py
+# methydata.py
 
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 from types import MappingProxyType
-from typing import List, Mapping, Dict, Self, Any
-from .util import DataFrameMap, FixedKeyMap
-from . import util
+from typing import Tuple, List, Mapping, Dict, Self, Any
+from ..containers import DataFrameMap, FixedKeyMap
+from .. import utils
+from .. import h5_utils
 import numpy as np
 import pandas as pd
 import inspect
 import h5py
 
-@util.copy_array_properties
+@utils.copy_array_properties
 @dataclass(frozen=True, slots=True, init=False)
-class FiberSeqRawData:
+class MethyPrintData:
+    """
+    Container for MethyPrint experimental data for a single chromosome.
+
+    This class stores methylation signal data for test samples and optional 
+    control samples (unmethylated and fully methylated). Data are stored 
+    as Pandas DataFrames and retrieved via read-only properties that 
+    provide defensive copies.
+
+    .. note::
+       This class is intended for internal use within a 
+       :class:`MethyPrintExperiment`. Use the experiment's loading 
+       mechanisms rather than instantiating this class directly.
+    """
+    
     chrom : str
+    """The chromosome identifier for this data block."""
+    
     nbp : int
-    _test_mol_id : np.ndarray
-    _test_data : pd.DataFrame
-    _unmeth_mol_id : np.ndarray
-    _unmeth_data : pd.DataFrame
-    _meth_mol_id : np.ndarray
-    _meth_data : pd.DataFrame
+    """The total number of base pairs in the chromatin fiber."""
+    
+    _test_mol_id : np.ndarray = field(
+        metadata={"doc": "np.ndarray: Array of molecule identifiers for the "
+                  "test samples."})
+    
+    _test_data : pd.DataFrame = field(
+        metadata={"doc": "pd.DataFrame: Raw methylation quality scores for "
+                  "test samples."})
+    
+    _unmeth_mol_id : np.ndarray = field(
+        metadata={"doc": "np.ndarray: Array of molecule identifiers for "
+                  "unmethylated controls."})
+    
+    _unmeth_data : pd.DataFrame = field(
+        metadata={"doc": "pd.DataFrame: Raw methylation quality scores for "
+                  "unmethylated controls."})
+    
+    _meth_mol_id : np.ndarray = field(
+        metadata={"doc": "np.ndarray: Array of molecule identifiers for "
+                  "methylated controls."})
+    
+    _meth_data : pd.DataFrame = field(
+        metadata={"doc": "pd.DataFrame: Raw methylation quality scores for "
+                  "methylated controls."})
 
     def __init__(self, *args : Any, **kwargs : Any):
         if not kwargs.pop("_internal", False):
-            raise TypeError("Use FiberSeqRawData._load() to instantiate",
+            raise TypeError("Use MethyPrintData._load() to instantiate",
                             "this class")
         sig = inspect.signature(self._create)
         bound = sig.bind(*args, **kwargs)
@@ -43,13 +79,13 @@ class FiberSeqRawData:
         def save_data(name, mol_id, df, gdata):
             if mol_id is not None and df is not None:
                 gdata.create_dataset(name+"_mol_id", data=mol_id, dtype=dt)
-                util.save_df(name+"_data", df, gdata)
+                h5_utils.save_df(name+"_data", df, gdata)
         save_data("test", self._test_mol_id, self._test_data, gdata)
         save_data("unmeth", self._unmeth_mol_id, self._unmeth_data, gdata)
         save_data("meth", self._meth_mol_id, self._meth_data, gdata)        
         
     @classmethod
-    def _load(cls, group, chrom):
+    def _load(cls, group, chrom) -> Self:
         if chrom not in group:
             raise ValueError(f"Cannot find data for the chrom {chrom}")
         gchrom = group[chrom]
@@ -61,7 +97,7 @@ class FiberSeqRawData:
             data_name = name+"_data"
             if id_name in gdata and data_name in gdata:
                 mol_id = gdata[id_name].asstr()[()]
-                df = util.load_df(data_name, gdata)
+                df = h5_utils.load_df(data_name, gdata)
                 return mol_id, df
             return None, None
         gdata = gchrom["data"]
@@ -96,14 +132,26 @@ class FiberSeqRawData:
 
 
 @dataclass(slots=True, init=False)
-class FiberSeqExperiment:
-    _raw_data : Mapping[str,FiberSeqRawData]
+class MethyPrintExperiment:
+    """
+    Manager for MethyPrint experimental data and analysis results.
+
+    This class provides tools to load raw methylation signals from sequencing 
+    files, manage control datasets (unmethylated and methylated, which are
+    optional), and store the results of normalization and downstream analyses.
+
+    .. note::
+       Direct instantiation is disabled. Use :meth:`load_raw` to process new 
+       sequencing data or :meth:`load` to open an existing HDF5 dataset.
+    """
+    
+    _raw_data : Mapping[str,MethyPrintData]
     _analysis : Mapping[str,DataFrameMap]
     _global_analysis : DataFrameMap
 
     def __init__(self, *args : Any, **kwargs : Any):
         if not kwargs.pop("_internal", False):
-            raise TypeError("Use FiberSeqExperiment.load() or .load_raw()",
+            raise TypeError("Use MethyPrintExperiment.load() or .load_raw()",
                             "to instantiate this class")
         sig = inspect.signature(self._create)
         bound = sig.bind(*args, **kwargs)
@@ -124,8 +172,45 @@ class FiberSeqExperiment:
                  unmeth_file : str | Path | None = None,
                  meth_file : str | Path | None = None,
                  wrap : bool = False,
-                 colidx : List | None = None):
-    
+                 colidx : List | None = None) -> Self:
+        """
+        Create an experiment by processing raw sequencing data files.
+
+        This method reads chromosome sizes and experimental data (typically 
+        modkit CSV output), re-orients the data if requested, and splits 
+        the signals by chromosome.
+
+        Parameters
+        ----------
+        chromsize : str or pathlib.Path
+            Path to a tab-separated file containing chromosome names and 
+            their lengths (bp).
+        test_file : str or pathlib.Path
+            Path to the raw experimental (test) data file.
+        unmeth_file : str or pathlib.Path, optional
+            Path to the unmethylated control data file.
+        meth_file : str or pathlib.Path, optional
+            Path to the fully methylated control data file.
+        wrap : bool, default False
+            If True, calculates positions relative to the fiber center 
+            (useful for circular or symmetrical fibers).
+        colidx : list of int, optional
+            Specific column indices to use if the input file does not follow 
+            the standard modkit format.
+
+        Returns
+        -------
+        MethyPrintExperiment
+            A newly initialized experiment object containing the processed
+            data.
+
+        Raises
+        ------
+        ValueError
+            If chromosome names are not unique or if control datasets contain 
+            chromosomes not found in the test dataset.
+        """        
+        
         # Read chromosome sizes
         df_size = pd.read_csv(chromsize, header=None, sep="\t",
                               names=["chrom", "length"])
@@ -135,6 +220,46 @@ class FiberSeqExperiment:
 
         # Read the raw data as a data frame
         def read_data(data_file, df_size, wrap=False, colidx=None, sep="\t"):
+            """
+            Internal parser for raw methylation sequencing files.
+
+            This helper handles the conversion from Modkit-style CSV/TSV 
+            formats into the internal DataFrame structure, performs 
+            coordinate re-orientation, and indexes molecules.
+
+            Parameters
+            ----------
+            data_file : str or pathlib.Path
+                The raw data file to be parsed.
+            df_size : pd.DataFrame
+                A lookup table containing 'chrom' and 'length' columns.
+            wrap : bool, default False
+                If True, positions are 'wrapped' to represent distance from 
+                the fiber center rather than absolute genomic coordinates.
+            colidx : list of int, optional
+                Explicit column indices if the file format deviates from 
+                standard Modkit output.
+            sep : str, default "\\t"
+                The delimiter used in the input file.
+
+            Returns
+            -------
+            tuple of (dict, dict)
+                A pair of mappings: (mol_ids, dataframes), both keyed by 
+                chromosome name.
+
+            Notes
+            -----
+            The function maps Modkit columns to internal identifiers:
+            
+            * ``read_id`` -> ``mol_id``
+            * ``ref_position`` -> ``upos`` (unprocessed position)
+            * ``mod_qual`` -> Methylation quality score
+            
+            It also generates a zero-based ``mol_index`` for each chromosome 
+            to allow for efficient array-based downstream analysis.
+            """
+            
             # Column names from modkit documentation
             modkit_colnames = ["read_id", "ref_position", "chrom", "mod_qual",
                                "mod_code"]
@@ -169,8 +294,8 @@ class FiberSeqExperiment:
                 dfs[c] = dfs[c][["mol_index","pos","mod_qual","mod_code"]]
             return mol_ids, dfs
         
-        # Read fiber-seq data and re-orientate the data with pos as index and
-        # mod_qual score at each pos for each molecule as columns        
+        # Read footprinting data and re-orientate the data with pos as index
+        # and mod_qual score at each pos for each molecule as columns        
         test_ids, dfs_test = read_data(test_file, df_size, wrap, colidx)
         chroms = dfs_test.keys()
 
@@ -193,12 +318,26 @@ class FiberSeqExperiment:
         # Create the raw data object for each chromosome
         raw_data = {}
         for c in chroms:
-            raw_data[c] = FiberSeqRawData._create(
+            raw_data[c] = MethyPrintData._create(
                 c, sizes[c], test_ids[c], dfs_test[c], unmeth_ids[c],
                 dfs_unmeth[c], meth_ids[c], dfs_meth[c])
         return cls._create(raw_data)
                 
     def save(self, path: str | Path):
+        """
+        Save the experiment data and analysis to an HDF5 file.
+
+        Parameters
+        ----------
+        path : str or pathlib.Path
+            The output file path. Raw data is only written if it does not 
+            already exist in the file.
+
+        Raises
+        ------
+        OSError
+            If the file cannot be written to disk.
+        """
         with h5py.File(path, "a") as h5stream:
             # Save the raw data - write once if raw_data does not exist
             if not "raw_data" in h5stream:
@@ -212,20 +351,33 @@ class FiberSeqExperiment:
             for chrom, data in self._analysis.items():
                 gchrom = gana.create_group(chrom)
                 for name, df in data.items():
-                    util.save_df(name, df, gchrom)
+                    h5_utils.save_df(name, df, gchrom)
             if "global_analysis" in h5stream: del h5stream["global_analysis"]
             gana = h5stream.create_group("global_analysis")
             for name, df in self._global_analysis.items():
-                util.save_df(name, df, gana)
+                h5_utils.save_df(name, df, gana)
                 
     @classmethod
-    def load(cls, path: str | Path):
+    def load(cls, path: str | Path) -> Self:
+        """
+        Load an experiment from a persistent HDF5 file.
+
+        Parameters
+        ----------
+        path : str or pathlib.Path
+            Path to the HDF5 file containing the experiment.
+
+        Returns
+        -------
+        MethyPrintExperiment
+            The loaded experiment object with all data and analysis maps.
+        """
         with h5py.File(path, "r") as h5stream:
             # Load the raw data
             graw = h5stream["raw_data"]
             raw_data = {}
             for chrom in graw:
-                raw_data[chrom] = FiberSeqRawData._load(graw, chrom)
+                raw_data[chrom] = MethyPrintData._load(graw, chrom)
             obj = cls._create(raw_data)
             
             # Load any analysis data
@@ -233,23 +385,39 @@ class FiberSeqExperiment:
             for chrom in gana:
                 gchrom = gana[chrom]
                 for name in gchrom:
-                    obj._analysis[chrom][name] = util.load_df(name, gchrom)
+                    obj._analysis[chrom][name] = h5_utils.load_df(name, gchrom)
             gana = h5stream["global_analysis"]
             for name in gana:
-                obj._global_analysis[name] = util.load_df(name, gana)
+                obj._global_analysis[name] = h5_utils.load_df(name, gana)
             return obj
                 
     @classmethod
-    def _create(cls, _raw_data):
+    def _create(cls, _raw_data) -> Self:
         return cls(_raw_data, _internal=True)
 
     @property
-    def chroms(self):
-        return self._raw_data.keys()
+    def chroms(self) -> Tuple[str,...]:
+        """
+        Get the identifiers of all chromosomes in the experiment.
+
+        Returns
+        -------
+        tuple of str
+            A sorted tuple of chromosome names.
+        """
+        return tuple(self._raw_data.keys())
 
     @property
-    def raw(self) -> Dict[str,FiberSeqRawData]:
-        # Make sure the raw data map is immutable
+    def raw(self) -> Mapping[str,MethyPrintData]:
+        """
+        Provide read-only access to the raw experimental data.
+
+        Returns
+        -------
+        MappingProxyType
+            A frozen mapping where keys are chromosome names and values 
+            are :class:`MethyPrintData` objects.
+        """
         return MappingProxyType(self._raw_data)
 
     # Allow iterating over the raw data by chromosome
@@ -261,10 +429,27 @@ class FiberSeqExperiment:
 
     @property
     def analysis(self) -> Mapping[str, DataFrameMap]:
+        """
+        Access the analysis results for each chromosome.
+        
+        Returns
+        -------
+        FixedKeyMap
+            A mapping where chromosome keys are fixed, but the analysis 
+            DataFrames remain mutable.
+        """
         return FixedKeyMap(self._analysis)
     
     @property
     def global_analysis(self) -> DataFrameMap:
+        """
+        Access analysis results aggregated across the entire experiment.
+
+        Returns
+        -------
+        DataFrameMap
+            A mutable map containing global analysis results.
+        """
         return self._global_analysis
     
     def __repr__(self):

@@ -3,7 +3,7 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - python=3.13
+  - python>=3.13
   - pip
   # Build-time and C++ dependencies
   - pybind11
@@ -11,14 +11,18 @@ dependencies:
   - pkg-config
   - cxx-compiler
   # Runtime dependencies (Conda versions)
+  - pyyaml
   - numpy
-  - pandas
+  - pandas>=3.0
   - h5py
   - matplotlib
   - typer
   - rich
   - multiprocess
+  # Tutorial dependencies
+  #- jupyterlab
   # Documentation dependencies
+  - nbsphinx
   - sphinx
   - sphinx-rtd-theme
   - myst-parser

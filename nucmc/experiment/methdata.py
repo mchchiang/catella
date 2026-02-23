@@ -1,4 +1,4 @@
-# methydata.py
+# methdata.py
 
 from dataclasses import dataclass, field, fields
 from pathlib import Path
@@ -9,14 +9,13 @@ from .. import utils
 from .. import h5_utils
 import numpy as np
 import pandas as pd
-import inspect
 import h5py
 
-@utils.copy_array_properties
+@utils.add_frozen_properties
 @dataclass(frozen=True, slots=True, init=False)
-class MethyPrintData:
+class MethPrintData:
     """
-    Container for MethyPrint experimental data for a single chromosome.
+    Container for MethPrint experimental data for a single chromosome.
 
     This class stores methylation signal data for test samples and optional 
     control samples (unmethylated and fully methylated). Data are stored 
@@ -25,7 +24,7 @@ class MethyPrintData:
 
     .. note::
        This class is intended for internal use within a 
-       :class:`MethyPrintExperiment`. Use the experiment's loading 
+       :class:`MethPrintExperiment`. Use the experiment's loading 
        mechanisms rather than instantiating this class directly.
     """
     
@@ -35,39 +34,39 @@ class MethyPrintData:
     nbp : int
     """The total number of base pairs in the chromatin fiber."""
     
-    _test_mol_id : np.ndarray = field(
+    _frozen_test_mol_id : np.ndarray = field(
         metadata={"doc": "np.ndarray: Array of molecule identifiers for the "
                   "test samples."})
     
-    _test_data : pd.DataFrame = field(
+    _frozen_test_data : pd.DataFrame = field(
         metadata={"doc": "pd.DataFrame: Raw methylation quality scores for "
                   "test samples."})
     
-    _unmeth_mol_id : np.ndarray = field(
+    _frozen_unmeth_mol_id : np.ndarray | None = field(
         metadata={"doc": "np.ndarray: Array of molecule identifiers for "
                   "unmethylated controls."})
     
-    _unmeth_data : pd.DataFrame = field(
+    _frozen_unmeth_data : pd.DataFrame | None = field(
         metadata={"doc": "pd.DataFrame: Raw methylation quality scores for "
                   "unmethylated controls."})
     
-    _meth_mol_id : np.ndarray = field(
+    _frozen_meth_mol_id : np.ndarray | None = field(
         metadata={"doc": "np.ndarray: Array of molecule identifiers for "
                   "methylated controls."})
     
-    _meth_data : pd.DataFrame = field(
+    _frozen_meth_data : pd.DataFrame | None = field(
         metadata={"doc": "pd.DataFrame: Raw methylation quality scores for "
                   "methylated controls."})
 
-    def __init__(self, *args : Any, **kwargs : Any):
+    def __init__(self, **kwargs : Any):
         if not kwargs.pop("_internal", False):
-            raise TypeError("Use MethyPrintData._load() to instantiate",
-                            "this class")
-        sig = inspect.signature(self._create)
-        bound = sig.bind(*args, **kwargs)
-        bound.apply_defaults()
-        for key,val in bound.arguments.items():
-            object.__setattr__(self, key, val)
+            raise TypeError("Use MethyPrintData._load() to instantiate ",
+                            "this class.")
+        for f in fields(self):
+            val = kwargs.get(f.name)
+            if val is None:
+                val = kwargs.get(f.name.removeprefix("_frozen_"))
+            object.__setattr__(self, f.name, val)
     
     def _save(self, group):
         dt = h5py.string_dtype(encoding="utf-8") # For storing strings        
@@ -80,14 +79,17 @@ class MethyPrintData:
             if mol_id is not None and df is not None:
                 gdata.create_dataset(name+"_mol_id", data=mol_id, dtype=dt)
                 h5_utils.save_df(name+"_data", df, gdata)
-        save_data("test", self._test_mol_id, self._test_data, gdata)
-        save_data("unmeth", self._unmeth_mol_id, self._unmeth_data, gdata)
-        save_data("meth", self._meth_mol_id, self._meth_data, gdata)        
+        save_data("test", self._frozen_test_mol_id,
+                  self._frozen_test_data, gdata)
+        save_data("unmeth", self._frozen_unmeth_mol_id,
+                  self._frozen_unmeth_data, gdata)
+        save_data("meth", self._frozen_meth_mol_id,
+                  self._frozen_meth_data, gdata)        
         
     @classmethod
     def _load(cls, group, chrom) -> Self:
         if chrom not in group:
-            raise ValueError(f"Cannot find data for the chrom {chrom}")
+            raise ValueError(f"Cannot find data for the chrom {chrom}.")
         gchrom = group[chrom]
         gmeta = gchrom["metadata"]
         chrom = gmeta.attrs["chrom"]
@@ -104,18 +106,17 @@ class MethyPrintData:
         test_mol_id, test_data = load_data("test", gdata)        
         unmeth_mol_id, unmeth_data = load_data("unmeth", gdata)
         meth_mol_id, meth_data = load_data("meth", gdata)
-        return cls._create(chrom, nbp, test_mol_id, test_data, unmeth_mol_id,
-                           unmeth_data, meth_mol_id, meth_data)
+        return cls._create(chrom=chrom, nbp=nbp, test_mol_id=test_mol_id,
+                           test_data=test_data, unmeth_mol_id=unmeth_mol_id,
+                           unmeth_data=unmeth_data, meth_mol_id=meth_mol_id,
+                           meth_data=meth_data)
     
     @classmethod
-    def _create(cls, chrom, nbp, _test_mol_id, _test_data,
-                _unmeth_mol_id=None, _unmeth_data=None, _meth_mol_id=None,
-                _meth_data=None) -> Self:
+    def _create(cls, **kwargs) -> Self:
         # Some validation
-        if nbp <= 0:
+        if kwargs.get("nbp") <= 0:
             raise ValueError("nbp must be positive")
-        return cls(chrom, nbp, _test_mol_id, _test_data, _unmeth_mol_id,
-                   _unmeth_data, _meth_mol_id, _meth_data, _internal=True)
+        return cls(**kwargs, _internal=True)
 
     def __repr__(self):
         # Get all public attributes by filtering out private attributes
@@ -132,9 +133,9 @@ class MethyPrintData:
 
 
 @dataclass(slots=True, init=False)
-class MethyPrintExperiment:
+class MethPrintExperiment:
     """
-    Manager for MethyPrint experimental data and analysis results.
+    Manager for MethPrint experimental data and analysis results.
 
     This class provides tools to load raw methylation signals from sequencing 
     files, manage control datasets (unmethylated and methylated, which are
@@ -145,19 +146,20 @@ class MethyPrintExperiment:
        sequencing data or :meth:`load` to open an existing HDF5 dataset.
     """
     
-    _raw_data : Mapping[str,MethyPrintData]
+    _raw_data : Mapping[str,MethPrintData]
     _analysis : Mapping[str,DataFrameMap]
     _global_analysis : DataFrameMap
 
-    def __init__(self, *args : Any, **kwargs : Any):
+    def __init__(self, **kwargs : Any):
         if not kwargs.pop("_internal", False):
-            raise TypeError("Use MethyPrintExperiment.load() or .load_raw()",
+            raise TypeError("Use MethPrintExperiment.load() or .load_raw()",
                             "to instantiate this class")
-        sig = inspect.signature(self._create)
-        bound = sig.bind(*args, **kwargs)
-        bound.apply_defaults()
-        for key,val in bound.arguments.items():
-            setattr(self, key, val)
+
+        # Bulk assigmnet of fields
+        for f in fields(self):
+            val = kwargs.get(f.name)
+            if val is not None:
+                setattr(self, f.name, val)
 
         # Create the dicts for analysis
         self._analysis = {chrom : DataFrameMap()
@@ -200,7 +202,7 @@ class MethyPrintExperiment:
 
         Returns
         -------
-        MethyPrintExperiment
+        MethPrintExperiment
             A newly initialized experiment object containing the processed
             data.
 
@@ -216,8 +218,15 @@ class MethyPrintExperiment:
                               names=["chrom", "length"])
         if not df_size["chrom"].is_unique:
             raise ValueError("Chromosomes must be unique in chromsize file")
-        sizes = dict(zip(df_size["chrom"], df_size["length"]))
+        
 
+        # Adjust the chromosome size if wrapped
+        if wrap:
+            sizes = dict(zip(df_size["chrom"],
+                             (df_size["length"]/2).astype(int)))
+        else:
+            sizes = dict(zip(df_size["chrom"], df_size["length"].astype(int)))
+        
         # Read the raw data as a data frame
         def read_data(data_file, df_size, wrap=False, colidx=None, sep="\t"):
             """
@@ -281,7 +290,7 @@ class MethyPrintExperiment:
                 df["pos"] = df["upos"]
             
             # Split the data by chromosomes
-            chroms = df["chrom"].unique()        
+            chroms = df["chrom"].unique()
             dfs = {c:df[df["chrom"] == c] for c in chroms}
 
             # Sort by position. Note that each molecule only has one chrom
@@ -314,14 +323,16 @@ class MethyPrintExperiment:
             if set(chroms) != set(dfs_meth.keys()):
                 raise ValueError("Different number of chromosomes in test and"
                                  "meth datasets")
-            
+
         # Create the raw data object for each chromosome
         raw_data = {}
-        for c in chroms:
-            raw_data[c] = MethyPrintData._create(
-                c, sizes[c], test_ids[c], dfs_test[c], unmeth_ids[c],
-                dfs_unmeth[c], meth_ids[c], dfs_meth[c])
-        return cls._create(raw_data)
+        for chrom in chroms:
+            raw_data[chrom] = MethPrintData._create(
+                chrom=chrom, nbp=sizes[chrom], test_mol_id=test_ids[chrom],
+                test_data=dfs_test[chrom], unmeth_mol_id=unmeth_ids[chrom],
+                unmeth_data=dfs_unmeth[chrom], meth_mol_id=meth_ids[chrom],
+                meth_data=dfs_meth[chrom])
+        return cls._create(_raw_data=raw_data)
                 
     def save(self, path: str | Path):
         """
@@ -369,7 +380,7 @@ class MethyPrintExperiment:
 
         Returns
         -------
-        MethyPrintExperiment
+        MethPrintExperiment
             The loaded experiment object with all data and analysis maps.
         """
         with h5py.File(path, "r") as h5stream:
@@ -377,8 +388,8 @@ class MethyPrintExperiment:
             graw = h5stream["raw_data"]
             raw_data = {}
             for chrom in graw:
-                raw_data[chrom] = MethyPrintData._load(graw, chrom)
-            obj = cls._create(raw_data)
+                raw_data[chrom] = MethPrintData._load(graw, chrom)
+            obj = cls._create(_raw_data=raw_data)
             
             # Load any analysis data
             gana = h5stream["analysis"]
@@ -392,8 +403,8 @@ class MethyPrintExperiment:
             return obj
                 
     @classmethod
-    def _create(cls, _raw_data) -> Self:
-        return cls(_raw_data, _internal=True)
+    def _create(cls, **kwargs) -> Self:
+        return cls(**kwargs, _internal=True)
 
     @property
     def chroms(self) -> Tuple[str,...]:
@@ -408,7 +419,7 @@ class MethyPrintExperiment:
         return tuple(self._raw_data.keys())
 
     @property
-    def raw(self) -> Mapping[str,MethyPrintData]:
+    def raw(self) -> Mapping[str,MethPrintData]:
         """
         Provide read-only access to the raw experimental data.
 
@@ -416,7 +427,7 @@ class MethyPrintExperiment:
         -------
         MappingProxyType
             A frozen mapping where keys are chromosome names and values 
-            are :class:`MethyPrintData` objects.
+            are :class:`MethPrintData` objects.
         """
         return MappingProxyType(self._raw_data)
 

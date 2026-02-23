@@ -1,5 +1,5 @@
 # __init__.py
 
-from .api import preprocess, run
+from .api import preprocess, run, analyze, plot_occup, plot_nuc_pos
 
-__all__ = ["preprocess", "run"]
+__all__ = ["preprocess", "run", "analyze", "plot_occup", "plot_nuc_pos"]

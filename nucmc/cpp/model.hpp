@@ -24,6 +24,13 @@ public:
     double mu;
     ulint seed;
   };
+
+  // Protocols for cooling the system
+  enum class Cooling {
+    Linear,
+    Geometric,
+    Constant
+  };
   
 private:
   // Required parameters
@@ -55,15 +62,16 @@ public:
   NucPosModel(int nucbp, int nbp, int llink, double mu, ulint seed);
   NucPosModel(const Params& params);
   ~NucPosModel();
-  void initByMethData(std::string dataFile);
-  void initMeth(const std::vector<double>& meth);
+  void setMethEnergy(std::string dataFile, double emax = 100);
+  void setMethEnergy(const std::vector<double>& meth, double emax = 100);
   void update();
   void reset();
   void output(lint time);
-  void run(lint nsweep, double startTemp, double endTemp, int ninc);
+  void run(lint nsweep, double startTemp, double endTemp, Cooling coolOption);
   const std::vector<int>& getNucPos() const;
   double getEnergy() const;
   double getTemp() const;
+  const std::vector<double>& getMethEnergy() const;
   const Params& getParams() const;
   void addTracker(std::shared_ptr<Tracker> tracker);
 };

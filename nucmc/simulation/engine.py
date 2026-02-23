@@ -1,6 +1,6 @@
-# engine.pyA
+# engine.py
 
-from typing import Tuple, Dict, List
+from typing import Tuple, Dict, List, Self, Any
 from pathlib import Path
 from dataclasses import dataclass
 from itertools import islice
@@ -14,74 +14,114 @@ import numpy as np
 import pandas as pd
 from .results import SimDataset
 from ..utils import IndexType
+from .. import utils
+from .config import SimSettings
 from nucmc_cpp import NucPosModel, Dump
 import nucmc_cpp as sim
+import matplotlib.pyplot as plt
 
-@dataclass
-class SimParams:    
+# Store parameters for a specific simulation run
+@dataclass(frozen=True, kw_only=True)
+class SimParams:
+    """
+    The complete execution manifest for a single chromatin fiber simulation.
+    
+    This class combines the physical 'recipe' (SimSettings) with specific 
+    identifying metadata for a unique simulation run.
+    """
+    
     chrom : str
+    """The name or identifier of the chromosome being simulated."""
+
     mol : int
+    """The index or identifier of the specific molecule within the
+    chromosome."""
+    
     run : int
-    nucbp : int
-    llink : int
-    mu : float
-    nsweep : int
-    start_temp : float
-    end_temp : float
-    ninc_temp : int
-    print_freq : int
+    """The iteration or replica index for this specific molecule-chromosome
+    pair."""
+    
     seed : int
+    """The specific random seed used for this execution. Note: This may differ
+    from the batch seed if per-run offsets are applied.
+    """
+    
     meth : bytes
+    """Binary representation of the DNA methylation footprinting signal."""
+    
     out_type : Dump.OutputType
+    """The format or scope of data to be recorded (e.g., Energy, Position,
+    All)."""
+
     out_path : str | Path
+    """The file system path where the simulation results are stored."""
+
+    settings : SimSettings
+    """The physical constants and Monte Carlo protocol used for this run."""
+
+    override : Mapping[str,Any]
+    """Override any of the parameter values in settings."""
+
+    _out_map = {"energy" : Dump.OutputType.Energy,
+                "position" : Dump.OutputType.Position,
+                "temp" : Dump.OutputType.Temp,
+                "all" : Dump.OutputType.All}    
 
 class SimManager:
     """
-    Orchestrator for managing and executing chromatin fiber simulations.
+    Orchestrator for managing and executing nucleosome positioning simulations.
 
     The SimManager handles the setup, parallel execution, and data collection 
     of Monte Carlo simulations across multiple chromosomes and molecules.
 
-    Parameters
+    Attributes
     ----------
-    nucbp : int
-        The number of base pairs occupied by a single nucleosome.
-    llink : int
-        The DNA linker length between nucleosomes.
-    mu : float
-        The chemical potential; energy gained by adding a nucleosome.
+    nworker : int, default 1
+        Number of parallel processes to use.
+    mp_context : {'spawn', 'forkserver'}, optional
+        The multiprocessing start method. Default to 'spawn' on macOS 
+        and 'forkserver' on other platforms.
+    verbose : bool, default True
+        If True, display a progress bar when running simulations.
+
+    Raises
+    ------
+    ValueError
+        If the number of parallel processes `nworker` is invalid.
+    ValueError
+        If an invalid `mp_context` is provided.
     """
     
-    def __init__(self,
-                 nucbp : int,
-                 llink : int,
-                 mu : float):
-        
-        self.nucbp = nucbp
-        self.llink = llink
-        self.mu = mu
-        self._out_map = {"energy" : Dump.OutputType.Energy,
-                         "position" : Dump.OutputType.Position,
-                         "temp" : Dump.OutputType.Temp,
-                         "all" : Dump.OutputType.All}
+    def __init__(self, *,
+                 nworker : int = 1,
+                 mp_context : str | None = None,
+                 verbose : bool = True):
 
-    def run(self,
+        if nworker <= 0:
+            raise ValueError("nworker must be greater than zero.")
+        
+        if mp_context is None:
+            mp_context = "spawn" if platform.system() == "Darwin" \
+                else "forkserver"
+        elif mp_context != "spawn" and mp_context != "forkserver":
+            raise ValueError("mp_context must be 'spawn' or 'forkserver'")
+        
+        self.nworker = nworker
+        self.mp_context = mp_context
+        self.verbose = verbose
+
+    def run(self, *,
             chroms : str | Iterable[str],
             nsim : int,
-            nsweep : int,
-            start_temp : float,
-            end_temp : float,
-            ninc_temp : int,
-            print_freq : int,
-            seed : int,
+            settings : str | Path | SimSettings,
             meth : np.ndarray | Mapping[str,np.ndarray|pd.DataFrame],
-            out_types : str | Iterable[str],    
             out_path : str | Path,
-            *,
+            out_types : str | Iterable[str] = "all",
+            seed : int | None = None,
             mols : IndexType | Mapping[str,IndexType] = slice(None),
-            nworker : int = 1,
-            mp_context : str | None = None,
-            verbose : bool = True) -> SimDataset:
+            store_emeth : bool = True,
+            use_zero_point_mu : bool = False
+            ) -> SimDataset:
         """
         Execute simulations in parallel across chromosomes and molecules.
 
@@ -91,40 +131,38 @@ class SimManager:
         Parameters
         ----------
         chroms : str or iterable of str
-            The chromosome identifier(s) to simulate.
+            The identifier(s) of chromosome(s) to include in the simulation.
         nsim : int
             Number of independent simulation runs per molecule.
-        nsweep : int
-            Number of Monte Carlo sweeps to perform per simulation.
-        start_temp : float
-            Starting temperature for the simulation annealing.
-        end_temp : float
-            Ending temperature for the simulation annealing.
-        ninc_temp : int
-            Number of temperature increments between start and end.
-        print_freq : int
-            Frequency (in sweeps) at which to record simulation data.
-        seed : int
-            Master seed used to generate independent seeds for each run.
+        settings : str | Path | SimSettings
+            The physical constants and Monte Carlo protocol (e.g., mu, temp, 
+            sweeps) to apply to all runs in this batch. These can be read
+            from a file.
         meth : np.ndarray or dict
             Methylation data. If multiple chromosomes are provided, this 
             must be a mapping of {chrom_name: data}. Data can be NumPy 
             arrays or Pandas DataFrames.
-        out_types : str or iterable of str
-            Types of data to record. Options include 'energy', 'position', 
-            'temp', or 'all'.
         out_path : str or pathlib.Path
-            Directory where the simulation dataset will be initialized.
+            Directory where the simulation dataset will be initialized. The
+            raw simulation data will be stored with a sub-directory called
+            `raw_data` and the analysis and metadata will be stored in an
+            HD5 file called `results.h5`
+        out_types : str or iterable of str, default 'all'
+            Types of data to record. Options include 'energy', 'position', 
+            'temp', or 'all'.        
+        seed : int, optional
+            Master seed used to generate independent seeds for each run. If
+            None, a high-entropy seed is automatically generated using the
+            NumPy default random generator.
         mols : IndexType or dict, default slice(None)
             Indices of molecules to simulate for each chromosome. Can be a 
             single index/slice or a mapping of {chrom_name: indices}.
-        nworker : int, default 1
-            Number of parallel processes to use.
-        mp_context : {'spawn', 'forkserver'}, optional
-            The multiprocessing start method. Defaults to 'spawn' on macOS 
-            and 'forkserver' on other platforms.
-        verbose : bool, default True
-            If True, displays a progress bar during execution.
+        store_emeth : bool, default True
+            Whether to store the energy landscape derived from the methylation
+            data to output dataset file or not.
+        use_zero_point_mu : bool : default False
+            Whether to modify the chemical potential parameter so that it is
+            equal to the mean of the methlyation energy.
 
         Returns
         -------
@@ -136,81 +174,153 @@ class SimManager:
         TypeError
             If input types for `chroms`, `meth`, or `mols` are inconsistent.
         ValueError
-            If an invalid `mp_context` is provided.
+            If the requested `out_types` are not recognized.
+        FileExistsError
+            If the specified `out_path` already contains an existing dataset.
         """
 
-        # Check that meth data and molecule iterators are valid
-        if isinstance(chroms,str):
-            chroms = [chroms]
-            meth = {chroms[0]:meth}
-            mols = {chroms[0]:mols}
-        elif isinstance(chroms,Iterable):
-            if not isinstance(meth, Mapping):
-                raise TypeError("Methylation data are needed for all "
-                                "chromosomes")
-            if isinstance(mols, IndexType.__args__):
-                # Apply the same indices across all chromosomes
-                mols = {chrom:mols for chrom in chroms}
-            elif not isinstance(mols, Mapping):
-                raise TypeError("Molecule indices are needed for all "
-                                "chromosomes")
-        else:
-            raise TypeError("chroms must be a str or an Iterable")
+        chroms = utils.normalize_chroms(chroms)
 
-        # Convert any data frames to numpy arrays in meth
+        # Normalize methylation data
+        if isinstance(meth, np.ndarray):
+            if not len(chroms) == 1:
+                raise TypeError("Methylation array provided but multiple "
+                                "chroms requested.")
+            meth = {chroms[0]:meth}
+        elif isinstance(meth, Mapping):
+            meth = {chrom:meth[chrom] for chrom in chroms}
+        else:
+            raise TypeError("meth must be a numpy array or a mapping.")
+
+        # Normalize molecule indices
+        if isinstance(mols, IndexType.__args__):
+            # Apply the same set of indices across all chromosomes
+            mols = {chrom:mols for chrom in chroms}
+        elif isinstance(mols, Mapping):
+            mols = {chrom:mols[chrom] for chrom in chroms}
+        else:
+            raise TypeError("mols must be an IndexType or a mapping.")
+
+        
+        # Check that the molecule indices are valid and compute total number
+        # of simulations required
+        nmol = {}
+        nbp = {}
+        total_sim = 0
         for chrom in chroms:
+            # Determine the maximum number of molecules and all molecule ids
+            size = meth[chrom].shape[0]
+            nmol[chrom] = size
+            
+            # Convert any data frames to numpy arrays in meth
             if isinstance(meth[chrom], pd.DataFrame):
                 meth[chrom] = meth[chrom].to_numpy()
+            meth[chrom] = np.atleast_2d(meth[chrom])
+            nbp[chrom] = meth[chrom].shape[1]
+            
+            try:
+                # Apply the index/slice to an 0-element view to trigger errors
+                # without allocating memory for the full index list
+                text_idx = np.empty(size, dtype=np.int8)[mols[chrom]]
+                if text_idx.size == 0:
+                    raise ValueError("Selection 'mols' for chromosome "
+                                     f"'{chrom}' is empty.")
+                total_sim += text_idx.size * nsim
+            except IndexError as e:
+                raise IndexError(f"mols index for chromosome '{chrom}': {e}") \
+                    from None
 
-        # Create the output directory if needed
-        out_path = Path(out_path)
-        out_path.mkdir(exist_ok=True, parents=True)
+        # Read simulation settings from file if needed
+        if isinstance(settings, (str | Path)):
+            settings = SimSettings.load(settings)
+        elif not isinstance(settings, SimSettings):
+            raise TypeError("'settings' must be either a path to the "
+                            "simulation setting file or a SimSettings object.")
 
-        # Determine the maximum number of molecule and all moleculde ids
-        nmol = {chrom:meth[chrom].shape[0] for chrom in chroms}
-        molids = {chrom:np.arange(0,nmol[chrom]) for chrom in chroms}
+        # Check temperatures are valid
+        if settings.end_temp > settings.start_temp:
+            raise ValueError("Expect 'end_temp' <= 'start_temp'.")
+        if settings.cool_option not in SimSettings._cool_map:
+            raise KeyError("Invalid value for 'cool_option'. Expect either "
+                           "'linear', 'geometric', or 'constant'.")
         
         # Combine output types
-        if isinstance(out_types,str):
+        if isinstance(out_types, str):
+            if out_types not in SimParams._out_map:
+                raise ValueError(f"Output type '{out_types}' is not a valid "
+                                 "option.")
             out_types = [out_types]
-        elif not isinstance(out_types,Iterable):
-            raise TypeError("out_types must be a str or an Iterable")
+        elif not isinstance(out_types, Iterable):
+            raise TypeError("'out_types' must be a str or an iterable.")
         
-        out_type = self._out_map[out_types[0]]
+        out_type = SimParams._out_map[out_types[0]]
         for i in range(1,len(out_types)):
-            out_type |= self._out_map[out_types[i]]
+            otype = SimParams._out_map[out_types[i]]
+            if otype not in SimParams._out_map:
+                raise ValueError(f"Output type '{otype}' is not a valid "
+                                 "option.")
+            out_type |= otype
 
+        # Create the output directory
+        out_path = Path(out_path)
+        if out_path.exists():
+            raise FileExistsError(f"The output directory '{out_path}' already "
+                                  "exists.")
+        else:
+            out_path.mkdir(exist_ok=True, parents=True)
+
+        # Compute the methylation energy landscape
+        emeth = None
+        if store_emeth:
+            emeth = {}
+            for chrom in chroms:
+                model = NucPosModel(settings.nucbp, nbp[chrom], settings.llink,
+                                    settings.mu, 0)
+                emeth[chrom] = np.empty(meth[chrom].shape)
+                for i in range(meth[chrom].shape[0]):
+                    model.setMethEnergy(meth[chrom][i], settings.emax)
+                    emeth[chrom][i] = model.getMethEnergy()
+
+        # Adjust the chemical potential if needed
+        override = {}
+        if use_zero_point_mu:
+            avg_emeth = np.empty(len(chroms))
+            for i,chrom in enumerate(chroms):
+                avg_emeth[i] = np.median(emeth[chrom])
+            avg_emeth = np.mean(avg_emeth)
+            print(f"Using zero point mu: {avg_emeth}")
+            override["mu"] = avg_emeth
+            
         # Prepare the dataset object
-        dataset = SimDataset.create_from_sim(chroms, nmol, nsim, out_path)
+        dataset = SimDataset.create(chroms = chroms, nmol = nmol, nsim = nsim,
+                                    nbp = nbp, settings = settings,
+                                    out_path = out_path, emeth = emeth)
         
         # Generate random seeds
         def seed_generator(parent_seed):
             ss = np.random.SeedSequence(parent_seed)
             while True: yield ss.spawn(1)[0].generate_state(1)[0]
+        if seed is None:
+            rng = np.random.default_rng()
+            seed = rng.bit_generator.seed_seq.entropy
         seed_gen = seed_generator(seed)
 
         # Generate the parameter list
-        def params_generator():
+        def params_generator(settings):
             for chrom in chroms:
-                idxs = mols[chrom]
-                for molidx in molids[chrom][idxs]:
+                molidxs = np.arange(nmol[chrom])[mols[chrom]]
+                for molidx in molidxs:
+                    idx = int(molidx)
+                    data = np.asarray(meth[chrom][molidx,:],
+                                      dtype=np.float64).tobytes()
                     for run in range(nsim):
-                        sim_path = dataset.get_sim_path(chrom, molidx, run)
-                        sim_seed = next(seed_gen)
-                        data = meth[chrom][molidx,:].copy().tobytes()
-                        yield SimParams(chrom, molidx, run, self.nucbp,
-                                        self.llink, self.mu, nsweep,
-                                        start_temp, end_temp, ninc_temp,
-                                        print_freq, sim_seed, data, out_type,
-                                        sim_path)
-        param_gen = params_generator()                        
-
-        # Determine the total number of simulations
-        total_sim = 0
-        for chrom in chroms:
-            idxs = mols[chrom]
-            total_sim += len(molids[chrom][idxs]) * nsim 
-
+                        sim_path = dataset.sim_path(chrom, idx, run)
+                        yield SimParams(chrom=chrom, mol=idx, run=run,
+                                        settings=settings, seed=next(seed_gen),
+                                        meth=data, out_type=out_type,
+                                        out_path=sim_path, override=override)
+        param_gen = params_generator(settings)
+        
         # Progress bar
         progress = Progress(
             SpinnerColumn(),
@@ -218,49 +328,74 @@ class SimManager:
             BarColumn(),
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TimeRemainingColumn(),
-            disable=not verbose)
-
+            disable=not self.verbose)
+        
         with progress:
             main_task = progress.add_task("[cyan]Running simulations ...",
                                           total=total_sim)
-            if mp_context is None:
-                mp_context = "spawn" if platform.system() == "Darwin" \
-                    else "forkserver"
-            elif mp_context != "spawn" and mp_context != "forkserver":
-                raise ValueError("mp_context must be 'spawn' or 'forkserver'")
-            ctx = mp.get_context(mp_context)
-            with ctx.Pool(processes=nworker) as pool:
-                iterator = pool.imap_unordered(SimManager._run_job, param_gen)
-                while True:
-                    try:
-                        result = next(iterator)
-                        progress.update(main_task, advance=1)
-                    except StopIteration:
-                        break
-                    except Exception as e:
-                        chrom, mol, run, _, e = result
-                        print(f"Simulation for chrom {chrom}, molecule "
-                              f"{mol}, run {run} failed: {e}")
-                        progress.update(main_task, advance=1)
+            if self.nworker > 1:
+                ctx = mp.get_context(self.mp_context)
+                with ctx.Pool(processes=self.nworker) as pool:
+                    iterator = pool.imap_unordered(SimManager._run_job,
+                                                   param_gen)
+                    while True:
+                        try:
+                            result = next(iterator)
+                            if result[3]:
+                                pass
+                            else:
+                                chrom, mol, run, _, err_msg = result
+                                progress.console.print(
+                                    "[red]Error[/red] Simulation for chrom "
+                                    f"{chrom}, molecule {mol}, run {run} "
+                                    f"failed: {err_msg}")
+                            progress.update(main_task, advance=1)
+                        except StopIteration:
+                            break
+            else: # nworker = 1
+                for param in param_gen:
+                    SimManager._run_job(param)
+                    progress.update(main_task, advance=1)
+
+        # Save the dataset to file
+        dataset.save(out_path/"results.h5")
+        
         return dataset
         
     # Run a single simulation
     @staticmethod
     def _run_job(p : SimParams):
+        def get_param(name):
+            if name in p.override and name in dir(p.settings):
+                return p.override[name]
+            elif name in dir(p.settings):
+                return getattr(p.settings, name)
+            else:
+                return None
+        nucbp = get_param("nucbp")
+        llink = get_param("llink")
+        mu = get_param("mu")
+        nsweep = get_param("nsweep")
+        start_temp = get_param("start_temp")
+        end_temp = get_param("end_temp")
+        print_freq = get_param("print_freq")
+        emax = get_param("emax")
+        cool_option = SimSettings._cool_map[get_param("cool_option")]
         try: 
             # Create the output directory
             sim_dir = Path(p.out_path).parents[0]
             sim_dir.mkdir(exist_ok=True, parents=True)
             # Initialize the methylation energy landscape
-            meth_list = array.array('d', p.meth).tolist()            
+            meth_list = np.frombuffer(p.meth, dtype=np.float64).tolist()
+            nbp = len(meth_list)
             # Create the cpp backend Monte Carlo simulation model
-            model = NucPosModel(p.nucbp, len(meth_list), p.llink, p.mu, p.seed)
-            model.initMeth(meth_list)            
+            model = NucPosModel(nucbp, nbp, llink, mu, p.seed)
+            model.setMethEnergy(meth_list, emax)
             # For tracking all simulation data
             model.addTracker(
-                sim.createDump(p.print_freq, str(p.out_path), p.out_type))
+                sim.createDump(print_freq, str(p.out_path), p.out_type))
             # Run the simulation
-            model.run(p.nsweep, p.start_temp, p.end_temp, p.ninc_temp)
+            model.run(nsweep, start_temp, end_temp, cool_option)
             return (p.chrom, p.mol, p.run, True)
         except Exception as e:
             return (p.chrom, p.mol, p.run, False, str(e))

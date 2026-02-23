@@ -8,8 +8,28 @@
 #include "model.hpp"
 #include "dump_h5.hpp"
 
+#define MAX_CHUNK_SIZE 1024
+
 using std::string;
 using std::vector;
+
+// Helper to create the compression property list
+hid_t createCompressionPlist(hsize_t rank, const hsize_t* dims,
+			     int level = 4) {
+  hid_t plist = H5Pcreate(H5P_DATASET_CREATE);
+
+  // Compression requires chunking
+  // For 1D vectors, chunk in blocks of 1024 (or the total size if smaller)
+  hsize_t chunk_dims[1];
+  chunk_dims[0] = (dims[0] < MAX_CHUNK_SIZE) ? dims[0] : MAX_CHUNK_SIZE;
+
+  // Compression is not possible/useful for dims[0] = 0
+  if (dims[0] > 0) {
+    H5Pset_chunk(plist, rank, chunk_dims);
+    H5Pset_deflate(plist, level);
+  }
+  return plist;
+}
 
 // Helper function for writing a vector to an h5 file
 template <typename T>
@@ -17,9 +37,13 @@ void writeVector(const string& name, const vector<T>& vec, hid_t group) {
   hsize_t dims[1] = {vec.size()};
   hid_t space = H5Screate_simple(1, dims, nullptr);
   hid_t dtype = h5_dtype<T>();
+
+  // Create property list with compression
+  hid_t plist = createCompressionPlist(1, dims);
   hid_t dset = H5Dcreate(group, name.c_str(), dtype, space,
-			 H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+			 H5P_DEFAULT, plist, H5P_DEFAULT);
   H5Dwrite(dset, dtype, H5S_ALL, H5S_ALL, H5P_DEFAULT, vec.data());
+  H5Pclose(plist);
   H5Dclose(dset);
   H5Sclose(space);
 }
@@ -50,9 +74,12 @@ void writeVector(const string& name, const vector<string>& vec, hid_t group) {
   for (const auto& s: vec) {
     cstrs.push_back(s.c_str());
   }
+  // Create property list with compression
+  hid_t plist = createCompressionPlist(1, dims);
   hid_t dset = H5Dcreate(group, name.c_str(), dtype, space,
-			 H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+			 H5P_DEFAULT, plist, H5P_DEFAULT);
   H5Dwrite(dset, dtype, H5S_ALL, H5S_ALL, H5P_DEFAULT, cstrs.data());
+  H5Pclose(plist);
   H5Dclose(dset);
   H5Tclose(dtype);
   H5Sclose(space);  

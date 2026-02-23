@@ -1,13 +1,12 @@
 # results.py
 
 import numpy as np
-import inspect
 import h5py
 import re
 from functools import lru_cache
 from itertools import islice
 from threading import Semaphore
-from dataclasses import dataclass, field, InitVar
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from types import MappingProxyType
 from typing import Tuple, Self, Dict, Any, Callable, List
@@ -15,13 +14,14 @@ from collections import Counter
 from collections.abc import Iterator, Iterable, Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed, Future
 from ..containers import DataFrameMap, FixedKeyMap
+from .config import SimSettings
 from .. import utils
 from .. import h5_utils
 
 # Limit the concurrent open files to stay under OS limits
 MAX_OPEN_FILES = Semaphore(500)
 
-@utils.copy_array_properties
+@utils.add_frozen_properties
 @dataclass(frozen=True, slots=True, init=False)
 class SimData:
     """
@@ -51,37 +51,47 @@ class SimData:
     seed : int
     """The seed used for initializing the random number generator."""
 
-    _time : np.ndarray = field(
+    _frozen_time : np.ndarray = field(
         metadata={"doc": "np.ndarray: The simulation time points."})
 
-    _energy : np.ndarray = field(
+    _frozen_energy : np.ndarray = field(
         metadata={"doc": "np.ndarray: The system energy recorded at each time "
                   "point."})
 
-    _position : Tuple[np.ndarray,...] = field(
+    _frozen_position : Tuple[np.ndarray,...] = field(
         metadata={"doc": "tuple of np.ndarray: Nucleosome positions for each "
                   "time frame."})
 
-    _temp : np.ndarray = field(
+    _frozen_temp : np.ndarray = field(
         metadata={"doc": "np.ndarray: The system temperature recorded at each "
                   "time point."})
 
-    _time_to_idx : dict[int,int] = field(repr=False)
+    # Map from time values to frame index
+    _time_to_idx : dict[int,int]
+    _obs_map : dict[str,Any]
+    _obs_list = ("energy", "position", "temp")
 
-    def __init__(self, *args : Any, **kwargs : Any):
+    def __init__(self, **kwargs : Any):
         if not kwargs.pop("_internal", False):
             raise TypeError("Use SimData.load() to instantiate this class")
-        sig = inspect.signature(self._create)
-        bound = sig.bind(*args, **kwargs)
-        bound.apply_defaults()
-        for key,val in bound.arguments.items():
-            object.__setattr__(self, key, val)
-    
-        # Build lookup: time -> index
-        time_map = {int(t): i for i,t in enumerate(self.time)}
+
+        # Bulk assignment of fields
+        for f in fields(self):
+            val = kwargs.get(f.name)
+            if val is None:
+                val = kwargs.get(f.name.removeprefix("_frozen_"))
+            object.__setattr__(self, f.name, val)
+            
+        # Build time index lookup
+        time_map = {t: i for i,t in enumerate(self.time)}        
         object.__setattr__(self, "_time_to_idx", time_map)
 
-    def idx(self, t: int) -> int:
+        # Build observable lookup
+        obs_map = {"energy": self.energy, "position": self.position,
+                   "temp": self.temp}
+        object.__setattr__(self, "_obs_map", obs_map)
+        
+    def time_index(self, t: int) -> int:
         """
         Retrieve the internal frame index for a given time point.
 
@@ -102,72 +112,32 @@ class SimData:
         """
         return self._time_to_idx[t]
 
-    def energy_at(self, t: int) -> float | None:
+    def at(self, t: int, obs : str):
         """
-        Retrieve the system's energy at a specific time point.
+        Retrieve an observable value at a specific time point.
 
         Parameters
         ----------
         t : int
             The time point of interest.
+        obs : str
+            The observable of interest.
 
         Returns
         -------
-        float or None
-            The system energy at time `t`, or None if energy data is missing.
-        """
-        return None if self._energy is None else self._energy[self.idx(t)]
-
-    def position_at(self, t: int) -> tuple[int] | None:
-        """
-        Retrieve nucleosome positions at a specific time point.
-
-        Parameters
-        ----------
-        t : int
-            The time point of interest.
-
-        Returns
-        -------
-        tuple of np.ndarray or None
-            A tuple of arrays representing nucleosome positions (left-aligned) 
-            at time `t`. Returns None if position data is missing.
-        """
-        return None if self._position is None else \
-            tuple(self._position[self.idx(t)])
-    
-    def save(self, path : str | Path):
-        """
-        Save the simulation data and parameters to an HDF5 file.
-
-        Parameters
-        ----------
-        path : str or pathlib.Path
-            The output file path. Existing files will be overwritten.
+        float or np.ndarray
+            The observable value at time `t`.
 
         Raises
         ------
-        OSError
-            If the file cannot be opened or written to disk.
+        ValueError
+            If obs is not a valid observable.
         """
-        with h5py.File(path, "w") as f:
-            # Store model parameters
-            g = f.create_group("params")
-            g.attrs["nucbp"] = self.nucbp
-            g.attrs["nbp"] = self.nbp
-            g.attrs["llink"] = self.llink
-            g.attrs["mu"] = self.mu
-            g.attrs["seed"] = self.seed
-            
-            # Store data
-            g = f.create_group("data")
-            def save_data(g, name, arr):
-                if arr is not None:
-                    g.create_dataset(name, arr, compression="gzip")
-            save_data(g, "energy", self.energy)
-            save_data(g, "temp", self.temp)
-            save_data(g, "time", self.time)
-
+        if obs not in self._obs_map.keys():
+            raise ValueError(f"'{obs}' is not a valid observable.")
+        value = self._obs_map[obs][self._time_to_idx[t]]
+        return value.item() if np.ndim(value) == 0 else value
+    
     @classmethod
     def load(cls, path : str | Path) -> Self:
         """
@@ -209,13 +179,14 @@ class SimData:
                     return tuple(np.asarray(d, dtype=flat.dtype) for d in data)
                 elif name in g:
                     return g[name][()]
-                return None
+                return np.nan
             time = load_data(g, "time")
             energy = load_data(g, "energy")
             position = load_data(g, "position")
             temp = load_data(g, "temp")
-            return cls._create(nucbp, nbp, llink, mu, seed, time, energy,
-                               position, temp)
+            return cls._create(nucbp=nucbp, nbp=nbp, llink=llink, mu=mu,
+                               seed=seed, time=time, energy=energy,
+                               position=position, temp=temp)
 
     # Extract the data for a specific obesrvable for a single time point
     @classmethod
@@ -241,7 +212,14 @@ class SimData:
         np.ndarray
             The extracted data for the specified observable and time. Returns 
             ``np.nan`` (or an array of nan for 'position') if extraction fails.
+
+        Raises
+        ------
+        ValueError
+            If obs is not a valid observable name
         """
+        if obs not in cls._obs_list:
+            raise ValueError(f"'{obs}' is not a valid observable.")
         norm_path = str(Path(path).resolve())
         try:
             return cls._cached_extract(norm_path, time, obs)
@@ -254,30 +232,37 @@ class SimData:
         with MAX_OPEN_FILES:
             with h5py.File(path, "r") as f:
                 tdata = f["data/time"][()]
-                idx = np.argmin(np.abs(tdata-time))
+                matches = np.where(tdata == time)[0]
+                if len(matches) == 0:
+                    raise KeyError(f"Cannot find data for time {time}.")
+                idx = matches[0]
                 if obs == "position":
                     flat = f["data/position_flat"]
                     offset = f["data/position_offset"][()]
                     start = offset[idx]
                     end = offset[idx+1] if idx+1 < len(offset) \
                         else flat.shape[0]
-                    return flat[start:end]
+                    return np.array(flat[start:end], copy=True)
                 else:
-                    return f[f"data/{obs}"][idx]
+                    return f[f"data/{obs}"][idx].item()
     
     @classmethod
-    def _create(cls, nucbp, nbp, llink, mu, seed, _time, _energy, _position,
-                _temp) -> Self:
+    def _create(cls, **kwargs) -> Self:
+        nucbp = kwargs.get("nucbp")
+        nbp = kwargs.get("nbp")        
+        llink = kwargs.get("llink")
+        seed = kwargs.get("seed")
+        time = kwargs.get("time")
+        energy = kwargs.get("energy")
+        position = kwargs.get("position")
+        temp = kwargs.get("temp")        
         # Some validation
         if nucbp <= 0 or nbp <= 0 or llink <= 0 or seed <= 0:
-            raise ValueError("nucbp, nbp, llink and seeed must be positive")
-        if not (len(_time) == len(_energy) == len(_temp)):
-            raise ValueError("time, energy, and temp must have the",
-                             "same length")
-        if not all(isinstance(p, np.ndarray) for p in _position):
-            raise TypeError("position must be a tuple of np.ndarray")        
-        return cls(nucbp, nbp, llink, mu, seed, _time, _energy, _position,
-                   _temp, _internal=True)
+            raise ValueError("nucbp, nbp, llink, and seed must be positive.")
+        if not (len(time) == len(energy) == len(temp) == len(position)):
+            raise ValueError("time, energy, position, and temp must have the",
+                             "same length.")
+        return cls(**kwargs, _internal=True)
 
     def __repr__(self):
         # Get all public attributes by filtering out private attributes
@@ -297,7 +282,7 @@ class SimPathMapper:
                  max_mols_per_dir : int = 100):
         self.root_path = Path(root_dir)
         self.max_mols_per_dir = max_mols_per_dir
-        self.zpad = int(np.ceil(np.log10(total_mols)))
+        self.zpad = max(1, int(np.ceil(np.log10(total_mols))))
 
     def params_to_path(self, chrom : str, molidx : int, run : int) -> Path:
         # Compute range
@@ -360,62 +345,85 @@ class SimDataset:
             chrom, mol, run = keys
             path = self._parent.sim_path(chrom, mol, run)
             if path.exists():
-                return self._load_sim_data(path)
+                return self._load_sim_data(str(path))
             else:
                 raise ValueError("Cannot find the simulation for chrom "
                                  f"{chrom}, molecule {mol}, run {run}")
 
         @staticmethod
         @lru_cache(maxsize=1024)
-        def _load_sim_data(path : str | Path):
+        def _load_sim_data(path : str):
             return SimData.load(path)
     
     _chroms : Iterable[str]
     _nmol : Mapping[str,int]
     _nsim : int
-    _raw_path : str | Path    
+    _nbp : Mapping[str,int]
+    _settings : SimSettings
+    _emeth : Mapping[str,np.ndarray]
+    _view_emeth : Mapping[str,np.ndarray]
+    _raw_path : Path    
     _path_map : SimPathMapper
     _analysis : Mapping[str, DataFrameMap]
-    _global_analysis : DataFrameMap    
+    _global_analysis : DataFrameMap
     _raw_accessor : SimDataAccessor
 
     def __init__(self, *args : Any, **kwargs : Any):
-        if not kwargs.pop("_internal", False):
-            raise TypeError("Use SimDataset.load() or .create_from_sim() ",
-                            "to instantiate this class")
-        sig = inspect.signature(self._create)
-        bound = sig.bind(*args, **kwargs)
-        bound.apply_defaults()
-        for key,val in bound.arguments.items():
-            setattr(self, key, val)
-
-        # Create the dicts for analysis
-        self._analysis = {chrom : DataFrameMap() for chrom in self._chroms}
-        self._global_analysis = DataFrameMap()
-        
-        self._raw_accessor = self.SimDataAccessor(self)
+        raise TypeError("Use SimDataset.load() or create() to instantiate "
+                        "this class.")
 
     @classmethod
-    def _create(cls, _chroms, _nmol, _nsim, _raw_path, _path_map):
-        # Some validation
-        if _nsim <= 0:
+    def _create(cls, *,
+                chroms : Iterable[str],
+                nmol : Mapping[str,int],
+                nsim : int,
+                nbp : Mapping[str,int],
+                settings : SimSettings,
+                raw_path : Path,
+                path_map : SimPathMapper,
+                emeth : Mapping[str, np.ndarray] | None):
+        # Some validations
+        if nsim <= 0:
             raise ValueError("Number of simulations must be positive")
         # Check the keys in nmol match up with chroms
-        if set(_chroms) != set(_nmol.keys()):
+        if set(nmol.keys()) != set(chroms):
             raise ValueError("Chromosomes in nmol do not match with chroms")
         # Check the number of molcules in each chromosome is valid
-        for chrom in _chroms:
-            if _nmol[chrom] <= 0:
+        for chrom in chroms:
+            if nmol[chrom] <= 0:
                 raise ValueError(f"Chromosome {chrom} must have at least one "
                                  "molecule")
-        return cls(_chroms, _nmol, _nsim, _raw_path, _path_map, _internal=True)
+        
+        obj = cls.__new__(cls)
+        obj._chroms = tuple(chroms)
+        obj._nmol = dict(nmol)
+        obj._nsim = int(nsim)
+        obj._nbp = dict(nbp)
+        obj._settings = settings
+        obj._raw_path = raw_path
+        obj._path_map = path_map
+        obj._analysis = {chrom : DataFrameMap() for chrom in obj._chroms}
+        obj._global_analysis = DataFrameMap()        
+        obj._raw_accessor = cls.SimDataAccessor(obj)
+        obj._emeth = emeth
+        if obj._emeth is None:
+            obj._view_emeth = {chrom:np.nan for chrom in chroms}
+        else:
+            obj._view_emeth = {chrom:obj._emeth[chrom] for chrom in chroms}
+            for chrom in chroms:
+                obj._view_emeth[chrom].flags.writeable = False
+        return obj
         
     @classmethod
-    def create(cls,
+    def create(cls, *,
                chroms : str | Iterable[str],
                nmol : int | Mapping[str,int],
                nsim : int,
-               out_path : str | Path) -> Self:
+               nbp : int | Mapping[str,int],
+               settings : SimSettings,
+               out_path : str | Path,
+               emeth : np.ndarray | Mapping[str,np.ndarray] | None = None) \
+               -> Self:
         """
         Create a new simulation dataset with the specified parameters.
 
@@ -433,8 +441,15 @@ class SimDataset:
             provided, it must specify the count for each chromosome name.
         nsim : int
             The number of simulation runs to perform for each molecule.
+        nbp : int or dict of {str: int}
+            The number of base-pair for each chromsome segment.
+        settings : SimSettings
+            The physical constants and Monte Carlo protocol (e.g., mu, temp,
+            sweeps) that apply to all simulations in the dataset.
         out_path : str or pathlib.Path
             The directory path where the dataset and raw data will be stored.
+        emeth : np.ndarray or None, default None
+            The energy landscape associated with the methylation data.
         
         Returns
         -------
@@ -446,20 +461,33 @@ class SimDataset:
         ValueError
             If the `raw_data` subdirectory already exists in `out_path`, or 
             if the chromosome keys in `nmol` do not match `chroms`.
-        """        
+        """
+        chroms = utils.normalize_chroms(chroms)
+        if isinstance(nmol, int):
+            nmol = {chrom:nmol for chrom in chroms}
+        elif not isinstance(nmol, Mapping):
+            raise ValueError("nmol must either be an int or a mapping")
+        elif set(nmol.keys()) != set(chroms):
+            raise ValueError("nmol must have the same set of chromosome "
+                             "identifiers as chroms")            
+        
         # Find the maximum number of molecules
         max_nmol = 0
         for chrom in chroms:
             if max_nmol < nmol[chrom]:
                 max_nmol = nmol[chrom]
+
+        # Check validity of the output directory
         raw_path = (Path(out_path)/"raw_data").resolve()
         if raw_path.exists():
-            raise ValueError("")
+            raise ValueError(f"The path '{raw_path}' already exists.")
         else:
             raw_path.mkdir(exist_ok=True, parents=True)
         path_map = SimPathMapper(raw_path, max_nmol)
-        return cls._create(chroms, nmol, nsim, raw_path, path_map)
-
+        return cls._create(chroms = chroms, nmol = nmol, nsim = nsim,
+                           nbp = nbp, settings = settings, emeth = emeth,
+                           raw_path = raw_path, path_map = path_map)
+    
     @classmethod
     def load(cls,
              path : str | Path,
@@ -493,21 +521,37 @@ class SimDataset:
             # Load metadata associated with raw simulation data
             gmeta = h5stream["metadata"]
             if new_raw_path is None:                
-                raw_path = Path(gmeta.attrs["raw_path"])
+                raw_path = Path(gmeta.attrs["raw_path"]).resolve()
                 if not raw_path.exists():
                     raise OSError("The raw simulation data directory cannot "
                                   "be found.")
             else:
+                new_raw_path = Path(new_raw_path).resolve()
                 if not new_raw_path.exists():
                     raise OSError("The raw simulation data directory cannot "
                                   "be found.")
                 raw_path = new_raw_path
             nsim = gmeta.attrs["nsim"]
-            chroms = [c.decode() for c in gmeta["chroms"][:]]
-            nmol_arr = gmeta["nmol"][:]
+            chroms = list(gmeta["chroms"].asstr()[()])
+            nmol_arr = gmeta["nmol"][()]
             nmol = {chrom:nmol_arr[i] for i,chrom in enumerate(chroms)}
-            path_map = SimPathMapper(raw_path, max(nmol_arr))            
-            obj = cls._create(chroms, nmol, nsim, raw_path, path_map)
+            path_map = SimPathMapper(raw_path, max(nmol_arr))
+            nbp_arr = gmeta["nbp"][()]
+            nbp = {chrom:nbp_arr[i] for i,chrom in enumerate(chroms)}
+            # Load simulation settings
+            gset = gmeta["settings"]
+            settings = SimSettings(**dict(gset.attrs.items()))
+            # Load methylation energy (if stored)
+            if "emeth" in gmeta:
+                gemeth = gmeta["emeth"]
+                emeth = {}
+                for chrom in chroms:
+                    emeth[chrom] = gemeth[chrom][()]
+            else:
+                emeth = None
+            obj = cls._create(chroms = chroms, nmol = nmol, nsim = nsim,
+                              nbp = nbp, settings = settings, emeth = emeth,
+                              raw_path = raw_path, path_map = path_map)
             # Load any analysis data
             gana = h5stream["analysis"]
             for chrom in gana:
@@ -541,7 +585,7 @@ class SimDataset:
         dt = h5py.string_dtype(encoding="utf-8")
         with h5py.File(path, "a") as h5stream:
             # Save metadata asssociated with raw simulation data
-            if not "metadata" in h5stream:
+            if "metadata" not in h5stream:
                 gmeta = h5stream.create_group("metadata")
                 gmeta.attrs["raw_path"] = str(self._raw_path)
                 gmeta.attrs["nsim"] = self._nsim        
@@ -549,7 +593,18 @@ class SimDataset:
                 nmol_arr = np.asarray([self._nmol[chrom]
                                        for chrom in self._chroms])
                 gmeta.create_dataset("nmol", data=nmol_arr)
-
+                nbp_arr = np.asarray([self._nbp[chrom]
+                                      for chrom in self._chroms])
+                gmeta.create_dataset("nbp", data=nbp_arr)
+                gset = gmeta.create_group("settings")
+                for field in fields(self._settings):
+                    gset.attrs[field.name] = getattr(self._settings,
+                                                     field.name)
+                if self._emeth is not None:
+                    gemeth = gmeta.create_group("emeth")
+                    for chrom in self._chroms:
+                        gemeth.create_dataset(chrom, data=self._emeth[chrom],
+                                              compression="gzip")
             # Save any analysis data
             if "analysis" in h5stream: del h5stream["analysis"]
             gana = h5stream.create_group("analysis")
@@ -562,8 +617,7 @@ class SimDataset:
             for name, df in self._global_analysis.items():
                 h5_utils.save_df(name, df, gana)
             
-    def iter_runs(self,
-                  chroms : str | Iterable[str] | None = None) \
+    def iter_runs(self, chroms : str | Iterable[str] | None = None) \
                   -> Iterator[Tuple[str,int,int]]:
         """
         Yield simulation identifiers across specified chromosomes and
@@ -598,14 +652,13 @@ class SimDataset:
             for mol in range(self._nmol[chrom]):
                 for run in range(self._nsim):
                     path = self._path_map.params_to_path(chrom, mol, run)
-                    if path.exists():
-                        yield (chrom, mol, run)
+                    if path.exists(): yield (chrom, mol, run)
 
-    def extract(self,
+    def extract(self, *,
                 time : int,
                 obs : str,
-                nworker : int = 100,
-                batch_size : int = 5000,
+                nworker : int = 1,
+                batch_size : int = 1000,
                 chroms : str | Iterable[str] | None = None,
                 agg_func : Callable[...,Any] | None = None,
                 **agg_kwargs : Any):
@@ -623,9 +676,9 @@ class SimDataset:
             The specific time point to extract from the simulation.
         obs : str
             The name of the observable to extract (e.g., 'position', 'energy').
-        nworker : int, default 100
+        nworker : int, default 1
             The maximum number of threads to use for parallel extraction.
-        batch_size : int, default 5000
+        batch_size : int, default 1000
             The number of simulation files to queue in a single processing
             batch to manage memory and thread overhead.
         chroms : str or iterable of str, optional
@@ -634,7 +687,7 @@ class SimDataset:
         agg_func : callable, optional
             A function used to aggregate results once all runs for a specific 
             molecule are finished. If provided, it is called as:
-            ``agg_func(chrom, mol, raw_runs, **agg_kwargs)``.
+            ``agg_func(chrom, mol, raw_data, **agg_kwargs)``.
         **agg_kwargs : Any
             Additional keyword arguments passed directly to `agg_func`.
         
@@ -652,47 +705,80 @@ class SimDataset:
         for each chromosome is automatically converted into a NumPy array with 
         shape ``(n_molecules, n_simulations, ...)``.
         """
+
+        # Check that no extra arguments are provided when agg_func is not used
+        if agg_func is None and agg_kwargs:
+            unknown_args = ", ".join(agg_kwargs.keys())
+            raise TypeError("extract() got unexpected keyword arguments: "
+                            f"{unknown_args}. These can only be used when an "
+                            "'agg_func' is provided.")
+        
         chroms = utils.normalize_chroms(chroms, default_chroms=self._chroms)
+        
         results = {}
-        finished_counts = Counter()
         for chrom in chroms:
             results[chrom] = [[None for _ in range(self._nsim)] 
                               for _ in range(self._nmol[chrom])]
-        path_gen = self.iter_runs(chroms)
-        with ThreadPoolExecutor(max_workers=nworker) as executor:        
-            while True:
-                # Grab a chunk of work
-                batch = list(islice(path_gen, batch_size))
-                if not batch: break
-                # Submit only this batch
-                tasks : Dict[Future,Tuple] = {
-                    executor.submit(SimData.extract,
-                                    self._path_map.parmas_to_path(*sim_id),
-                                    time, obs): sim_id for sim_id in batch}
-                # Process this batch as it completes
-                for future in as_completed(tasks):
-                    chrom, mol, run = tasks[future]
-                    try:
-                        data = future.result()
-                        results[chrom][mol][run] = data
-                        key = (chrom, mol)
-                        finished_counts[key] += 1
-                        # Aggregate results from different runs if needed
-                        if agg_func and finished_counts[key] == self._nsim:
-                            raw_runs = results[chrom][mol]
-                            if obs != "position":
-                                raw_runs = np.asarray(raw_runs)
-                            results[chrom][mol] = \
-                                agg_func(chrom, mol, raw_runs, **agg_kwargs)
-                    except Exception as e:                   
-                        print(f"Fail to extract '{obs}' from chrom {chrom}, "
-                              f"molecule {mol}, run {run}: {e}")
-                # Clean up batch
-                tasks.clear()
+
+        # Get the expected number of simulations per molecule
+        finished_counts = Counter()
+        expected_counts = Counter()
+        for sim_id in self.iter_runs(chroms):
+            chrom, mol, _ = sim_id
+            expected_counts[(chrom,mol)] += 1
+
+        if nworker > 1:
+            with ThreadPoolExecutor(max_workers=nworker) as executor:        
+                while True:
+                    # Grab a chunk of work
+                    batch = list(islice(self.iter_runs(chroms), batch_size))
+                    if not batch: break
+                    # Submit only this batch
+                    tasks : Dict[Future,Tuple] = {
+                        executor.submit(SimData.extract,
+                                        self._path_map.params_to_path(*sim_id),
+                                        time, obs): sim_id for sim_id in batch}
+                    # Process this batch as it completes
+                    for future in as_completed(tasks):
+                        chrom, mol, run = tasks[future]
+                        try:
+                            data = future.result()
+                            results[chrom][mol][run] = data
+                            key = (chrom, mol)
+                            finished_counts[key] += 1
+                            # Aggregate results from different runs if needed
+                            if agg_func and \
+                               finished_counts[key] == expected_counts[key]:
+                                raw_data = results[chrom][mol]
+                                if obs != "position":
+                                    raw_data = np.asarray(raw_data)
+                                results[chrom][mol] = \
+                                    agg_func(chrom, mol, raw_data,
+                                             **agg_kwargs)
+                        except Exception as e:                
+                            print(f"Fail to extract '{obs}' from chrom "
+                                  f"{chrom}, molecule {mol}, run {run}: {e}")
+                    # Clean up batch
+                    tasks.clear()
+        else: # nworker = 1
+            for sim_id in self.iter_runs(chroms):
+                chrom, mol, run = sim_id
+                path = self._path_map.params_to_path(chrom, mol, run)
+                results[chrom][mol][run] = SimData.extract(path, time, obs)
+                key = (chrom, mol)
+                finished_counts[key] += 1
+                # Aggregate results from different runs if needed
+                if agg_func and finished_counts[key] == self._nsim:
+                    raw_data = results[chrom][mol]
+                    if obs != "position":
+                        raw_data = np.asarray(raw_data)
+                    results[chrom][mol] = agg_func(chrom, mol, raw_data,
+                                                   **agg_kwargs)
+                
         # Tidy up results and return a numpy array for each chromosome data
         if agg_func is None and obs != "position":
             for chrom in chroms:
-                results[chrom] = np.asarray(results[chrom])
+                results[chrom] = np.asarray(results[chrom])                
         return results
     
     def sim_path(self, chrom : str, mol : int, run : int) -> Path:
@@ -719,6 +805,28 @@ class SimDataset:
         structure, regardless of whether the file actually exists on disk.
         """        
         return self._path_map.params_to_path(chrom, mol, run)
+
+    def settings(self, name) -> Any:
+        """
+        Retrieve the value of a specific simulation parameter used in
+        generating the dataset.
+
+        Parameters
+        ----------
+        name : str
+            The name of the parameter.
+
+        Returns
+        -------
+        Any
+            The value of the specified parameter.
+
+        Raises
+        ------
+        KeyError
+            If the parameter does not exist.
+        """        
+        return self._settings.getattr(name)
     
     @property
     def chroms(self) -> Iterable[str]:
@@ -747,7 +855,7 @@ class SimDataset:
         return MappingProxyType(self._nmol)
 
     @property
-    def nsim(self):
+    def nsim(self) -> int:
         """
         The total number of simulation runs performed per molecule.
 
@@ -758,6 +866,35 @@ class SimDataset:
             molecule-chromosome pair.
         """
         return self._nsim
+
+    @property
+    def nbp(self) -> Mapping[str,int]:
+        """
+        The number of base pairs simulated for each chromosome.
+
+        Returns
+        -------
+        types.MappingProxyType
+            A read-only mapping of chromosome names to their length in base
+            pairs. This view is immutable; neither keys nor counts 
+            can be modified.
+        """        
+        return MappingProxyType(self._nbp)
+    
+    @property
+    def emeth(self) -> Mapping[str, np.ndarray]:
+        """
+        The energy landscape associated with the methylation data for each
+        molecule in each chromosome.
+
+        Returns
+        -------
+        types.MappingProxyType
+            A read-only mapping of chromosome names to the energy landscapes of
+            the methylation data for those chromosome molecules. This view is
+            immutable; neither keys nor counts can be modified.
+        """        
+        return MappingProxyType(self._view_emeth)
     
     @property
     def raw(self) -> SimDataAccessor:

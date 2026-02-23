@@ -5,6 +5,7 @@
 #include <pybind11/stl.h>
 #include <memory>
 #include <string>
+#include <vector>
 #include "dtype.hpp"
 #include "model.hpp"
 #include "tracker.hpp"
@@ -16,18 +17,26 @@ namespace py = pybind11;
 
 using std::shared_ptr;
 using std::string;
+using std::vector;
 
 PYBIND11_MODULE(nucmc_cpp, m) {
-  py::class_<NucPosModel>(m, "NucPosModel")
-    .def(py::init<int,int,int,double,ulint>(),
-	 py::arg("nucbp"), py::arg("nbp"), py::arg("llink"), py::arg("mu"),
-	 py::arg("seed"))
-    .def("run", &NucPosModel::run)
-    .def("reset", &NucPosModel::reset)
-    .def("addTracker", &NucPosModel::addTracker)
-    .def("initMeth", [](NucPosModel& self, std::vector<double> data) {
-      self.initMeth(data);
-    }, py::arg("data"));
+  py::class_<NucPosModel> modelcls(m, "NucPosModel");
+  modelcls.def(py::init<int,int,int,double,ulint>(),
+	       py::arg("nucbp"), py::arg("nbp"), py::arg("llink"),
+	       py::arg("mu"), py::arg("seed"));
+  modelcls.def("run", &NucPosModel::run);
+  modelcls.def("reset", &NucPosModel::reset);
+  modelcls.def("addTracker", &NucPosModel::addTracker);
+  modelcls.def("getMethEnergy", &NucPosModel::getMethEnergy);
+  modelcls.def("setMethEnergy", [](NucPosModel& self, vector<double> data,
+				   double emax) {
+    self.setMethEnergy(data, emax);
+  }, py::arg("data"), py::arg("emax") = 100);
+
+  py::enum_<NucPosModel::Cooling>(modelcls, "Cooling")
+    .value("Linear", NucPosModel::Cooling::Linear)
+    .value("Geometric", NucPosModel::Cooling::Geometric)
+    .value("Constant", NucPosModel::Cooling::Constant);
   
   py::class_<Tracker, shared_ptr<Tracker> >(m, "Tracker");
   

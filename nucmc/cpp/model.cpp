@@ -83,7 +83,7 @@ void NucPosModel::reset() {
   std::fill(emeth.begin(), emeth.end(), 0.0);  
 }
 
-void NucPosModel::initByMethData(string dataFile) {
+void NucPosModel::setMethEnergy(string dataFile, double emax) {
   emeth = vector<double>(nbp, 0.0);
   ifstream reader;
   reader.open(dataFile);
@@ -94,25 +94,32 @@ void NucPosModel::initByMethData(string dataFile) {
   stringstream ss;
   int pos;
   double score;
+  double pmin = exp(-emax);
+  double p;  
   while (getline(reader, line)) {
     if (line[0] == '#') continue; // Skip comments
     ss.clear();
     ss.str(line);
     ss >> pos >> score;
     if (pos >= 0 && pos < nbp) {
-      emeth[pos] = score;
+      p = 1-score;
+      emeth[pos] = p < pmin ? emax : -log(p); // E_meth = -kT log(1-M)
     }
   }
   reader.close();
 }
 
-void NucPosModel::initMeth(const std::vector<double>& data) {
+void NucPosModel::setMethEnergy(const std::vector<double>& data, double emax) {
+  double pmin = exp(-emax);
+  double p;
   if (static_cast<int>(data.size()) != nbp) {
     throw std::runtime_error("Methylation data array size does not match "
 			     "the size of the simulated fiber");
   }
-  emeth = vector<double>(nbp, 0.0);
-  std::copy(data.begin(), data.end(), emeth.begin());
+  for (int i = 0; i < nbp; i++) {
+    p = 1-data[i];
+    emeth[i] = p < pmin ? emax : -log(p); // E_meth = -kT log(1-M)
+  }
 }
 
 void NucPosModel::update() {
@@ -205,31 +212,26 @@ void NucPosModel::update() {
 }
 
 void NucPosModel::run(lint nsweep, double startTemp, double endTemp,
-		      int ninc) {
-  double tempInc;
-  int nsweepPerTemp;
-  if (ninc <= 0) {
-    tempInc = 0.0;
-    startTemp = endTemp;
-    nsweepPerTemp = nsweep;
-  } else {
-    tempInc = (endTemp-startTemp)/(ninc+1.0);
-    // Allow time for the start and end temp    
-    nsweepPerTemp = static_cast<int>(ceil(nsweep/(ninc+1.0)));
-  }
+		      Cooling coolOption) {
   temp = startTemp;
   for (auto& t : trackers) t->initialize(0, *this);
-  output(0);
-  for (int n = 1; n <= nsweep; n++) {
+  output(0); // Output the frame without any nucleosome
+  for (int n = 0; n < nsweep; n++) {
+    // Update temperature
+    double progress = (nsweep > 1) ? static_cast<double>(n)/(nsweep-1) : 1.0;
+    switch (coolOption) {
+    case Cooling::Linear:
+      temp = startTemp + progress * (endTemp-startTemp); break;
+    case Cooling::Geometric:
+      temp = startTemp * pow(endTemp/startTemp, progress); break;
+    case Cooling::Constant:
+      break; // Do nothing
+    }    
     for (int i = 0; i < maxNumOfNuc; i++) {
       update();
     }
-    output(n);
-    if ((n+1) % nsweepPerTemp == 0) {
-      temp += tempInc;
-    }
+    output(n+1);
   }
-  output(nsweep);
   for (auto& t : trackers) t->finalize(nsweep, *this); 
 }
 
@@ -259,6 +261,10 @@ double NucPosModel::getEnergy() const {
 
 double NucPosModel::getTemp() const {
   return temp;
+}
+
+const vector<double>& NucPosModel::getMethEnergy() const {
+  return emeth;
 }
 
 const NucPosModel::Params& NucPosModel::getParams() const {

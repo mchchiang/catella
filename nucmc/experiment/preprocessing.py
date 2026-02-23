@@ -4,18 +4,26 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from typing import List
-from .methydata import MethyPrintExperiment
+from .methdata import MethPrintExperiment
+import matplotlib.pyplot as plt
 
-class MethyPrintAnalysis:
+class MethPrintAnalysis:
     """
-    A suite of normalization tools for MethyPrint experimental data.
+    A suite of normalization tools for MethPrint experimental data.
 
     This class provides methods to process raw methylation signals, including 
     rolling average smoothing and normalization against unmethylated and 
     fully methylated control samples.
     """
+
+    # Percentiles used to define the "floor" and "ceiling" of the signal.
+    # 1.0/99.0 handles sparse, sudden spikes without crushing the dynamic
+    # range.
+    _LOWER_PERCENTILE = 1.0 
+    _UPPER_PERCENTILE = 99.0
+    _EPSILON = np.finfo(float).eps  # Smallest float to avoid DivByZero
     
-    def normalize(self, binsize : int, exp : MethyPrintExperiment,
+    def normalize(self, binsize : int, exp : MethPrintExperiment,
                   name : str = "norm"):
         """
         Normalize and smooth methylation signals across an experiment.
@@ -29,7 +37,7 @@ class MethyPrintAnalysis:
         ----------
         binsize : int
             The window size (in base pairs) for the rolling average smoothing.
-        exp : MethyPrintExperiment
+        exp : MethPrintExperiment
             The experiment object containing the raw data and analysis maps.
         name : str, default "norm"
             The key name used to store the resulting DataFrame in 
@@ -68,18 +76,6 @@ class MethyPrintAnalysis:
         np.ndarray
             A 2D NumPy array of normalized and smoothed methylation scores 
             with shape (n_molecules, n_base_pairs).
-
-        Notes
-        -----
-        If both `df_unmeth` and `df_meth` are provided, the test data is 
-        scaled using the formula:
-        
-        .. math::
-           T_{norm} = \\frac{T - U_{avg}}{M_{avg} - U_{avg}}
-
-        where :math:`T` is the test signal, :math:`U_{avg}` is the 
-        unmethylated average, and :math:`M_{avg}` is the methylated average.
-        Finally, the global mean is subtracted from the results.
         """
         
         # Some helper functions
@@ -125,7 +121,28 @@ class MethyPrintAnalysis:
             unmeth_avg = unmeth_avg["mod_qual_mean_smooth"].to_numpy()
             meth_avg = get_overall_avg(piv_meth, binsize)
             meth_avg = meth_avg["mod_qual_mean_smooth"].to_numpy()
-            test_rollavg = (test_rollavg-unmeth_avg)/(meth_avg-unmeth_avg)
-        test_rollavg -= np.mean(test_rollavg)        
-        return test_rollavg
+            # Avoid divsion by zero in controls
+            denom = meth_avg - unmeth_avg
+            denom[denom == 0] = self._EPSILON
+            test_rollavg = (test_rollavg - unmeth_avg) / denom
+            
+        # Normalize the data so that all values are between 0 and 1
+        # Identify valid genomic range to avoid biases from the trailing edge
+        end_idx = -(binsize-1) if binsize > 1 else None        
+        valid = test_rollavg[:,:end_idx]
+        
+        # Calculate the floor and ceiling for every molecule independently
+        plow = np.percentile(valid, self._LOWER_PERCENTILE, axis=1,
+                             keepdims=True)
+        phigh = np.percentile(valid, self._UPPER_PERCENTILE, axis=1,
+                              keepdims=True)
+
+        # Use the difference between percentiles as the scaling factor
+        denom = np.maximum(phigh-plow, self._EPSILON)
+        
+        # Map to probability [0,1]. Clip to ensure that outliers outside the
+        # percentile bounds do not result in probabilities < 0 or > 1.
+        prob = np.clip((test_rollavg-plow)/denom, 0.0, 1.0)
+        
+        return prob
     

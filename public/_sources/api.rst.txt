@@ -1,37 +1,45 @@
 API Reference
 =============
 
-experiment
----------------
+High-level API
+--------------
 
-.. automodule:: nucmc.experiment.methydata
+.. automodule:: nucmc
+   :members:
+   :undoc-members:
+   :imported-members:
+
+Experiment classes
+------------------
+
+.. automodule:: nucmc.experiment.methdata
     :members:
     :undoc-members:
-    :show-inheritance:
-
 
 .. automodule:: nucmc.experiment.preprocessing
     :members:
     :undoc-members:
-    :show-inheritance:
 
-simulation
----------------
+
+Simulation classes
+------------------
 
 .. automodule:: nucmc.simulation.results
     :members:
     :undoc-members:
     :exclude-members: SimPathMapper       
-    :show-inheritance:
 
 .. automodule:: nucmc.simulation.engine
     :members:
     :undoc-members:
     :exclude-members: SimParams
-    :show-inheritance:
 
 .. automodule:: nucmc.simulation.analysis
     :members:
     :undoc-members:
-    :show-inheritance:
 
+.. automodule:: nucmc.simulation.plot
+    :members:
+    :undoc-members:
+       
+      

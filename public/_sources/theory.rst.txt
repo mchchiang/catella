@@ -1,5 +1,5 @@
-Monte Carlo Simulations of Nucleosome Positions
-===============================================
+Simulation Model
+================
 
 We model the DNA fiber as a one-dimensional (1D) lattice array given by
 coordinates :math:`x \in \{0,\ldots,L-1\}`, where :math:`L` is the total
@@ -16,43 +16,63 @@ The effective Hamiltonian of the system has three contributions:
    H = E - \mu N \equiv E_{\text{seq}} + E_{\text{rep}} -\mu N \;,
 
 where :math:`E_{\text{seq}}` is an energy associated with the methylation
-footprinting signal (related to a sequence-specific nucleosomal binding
-energy), and :math:`E_{\text{rep}}` is a pairwise repulsion energy due to the
-excluded volume of the nucleosomes (i.e., they cannot overlap). The last term
-is a chemical energy associated with a non-sequence-specific nucleosomal
-binding energy to the DNA fiber, with :math:`\mu` being the chemical potential
-(note that a positive :math:`\mu` means it is favourable for nucleosomes to
-bind to the fiber) and :math:`N` the total number of nucleosomes on the fiber.
+footprinting signal (see below), and :math:`E_{\text{rep}}` is a pairwise
+repulsion energy due to the excluded volume of the nucleosomes (i.e., they
+cannot overlap). The last term is a chemical energy associated with a
+non-sequence-specific nucleosomal binding energy to the DNA fiber, with
+:math:`\mu` being the chemical potential (note that a positive :math:`\mu`
+means it is favourable for nucleosomes to bind to the fiber) and :math:`N`
+the total number of nucleosomes on the fiber.
 
-More specifically, we define :math:`E_{\text{seq}}` via the normalized
-methylation score :math:`M(x)`, which is given by
+To obtain :math:`E_{\text{seq}}(x)`, we first compute the probability
+:math:`p(x)` of a nucleosome binding to the DNA fiber at :math:`x` based on the
+methylation footprinting data. If control data are available (i.e.,
+footprinting data for a fully methylated and unmethylated fiber), we define
+a normalized methylation score :math:`M(x)` as follows:
 
 .. math::
 
-   M(x) = \frac{\langle S_{\text{test}} \rangle_{\text{bin}}(x)-\langle S_{\text{unmeth}} \rangle_{\text{bin}}(x)}{\langle S_{\text{meth}} \rangle_{\text{bin}}(x)-\langle S_{\text{unmeth}} \rangle_{\text{bin}}(x)} \;,
+   M(x) = \frac{\langle S_{\text{test}} \rangle_{\text{bin}}(x) -
+   \langle S_{\text{unmeth}} \rangle_{\text{bin}}(x)}
+   {\langle S_{\text{meth}} \rangle_{\text{bin}}(x) -
+   \langle S_{\text{unmeth}} \rangle_{\text{bin}}(x)} \;,
 
-where :math:`S_{\text{test}}` is the methylation score (defined for each bp)
-for the test condition (e.g., chromatinized DNA), while :math:`S_{\text{meth}}`
-and :math:`S_{\text{unmeth}}` are the methylation scores for the cases of a
-fully methylated and unmethylated DNA fiber, respectively. 
-
-Here, the operation :math:`\langle\cdot\rangle_{\text{bin}}` denotes that we
-have first smoothed the signal by doing a rolling average with a bin size of
+where :math:`S_{\text{test}}`, :math:`S_{\text{meth}}`, and
+:math:`S_{\text{unmeth}}` are the methylation signal strengths as computed
+by ModKit (i.e., the value from the `mod_qual` column; defined for each bp)
+for the test condition (chromatinized DNA), a fully methylated fiber, and an
+unmethylated DNA fiber, respectively. Here, the operation
+:math:`\langle\cdot\rangle_{\text{bin}}` denotes that we have first smoothed
+the signal by doing a rolling average with a bin size of
 :math:`\ell_{\text{bin}}`. Typically, we take :math:`\ell_{\text{bin}} = 147`
-bp, which is the typically length of DNA wrapped around a nucleosome [#f1]_. 
-
-With a set of :math:`N` nucleosomes occupying positions
-:math:`x_0, ..., x_{N-1}`, the energy associated with the methylation
-footprinting data is
+bp, which is the typically length of DNA wrapped around a nucleosome [#f1]_. If
+control datasets are unavailable, we set
 
 .. math::
 
-   E_{\text{seq}} = k_BT\sum_{i=0}^{N-1}\widetilde{M}(x) \equiv k_BT\sum_{i=0}^{N-1} \left[M(x_i)-\langle M \rangle \right] \;,
+   M(x) = \langle S_{\text{test}} \rangle_{\text{bin}}(x) \;.
+
+To convert :math:`M(x)` into a formal probability that lies between 0 and 1, we
+rescale the score linearly, setting those ranking below 1% to 0 and those
+ranking above 99% to 1, i.e.,
+
+.. math::
+   p(x) = 1-\frac{\widetilde{M(x)} - M_{p=0.01}}{M_{p=0.99}-M_{p=0.01}} \;,
+
+where
+
+.. math::
+   \widetilde{M(x)} = \text{min}[\text{max}[M(x),M_{p=0.01}],M_{p=0.99}] \;.
+   
+Finally, we convert :math:`p(x)` to the energy assuming it follows a
+Boltzmann distribution:
+
+.. math::
+   E_{\text{seq}} = \text{min}[-k_BT\log p(x), E_{\text{seq}}^{\text{max}}] \;,
 
 where :math:`k_B` is the Boltzmann constant, :math:`T` is the temperature of
-the system, and :math:`\langle M \rangle` is the averaged normalized
-methylation score over all molecules sequenced for the test condition (i.e.,
-an ensemble average).
+the system, and :math:`E_{\text{seq}}^{\text{max}}` is a threshold maximum
+energy that the user can specify to avoid :math:`E_{\text{seq}} \to \infty`.
 
 To model the pairwise repulsion between two nucleosomes (say :math:`i` and
 :math:`j`), we consider the following potential:
@@ -119,17 +139,18 @@ function. We perform one of the following three moves in each step:
 These moves follow the **Metropolis algorithm**, ensuring detailed balance and
 thermal equilibrium.
 
-Observables
---------------
+..
+   Observables
+   --------------
 
-The mean occupancy profile is defined as follows:
+   The mean occupancy profile is defined as follows:
 
-.. math::
-   :label: mean_occ
+   .. math::
+      :label: mean_occ
 
-   \langle n(x) \rangle = \frac{1}{T}\sum_{t=1}^{T} n(x,t)
+      \langle n(x) \rangle = \frac{1}{T}\sum_{t=1}^{T} n(x,t)
 
-This quantity corresponds to the time-averaged coverage at base-pair :math:`x`.
+   This quantity corresponds to the time-averaged coverage at base-pair :math:`x`.
 
 
 .. rubric:: Footnotes

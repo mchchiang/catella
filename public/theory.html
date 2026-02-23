@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Monte Carlo Simulations of Nucleosome Positions &mdash; nucmc 0.1.0 documentation</title>
+  <title>Simulation Model &mdash; nucmc 0.1.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
 
@@ -16,13 +16,14 @@
       <script src="_static/documentation_options.js?v=01f34227"></script>
       <script src="_static/doctools.js?v=fd6eb6e6"></script>
       <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
-      <script type="text/x-mathjax-config">MathJax.Hub.Config({"tex2jax": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "displayMath": [["$$", "$$"], ["\\[", "\\]"]], "processEscapes": true}})</script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+      <script type="text/x-mathjax-config">MathJax.Hub.Config({"tex2jax": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true, "ignoreClass": "tex2jax_ignore|mathjax_ignore|document", "processClass": "tex2jax_process|mathjax_process|math|output_area", "displayMath": [["$$", "$$"], ["\\[", "\\]"]]}})</script>
       <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
     <link rel="next" title="API Reference" href="api.html" />
-    <link rel="prev" title="Welcome to nucmc’s documentation!" href="index.html" /> 
+    <link rel="prev" title="Installation" href="install.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -46,14 +47,14 @@
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul class="current">
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Monte Carlo Simulations of Nucleosome Positions</a><ul>
+<li class="toctree-l1"><a class="reference internal" href="install.html">Installation</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Simulation Model</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#the-energy-of-the-system">The Energy of the System</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#monte-carlo-sampling-moves">Monte Carlo Sampling Moves</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#observables">Observables</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/quick_start.html">Quick Start Tutorial</a></li>
 </ul>
 
         </div>
@@ -70,7 +71,7 @@
           <div role="navigation" aria-label="Page navigation">
   <ul class="wy-breadcrumbs">
       <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
-      <li class="breadcrumb-item active">Monte Carlo Simulations of Nucleosome Positions</li>
+      <li class="breadcrumb-item active">Simulation Model</li>
       <li class="wy-breadcrumbs-aside">
             <a href="_sources/theory.rst.txt" rel="nofollow"> View page source</a>
       </li>
@@ -80,8 +81,8 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <section id="monte-carlo-simulations-of-nucleosome-positions">
-<h1>Monte Carlo Simulations of Nucleosome Positions<a class="headerlink" href="#monte-carlo-simulations-of-nucleosome-positions" title="Link to this heading"></a></h1>
+  <section id="simulation-model">
+<h1>Simulation Model<a class="headerlink" href="#simulation-model" title="Link to this heading"></a></h1>
 <p>We model the DNA fiber as a one-dimensional (1D) lattice array given by
 coordinates <span class="math notranslate nohighlight">\(x \in \{0,\ldots,L-1\}\)</span>, where <span class="math notranslate nohighlight">\(L\)</span> is the total
 length of the DNA fiber (in units of bp). Within the simulations, nucleosomes
@@ -92,34 +93,50 @@ of size <span class="math notranslate nohighlight">\(\ell_{\text{nuc}}\)</span> 
 <div class="math notranslate nohighlight">
 \[H = E - \mu N \equiv E_{\text{seq}} + E_{\text{rep}} -\mu N \;,\]</div>
 <p>where <span class="math notranslate nohighlight">\(E_{\text{seq}}\)</span> is an energy associated with the methylation
-footprinting signal (related to a sequence-specific nucleosomal binding
-energy), and <span class="math notranslate nohighlight">\(E_{\text{rep}}\)</span> is a pairwise repulsion energy due to the
-excluded volume of the nucleosomes (i.e., they cannot overlap). The last term
-is a chemical energy associated with a non-sequence-specific nucleosomal
-binding energy to the DNA fiber, with <span class="math notranslate nohighlight">\(\mu\)</span> being the chemical potential
-(note that a positive <span class="math notranslate nohighlight">\(\mu\)</span> means it is favourable for nucleosomes to
-bind to the fiber) and <span class="math notranslate nohighlight">\(N\)</span> the total number of nucleosomes on the fiber.</p>
-<p>More specifically, we define <span class="math notranslate nohighlight">\(E_{\text{seq}}\)</span> via the normalized
-methylation score <span class="math notranslate nohighlight">\(M(x)\)</span>, which is given by</p>
+footprinting signal (see below), and <span class="math notranslate nohighlight">\(E_{\text{rep}}\)</span> is a pairwise
+repulsion energy due to the excluded volume of the nucleosomes (i.e., they
+cannot overlap). The last term is a chemical energy associated with a
+non-sequence-specific nucleosomal binding energy to the DNA fiber, with
+<span class="math notranslate nohighlight">\(\mu\)</span> being the chemical potential (note that a positive <span class="math notranslate nohighlight">\(\mu\)</span>
+means it is favourable for nucleosomes to bind to the fiber) and <span class="math notranslate nohighlight">\(N\)</span>
+the total number of nucleosomes on the fiber.</p>
+<p>To obtain <span class="math notranslate nohighlight">\(E_{\text{seq}}(x)\)</span>, we first compute the probability
+<span class="math notranslate nohighlight">\(p(x)\)</span> of a nucleosome binding to the DNA fiber at <span class="math notranslate nohighlight">\(x\)</span> based on the
+methylation footprinting data. If control data are available (i.e.,
+footprinting data for a fully methylated and unmethylated fiber), we define
+a normalized methylation score <span class="math notranslate nohighlight">\(M(x)\)</span> as follows:</p>
 <div class="math notranslate nohighlight">
-\[M(x) = \frac{\langle S_{\text{test}} \rangle_{\text{bin}}(x)-\langle S_{\text{unmeth}} \rangle_{\text{bin}}(x)}{\langle S_{\text{meth}} \rangle_{\text{bin}}(x)-\langle S_{\text{unmeth}} \rangle_{\text{bin}}(x)} \;,\]</div>
-<p>where <span class="math notranslate nohighlight">\(S_{\text{test}}\)</span> is the methylation score (defined for each bp)
-for the test condition (e.g., chromatinized DNA), while <span class="math notranslate nohighlight">\(S_{\text{meth}}\)</span>
-and <span class="math notranslate nohighlight">\(S_{\text{unmeth}}\)</span> are the methylation scores for the cases of a
-fully methylated and unmethylated DNA fiber, respectively.</p>
-<p>Here, the operation <span class="math notranslate nohighlight">\(\langle\cdot\rangle_{\text{bin}}\)</span> denotes that we
-have first smoothed the signal by doing a rolling average with a bin size of
+\[M(x) = \frac{\langle S_{\text{test}} \rangle_{\text{bin}}(x) -
+\langle S_{\text{unmeth}} \rangle_{\text{bin}}(x)}
+{\langle S_{\text{meth}} \rangle_{\text{bin}}(x) -
+\langle S_{\text{unmeth}} \rangle_{\text{bin}}(x)} \;,\]</div>
+<p>where <span class="math notranslate nohighlight">\(S_{\text{test}}\)</span>, <span class="math notranslate nohighlight">\(S_{\text{meth}}\)</span>, and
+<span class="math notranslate nohighlight">\(S_{\text{unmeth}}\)</span> are the methylation signal strengths as computed
+by ModKit (i.e., the value from the <cite>mod_qual</cite> column; defined for each bp)
+for the test condition (chromatinized DNA), a fully methylated fiber, and an
+unmethylated DNA fiber, respectively. Here, the operation
+<span class="math notranslate nohighlight">\(\langle\cdot\rangle_{\text{bin}}\)</span> denotes that we have first smoothed
+the signal by doing a rolling average with a bin size of
 <span class="math notranslate nohighlight">\(\ell_{\text{bin}}\)</span>. Typically, we take <span class="math notranslate nohighlight">\(\ell_{\text{bin}} = 147\)</span>
-bp, which is the typically length of DNA wrapped around a nucleosome <a class="footnote-reference brackets" href="#f1" id="id1" role="doc-noteref"><span class="fn-bracket">[</span>1<span class="fn-bracket">]</span></a>.</p>
-<p>With a set of <span class="math notranslate nohighlight">\(N\)</span> nucleosomes occupying positions
-<span class="math notranslate nohighlight">\(x_0, ..., x_{N-1}\)</span>, the energy associated with the methylation
-footprinting data is</p>
+bp, which is the typically length of DNA wrapped around a nucleosome <a class="footnote-reference brackets" href="#f1" id="id1" role="doc-noteref"><span class="fn-bracket">[</span>1<span class="fn-bracket">]</span></a>. If
+control datasets are unavailable, we set</p>
 <div class="math notranslate nohighlight">
-\[E_{\text{seq}} = k_BT\sum_{i=0}^{N-1}\widetilde{M}(x) \equiv k_BT\sum_{i=0}^{N-1} \left[M(x_i)-\langle M \rangle \right] \;,\]</div>
+\[M(x) = \langle S_{\text{test}} \rangle_{\text{bin}}(x) \;.\]</div>
+<p>To convert <span class="math notranslate nohighlight">\(M(x)\)</span> into a formal probability that lies between 0 and 1, we
+rescale the score linearly, setting those ranking below 1% to 0 and those
+ranking above 99% to 1, i.e.,</p>
+<div class="math notranslate nohighlight">
+\[p(x) = 1-\frac{\widetilde{M(x)} - M_{p=0.01}}{M_{p=0.99}-M_{p=0.01}} \;,\]</div>
+<p>where</p>
+<div class="math notranslate nohighlight">
+\[\widetilde{M(x)} = \text{min}[\text{max}[M(x),M_{p=0.01}],M_{p=0.99}] \;.\]</div>
+<p>Finally, we convert <span class="math notranslate nohighlight">\(p(x)\)</span> to the energy assuming it follows a
+Boltzmann distribution:</p>
+<div class="math notranslate nohighlight">
+\[E_{\text{seq}} = \text{min}[-k_BT\log p(x), E_{\text{seq}}^{\text{max}}] \;,\]</div>
 <p>where <span class="math notranslate nohighlight">\(k_B\)</span> is the Boltzmann constant, <span class="math notranslate nohighlight">\(T\)</span> is the temperature of
-the system, and <span class="math notranslate nohighlight">\(\langle M \rangle\)</span> is the averaged normalized
-methylation score over all molecules sequenced for the test condition (i.e.,
-an ensemble average).</p>
+the system, and <span class="math notranslate nohighlight">\(E_{\text{seq}}^{\text{max}}\)</span> is a threshold maximum
+energy that the user can specify to avoid <span class="math notranslate nohighlight">\(E_{\text{seq}} \to \infty\)</span>.</p>
 <p>To model the pairwise repulsion between two nucleosomes (say <span class="math notranslate nohighlight">\(i\)</span> and
 <span class="math notranslate nohighlight">\(j\)</span>), we consider the following potential:</p>
 <div class="math notranslate nohighlight">
@@ -169,13 +186,6 @@ probability is:</p>
 </ol>
 <p>These moves follow the <strong>Metropolis algorithm</strong>, ensuring detailed balance and
 thermal equilibrium.</p>
-</section>
-<section id="observables">
-<h2>Observables<a class="headerlink" href="#observables" title="Link to this heading"></a></h2>
-<p>The mean occupancy profile is defined as follows:</p>
-<div class="math notranslate nohighlight" id="equation-mean-occ">
-<span class="eqno">(1)<a class="headerlink" href="#equation-mean-occ" title="Link to this equation"></a></span>\[\langle n(x) \rangle = \frac{1}{T}\sum_{t=1}^{T} n(x,t)\]</div>
-<p>This quantity corresponds to the time-averaged coverage at base-pair <span class="math notranslate nohighlight">\(x\)</span>.</p>
 <p class="rubric">Footnotes</p>
 <aside class="footnote-list brackets">
 <aside class="footnote brackets" id="f1" role="doc-footnote">
@@ -195,7 +205,7 @@ has no effect as the nucleosome cannot “fall off” the fiber.</p>
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="index.html" class="btn btn-neutral float-left" title="Welcome to nucmc’s documentation!" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="install.html" class="btn btn-neutral float-left" title="Installation" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
         <a href="api.html" class="btn btn-neutral float-right" title="API Reference" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 

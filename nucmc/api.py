@@ -187,7 +187,7 @@ def analyze(*, dataset : SimDataset,
         analysis metrics.
     """
     ana = SimAnalysis()
-    ana.compute_occupancy(dataset=dataset, time=time, name=occup_name)
+    ana.compute_occup(dataset=dataset, time=time, name=occup_name)
     ana.compute_mean_nnuc(dataset=dataset, time=time, name=mean_nnuc_name)
 
 def plot_occup(*, chrom : str,
@@ -262,5 +262,5 @@ def plot_nuc_pos(*, chrom : str,
     in the `out_types` during the `run` execution.
     """
     simplot = SimPlot()
-    simplot.plot_nuc_pos(chrom=chrom, mol=mol, run=run, out_file=out_file,
-                         show=show)
+    simplot.plot_nuc_pos(chrom=chrom, mol=mol, run=run, dataset=dataset,
+                         out_file=out_file, show=show)

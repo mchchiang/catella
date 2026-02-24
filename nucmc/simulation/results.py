@@ -826,7 +826,7 @@ class SimDataset:
         KeyError
             If the parameter does not exist.
         """        
-        return self._settings.getattr(name)
+        return getattr(self._settings,name)
     
     @property
     def chroms(self) -> Iterable[str]:

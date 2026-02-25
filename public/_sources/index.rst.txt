@@ -6,6 +6,6 @@ Welcome to nucmc's documentation!
    :caption: Contents:
 
    install
-   theory
+   model
    api
-   tutorials/quick_start
+   tutorials/tut01_quick_start/quick_start

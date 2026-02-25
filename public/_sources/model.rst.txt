@@ -24,11 +24,12 @@ non-sequence-specific nucleosomal binding energy to the DNA fiber, with
 means it is favourable for nucleosomes to bind to the fiber) and :math:`N`
 the total number of nucleosomes on the fiber.
 
-To obtain :math:`E_{\text{seq}}(x)`, we first compute the probability
-:math:`p(x)` of a nucleosome binding to the DNA fiber at :math:`x` based on the
-methylation footprinting data. If control data are available (i.e.,
-footprinting data for a fully methylated and unmethylated fiber), we define
-a normalized methylation score :math:`M(x)` as follows:
+To obtain :math:`E_{\text{seq}}(x)`, we first compute the sequence-specific
+probability :math:`p_{\text{seq}}(x)` of a nucleosome binding to the DNA
+fiber at :math:`x` based on the methylation footprinting data. If control
+data are available (i.e., footprinting data for a fully methylated and
+unmethylated fiber), we define a normalized methylation score :math:`M(x)` as
+follows:
 
 .. math::
 
@@ -44,30 +45,42 @@ for the test condition (chromatinized DNA), a fully methylated fiber, and an
 unmethylated DNA fiber, respectively. Here, the operation
 :math:`\langle\cdot\rangle_{\text{bin}}` denotes that we have first smoothed
 the signal by doing a rolling average with a bin size of
-:math:`\ell_{\text{bin}}`. Typically, we take :math:`\ell_{\text{bin}} = 147`
-bp, which is the typically length of DNA wrapped around a nucleosome [#f1]_. If
-control datasets are unavailable, we set
+:math:`\ell_{\text{bin}}`. Typically, we set
+:math:`\ell_{\text{bin}} = \ell_{\text{nuc}} = 147` bp, which is the typically
+length of DNA wrapped around a nucleosome (or the footprinting length of the
+nucleosome) [#f1]_. If control datasets are unavailable, we set
 
 .. math::
 
    M(x) = \langle S_{\text{test}} \rangle_{\text{bin}}(x) \;.
 
-To convert :math:`M(x)` into a formal probability that lies between 0 and 1, we
-rescale the score linearly, setting those ranking below 1% to 0 and those
-ranking above 99% to 1, i.e.,
+To convert :math:`M(x)` into a formal probability of methylation
+:math:`p_M(x)` that lies between 0 and 1, we rescale the score linearly while
+setting those scores ranking below 1% to 0 and those ranking above 99% to 1,
+i.e.,
 
 .. math::
-   p(x) = 1-\frac{\widetilde{M(x)} - M_{p=0.01}}{M_{p=0.99}-M_{p=0.01}} \;,
+   
+   p_M(x) = \frac{\widetilde{M(x)} - M_{p=0.01}}{M_{p=0.99}-M_{p=0.01}} \;,
 
 where
 
 .. math::
-   \widetilde{M(x)} = \text{min}[\text{max}[M(x),M_{p=0.01}],M_{p=0.99}] \;.
    
-Finally, we convert :math:`p(x)` to the energy assuming it follows a
-Boltzmann distribution:
+   \widetilde{M(x)} = \text{min}[\text{max}[M(x),M_{p=0.01}],M_{p=0.99}] \;.
+
+The sequence-specific probability of nucleosome binding
+:math:`p_{\text{seq}}(x)` is taken as the complementary probability:
 
 .. math::
+   
+   p_{\text{seq}}(x) = 1 - p_M(x) \;.
+
+Finally, we convert :math:`p_{\text{seq}}(x)` to the energy
+:math:`E_{\text{seq}}` using Boltzmann inversion:
+
+.. math::
+   
    E_{\text{seq}} = \text{min}[-k_BT\log p(x), E_{\text{seq}}^{\text{max}}] \;,
 
 where :math:`k_B` is the Boltzmann constant, :math:`T` is the temperature of

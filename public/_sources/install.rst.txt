@@ -22,7 +22,9 @@ Step 2: Create the Environment
 ------------------------------
 
 Use the provided `environment.yml` file to create a dedicated Conda
-environment. This ensures all dependencies are correctly managed.
+environment. This ensures all dependencies are correctly managed. The default
+name of the environment is `nucmc`, but you can change this within the file.
+file.
 
 .. code-block:: bash
 
@@ -46,6 +48,3 @@ Check that the program is working correctly by running the help command:
 
    nucmc --help		
 
-.. note::
-   If you encounter any issues during installation, please check our 
-   `Troubleshooting <#>`_ page or open an issue on 

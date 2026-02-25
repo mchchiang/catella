@@ -9,6 +9,7 @@
   <title>Simulation Model &mdash; nucmc 0.1.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="_static/custom.css?v=57874f38" />
 
   
       <script src="_static/jquery.js?v=5d32c60e"></script>
@@ -17,8 +18,8 @@
       <script src="_static/doctools.js?v=fd6eb6e6"></script>
       <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
-      <script type="text/x-mathjax-config">MathJax.Hub.Config({"tex2jax": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true, "ignoreClass": "tex2jax_ignore|mathjax_ignore|document", "processClass": "tex2jax_process|mathjax_process|math|output_area", "displayMath": [["$$", "$$"], ["\\[", "\\]"]]}})</script>
-      <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
+      <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true, "displayMath": [["$$", "$$"], ["\\[", "\\]"]], "tags": "ams", "tagSide": "right", "tagAlign": "center"}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+      <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
@@ -54,7 +55,7 @@
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/quick_start.html">Quick Start Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/tut01_quick_start/quick_start.html">Tutorial 1: Quick Start</a></li>
 </ul>
 
         </div>
@@ -73,7 +74,7 @@
       <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
       <li class="breadcrumb-item active">Simulation Model</li>
       <li class="wy-breadcrumbs-aside">
-            <a href="_sources/theory.rst.txt" rel="nofollow"> View page source</a>
+            <a href="_sources/model.rst.txt" rel="nofollow"> View page source</a>
       </li>
   </ul>
   <hr/>
@@ -90,8 +91,8 @@ of size <span class="math notranslate nohighlight">\(\ell_{\text{nuc}}\)</span> 
 <section id="the-energy-of-the-system">
 <h2>The Energy of the System<a class="headerlink" href="#the-energy-of-the-system" title="Link to this heading"></a></h2>
 <p>The effective Hamiltonian of the system has three contributions:</p>
-<div class="math notranslate nohighlight">
-\[H = E - \mu N \equiv E_{\text{seq}} + E_{\text{rep}} -\mu N \;,\]</div>
+<div class="math notranslate nohighlight" id="equation-model-0">
+<span class="eqno">(1)<a class="headerlink" href="#equation-model-0" title="Link to this equation"></a></span>\[H = E - \mu N \equiv E_{\text{seq}} + E_{\text{rep}} -\mu N \;,\]</div>
 <p>where <span class="math notranslate nohighlight">\(E_{\text{seq}}\)</span> is an energy associated with the methylation
 footprinting signal (see below), and <span class="math notranslate nohighlight">\(E_{\text{rep}}\)</span> is a pairwise
 repulsion energy due to the excluded volume of the nucleosomes (i.e., they
@@ -100,13 +101,14 @@ non-sequence-specific nucleosomal binding energy to the DNA fiber, with
 <span class="math notranslate nohighlight">\(\mu\)</span> being the chemical potential (note that a positive <span class="math notranslate nohighlight">\(\mu\)</span>
 means it is favourable for nucleosomes to bind to the fiber) and <span class="math notranslate nohighlight">\(N\)</span>
 the total number of nucleosomes on the fiber.</p>
-<p>To obtain <span class="math notranslate nohighlight">\(E_{\text{seq}}(x)\)</span>, we first compute the probability
-<span class="math notranslate nohighlight">\(p(x)\)</span> of a nucleosome binding to the DNA fiber at <span class="math notranslate nohighlight">\(x\)</span> based on the
-methylation footprinting data. If control data are available (i.e.,
-footprinting data for a fully methylated and unmethylated fiber), we define
-a normalized methylation score <span class="math notranslate nohighlight">\(M(x)\)</span> as follows:</p>
-<div class="math notranslate nohighlight">
-\[M(x) = \frac{\langle S_{\text{test}} \rangle_{\text{bin}}(x) -
+<p>To obtain <span class="math notranslate nohighlight">\(E_{\text{seq}}(x)\)</span>, we first compute the sequence-specific
+probability <span class="math notranslate nohighlight">\(p_{\text{seq}}(x)\)</span> of a nucleosome binding to the DNA
+fiber at <span class="math notranslate nohighlight">\(x\)</span> based on the methylation footprinting data. If control
+data are available (i.e., footprinting data for a fully methylated and
+unmethylated fiber), we define a normalized methylation score <span class="math notranslate nohighlight">\(M(x)\)</span> as
+follows:</p>
+<div class="math notranslate nohighlight" id="equation-model-1">
+<span class="eqno">(2)<a class="headerlink" href="#equation-model-1" title="Link to this equation"></a></span>\[M(x) = \frac{\langle S_{\text{test}} \rangle_{\text{bin}}(x) -
 \langle S_{\text{unmeth}} \rangle_{\text{bin}}(x)}
 {\langle S_{\text{meth}} \rangle_{\text{bin}}(x) -
 \langle S_{\text{unmeth}} \rangle_{\text{bin}}(x)} \;,\]</div>
@@ -117,30 +119,36 @@ for the test condition (chromatinized DNA), a fully methylated fiber, and an
 unmethylated DNA fiber, respectively. Here, the operation
 <span class="math notranslate nohighlight">\(\langle\cdot\rangle_{\text{bin}}\)</span> denotes that we have first smoothed
 the signal by doing a rolling average with a bin size of
-<span class="math notranslate nohighlight">\(\ell_{\text{bin}}\)</span>. Typically, we take <span class="math notranslate nohighlight">\(\ell_{\text{bin}} = 147\)</span>
-bp, which is the typically length of DNA wrapped around a nucleosome <a class="footnote-reference brackets" href="#f1" id="id1" role="doc-noteref"><span class="fn-bracket">[</span>1<span class="fn-bracket">]</span></a>. If
-control datasets are unavailable, we set</p>
-<div class="math notranslate nohighlight">
-\[M(x) = \langle S_{\text{test}} \rangle_{\text{bin}}(x) \;.\]</div>
-<p>To convert <span class="math notranslate nohighlight">\(M(x)\)</span> into a formal probability that lies between 0 and 1, we
-rescale the score linearly, setting those ranking below 1% to 0 and those
-ranking above 99% to 1, i.e.,</p>
-<div class="math notranslate nohighlight">
-\[p(x) = 1-\frac{\widetilde{M(x)} - M_{p=0.01}}{M_{p=0.99}-M_{p=0.01}} \;,\]</div>
+<span class="math notranslate nohighlight">\(\ell_{\text{bin}}\)</span>. Typically, we set
+<span class="math notranslate nohighlight">\(\ell_{\text{bin}} = \ell_{\text{nuc}} = 147\)</span> bp, which is the typically
+length of DNA wrapped around a nucleosome (or the footprinting length of the
+nucleosome) <a class="footnote-reference brackets" href="#f1" id="id1" role="doc-noteref"><span class="fn-bracket">[</span>1<span class="fn-bracket">]</span></a>. If control datasets are unavailable, we set</p>
+<div class="math notranslate nohighlight" id="equation-model-2">
+<span class="eqno">(3)<a class="headerlink" href="#equation-model-2" title="Link to this equation"></a></span>\[M(x) = \langle S_{\text{test}} \rangle_{\text{bin}}(x) \;.\]</div>
+<p>To convert <span class="math notranslate nohighlight">\(M(x)\)</span> into a formal probability of methylation
+<span class="math notranslate nohighlight">\(p_M(x)\)</span> that lies between 0 and 1, we rescale the score linearly while
+setting those scores ranking below 1% to 0 and those ranking above 99% to 1,
+i.e.,</p>
+<div class="math notranslate nohighlight" id="equation-model-3">
+<span class="eqno">(4)<a class="headerlink" href="#equation-model-3" title="Link to this equation"></a></span>\[p_M(x) = \frac{\widetilde{M(x)} - M_{p=0.01}}{M_{p=0.99}-M_{p=0.01}} \;,\]</div>
 <p>where</p>
-<div class="math notranslate nohighlight">
-\[\widetilde{M(x)} = \text{min}[\text{max}[M(x),M_{p=0.01}],M_{p=0.99}] \;.\]</div>
-<p>Finally, we convert <span class="math notranslate nohighlight">\(p(x)\)</span> to the energy assuming it follows a
-Boltzmann distribution:</p>
-<div class="math notranslate nohighlight">
-\[E_{\text{seq}} = \text{min}[-k_BT\log p(x), E_{\text{seq}}^{\text{max}}] \;,\]</div>
+<div class="math notranslate nohighlight" id="equation-model-4">
+<span class="eqno">(5)<a class="headerlink" href="#equation-model-4" title="Link to this equation"></a></span>\[\widetilde{M(x)} = \text{min}[\text{max}[M(x),M_{p=0.01}],M_{p=0.99}] \;.\]</div>
+<p>The sequence-specific probability of nucleosome binding
+<span class="math notranslate nohighlight">\(p_{\text{seq}}(x)\)</span> is taken as the complementary probability:</p>
+<div class="math notranslate nohighlight" id="equation-model-5">
+<span class="eqno">(6)<a class="headerlink" href="#equation-model-5" title="Link to this equation"></a></span>\[p_{\text{seq}}(x) = 1 - p_M(x) \;.\]</div>
+<p>Finally, we convert <span class="math notranslate nohighlight">\(p_{\text{seq}}(x)\)</span> to the energy
+<span class="math notranslate nohighlight">\(E_{\text{seq}}\)</span> using Boltzmann inversion:</p>
+<div class="math notranslate nohighlight" id="equation-model-6">
+<span class="eqno">(7)<a class="headerlink" href="#equation-model-6" title="Link to this equation"></a></span>\[E_{\text{seq}} = \text{min}[-k_BT\log p(x), E_{\text{seq}}^{\text{max}}] \;,\]</div>
 <p>where <span class="math notranslate nohighlight">\(k_B\)</span> is the Boltzmann constant, <span class="math notranslate nohighlight">\(T\)</span> is the temperature of
 the system, and <span class="math notranslate nohighlight">\(E_{\text{seq}}^{\text{max}}\)</span> is a threshold maximum
 energy that the user can specify to avoid <span class="math notranslate nohighlight">\(E_{\text{seq}} \to \infty\)</span>.</p>
 <p>To model the pairwise repulsion between two nucleosomes (say <span class="math notranslate nohighlight">\(i\)</span> and
 <span class="math notranslate nohighlight">\(j\)</span>), we consider the following potential:</p>
-<div class="math notranslate nohighlight">
-\[\begin{split}E_{\text{rep}}^{ij}(x_{ij}) =
+<div class="math notranslate nohighlight" id="equation-model-7">
+<span class="eqno">(8)<a class="headerlink" href="#equation-model-7" title="Link to this equation"></a></span>\[\begin{split}E_{\text{rep}}^{ij}(x_{ij}) =
 \begin{cases}
   \infty &amp; \text{if } x_{ij} &lt; \ell_{\text{nuc}} \\
   k_BT\left[\left(\frac{\ell_{\text{link}}}{x_{ij}-\ell_{\text{nuc}}}\right)^{12} - 2\left(\frac{\ell_{\text{link}}}{x_{ij}-\ell_{\text{nuc}}}\right)^6 + 1\right] &amp; \text{if } \ell_{\text{nuc}} \leq x_{ij} \leq \ell_{\text{nuc}}+\ell_{\text{link}} \\
@@ -151,8 +159,8 @@ energy that the user can specify to avoid <span class="math notranslate nohighli
 typical length of the linker DNA between nucleosomes (set to 50 bp). Under
 the condition <span class="math notranslate nohighlight">\(\ell_{\text{link}} &lt; \ell_{\text{nuc}}\)</span>, only nearest
 neighbour interactions are effective, and so</p>
-<div class="math notranslate nohighlight">
-\[E_{\text{rep}} = \sum_{i=0}^{N-2}E_{\text{rep}}^{i,i+1}\]</div>
+<div class="math notranslate nohighlight" id="equation-model-8">
+<span class="eqno">(9)<a class="headerlink" href="#equation-model-8" title="Link to this equation"></a></span>\[E_{\text{rep}} = \sum_{i=0}^{N-2}E_{\text{rep}}^{i,i+1}\]</div>
 <p>for <span class="math notranslate nohighlight">\(N \geq 2\)</span> and 0 otherwise.</p>
 </section>
 <section id="monte-carlo-sampling-moves">
@@ -160,28 +168,28 @@ neighbour interactions are effective, and so</p>
 <p>Since we allow the number of nucleosomes to vary, the statistical ensemble
 sampled is the <strong>grand canonical ensemble</strong>. In thermal equilibrium, the
 probability of observing a configuration <span class="math notranslate nohighlight">\(\mathcal{C}\)</span> is</p>
-<div class="math notranslate nohighlight">
-\[P(\mathcal{C}) = \frac{1}{\mathcal{Z}}\exp[-\beta H(\mathcal{C})] \;,\]</div>
+<div class="math notranslate nohighlight" id="equation-model-9">
+<span class="eqno">(10)<a class="headerlink" href="#equation-model-9" title="Link to this equation"></a></span>\[P(\mathcal{C}) = \frac{1}{\mathcal{Z}}\exp[-\beta H(\mathcal{C})] \;,\]</div>
 <p>where <span class="math notranslate nohighlight">\(\beta = 1/(k_BT)\)</span> and <span class="math notranslate nohighlight">\(\mathcal{Z}\)</span> is the partition
 function. We perform one of the following three moves in each step:</p>
 <ol class="arabic">
 <li><p><strong>Shifting a nucleosome</strong>
 We randomly select the <span class="math notranslate nohighlight">\(i\)</span>-th nucleosome and move its position
 <span class="math notranslate nohighlight">\(x_i \to x_i' = x_i \pm 1\)</span> bp. The acceptance probability is:</p>
-<div class="math notranslate nohighlight">
-\[p(x_i\to x_i') = \min\left[1,\exp[-\beta(E(x_i')-E(x_i))]\right] \;.\]</div>
+<div class="math notranslate nohighlight" id="equation-model-10">
+<span class="eqno">(11)<a class="headerlink" href="#equation-model-10" title="Link to this equation"></a></span>\[p(x_i\to x_i') = \min\left[1,\exp[-\beta(E(x_i')-E(x_i))]\right] \;.\]</div>
 </li>
 <li><p><strong>Adding a nucleosome</strong>
 We randomly select a position <span class="math notranslate nohighlight">\(x\)</span>. The probability of accepting a new
 nucleosome at that position is:</p>
-<div class="math notranslate nohighlight">
-\[p(\text{add at } x) = \min\left[1,\frac{L}{(N+1)\ell_{\text{nuc}}}\exp[\beta\mu-\beta\Delta E_{\text{add}}(x)]\right] \;,\]</div>
+<div class="math notranslate nohighlight" id="equation-model-11">
+<span class="eqno">(12)<a class="headerlink" href="#equation-model-11" title="Link to this equation"></a></span>\[p(\text{add at } x) = \min\left[1,\frac{L}{(N+1)\ell_{\text{nuc}}}\exp[\beta\mu-\beta\Delta E_{\text{add}}(x)]\right] \;,\]</div>
 </li>
 <li><p><strong>Removing a nucleosome</strong>
 We randomly select and remove the <span class="math notranslate nohighlight">\(i\)</span>-th nucleosome. The acceptance
 probability is:</p>
-<div class="math notranslate nohighlight">
-\[p(\text{remove } i) = \min\left[1,\frac{N\ell_{\text{nuc}}}{L}\exp[-\beta\mu-\beta\Delta E_{\text{remove}}(x_i)]\right] \;.\]</div>
+<div class="math notranslate nohighlight" id="equation-model-12">
+<span class="eqno">(13)<a class="headerlink" href="#equation-model-12" title="Link to this equation"></a></span>\[p(\text{remove } i) = \min\left[1,\frac{N\ell_{\text{nuc}}}{L}\exp[-\beta\mu-\beta\Delta E_{\text{remove}}(x_i)]\right] \;.\]</div>
 </li>
 </ol>
 <p>These moves follow the <strong>Metropolis algorithm</strong>, ensuring detailed balance and

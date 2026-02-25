@@ -1,0 +1,10 @@
+/* Force equation numbers to the right-hand side */
+span.eqno {
+    float: right;
+}
+
+/* Ensure the math block takes full width so the label can float */
+.math {
+    width: 100%;
+    display: block;
+}

@@ -1,0 +1,20 @@
+/* Container for the whole math block + number */
+div.math {
+    display: flex !important;
+    align-items: center; /* Vertically centers children (math and number) */
+    justify-content: center; /* Keeps the math formula centered horizontally */
+    width: 100%;
+    position: relative;
+    margin: 1em 0;
+}
+
+/* The equation number itself */
+span.eqno {
+    position: absolute;
+    right: 0; /* Pins the number to the far right */
+}
+
+/* Ensure inline math is NOT affected by the flex layout */
+span.math {
+    display: inline !important;
+}

@@ -9,6 +9,7 @@
   <title>Installation &mdash; nucmc 0.1.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="_static/custom.css?v=57874f38" />
 
   
       <script src="_static/jquery.js?v=5d32c60e"></script>
@@ -20,7 +21,7 @@
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Simulation Model" href="theory.html" />
+    <link rel="next" title="Simulation Model" href="model.html" />
     <link rel="prev" title="Welcome to nucmc’s documentation!" href="index.html" /> 
 </head>
 
@@ -53,9 +54,9 @@
 <li class="toctree-l2"><a class="reference internal" href="#step-4-verify-installation">Step 4: Verify Installation</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="theory.html">Simulation Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model.html">Simulation Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/quick_start.html">Quick Start Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/tut01_quick_start/quick_start.html">Tutorial 1: Quick Start</a></li>
 </ul>
 
         </div>
@@ -100,7 +101,9 @@ installed on your system.</p>
 <section id="step-2-create-the-environment">
 <h2>Step 2: Create the Environment<a class="headerlink" href="#step-2-create-the-environment" title="Link to this heading"></a></h2>
 <p>Use the provided <cite>environment.yml</cite> file to create a dedicated Conda
-environment. This ensures all dependencies are correctly managed.</p>
+environment. This ensures all dependencies are correctly managed. The default
+name of the environment is <cite>nucmc</cite>, but you can change this within the file.
+file.</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>conda<span class="w"> </span>env<span class="w"> </span>create<span class="w"> </span>-f<span class="w"> </span>environment.yml
 </pre></div>
 </div>
@@ -118,11 +121,6 @@ environment. This ensures all dependencies are correctly managed.</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>nucmc<span class="w"> </span>--help
 </pre></div>
 </div>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>If you encounter any issues during installation, please check our
-<a class="reference internal" href="#"><span class="doc">Troubleshooting</span></a> page or open an issue on</p>
-</div>
 </section>
 </section>
 
@@ -131,7 +129,7 @@ environment. This ensures all dependencies are correctly managed.</p>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
         <a href="index.html" class="btn btn-neutral float-left" title="Welcome to nucmc’s documentation!" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="theory.html" class="btn btn-neutral float-right" title="Simulation Model" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="model.html" class="btn btn-neutral float-right" title="Simulation Model" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>

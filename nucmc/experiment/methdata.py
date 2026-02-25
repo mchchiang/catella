@@ -214,8 +214,13 @@ class MethPrintExperiment:
         """        
         
         # Read chromosome sizes
-        df_size = pd.read_csv(chromsize, header=None, sep="\t",
-                              names=["chrom", "length"])
+        df_size = pd.read_csv(chromsize, sep="\t")
+        if "chrom" not in df_size.columns:
+            raise ValueError("Column 'chrom' containing the chromosome "
+                             "identifier is missing.")
+        if "length" not in df_size.columns:
+            raise ValueError("Column 'length' containing the chromosome "
+                             "length is missing.")        
         if not df_size["chrom"].is_unique:
             raise ValueError("Chromosomes must be unique in chromsize file")
         

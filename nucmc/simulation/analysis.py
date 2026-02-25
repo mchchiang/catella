@@ -172,7 +172,7 @@ class SimAnalysis:
             (e.g., "occup_t_100").
         """
         chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)
-        nuc_map = {chrom:NucFiberMap(dataset.settings("nucbp"),
+        nuc_map = {chrom:NucFiberMap(dataset.settings["nucbp"],
                                      dataset.nbp[chrom])
                    for chrom in chroms}
         if time is None:

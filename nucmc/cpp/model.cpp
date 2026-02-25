@@ -44,7 +44,7 @@ NucPosModel::NucPosModel(int _nucbp, int _nbp, int _llink, double _mu,
   }
   maxNumOfNuc = nbp/nucbp;
   npos = nbp-nucbp;
-  emeth = vector<double>(nbp);
+  eseq = vector<double>(nbp);
   reset();
 }
 
@@ -60,7 +60,7 @@ NucPosModel::NucPosModel(const Params& p) :
   }
   maxNumOfNuc = nbp/nucbp;
   npos = nbp-nucbp;
-  emeth = vector<double>(nbp);
+  eseq = vector<double>(nbp);
   reset();
 }
 
@@ -80,11 +80,11 @@ void NucPosModel::reset() {
   temp = 1.0;
 
   // Reset energy landscape
-  std::fill(emeth.begin(), emeth.end(), 0.0);  
+  std::fill(eseq.begin(), eseq.end(), 0.0);  
 }
 
-void NucPosModel::setMethEnergy(string dataFile, double emax) {
-  emeth = vector<double>(nbp, 0.0);
+void NucPosModel::setSeqEnergy(string dataFile, double emax) {
+  eseq = vector<double>(nbp, 0.0);
   ifstream reader;
   reader.open(dataFile);
   if (!reader) {
@@ -93,32 +93,30 @@ void NucPosModel::setMethEnergy(string dataFile, double emax) {
   string line;
   stringstream ss;
   int pos;
-  double score;
   double pmin = exp(-emax);
   double p;  
   while (getline(reader, line)) {
     if (line[0] == '#') continue; // Skip comments
     ss.clear();
     ss.str(line);
-    ss >> pos >> score;
+    ss >> pos >> p;
     if (pos >= 0 && pos < nbp) {
-      p = 1-score;
-      emeth[pos] = p < pmin ? emax : -log(p); // E_meth = -kT log(1-M)
+      eseq[pos] = p < pmin ? emax : -log(p); // E_seq = -kT log(p_seq)
     }
+    reader.close();
   }
-  reader.close();
 }
-
-void NucPosModel::setMethEnergy(const std::vector<double>& data, double emax) {
+    
+void NucPosModel::setSeqEnergy(const std::vector<double>& pseq, double emax) {
   double pmin = exp(-emax);
   double p;
-  if (static_cast<int>(data.size()) != nbp) {
-    throw std::runtime_error("Methylation data array size does not match "
+  if (static_cast<int>(pseq.size()) != nbp) {
+    throw std::runtime_error("Probability array size does not match "
 			     "the size of the simulated fiber");
   }
   for (int i = 0; i < nbp; i++) {
-    p = 1-data[i];
-    emeth[i] = p < pmin ? emax : -log(p); // E_meth = -kT log(1-M)
+    p = pseq[i];
+    eseq[i] = p < pmin ? emax : -log(p); // E_seq = -kT log(p_seq)
   }
 }
 
@@ -158,8 +156,8 @@ void NucPosModel::update() {
       if (ndpos < llink+nucbp) dErep += erep[ndpos-nucbp];
       if (dpos < llink+nucbp) dErep -= erep[dpos-nucbp];
     }
-    double dEmeth = emeth[nxt]-emeth[pos];
-    if (p < min(1.0, exp((-dEmeth-dErep)/temp))) {
+    double dEseq = eseq[nxt]-eseq[pos];
+    if (p < min(1.0, exp((-dEseq-dErep)/temp))) {
 	nucpos[inuc] = nxt;
     }    
   } else if (mode == 1) { // Add a nucleosome
@@ -183,7 +181,7 @@ void NucPosModel::update() {
       else if (dpos < llink+nucbp) dErep += erep[dpos-nucbp];
     }
     if (p < min(1.0, nbp/static_cast<double>((nnuc+1.0)*nucbp)*
-		exp((mu-emeth[pos]-dErep)/temp))) {
+		exp((mu-eseq[pos]-dErep)/temp))) {
       nucpos.insert(itup, pos);
     }
   } else if (mode == 2 && nnuc > 0) { // Remove a nucleosome
@@ -205,7 +203,7 @@ void NucPosModel::update() {
       if (dpos < llink+nucbp) dErep -= erep[dpos-nucbp];
     }
     if (p < min(1.0, (nnuc*nucbp)/static_cast<double>(nbp)*
-		exp((-mu+emeth[pos]-dErep)/temp))) {
+		exp((-mu+eseq[pos]-dErep)/temp))) {
       nucpos.erase(nucpos.begin()+inuc);
     }
   }
@@ -246,25 +244,25 @@ const vector<int>& NucPosModel::getNucPos() const {
 }
 
 double NucPosModel::getEnergy() const {
-  double totalEmeth = 0.0;
+  double totalEseq = 0.0;
   double totalErep = 0.0;  
   for (size_t i = 0; i < nucpos.size(); i++) {
     int pos = nucpos[i];
-    totalEmeth += emeth[pos];
+    totalEseq += eseq[pos];
     if (i > 0) {
       int dpos = nucpos[i]-nucpos[i-1];
       if (dpos < nucbp+llink) totalErep += erep[dpos-nucbp];
     }
   }
-  return totalEmeth + totalErep - mu*nucpos.size();
+  return totalEseq + totalErep - mu*nucpos.size();
 }
 
 double NucPosModel::getTemp() const {
   return temp;
 }
 
-const vector<double>& NucPosModel::getMethEnergy() const {
-  return emeth;
+const vector<double>& NucPosModel::getSeqEnergy() const {
+  return eseq;
 }
 
 const NucPosModel::Params& NucPosModel::getParams() const {

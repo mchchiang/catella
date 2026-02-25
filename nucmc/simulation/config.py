@@ -1,4 +1,4 @@
-# config.py
+# config.pyA
 
 from dataclasses import dataclass
 from nucmc_cpp import NucPosModel
@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Self
 
 # Store parameters relevant for a batch of runs
-@dataclass(frozen=True, kw_only=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class SimSettings:
     """
     Configuration for the physical model and Monte Carlo simulation protocol.

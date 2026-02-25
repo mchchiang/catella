@@ -46,8 +46,9 @@ class SimParams:
     from the batch seed if per-run offsets are applied.
     """
     
-    meth : bytes
-    """Binary representation of the DNA methylation footprinting signal."""
+    seq_prob : bytes
+    """Binary representation of the sequence-specific nucleosome binding
+    probability derived from the methylation data."""
     
     out_type : Dump.OutputType
     """The format or scope of data to be recorded (e.g., Energy, Position,
@@ -114,12 +115,12 @@ class SimManager:
             chroms : str | Iterable[str],
             nsim : int,
             settings : str | Path | SimSettings,
-            meth : np.ndarray | Mapping[str,np.ndarray|pd.DataFrame],
+            meth_prob : np.ndarray | Mapping[str,np.ndarray|pd.DataFrame],
             out_path : str | Path,
             out_types : str | Iterable[str] = "all",
             seed : int | None = None,
             mols : IndexType | Mapping[str,IndexType] = slice(None),
-            store_emeth : bool = True,
+            store_eseq : bool = True,
             use_zero_point_mu : bool = False
             ) -> SimDataset:
         """
@@ -138,10 +139,10 @@ class SimManager:
             The physical constants and Monte Carlo protocol (e.g., mu, temp, 
             sweeps) to apply to all runs in this batch. These can be read
             from a file.
-        meth : np.ndarray or dict
-            Methylation data. If multiple chromosomes are provided, this 
-            must be a mapping of {chrom_name: data}. Data can be NumPy 
-            arrays or Pandas DataFrames.
+        meth_prob : np.ndarray or dict
+            The probability of methylation. If multiple chromosomes are
+            provided, this must be a mapping of {chrom_name: data}. Data can
+            be NumPy arrays or Pandas DataFrames.
         out_path : str or pathlib.Path
             Directory where the simulation dataset will be initialized. The
             raw simulation data will be stored with a sub-directory called
@@ -157,12 +158,13 @@ class SimManager:
         mols : IndexType or dict, default slice(None)
             Indices of molecules to simulate for each chromosome. Can be a 
             single index/slice or a mapping of {chrom_name: indices}.
-        store_emeth : bool, default True
-            Whether to store the energy landscape derived from the methylation
-            data to output dataset file or not.
+        store_eseq : bool, default True
+            Whether to store the sequence-specific nucleosome binding energy
+            landscape derived from the methylation data to output dataset file.
         use_zero_point_mu : bool : default False
             Whether to modify the chemical potential parameter so that it is
-            equal to the mean of the methlyation energy.
+            equal to the median of the squence-specific nucleosome binding
+            energy.
 
         Returns
         -------
@@ -172,7 +174,8 @@ class SimManager:
         Raises
         ------
         TypeError
-            If input types for `chroms`, `meth`, or `mols` are inconsistent.
+            If input types for `chroms`, `meth_prob`, or `mols` are
+            inconsistent.
         ValueError
             If the requested `out_types` are not recognized.
         FileExistsError
@@ -182,15 +185,15 @@ class SimManager:
         chroms = utils.normalize_chroms(chroms)
 
         # Normalize methylation data
-        if isinstance(meth, np.ndarray):
+        if isinstance(meth_prob, np.ndarray):
             if not len(chroms) == 1:
-                raise TypeError("Methylation array provided but multiple "
-                                "chroms requested.")
-            meth = {chroms[0]:meth}
-        elif isinstance(meth, Mapping):
-            meth = {chrom:meth[chrom] for chrom in chroms}
+                raise TypeError("Methylation probability array 'meth_prob' "
+                                "provided but multiple chroms requested.")
+            meth_prob = {chroms[0]:meth_prob}
+        elif isinstance(meth_prob, Mapping):
+            meth_prob = {chrom:meth_prob[chrom] for chrom in chroms}
         else:
-            raise TypeError("meth must be a numpy array or a mapping.")
+            raise TypeError("'meth_prob' must be a numpy array or a mapping.")
 
         # Normalize molecule indices
         if isinstance(mols, IndexType.__args__):
@@ -199,7 +202,7 @@ class SimManager:
         elif isinstance(mols, Mapping):
             mols = {chrom:mols[chrom] for chrom in chroms}
         else:
-            raise TypeError("mols must be an IndexType or a mapping.")
+            raise TypeError("'mols' must be an IndexType or a mapping.")
 
         
         # Check that the molecule indices are valid and compute total number
@@ -209,14 +212,14 @@ class SimManager:
         total_sim = 0
         for chrom in chroms:
             # Determine the maximum number of molecules and all molecule ids
-            size = meth[chrom].shape[0]
+            size = meth_prob[chrom].shape[0]
             nmol[chrom] = size
             
-            # Convert any data frames to numpy arrays in meth
-            if isinstance(meth[chrom], pd.DataFrame):
-                meth[chrom] = meth[chrom].to_numpy()
-            meth[chrom] = np.atleast_2d(meth[chrom])
-            nbp[chrom] = meth[chrom].shape[1]
+            # Convert any data frames to numpy arrays in meth_prob
+            if isinstance(meth_prob[chrom], pd.DataFrame):
+                meth_prob[chrom] = meth_prob[chrom].to_numpy()
+            meth_prob[chrom] = np.atleast_2d(meth_prob[chrom])
+            nbp[chrom] = meth_prob[chrom].shape[1]
             
             try:
                 # Apply the index/slice to an 0-element view to trigger errors
@@ -270,31 +273,32 @@ class SimManager:
             out_path.mkdir(exist_ok=True, parents=True)
 
         # Compute the methylation energy landscape
-        emeth = None
-        if store_emeth:
-            emeth = {}
+        eseq = None
+        if store_eseq:
+            eseq = {}
             for chrom in chroms:
                 model = NucPosModel(settings.nucbp, nbp[chrom], settings.llink,
                                     settings.mu, 0)
-                emeth[chrom] = np.empty(meth[chrom].shape)
-                for i in range(meth[chrom].shape[0]):
-                    model.setMethEnergy(meth[chrom][i], settings.emax)
-                    emeth[chrom][i] = model.getMethEnergy()
+                eseq[chrom] = np.empty(meth_prob[chrom].shape)
+                for i in range(meth_prob[chrom].shape[0]):
+                    # pseq = 1 - pmeth
+                    model.setSeqEnergy(1.0-meth_prob[chrom][i], settings.emax)
+                    eseq[chrom][i] = model.getSeqEnergy()
 
         # Adjust the chemical potential if needed
         override = {}
         if use_zero_point_mu:
-            avg_emeth = np.empty(len(chroms))
+            avg_eseq = np.empty(len(chroms))
             for i,chrom in enumerate(chroms):
-                avg_emeth[i] = np.median(emeth[chrom])
-            avg_emeth = np.mean(avg_emeth)
-            print(f"Using zero point mu: {avg_emeth}")
-            override["mu"] = avg_emeth
+                avg_eseq[i] = np.median(eseq[chrom])
+            avg_eseq = np.mean(avg_eseq)
+            print(f"Using zero point mu: {avg_eseq}")
+            override["mu"] = avg_eseq
             
         # Prepare the dataset object
-        dataset = SimDataset.create(chroms = chroms, nmol = nmol, nsim = nsim,
-                                    nbp = nbp, settings = settings,
-                                    out_path = out_path, emeth = emeth)
+        dataset = SimDataset.create(chroms=chroms, nmol=nmol, nsim=nsim,
+                                    nbp=nbp, settings=settings,
+                                    out_path=out_path, eseq=eseq)
         
         # Generate random seeds
         def seed_generator(parent_seed):
@@ -311,13 +315,14 @@ class SimManager:
                 molidxs = np.arange(nmol[chrom])[mols[chrom]]
                 for molidx in molidxs:
                     idx = int(molidx)
-                    data = np.asarray(meth[chrom][molidx,:],
+                    # pseq = 1 - pmeth
+                    pseq = np.asarray(1.0-meth_prob[chrom][molidx,:],
                                       dtype=np.float64).tobytes()
                     for run in range(nsim):
                         sim_path = dataset.sim_path(chrom, idx, run)
                         yield SimParams(chrom=chrom, mol=idx, run=run,
                                         settings=settings, seed=next(seed_gen),
-                                        meth=data, out_type=out_type,
+                                        seq_prob=pseq, out_type=out_type,
                                         out_path=sim_path, override=override)
         param_gen = params_generator(settings)
         
@@ -386,11 +391,11 @@ class SimManager:
             sim_dir = Path(p.out_path).parents[0]
             sim_dir.mkdir(exist_ok=True, parents=True)
             # Initialize the methylation energy landscape
-            meth_list = np.frombuffer(p.meth, dtype=np.float64).tolist()
-            nbp = len(meth_list)
+            pseq_list = np.frombuffer(p.seq_prob, dtype=np.float64).tolist()
+            nbp = len(pseq_list)
             # Create the cpp backend Monte Carlo simulation model
             model = NucPosModel(nucbp, nbp, llink, mu, p.seed)
-            model.setMethEnergy(meth_list, emax)
+            model.setSeqEnergy(pseq_list, emax)
             # For tracking all simulation data
             model.addTracker(
                 sim.createDump(print_freq, str(p.out_path), p.out_type))

@@ -1,7 +1,8 @@
 # containers.py
 
-from collections.abc import MutableMapping
+from collections.abc import MutableMapping, Mapping
 from typing import Dict, Any, Iterator
+from dataclasses import fields
 import pandas as pd
 
 class DataFrameMap(MutableMapping):
@@ -61,3 +62,21 @@ class FixedKeyMap(MutableMapping):
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self._data!r})"
+
+class DataclassPublicProxy(Mapping):
+    def __init__(self, obj):
+        self._obj = obj
+        # Identify public fields once during initialization
+        self._keys = [f.name for f in fields(obj)
+                      if not f.name.startswith('_')]
+
+    def __getitem__(self, key):
+        if key in self._keys:
+            return getattr(self._obj, key)
+        raise KeyError(key)
+
+    def __iter__(self):
+        yield from self._keys
+
+    def __len__(self):
+        return len(self._keys)

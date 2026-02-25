@@ -13,7 +13,7 @@ from typing import Tuple, Self, Dict, Any, Callable, List
 from collections import Counter
 from collections.abc import Iterator, Iterable, Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed, Future
-from ..containers import DataFrameMap, FixedKeyMap
+from ..containers import DataFrameMap, FixedKeyMap, DataclassPublicProxy
 from .config import SimSettings
 from .. import utils
 from .. import h5_utils
@@ -360,8 +360,8 @@ class SimDataset:
     _nsim : int
     _nbp : Mapping[str,int]
     _settings : SimSettings
-    _emeth : Mapping[str,np.ndarray]
-    _view_emeth : Mapping[str,np.ndarray]
+    _eseq : Mapping[str,np.ndarray]
+    _view_eseq : Mapping[str,np.ndarray]
     _raw_path : Path    
     _path_map : SimPathMapper
     _analysis : Mapping[str, DataFrameMap]
@@ -381,7 +381,7 @@ class SimDataset:
                 settings : SimSettings,
                 raw_path : Path,
                 path_map : SimPathMapper,
-                emeth : Mapping[str, np.ndarray] | None):
+                eseq : Mapping[str, np.ndarray] | None):
         # Some validations
         if nsim <= 0:
             raise ValueError("Number of simulations must be positive")
@@ -405,13 +405,13 @@ class SimDataset:
         obj._analysis = {chrom : DataFrameMap() for chrom in obj._chroms}
         obj._global_analysis = DataFrameMap()        
         obj._raw_accessor = cls.SimDataAccessor(obj)
-        obj._emeth = emeth
-        if obj._emeth is None:
-            obj._view_emeth = {chrom:np.nan for chrom in chroms}
+        obj._eseq = eseq
+        if obj._eseq is None:
+            obj._view_eseq = {chrom:np.nan for chrom in chroms}
         else:
-            obj._view_emeth = {chrom:obj._emeth[chrom] for chrom in chroms}
+            obj._view_eseq = {chrom:obj._eseq[chrom] for chrom in chroms}
             for chrom in chroms:
-                obj._view_emeth[chrom].flags.writeable = False
+                obj._view_eseq[chrom].flags.writeable = False
         return obj
         
     @classmethod
@@ -422,7 +422,7 @@ class SimDataset:
                nbp : int | Mapping[str,int],
                settings : SimSettings,
                out_path : str | Path,
-               emeth : np.ndarray | Mapping[str,np.ndarray] | None = None) \
+               eseq : np.ndarray | Mapping[str,np.ndarray] | None = None) \
                -> Self:
         """
         Create a new simulation dataset with the specified parameters.
@@ -448,8 +448,9 @@ class SimDataset:
             sweeps) that apply to all simulations in the dataset.
         out_path : str or pathlib.Path
             The directory path where the dataset and raw data will be stored.
-        emeth : np.ndarray or None, default None
-            The energy landscape associated with the methylation data.
+        eseq : np.ndarray or None, default None
+            The sequence-specific energy landscape derived from the
+            methylation data.
         
         Returns
         -------
@@ -485,7 +486,7 @@ class SimDataset:
             raw_path.mkdir(exist_ok=True, parents=True)
         path_map = SimPathMapper(raw_path, max_nmol)
         return cls._create(chroms = chroms, nmol = nmol, nsim = nsim,
-                           nbp = nbp, settings = settings, emeth = emeth,
+                           nbp = nbp, settings = settings, eseq = eseq,
                            raw_path = raw_path, path_map = path_map)
     
     @classmethod
@@ -542,15 +543,15 @@ class SimDataset:
             gset = gmeta["settings"]
             settings = SimSettings(**dict(gset.attrs.items()))
             # Load methylation energy (if stored)
-            if "emeth" in gmeta:
-                gemeth = gmeta["emeth"]
-                emeth = {}
+            if "eseq" in gmeta:
+                geseq = gmeta["eseq"]
+                eseq = {}
                 for chrom in chroms:
-                    emeth[chrom] = gemeth[chrom][()]
+                    eseq[chrom] = geseq[chrom][()]
             else:
-                emeth = None
+                eseq = None
             obj = cls._create(chroms = chroms, nmol = nmol, nsim = nsim,
-                              nbp = nbp, settings = settings, emeth = emeth,
+                              nbp = nbp, settings = settings, eseq = eseq,
                               raw_path = raw_path, path_map = path_map)
             # Load any analysis data
             gana = h5stream["analysis"]
@@ -600,10 +601,10 @@ class SimDataset:
                 for field in fields(self._settings):
                     gset.attrs[field.name] = getattr(self._settings,
                                                      field.name)
-                if self._emeth is not None:
-                    gemeth = gmeta.create_group("emeth")
+                if self._eseq is not None:
+                    geseq = gmeta.create_group("eseq")
                     for chrom in self._chroms:
-                        gemeth.create_dataset(chrom, data=self._emeth[chrom],
+                        geseq.create_dataset(chrom, data=self._eseq[chrom],
                                               compression="gzip")
             # Save any analysis data
             if "analysis" in h5stream: del h5stream["analysis"]
@@ -806,27 +807,14 @@ class SimDataset:
         """        
         return self._path_map.params_to_path(chrom, mol, run)
 
-    def settings(self, name) -> Any:
+    @property
+    def settings(self) -> Mapping[str,Any]:
         """
-        Retrieve the value of a specific simulation parameter used in
-        generating the dataset.
-
-        Parameters
-        ----------
-        name : str
-            The name of the parameter.
-
-        Returns
-        -------
-        Any
-            The value of the specified parameter.
-
-        Raises
-        ------
-        KeyError
-            If the parameter does not exist.
-        """        
-        return getattr(self._settings,name)
+        A read-only, live view of the simulation settings and parameters.
+        
+        Provide zero-copy access to the underlying simulation settings object.
+        """
+        return DataclassPublicProxy(self._settings)
     
     @property
     def chroms(self) -> Iterable[str]:
@@ -882,10 +870,10 @@ class SimDataset:
         return MappingProxyType(self._nbp)
     
     @property
-    def emeth(self) -> Mapping[str, np.ndarray]:
+    def eseq(self) -> Mapping[str, np.ndarray]:
         """
-        The energy landscape associated with the methylation data for each
-        molecule in each chromosome.
+        The seqeunce-specific energy landscape derived from the methylation
+        data for each molecule in each chromosome.
 
         Returns
         -------
@@ -894,7 +882,7 @@ class SimDataset:
             the methylation data for those chromosome molecules. This view is
             immutable; neither keys nor counts can be modified.
         """        
-        return MappingProxyType(self._view_emeth)
+        return MappingProxyType(self._view_eseq)
     
     @property
     def raw(self) -> SimDataAccessor:

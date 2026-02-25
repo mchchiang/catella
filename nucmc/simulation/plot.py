@@ -24,7 +24,7 @@ class SimPlot:
     linewidth : int = 1.0
     """The border and axis line thickness for all plots."""
     
-    fontsize : int = 20
+    fontsize : int = 14
     """The base font size for labels, ticks, and titles."""
     
     cmap : str = "viridis"
@@ -76,21 +76,21 @@ class SimPlot:
             xstr = name if name is not None else "x"
             raise ValueError(f"'{name}' must be a non-negative power of 10.")
         return log10x
-        
+
     @_apply_style
-    def plot_nuc_pos(self, *,
-                     chrom : str,
-                     mol : int,
-                     run : int,
-                     dataset : SimDataset,
-                     tstart : int | None = None,
-                     tend : int | None = None,
-                     tscale : int = 1000000,
-                     xscale : int = 1000,
-                     out_file : str | Path | None = None,
-                     show : bool = True):
+    def plot_energy(self, *,
+                    chrom : str,
+                    mol : int,
+                    run : int,
+                    dataset : SimDataset,
+                    tstart : int | None = None,
+                    tend : int | None = None,
+                    tscale : int = 1000000,
+                    out_file : str | Path | None = None,
+                    show : bool = True):
         """
-        Plot the nucleosome position heatmap for a specific molecule over time.
+        Plot the total energy of the system for a specific simulation run
+        of a molecule over time.
 
         Parameters
         ----------
@@ -107,15 +107,99 @@ class SimPlot:
             simulation.
         tend : int, optional
             Ending time step. If None, defaults to the end of the simulation.
-        tscale : int, default=1000000
+        tscale : int, default 1000000
             Time scaling factor (must be a power of 10) for the y-axis labels.
-        xscale : int, default=1000
+        out_file : str or Path, optional
+            Path to save the generated figure. Directories are created if
+            they do not exist.
+        show : bool, default True
+            Whether to display the plot using `plt.show()`.
+
+        Raises
+        ------
+        ValueError
+            If `tend` < `tstart` or if scaling factors are not powers of 10.
+        """
+        # Check the time values are valid
+        if tstart is not None and tend is not None and tend < tstart:
+            raise ValueError("'tend' must be greater than 'tstart'.")
+
+        tpow = int(self._log10(tscale, "tscale"))
+        
+        # Retrieve the data
+        data = dataset.raw[chrom,mol,run]
+        
+        # Normalize time indices and validate time values
+        nframes = len(data.time)
+        start_idx = 0 if tstart is None else data.time_index(tstart)
+        end_idx = nframes if tend is None else \
+            min(data.time_index(tend)+1, nframes)
+        time = data.time[start_idx:end_idx] / tscale
+        energy = data.energy[start_idx:end_idx]
+        
+        # Plot the nucleosome position as a heat map        
+        fig, ax = plt.subplots()
+        ax.plot(time, energy)
+        
+        tpow_str = rf"$10^{{{tpow}}}$"
+        ax.set_xlabel(rf"Time $t$ [{tpow_str} MCS]")
+        ax.set_ylabel(rf"Energy [$k_BT$]")        
+
+        fig.tight_layout()
+        
+        if show: plt.show()
+
+        if out_file is not None:
+            out_path = Path(out_file)
+            out_dir = out_path.parents[0]
+            out_dir.mkdir(exist_ok=True, parents=True)
+            fig.savefig(out_file)
+    
+    
+    @_apply_style
+    def plot_nuc_pos(self, *,
+                     chrom : str,
+                     mol : int,
+                     run : int,
+                     dataset : SimDataset,
+                     tstart : int | None = None,
+                     tend : int | None = None,
+                     tscale : int = 1000000,
+                     xscale : int = 1000,
+                     out_file : str | Path | None = None,
+                     plot_eseq : bool = False,
+                     show : bool = True):
+        """
+        Plot the nucleosome position heatmap for a specific simulation run of
+        a molecule over time.
+
+        Parameters
+        ----------
+        chrom : str
+            Chromosome identifier.
+        mol : int
+            Molecule index within the dataset.
+        run : int
+            Simulation run index.
+        dataset : SimDataset
+            The dataset object containing raw simulation results.
+        tstart : int, optional
+            Starting time step. If None, defaults to the beginning of the
+            simulation.
+        tend : int, optional
+            Ending time step. If None, defaults to the end of the simulation.
+        tscale : int, default 1000000
+            Time scaling factor (must be a power of 10) for the y-axis labels.
+        xscale : int, default 1000
             Spatial scaling factor (must be a power of 10) for the x-axis
             labels.
         out_file : str or Path, optional
             Path to save the generated figure. Directories are created if
             they do not exist.
-        show : bool, default=True
+        plot_seq : bool, default False
+            Whether to plot the underlying sequence-specific nucleosome binding
+            energy.
+        show : bool, default True
             Whether to display the plot using `plt.show()`.
 
         Raises
@@ -145,18 +229,47 @@ class SimPlot:
         tstart = data.time[start_idx]
         tend = data.time[end_idx-1]
         
-        # Plot the nucleosome position as a heat map        
-        fig, ax = plt.subplots()
+        # Set up the figure
+        if plot_eseq:
+            nplots = 2
+            fig, ax = plt.subplots(nrows=nplots, ncols=1,
+                                   gridspec_kw={"height_ratios": [4, 1]})
+            w, h = fig.get_size_inches()
+            fig.set_size_inches(w, h*1.25) 
+        else:
+            nplots = 1
+            fig, ax = plt.subplots(nrows=nplots, ncols=1)
+            ax = [ax]
+
+        # Plot the nucleosome position as a heat map            
         norm = Normalize(vmin=0, vmax=1)
-        ax.imshow(occup, cmap=self.cmap, norm=norm, aspect="auto",
-                  origin="lower", interpolation="none",
-                  extent=[0,occup.shape[1]/xscale,tstart/tscale,tend/tscale])
+        ax[0].imshow(occup, cmap=self.cmap, norm=norm, aspect="auto",
+                     origin="lower", interpolation="none",
+                     extent=[0, data.nbp/xscale, tstart/tscale, tend/tscale])
         xpow_str = rf"$10^{{{xpow}}}$"
         tpow_str = rf"$10^{{{tpow}}}$"
-        ax.invert_yaxis()
-        ax.set_xlabel(rf"Position $x$ [{xpow_str} bp]")
-        ax.set_ylabel(rf"Time $t$ [{tpow_str} MCS]")
+        ax[0].invert_yaxis()
+        ax[0].set_xlim(0, data.nbp/xscale)
+        if plot_eseq:
+            ax[0].get_xaxis().set_visible(False)
+        ax[0].set_ylabel(rf"Time $t$ [{tpow_str} MCS]")
 
+        # Plot the sequence energy if needed
+        if plot_eseq:
+            eseq = dataset.eseq[chrom][mol,:]
+            ax[1].plot(np.arange(0,data.nbp)/xscale, eseq)
+            ax[1].set_ylabel(r"$E_{\text{seq}}$ [$k_BT$]")            
+            ax[1].set_xlim(0, data.nbp/xscale)
+            med = np.median(eseq)
+            sigma = np.median(np.abs(eseq-med)) * 1.4826 # MAD to SD
+            nsig = 3 # Plot up to how many sigma
+            emin = max(-nsig*sigma+med,0)
+            emax = min(med+nsig*sigma,dataset.settings["emax"])
+            ax[1].set_ylim(emin,emax)
+
+        # Common x-axis label
+        ax[nplots-1].set_xlabel(rf"Position $x$ [{xpow_str} bp]")
+        
         fig.tight_layout()
         
         if show: plt.show()
@@ -175,6 +288,7 @@ class SimPlot:
                    occup_name : str = "occup",                       
                    xscale : int = 1000,
                    out_file : str | Path | None = None,
+                   plot_eseq : bool = False,
                    show : bool = True):
         """
         Plot the nucleosome occupancy across all molecules for a specific
@@ -200,6 +314,9 @@ class SimPlot:
         out_file : str or Path, optional
             Path to save the generated figure. Directories are created if
             they do not exist.
+        plot_seq : bool, default False
+            Whether to plot the underlying sequence-specific nucleosome binding
+            energy, averaged across all molecules.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
@@ -219,16 +336,47 @@ class SimPlot:
                               name=occup_name)
         occup = dataset.analysis[chrom][occup_name]
 
-        # Plot the nucleosome position as a heat map        
-        fig, ax = plt.subplots()
-        norm = Normalize(vmin=0, vmax=1)
-        ax.imshow(occup, cmap=self.cmap, norm=norm, aspect="auto",
-                  origin="lower", interpolation="none",
-                  extent=[0,occup.shape[1]/xscale,0,occup.shape[0]])
-        xpow_str = rf"$10^{{{xpow}}}$"
-        ax.set_xlabel(rf"Position $x$ [{xpow_str} bp]")
-        ax.set_ylabel(r"Molecule index")
+        # Set up the figure
+        if plot_eseq:
+            nplots = 2
+            fig, ax = plt.subplots(nrows=nplots, ncols=1,
+                                   gridspec_kw={"height_ratios": [4, 1]})
+            w, h = fig.get_size_inches()
+            fig.set_size_inches(w, h*1.25) 
+        else:
+            nplots = 1
+            fig, ax = plt.subplots(nrows=nplots, ncols=1)
+            ax = [ax]
 
+        
+        # Plot the nucleosome position as a heat map
+        nbp = dataset.nbp[chrom]
+        norm = Normalize(vmin=0, vmax=1)
+        ax[0].imshow(occup, cmap=self.cmap, norm=norm, aspect="auto",
+                     origin="lower", interpolation="none",
+                     extent=[0,occup.shape[1]/xscale,0,occup.shape[0]])
+        xpow_str = rf"$10^{{{xpow}}}$"
+        ax[0].set_xlim(0, nbp/xscale)
+        if plot_eseq:
+            ax[0].get_xaxis().set_visible(False)
+        ax[0].set_ylabel(r"Molecule index")
+
+        # Plot the sequence energy if needed
+        if plot_eseq:
+            eseq = np.mean(dataset.eseq[chrom], axis=0)
+            ax[1].plot(np.arange(0,nbp)/xscale, eseq)
+            ax[1].set_ylabel(r"$\langle E_{\text{seq}} \rangle$ [$k_BT$]")
+            ax[1].set_xlim(0, nbp/xscale)
+            med = np.median(eseq)
+            sigma = np.median(np.abs(eseq-med)) * 1.4826 # MAD to SD
+            nsig = 3 # Plot up to how many sigma
+            emin = max(-nsig*sigma+med,0)
+            emax = min(med+nsig*sigma,dataset.settings["emax"])
+            ax[1].set_ylim(emin,emax)
+
+        # Common x-axis label
+        ax[nplots-1].set_xlabel(rf"Position $x$ [{xpow_str} bp]")
+        
         fig.tight_layout()
         
         if show: plt.show()

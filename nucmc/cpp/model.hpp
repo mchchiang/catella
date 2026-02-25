@@ -45,7 +45,7 @@ private:
   int npos;
   int maxNumOfNuc;
   double temp;
-  std::vector<double> emeth;
+  std::vector<double> eseq;
   std::vector<double> erep;
   std::vector<int> nucpos; // Leftmost position of each nucleosome
 
@@ -62,8 +62,8 @@ public:
   NucPosModel(int nucbp, int nbp, int llink, double mu, ulint seed);
   NucPosModel(const Params& params);
   ~NucPosModel();
-  void setMethEnergy(std::string dataFile, double emax = 100);
-  void setMethEnergy(const std::vector<double>& meth, double emax = 100);
+  void setSeqEnergy(std::string dataFile, double emax);
+  void setSeqEnergy(const std::vector<double>& pseq, double emax);
   void update();
   void reset();
   void output(lint time);
@@ -71,7 +71,7 @@ public:
   const std::vector<int>& getNucPos() const;
   double getEnergy() const;
   double getTemp() const;
-  const std::vector<double>& getMethEnergy() const;
+  const std::vector<double>& getSeqEnergy() const;
   const Params& getParams() const;
   void addTracker(std::shared_ptr<Tracker> tracker);
 };

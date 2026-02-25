@@ -27,11 +27,11 @@ PYBIND11_MODULE(nucmc_cpp, m) {
   modelcls.def("run", &NucPosModel::run);
   modelcls.def("reset", &NucPosModel::reset);
   modelcls.def("addTracker", &NucPosModel::addTracker);
-  modelcls.def("getMethEnergy", &NucPosModel::getMethEnergy);
-  modelcls.def("setMethEnergy", [](NucPosModel& self, vector<double> data,
+  modelcls.def("getSeqEnergy", &NucPosModel::getSeqEnergy);
+  modelcls.def("setSeqEnergy", [](NucPosModel& self, vector<double> pseq,
 				   double emax) {
-    self.setMethEnergy(data, emax);
-  }, py::arg("data"), py::arg("emax") = 100);
+    self.setSeqEnergy(pseq, emax);
+  }, py::arg("pseq"), py::arg("emax"));
 
   py::enum_<NucPosModel::Cooling>(modelcls, "Cooling")
     .value("Linear", NucPosModel::Cooling::Linear)

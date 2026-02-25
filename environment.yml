@@ -19,8 +19,6 @@ dependencies:
   - typer
   - rich
   - multiprocess
-  # Tutorial dependencies
-  #- jupyterlab
   # Documentation dependencies
   - nbsphinx
   - sphinx

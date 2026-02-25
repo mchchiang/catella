@@ -56,18 +56,18 @@ nucleosome) [#f1]_. If control datasets are unavailable, we set
 
 To convert :math:`M(x)` into a formal probability of methylation
 :math:`p_M(x)` that lies between 0 and 1, we rescale the score linearly while
-setting those scores ranking below 1% to 0 and those ranking above 99% to 1,
-i.e.,
+setting those scores ranking below 0.1% to 0 and those ranking above 99.9% to
+1, i.e.,
 
 .. math::
    
-   p_M(x) = \frac{\widetilde{M(x)} - M_{p=0.01}}{M_{p=0.99}-M_{p=0.01}} \;,
+   p_M(x) = \frac{\widetilde{M(x)} - M_{p=0.001}}{M_{p=0.999}-M_{p=0.001}} \;,
 
 where
 
 .. math::
    
-   \widetilde{M(x)} = \text{min}[\text{max}[M(x),M_{p=0.01}],M_{p=0.99}] \;.
+   \widetilde{M(x)} = \text{min}[\text{max}[M(x),M_{p=0.001}],M_{p=0.999}] \;.
 
 The sequence-specific probability of nucleosome binding
 :math:`p_{\text{seq}}(x)` is taken as the complementary probability:

@@ -127,13 +127,13 @@ nucleosome) <a class="footnote-reference brackets" href="#f1" id="id1" role="doc
 <span class="eqno">(3)<a class="headerlink" href="#equation-model-2" title="Link to this equation"></a></span>\[M(x) = \langle S_{\text{test}} \rangle_{\text{bin}}(x) \;.\]</div>
 <p>To convert <span class="math notranslate nohighlight">\(M(x)\)</span> into a formal probability of methylation
 <span class="math notranslate nohighlight">\(p_M(x)\)</span> that lies between 0 and 1, we rescale the score linearly while
-setting those scores ranking below 1% to 0 and those ranking above 99% to 1,
-i.e.,</p>
+setting those scores ranking below 0.1% to 0 and those ranking above 99.9% to
+1, i.e.,</p>
 <div class="math notranslate nohighlight" id="equation-model-3">
-<span class="eqno">(4)<a class="headerlink" href="#equation-model-3" title="Link to this equation"></a></span>\[p_M(x) = \frac{\widetilde{M(x)} - M_{p=0.01}}{M_{p=0.99}-M_{p=0.01}} \;,\]</div>
+<span class="eqno">(4)<a class="headerlink" href="#equation-model-3" title="Link to this equation"></a></span>\[p_M(x) = \frac{\widetilde{M(x)} - M_{p=0.001}}{M_{p=0.999}-M_{p=0.001}} \;,\]</div>
 <p>where</p>
 <div class="math notranslate nohighlight" id="equation-model-4">
-<span class="eqno">(5)<a class="headerlink" href="#equation-model-4" title="Link to this equation"></a></span>\[\widetilde{M(x)} = \text{min}[\text{max}[M(x),M_{p=0.01}],M_{p=0.99}] \;.\]</div>
+<span class="eqno">(5)<a class="headerlink" href="#equation-model-4" title="Link to this equation"></a></span>\[\widetilde{M(x)} = \text{min}[\text{max}[M(x),M_{p=0.001}],M_{p=0.999}] \;.\]</div>
 <p>The sequence-specific probability of nucleosome binding
 <span class="math notranslate nohighlight">\(p_{\text{seq}}(x)\)</span> is taken as the complementary probability:</p>
 <div class="math notranslate nohighlight" id="equation-model-5">

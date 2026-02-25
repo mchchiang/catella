@@ -27,11 +27,14 @@ extensions = [
     'sphinx.ext.mathjax',
 ]
 
-mathjax_config = {
-    'tex2jax': {
+mathjax4_config = {
+    'tex': {
         'inlineMath': [ ["$","$"], ["\\(","\\)"] ],
         'displayMath': [ ["$$","$$"], ["\\[","\\]"] ],
         'processEscapes': True,
+        'tags': 'ams',        # Enable numbering
+        'tagSide': 'right',   # Place numbers on the RHS
+        'tagAlign': 'center', # Vertically center the number
     },
 }
 
@@ -40,6 +43,16 @@ exclude_patterns = []
 
 autosummary_generate = True
 autodoc_member_order = 'bysource'
+
+# Disable global numbering
+numfig = False
+math_numfig = False
+
+# Make sure equations are numbered
+math_number_all = True
+
+def setup(app):
+    app.add_css_file("custom.css")
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output

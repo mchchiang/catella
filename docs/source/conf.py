@@ -22,6 +22,7 @@ release = '0.1.0'
 extensions = [
     'nbsphinx',
     'sphinx.ext.autodoc',
+    'sphinx_rtd_theme',
     'sphinx.ext.napoleon',
     'sphinx.ext.autosummary',
     'sphinx.ext.mathjax',

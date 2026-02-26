@@ -52,7 +52,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../model.html">Simulation Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../api.html">API Reference</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Tutorial 1: Quick Start</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#Pre-requisite-data-files">Pre-requisite data files</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#Prerequisite-data-files">Prerequisite data files</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#Loading-the-data-files-and-performing-normalization">Loading the data files and performing normalization</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#Performing-nucleosome-positioning-sampling-simulations">Performing nucleosome positioning sampling simulations</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#Analyzing-the-simulation-results">Analyzing the simulation results</a></li>
@@ -86,14 +86,17 @@
              
   <section id="Tutorial-1:-Quick-Start">
 <h1>Tutorial 1: Quick Start<a class="headerlink" href="#Tutorial-1:-Quick-Start" title="Link to this heading"></a></h1>
-<p>This tutorial explains how to use the higher-level API to perform nucleosome positioning Monte-Carlo simulations using the <code class="docutils literal notranslate"><span class="pre">nucmc</span></code> package. The following steps are performed within a Jupyter notebook environment. Jupyter notebook is not automatically provided within the supplied Conda environment file, but it can be installed as follows:</p>
+<p>This tutorial explains how to use the higher-level API of the <code class="docutils literal notranslate"><span class="pre">nucmc</span></code> package to perform nucleosome positioning Monte Carlo simulations. The following steps are conducted within a Jupyter notebook environment. Jupyter notebook is not automatically provided within the supplied Conda environment, but it can be installed as follows:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>conda<span class="w"> </span>activate<span class="w"> </span>nucmc
 conda<span class="w"> </span>install<span class="w"> </span>jupyterlab<span class="w"> </span>ipywidgets
 </pre></div>
 </div>
-<section id="Pre-requisite-data-files">
-<h2>Pre-requisite data files<a class="headerlink" href="#Pre-requisite-data-files" title="Link to this heading"></a></h2>
-<p>To begin, we download some example methylation footprinting data for the promoter region of the gene <em>Oct4</em>, with a coverage of 5 kbp. These data are available from the GitLab repository, and they would have been automatically downloaded when doing <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">clone</span></code> of the project and stored in the directory <code class="docutils literal notranslate"><span class="pre">example/tut01_quick_start/experiment/raw_data</span></code>. There are four files in this directory:</p>
+<div class="admonition note">
+<p><strong>Note:</strong> It is not required to use Jupyter notebook to run the commands in this tutorial. Using the terminal and the default Python interpreter will work just fine, although bash commands will need to be run without ‘!’ preceeding it.</p>
+</div>
+<section id="Prerequisite-data-files">
+<h2>Prerequisite data files<a class="headerlink" href="#Prerequisite-data-files" title="Link to this heading"></a></h2>
+<p>To begin, we download some example methylation footprinting data for the promoter region of the gene <em>Oct4</em>, with a coverage of 5 kbp. These data are available from the GitLab repository, and they would have been automatically downloaded when doing <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">clone</span></code> of the project and stored in <code class="docutils literal notranslate"><span class="pre">example/tut01_quick_start/experiment/raw_data</span></code> from the project root directory. There are four files in this directory:</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">segments.size</span></code> - a file containing the size of each DNA fiber segment.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">chromatin.tsv</span></code> - the methylation footprinting scores outputted from ModKit for chromatinized DNA.</p></li>
@@ -118,7 +121,7 @@ chrom   length
 Oct4    5000
 </pre></div></div>
 </div>
-<p>And here is the top few lines of the <code class="docutils literal notranslate"><span class="pre">chromatin.tsv</span></code> file outputted from ModKit (note that these files have already been trimmed to include only the necessary columns in order to reduce file size):</p>
+<p>And here we show the top few lines of the <code class="docutils literal notranslate"><span class="pre">chromatin.tsv</span></code> file generated from ModKit (note that these files have already been trimmed to include only the necessary columns in order to reduce file size):</p>
 <div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
 </pre></div>
@@ -139,7 +142,10 @@ m84140_251219_135204_s2/221451669/ccs   2       Oct4    0       a
 m84140_251219_135204_s2/221451669/ccs   3       Oct4    0       a
 </pre></div></div>
 </div>
-<p><strong>Note:</strong> It is important to keep the header when outputting the data from ModKit. <code class="docutils literal notranslate"><span class="pre">nucmc</span></code> uses this to identify the relevant data columns to keep for any downstream analysis. In particular, it requires data from the following columns (as per modkit <code class="docutils literal notranslate"><span class="pre">extract</span> <span class="pre">full</span></code> output, see <a class="reference external" href="https://nanoporetech.github.io/modkit/intro_extract.html">https://nanoporetech.github.io/modkit/intro_extract.html</a>):</p>
+<div class="admonition note">
+<p><strong>Note:</strong> It is important to keep the header when outputting the data from ModKit. <code class="docutils literal notranslate"><span class="pre">nucmc</span></code> uses this to identify the relevant data columns to keep for any downstream analysis.</p>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">nucmc</span></code> requires data from the following columns of the ModKit output tab-delimited file (as per modkit <code class="docutils literal notranslate"><span class="pre">extract</span> <span class="pre">full</span></code> output, see <a class="reference external" href="https://nanoporetech.github.io/modkit/intro_extract.html">https://nanoporetech.github.io/modkit/intro_extract.html</a>):</p>
 <table class="docutils align-default">
 <thead>
 <tr class="row-odd"><th class="head"><p>Column name</p></th>
@@ -173,7 +179,7 @@ m84140_251219_135204_s2/221451669/ccs   3       Oct4    0       a
 </section>
 <section id="Loading-the-data-files-and-performing-normalization">
 <h2>Loading the data files and performing normalization<a class="headerlink" href="#Loading-the-data-files-and-performing-normalization" title="Link to this heading"></a></h2>
-<p>The first step towards performing the simulations is loading the data above into an <code class="docutils literal notranslate"><span class="pre">MethyPrintExperiment</span></code> object. We set up some variables for convenience:</p>
+<p>The first step towards performing the simulations is loading the data above into an <code class="docutils literal notranslate"><span class="pre">MethPrintExperiment</span></code> object. We set up some variables for convenience:</p>
 <div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
 </pre></div>
@@ -189,7 +195,7 @@ m84140_251219_135204_s2/221451669/ccs   3       Oct4    0       a
 </pre></div>
 </div>
 </div>
-<p>The data files above can be loaded using the <code class="docutils literal notranslate"><span class="pre">nucmc.preprocess</span></code> method. Note that you need to write out the parameter names when passing the arguments:</p>
+<p>The data files above can be loaded using the <code class="docutils literal notranslate"><span class="pre">nucmc.preprocess</span></code> method. Note that you need to write out the parameter names when passing the arguments - this also applies to most methods within the package:</p>
 <div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
 </pre></div>
@@ -214,7 +220,7 @@ Reading example/tut01_quick_start/experiment/raw_data/methylated.tsv ...
 Normalizing against control samples ...
 </pre></div></div>
 </div>
-<p><code class="docutils literal notranslate"><span class="pre">exp_data</span></code> is a <code class="docutils literal notranslate"><span class="pre">MethPrintExperiment</span></code> object, which contains only the relevant attributes from the ModKit output that we need for running the simulations. We can use the <code class="docutils literal notranslate"><span class="pre">raw</span></code> property to access these underlying data. For instance, to view the footprinting data for the chromatinized DNA fiber for the <em>Oct4</em> segment, we do the following:</p>
+<p><code class="docutils literal notranslate"><span class="pre">exp_data</span></code> is a <code class="docutils literal notranslate"><span class="pre">MethPrintExperiment</span></code> object, which contains only the relevant attributes from the ModKit output that we need for running the simulations. We can use the <code class="docutils literal notranslate"><span class="pre">raw</span></code> property to access these underlying data (as <code class="docutils literal notranslate"><span class="pre">MethPrintData</span></code> objects). For instance, to view the methylation footprinting data for the chromatinized DNA fiber (i.e., the test condition) for <em>Oct4</em>, we use the <code class="docutils literal notranslate"><span class="pre">test_data</span></code> property, which returns a Pandas data frame of the underlying data:</p>
 <div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
 </pre></div>
@@ -335,10 +341,43 @@ Normalizing against control samples ...
 <p>240229 rows × 4 columns</p>
 </div></div>
 </div>
+<p>Here, the program has automatically replaced the actual string-based <code class="docutils literal notranslate"><span class="pre">read_id</span></code> of the molecule with <code class="docutils literal notranslate"><span class="pre">mol_index</span></code> (an integer) to save storage space. The actual mapping between <code class="docutils literal notranslate"><span class="pre">mol_index</span></code> and <code class="docutils literal notranslate"><span class="pre">read_id</span></code> (for the test condition) can be accessed using the <code class="docutils literal notranslate"><span class="pre">test_mol_id</span></code> property, and we show here the first 10 of these read IDs:</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">exp_data</span><span class="o">.</span><span class="n">raw</span><span class="p">[</span><span class="s2">&quot;Oct4&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">test_mol_id</span><span class="p">[:</span><span class="mi">10</span><span class="p">]</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
+</pre></div>
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+&lt;StringArray&gt;
+[&#39;m84140_251219_135204_s2/101061342/ccs&#39;,
+ &#39;m84140_251219_135204_s2/101583220/ccs&#39;,
+ &#39;m84140_251219_135204_s2/105646491/ccs&#39;,
+  &#39;m84140_251219_135204_s2/10949257/ccs&#39;,
+ &#39;m84140_251219_135204_s2/109513734/ccs&#39;,
+ &#39;m84140_251219_135204_s2/110694551/ccs&#39;,
+ &#39;m84140_251219_135204_s2/112396351/ccs&#39;,
+ &#39;m84140_251219_135204_s2/115676811/ccs&#39;,
+  &#39;m84140_251219_135204_s2/12389686/ccs&#39;,
+ &#39;m84140_251219_135204_s2/124256946/ccs&#39;]
+Length: 10, dtype: str
+</pre></div></div>
+</div>
+<p>We can access the unmethylated and methylated fiber raw data in a similar way using the properties <code class="docutils literal notranslate"><span class="pre">unmeth_data</span></code> and <code class="docutils literal notranslate"><span class="pre">meth_data</span></code>, respectively, and their molecule read IDs using <code class="docutils literal notranslate"><span class="pre">unmeth_mol_id</span></code> and <code class="docutils literal notranslate"><span class="pre">meth_mol_id</span></code>.</p>
+<div class="admonition note">
+<p><strong>Note:</strong> Any operations on or modifications of the Pandas data frames containing the raw data are done on a copy, so the original data are unaffected. The data frame copies are not saved; hence, it is best to utilize the <code class="docutils literal notranslate"><span class="pre">analysis</span></code> property (see below) to add any modifications or annotations to the data. Note also that molecule read IDs are returned as non-writeable NumPy arrays.</p>
+</div>
 <p>As well as the raw data, the object also contains the normalized methylation signal, or the methylation probability <span class="math notranslate nohighlight">\(p_M(x)\)</span> for each molecule (see Simulation Model on how we defined it). Since we have provided control datasets (fully methlyated and unmethylated DNA fibers), the normalization was done taking into account of them. <span class="math notranslate nohighlight">\(p_M\)</span> is stored in <code class="docutils literal notranslate"><span class="pre">exp_data.analysis</span></code>, a dictionary of data frames containing any analysis results for each chromosome or DNA segment. More specifically,
 we look for the column <code class="docutils literal notranslate"><span class="pre">meth_prob</span></code> in the data frame:</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">exp_data</span><span class="o">.</span><span class="n">analysis</span><span class="p">[</span><span class="s2">&quot;Oct4&quot;</span><span class="p">][</span><span class="s2">&quot;meth_prob&quot;</span><span class="p">]</span>
@@ -346,7 +385,7 @@ we look for the column <code class="docutils literal notranslate"><span class="p
 </div>
 </div>
 <div class="nboutput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:
 </pre></div>
 </div>
 <div class="output_area rendered_html docutils container">
@@ -663,7 +702,7 @@ we look for the column <code class="docutils literal notranslate"><span class="p
 </div>
 <p>This is now a good checkpoint to save the processed experimental data, which can be done using the <code class="docutils literal notranslate"><span class="pre">save</span></code> method. This stores the relevant raw data and analyses we have done into a single HDF5 file.</p>
 <div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[8]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">exp_h5</span> <span class="o">=</span> <span class="n">exp_dir</span><span class="o">/</span><span class="s2">&quot;analysis.h5&quot;</span>
@@ -673,7 +712,7 @@ we look for the column <code class="docutils literal notranslate"><span class="p
 </div>
 <p>We can reload this file later using the <code class="docutils literal notranslate"><span class="pre">load</span></code> method:</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[8]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[9]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">nucmc.experiment.methdata</span><span class="w"> </span><span class="kn">import</span> <span class="n">MethPrintExperiment</span>
@@ -732,7 +771,7 @@ MethPrintExperiment(chroms, raw, analysis, global_analysis)
 </table>
 <p>The file can be in <code class="docutils literal notranslate"><span class="pre">.json</span></code> or <code class="docutils literal notranslate"><span class="pre">.yml</span></code> format. For example, in <code class="docutils literal notranslate"><span class="pre">.yml</span></code> format the file looks as follows:</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[9]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="o">!</span>cat<span class="w"> </span>example/tut01_quick_start/simulation/sim_params.yml
@@ -757,7 +796,7 @@ emax:        10.0
 </div>
 <p>Alternatively, we can specify these parameters directly within python by utilizing the <code class="docutils literal notranslate"><span class="pre">SimSettings</span></code> object:</p>
 <div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[11]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">nucmc.simulation.engine</span><span class="w"> </span><span class="kn">import</span> <span class="n">SimSettings</span>
@@ -775,19 +814,21 @@ emax:        10.0
 </pre></div>
 </div>
 </div>
-<p>Next, we need extract the methylation probabilities <span class="math notranslate nohighlight">\(p_M\)</span> from the processed data and store them in a dictionary:</p>
+<p>Sometimes it may not be simple to determine an appropriate value for the chemical potential <span class="math notranslate nohighlight">\(\mu\)</span> <em>a priori</em>. One could start with setting <span class="math notranslate nohighlight">\(\mu\)</span> so that the energy landscape is effectively shifted with its median zeroed (or the “zero-point” energy), i.e., <span class="math notranslate nohighlight">\(\mu_z = \text{median}(E_{\text{seq}})\)</span>, as this should be the typical energy scale when nucleosomes will start binding. This can be done be setting <span class="math notranslate nohighlight">\(\mu\)</span> to an arbitrary number (say 0) in the parameter list, and the use
+the option <code class="docutils literal notranslate"><span class="pre">use_zero_point_mu</span></code> in <code class="docutils literal notranslate"><span class="pre">nucmc.run</span></code> to modify <span class="math notranslate nohighlight">\(\mu = \mu_z\)</span>.</p>
+<p>Next, we need to extract the methylation probabilities <span class="math notranslate nohighlight">\(p_M\)</span> from the processed data and store them in a dictionary:</p>
 <div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[11]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[12]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">meth_prob</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;Oct4&quot;</span><span class="p">:</span> <span class="n">exp_data</span><span class="o">.</span><span class="n">analysis</span><span class="p">[</span><span class="s2">&quot;Oct4&quot;</span><span class="p">][</span><span class="s2">&quot;meth_prob&quot;</span><span class="p">]}</span>
 </pre></div>
 </div>
 </div>
-<p>We now use the <code class="docutils literal notranslate"><span class="pre">nucmc.run</span></code> method to run the simulations. This method requires specifying the chromosomes (DNA segments) we would like to perform the sampling, the number of simulations to conduct (<code class="docutils literal notranslate"><span class="pre">nsim</span></code>), the simulation parameters (<code class="docutils literal notranslate"><span class="pre">settings</span></code>) and the methylation probability profile for each molecule in each chromosome (<code class="docutils literal notranslate"><span class="pre">meth_prob</span></code>). We also need to specify the output directory (<code class="docutils literal notranslate"><span class="pre">out_path</span></code>) where the simulation results will be stored. The simulations can be run with in parallel using
-multiple processes; this can be set using <code class="docutils literal notranslate"><span class="pre">nworker</span></code> (default is 1). By default, the verbose option is set to <code class="docutils literal notranslate"><span class="pre">True</span></code>, allowing a progress bar to be displayed in the terminal when the simulations are running, with an estimation of the time remaining before all jobs are complete.</p>
+<p>We now use the <code class="docutils literal notranslate"><span class="pre">nucmc.run</span></code> method to run the simulations. This method requires specifying the chromosomes (DNA segments) we would like to perform the sampling, the number of simulations to conduct per molecule (<code class="docutils literal notranslate"><span class="pre">nsim</span></code>), the simulation parameters (<code class="docutils literal notranslate"><span class="pre">settings</span></code>) and the methylation probability profile for each molecule in each chromosome (<code class="docutils literal notranslate"><span class="pre">meth_prob</span></code>). We also need to specify the output directory (<code class="docutils literal notranslate"><span class="pre">out_path</span></code>) where the simulation results will be stored. The simulations can be run in
+parallel using multiple processes, and this is set using <code class="docutils literal notranslate"><span class="pre">nworker</span></code> (default is 1). By default, the <code class="docutils literal notranslate"><span class="pre">verbose</span></code> option is set to <code class="docutils literal notranslate"><span class="pre">True</span></code>, allowing a progress bar to be displayed in the terminal that provides an estimation of the time remaining before all jobs are complete.</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[12]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[13]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">sim_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;example/tut01_quick_start/simulation/result/&quot;</span><span class="p">)</span> <span class="c1"># Note that this dir must not exists</span>
@@ -805,7 +846,7 @@ multiple processes; this can be set using <code class="docutils literal notransl
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<script type="application/vnd.jupyter.widget-view+json">{"model_id": "07332c79b3dd444595c6af4f5729944c", "version_major": 2, "version_minor": 0}</script></div>
+<script type="application/vnd.jupyter.widget-view+json">{"model_id": "d0d19f62117b4c81823a42a787365ecc", "version_major": 2, "version_minor": 0}</script></div>
 </div>
 <div class="nboutput nblast docutils container">
 <div class="prompt empty docutils container">
@@ -813,13 +854,59 @@ multiple processes; this can be set using <code class="docutils literal notransl
 <div class="output_area rendered_html docutils container">
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
 </div>
-<p>With <code class="docutils literal notranslate"><span class="pre">nworker=10</span></code>, the simulations should take around a few minutes to complete.</p>
+<p>With <code class="docutils literal notranslate"><span class="pre">nworker=10</span></code>, the simulations should take around a few minutes to complete. Each simulation generates an HDF5 file containing the output data as specified by the <code class="docutils literal notranslate"><span class="pre">out_types</span></code> option in <code class="docutils literal notranslate"><span class="pre">run</span></code>. The default value for this option is <code class="docutils literal notranslate"><span class="pre">all</span></code>, including all information about the system such as its energy and temperature over time as well as the nucleosome positions. All simulation HDF5 files are located within the sub-directory <code class="docutils literal notranslate"><span class="pre">raw_data</span></code> in <code class="docutils literal notranslate"><span class="pre">out_path</span></code>.</p>
+<div class="admonition note">
+<p><strong>Note:</strong> Sub-directories within <code class="docutils literal notranslate"><span class="pre">raw_data</span></code> should not be touched, as <code class="docutils literal notranslate"><span class="pre">nucmc</span></code> relies on the file structure there to access the raw simulation data.</p>
+</div>
 </section>
 <section id="Analyzing-the-simulation-results">
 <h2>Analyzing the simulation results<a class="headerlink" href="#Analyzing-the-simulation-results" title="Link to this heading"></a></h2>
-<p>Before diving into further analysis, it is good to first inspect the raw simulation data and check that the results are reasonable. First, we check that the total energy of the system has reached a steady state:</p>
+<p>It is good practice to first inspect the raw simulation data and check that the results are reasonable before conducting any downstream analysis. To access the raw data from a specific simulation run (say run 0 for molecule 0 in <em>Oct4</em>), we use the <code class="docutils literal notranslate"><span class="pre">raw</span></code> property, which returns a <code class="docutils literal notranslate"><span class="pre">SimData</span></code> object:</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[13]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[14]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">sim_data</span><span class="o">.</span><span class="n">raw</span><span class="p">[</span><span class="s2">&quot;Oct4&quot;</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">]</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[14]:
+</pre></div>
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+SimData(nucbp, nbp, llink, mu, seed, time, energy, position, temp)
+</pre></div></div>
+</div>
+<div class="admonition note">
+<p><strong>Note:</strong> All molecules and simulation runs are labelled using zero-based indexing.</p>
+</div>
+<p>Here, we can for instance inspect the total energy of the system over time, using the property <code class="docutils literal notranslate"><span class="pre">energy</span></code>:</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[15]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">sim_data</span><span class="o">.</span><span class="n">raw</span><span class="p">[</span><span class="s2">&quot;Oct4&quot;</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">energy</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[15]:
+</pre></div>
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+array([ 0.        , -2.38651134,  0.5707656 , ..., -6.08010754,
+       -6.12096813, -6.03795022], shape=(1001,))
+</pre></div></div>
+</div>
+<div class="admonition note">
+<p><strong>Note:</strong> Accessing simulation properties such as <code class="docutils literal notranslate"><span class="pre">energy</span></code> and <code class="docutils literal notranslate"><span class="pre">temp</span></code> (for the system’s temperature) always returns a view of the underlying NumPy array that is non-writeable to preserve data integrity. The same applies to the property <code class="docutils literal notranslate"><span class="pre">position</span></code>, which returns a <code class="docutils literal notranslate"><span class="pre">Tuple</span></code> of non-writeable NumPy arrays of the nucleosome positions over time.</p>
+</div>
+<p>A good sanity check that we have run the simulation for long enough and that the system has reached a steady state is to see whether the total energy has stablized. We can plot the above time series of the energy values as follows:</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[16]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">nucmc</span><span class="o">.</span><span class="n">plot_energy</span><span class="p">(</span><span class="n">chrom</span><span class="o">=</span><span class="s2">&quot;Oct4&quot;</span><span class="p">,</span> <span class="n">mol</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">run</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">dataset</span><span class="o">=</span><span class="n">sim_data</span><span class="p">)</span>
@@ -830,12 +917,13 @@ multiple processes; this can be set using <code class="docutils literal notransl
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../../_images/tutorials_tut01_quick_start_quick_start_27_0.png" src="../../_images/tutorials_tut01_quick_start_quick_start_27_0.png" />
+<img alt="../../_images/tutorials_tut01_quick_start_quick_start_33_0.png" src="../../_images/tutorials_tut01_quick_start_quick_start_33_0.png" />
 </div>
 </div>
-<p>Second, we plot how the nucleosome positions change over time as the temperature decreases using the <code class="docutils literal notranslate"><span class="pre">nucmc.plot_nuc_pos</span></code> method (say for molecule 0, run 0 in the <em>Oct4</em> DNA segment), enabling the <code class="docutils literal notranslate"><span class="pre">plot_eseq</span></code> option to show the sequence-specific energy landscape used during the simulation:</p>
+<p>We can see that the energy has gradually lowered over time and stablizes at around <span class="math notranslate nohighlight">\(-6 k_BT\)</span>, and that fluctuations have minimized over time (reported in units of MCS, or number of Monte Carlo sweeps).</p>
+<p>Another way to see whether the system has stablized is to plot the nucleosome positions over time as a heatmap. This can be done using the <code class="docutils literal notranslate"><span class="pre">nucmc.plot_nuc_pos</span></code> method, and it is useful to enable the <code class="docutils literal notranslate"><span class="pre">plot_eseq</span></code> option to show within the same plot the sequence-specific energy landscape <span class="math notranslate nohighlight">\(E_{\text{seq}}\)</span> for the molecule derived from its methylation footprinting data.</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[14]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[17]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">nucmc</span><span class="o">.</span><span class="n">plot_nuc_pos</span><span class="p">(</span><span class="n">chrom</span><span class="o">=</span><span class="s2">&quot;Oct4&quot;</span><span class="p">,</span> <span class="n">mol</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">run</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">dataset</span><span class="o">=</span><span class="n">sim_data</span><span class="p">,</span> <span class="n">plot_eseq</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
@@ -846,13 +934,13 @@ multiple processes; this can be set using <code class="docutils literal notransl
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../../_images/tutorials_tut01_quick_start_quick_start_29_0.png" src="../../_images/tutorials_tut01_quick_start_quick_start_29_0.png" />
+<img alt="../../_images/tutorials_tut01_quick_start_quick_start_35_0.png" src="../../_images/tutorials_tut01_quick_start_quick_start_35_0.png" />
 </div>
 </div>
-<p>The nucleosome locations are shown in yellow in this plot, and they behave as one would expect: as the temperature decreases, the extent of repositioning and shuffling reduces, and the nucleosomes freeze into a final set of positions. Also, comparing with the sequence-specific energy landscape <span class="math notranslate nohighlight">\(E_{\text{seq}}\)</span>, we see that the nucleosomes tend to avoid the maxima and sit near the minima as expected. To get a sense of the overall picture of nucleosome positioning across all molecules, we
-use <code class="docutils literal notranslate"><span class="pre">nucmc.analyze</span></code> to perform some basic quantification of the simulated nucleosome positions:</p>
+<p>The nucleosome locations are shown in yellow in this plot, and they behave as one would expect: as the temperature decreases, the extent of repositioning and shuffling reduces, and the nucleosomes freeze into a final set of positions. Also, comparing with the energy landscape <span class="math notranslate nohighlight">\(E_{\text{seq}}\)</span>, we see that the nucleosomes tend to avoid the maxima and sit near the minima as expected.</p>
+<p>To get a sense of the overall picture of nucleosome positioning across all molecules, we use <code class="docutils literal notranslate"><span class="pre">nucmc.analyze</span></code> to perform some basic quantification of the simulated nucleosome positions:</p>
 <div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[15]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[18]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">nucmc</span><span class="o">.</span><span class="n">analyze</span><span class="p">(</span><span class="n">dataset</span><span class="o">=</span><span class="n">sim_data</span><span class="p">)</span>
@@ -865,7 +953,7 @@ use <code class="docutils literal notranslate"><span class="pre">nucmc.analyze</
 <p>where <span class="math notranslate nohighlight">\(s_i^{(n)} = 1\)</span> if, in the <span class="math notranslate nohighlight">\(n\)</span>th simulation, a nucleosome occcupies base-pair <span class="math notranslate nohighlight">\(x\)</span> and <span class="math notranslate nohighlight">\(0\)</span> otherwise.</p>
 <p>These results are stored in <code class="docutils literal notranslate"><span class="pre">data.analysis</span></code>. For instance, to retrieve the average number of nucleosomes in each molecule in <em>Oct4</em>, we do the following:</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[16]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[19]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">sim_data</span><span class="o">.</span><span class="n">analysis</span><span class="p">[</span><span class="s2">&quot;Oct4&quot;</span><span class="p">][</span><span class="s2">&quot;mean_nnuc&quot;</span><span class="p">]</span>
@@ -873,7 +961,7 @@ use <code class="docutils literal notranslate"><span class="pre">nucmc.analyze</
 </div>
 </div>
 <div class="nboutput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[16]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[19]:
 </pre></div>
 </div>
 <div class="output_area rendered_html docutils container">
@@ -950,7 +1038,7 @@ use <code class="docutils literal notranslate"><span class="pre">nucmc.analyze</
 </div>
 <p>To visualize the averaged nucleosome occupancy across all molecules, we use the <code class="docutils literal notranslate"><span class="pre">nucmc.plot_occup</span></code> method, and again we enable the <code class="docutils literal notranslate"><span class="pre">plot_eseq</span></code> option to see correspondence between the nucleosome positions and the underlying energy landscape:</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[17]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[20]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">nucmc</span><span class="o">.</span><span class="n">plot_occup</span><span class="p">(</span><span class="n">chrom</span><span class="o">=</span><span class="s2">&quot;Oct4&quot;</span><span class="p">,</span> <span class="n">dataset</span><span class="o">=</span><span class="n">sim_data</span><span class="p">,</span> <span class="n">plot_eseq</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
@@ -961,12 +1049,12 @@ use <code class="docutils literal notranslate"><span class="pre">nucmc.analyze</
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../../_images/tutorials_tut01_quick_start_quick_start_35_0.png" src="../../_images/tutorials_tut01_quick_start_quick_start_35_0.png" />
+<img alt="../../_images/tutorials_tut01_quick_start_quick_start_41_0.png" src="../../_images/tutorials_tut01_quick_start_quick_start_41_0.png" />
 </div>
 </div>
 <p>Finally, we can save our analyses of the simulation results into an HDF5 file that can be retrieved later for further post-processing:</p>
 <div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[18]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[21]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">sim_data</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">sim_dir</span><span class="o">/</span><span class="s2">&quot;results.h5&quot;</span><span class="p">)</span>

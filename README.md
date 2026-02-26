@@ -10,7 +10,7 @@ The most convenient way to install the package is via Conda. First, clone the pr
 git clone https://git.ecdf.ed.ac.uk/cchiang2/nucmc-project.git
 ```
 
-Next, use Conda to create a new environment with the package installed via the provided environment (`.yml) file:
+Next, use Conda to create a new environment with the package installed via the provided environment (.yml) file:
 
 ```bash
 conda env create -n environment.yml

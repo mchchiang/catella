@@ -23,7 +23,10 @@ def preprocess(*, chromsize : str | Path,
                meth_file : str | Path | None = None,
                binsize : int = 147,               
                wrap : bool = False,
-               colidx : Iterable | None = None) -> MethPrintExperiment:
+               colidx : Iterable | None = None,
+               clip_low : float = 0.1,
+               clip_high : float = 99.9,
+               norm_by_strand : bool = False) -> MethPrintExperiment:
     """
     Preprocess raw methylation data to create a MethPrintExperiment.
 
@@ -54,6 +57,14 @@ def preprocess(*, chromsize : str | Path,
     colidx : Iterable, optional
         Specific column indices to use if the input file does not follow    
         the standard ModKit format.
+    clip_low : float, default 0.1
+        Lower percentile bound for signal clipping. Values below this
+        percentile are set to 0. 
+    clip_high : float, default 99.9
+        Upper percentile bound for signal clipping. Values above this
+        percentile are set to 1.    
+    norm_by_strand : bool, default False
+        Whether to perform normalization separately based on strandedness.
     
     Returns
     -------
@@ -68,10 +79,10 @@ def preprocess(*, chromsize : str | Path,
         chromsize=chromsize, test_file=test_file, unmeth_file=unmeth_file,
         meth_file=meth_file, wrap=wrap, colidx=colidx)
 
-    # Normalize the data as required
-    if meth_file is not None and unmeth_file is not None:
-        ana = MethPrintAnalysis()
-        ana.normalize(binsize=binsize, exp=exp_data)
+    # Normalize the data - compute methylation probability
+    ana = MethPrintAnalysis()
+    ana.smooth(binsize=binsize, exp=exp_data)
+    ana.meth_prob(exp=exp_data, norm_by_strand=norm_by_strand)
     
     # Save the results
     if out_file is not None:

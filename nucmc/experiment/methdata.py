@@ -214,7 +214,14 @@ class MethPrintExperiment:
         """        
         
         # Read chromosome sizes
-        df_size = pd.read_csv(chromsize, sep="\t")
+        size_cols = ["chrom", "length"]
+        with open(chromsize, "r") as reader:
+            first_line = reader.readline().strip()
+        if first_line == "\t".join(size_cols):
+            df_size = pd.read_csv(chromsize, sep="\t")
+        else:
+            df_size = pd.read_csv(chromsize, sep="\t", names=size_cols,
+                                  header=None)
         if "chrom" not in df_size.columns:
             raise ValueError("Column 'chrom' containing the chromosome "
                              "identifier is missing.")
@@ -275,9 +282,10 @@ class MethPrintExperiment:
             """
             
             # Column names from modkit documentation
-            modkit_colnames = ["read_id", "ref_position", "chrom", "mod_qual",
-                               "mod_code"]
-            colnames = ["mol_id", "upos", "chrom", "mod_qual", "mod_code"]
+            modkit_colnames = ["read_id", "ref_position", "chrom",
+                               "ref_strand", "mod_qual", "mod_code"]
+            colnames = ["mol_id", "upos", "chrom", "strand", "mod_qual",
+                        "mod_code"]
             usecols = lambda c : c.lstrip("#").strip() in modkit_colnames
             print(f"Reading {data_file} ...")
             if colidx is None:
@@ -305,7 +313,8 @@ class MethPrintExperiment:
                 mol_ids[c] = dfs[c]["mol_id"].unique()
                 id2idx = {rid:i for i,rid in enumerate(mol_ids[c])}
                 dfs[c]["mol_index"] = dfs[c]["mol_id"].map(id2idx)
-                dfs[c] = dfs[c][["mol_index","pos","mod_qual","mod_code"]]
+                dfs[c] = dfs[c][["mol_index", "pos", "strand", "mod_qual",
+                                 "mod_code"]]
             return mol_ids, dfs
         
         # Read footprinting data and re-orientate the data with pos as index

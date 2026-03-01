@@ -150,8 +150,8 @@ class SimPlot:
         if show: plt.show()
 
         if out_file is not None:
-            out_path = Path(out_file)
-            out_dir = out_path.parents[0]
+            out_file = Path(out_file)
+            out_dir = out_file.parents[0]
             out_dir.mkdir(exist_ok=True, parents=True)
             fig.savefig(out_file)
     
@@ -275,8 +275,8 @@ class SimPlot:
         if show: plt.show()
 
         if out_file is not None:
-            out_path = Path(out_file)
-            out_dir = out_path.parents[0]
+            out_file = Path(out_file)
+            out_dir = out_file.parents[0]
             out_dir.mkdir(exist_ok=True, parents=True)
             fig.savefig(out_file)
         
@@ -382,8 +382,8 @@ class SimPlot:
         if show: plt.show()
 
         if out_file is not None:
-            out_path = Path(out_file)
-            out_dir = out_path.parents[0]
+            out_file = Path(out_file)
+            out_dir = out_file.parents[0]
             out_dir.mkdir(exist_ok=True, parents=True)
             fig.savefig(out_file)
         

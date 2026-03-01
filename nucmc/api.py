@@ -36,17 +36,17 @@ def preprocess(*, chromsize : str | Path,
 
     Parameters
     ----------
-    chromsize : str | Path
+    chromsize : str or Path
         Path to the chromosome sizes file or a string identifier for the
         genome.
-    test_file : str | Path
+    test_file : str or Path
         Path to the primary experimental methylation data file.
-    out_file : str | Path, optional
+    out_file : str or Path, optional
         Path where the processed `MethPrintExperiment` will be saved. 
         If None, the result is only returned in-memory.
-    unmeth_file : str | Path, optional
+    unmeth_file : str or Path, optional
         Path to the unmethylated control file.
-    meth_file : str | Path, optional
+    meth_file : str or Path, optional
         Path to the methylated control file.
     binsize : int, default 147
         The genomic window size (in base pairs) used for data aggregation. The
@@ -79,10 +79,11 @@ def preprocess(*, chromsize : str | Path,
         chromsize=chromsize, test_file=test_file, unmeth_file=unmeth_file,
         meth_file=meth_file, wrap=wrap, colidx=colidx)
 
-    # Normalize the data - compute methylation probability
+    # Smooth and normalize the data - compute methylation probability
     ana = MethPrintAnalysis()
     ana.smooth(binsize=binsize, exp=exp_data)
-    ana.meth_prob(exp=exp_data, norm_by_strand=norm_by_strand)
+    ana.meth_prob(exp=exp_data, clip_low=clip_low, clip_high=clip_high,
+                  norm_by_strand=norm_by_strand)
     
     # Save the results
     if out_file is not None:
@@ -95,7 +96,8 @@ def run(*, chroms : str | Iterable[str],
         nsim : int,
         settings : str | Path | SimSettings,
         meth_prob : np.ndarray | Mapping[str,np.ndarray|pd.DataFrame],
-        out_path : str | Path,
+        out_dir : str | Path,
+        dataset_name : str = "results",
         out_types : str | Iterable[str] = "all",        
         seed : int | None = None,        
         mols : IndexType | Mapping[str,IndexType] = slice(None),
@@ -113,25 +115,25 @@ def run(*, chroms : str | Iterable[str],
 
     Parameters
     ----------
-    chroms : str | Iterable[str]
+    chroms : str or iterable of str
         The identifier(s) of chromosome(s) to include in the simulation.
     nsim : int
         Number of independent simulation runs per molecule.
-    settings : str | Path | SimSettings
+    settings : str or Path or SimSettings
         Simulation parameters. Can be a path to a configuration file or a 
         `SimSettings` object.
-    meth_prob : np.ndarray | Mapping[str, np.ndarray | pd.DataFrame]
+    meth_prob : np.ndarray or Mapping[str, np.ndarray | pd.DataFrame]
         Probability of methylation. If multiple chromosomes are provided, this
         must be a mapping of {chrom_name: data}. Data can be NumPy arrays or
         Pandas DataFrames. 
-    out_path : str | Path
+    out_dir : str or Path
         Directory or file prefix where simulation results will be stored.
     out_types : str | Iterable[str], default 'all'
         Types of data to record. Options include 'energy', 'position',      
         'temp', or 'all'. 
     seed : int, optional
         Seed for the random number generator to ensure reproducibility.
-    mols : IndexType | Mapping[str, IndexType], default slice(None)
+    mols : IndexType | Mapping[str, IndexType], default slice(None
         Specific molecule indices to subset for the simulation.
     store_eseq : bool, default True
         Whether to store the sequence-specific nucleosome binding energy
@@ -157,8 +159,8 @@ def run(*, chroms : str | Iterable[str],
                          verbose=verbose)
     dataset = manager.run(chroms=chroms, nsim=nsim, settings=settings,
                           meth_prob=meth_prob, out_types=out_types,
-                          out_path=out_path, seed=seed, mols=mols,
-                          store_eseq=store_eseq,
+                          out_dir=out_dir, dataset_name=dataset_name, seed=seed,
+                          mols=mols, store_eseq=store_eseq,
                           use_zero_point_mu=use_zero_point_mu)    
     return dataset
 
@@ -214,7 +216,7 @@ def plot_occup(*, chrom : str,
         Path where the generated plot will be saved. If None, the plot 
         is not saved to disk.
     occup_name : str, default "occup"
-        The key/name of the occupancy data to retrieve from the dataset. 
+        The key or name of the occupancy data to retrieve from the dataset. 
         This should match the name used during the `analyze` step.
     plot_eseq : bool, default True
         Whether to plot the underlying sequence-specific nucleosome binding 

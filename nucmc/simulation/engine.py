@@ -54,8 +54,8 @@ class SimParams:
     """The format or scope of data to be recorded (e.g., Energy, Position,
     All)."""
 
-    out_path : str | Path
-    """The file system path where the simulation results are stored."""
+    out_file : Path
+    """The HDF5 file where the simulation results are stored."""
 
     settings : SimSettings
     """The physical constants and Monte Carlo protocol used for this run."""
@@ -116,7 +116,8 @@ class SimManager:
             nsim : int,
             settings : str | Path | SimSettings,
             meth_prob : np.ndarray | Mapping[str,np.ndarray|pd.DataFrame],
-            out_path : str | Path,
+            out_dir : str | Path,
+            dataset_name : str = "results",
             out_types : str | Iterable[str] = "all",
             seed : int | None = None,
             mols : IndexType | Mapping[str,IndexType] = slice(None),
@@ -135,19 +136,22 @@ class SimManager:
             The identifier(s) of chromosome(s) to include in the simulation.
         nsim : int
             Number of independent simulation runs per molecule.
-        settings : str | Path | SimSettings
-            The physical constants and Monte Carlo protocol (e.g., mu, temp, 
-            sweeps) to apply to all runs in this batch. These can be read
-            from a file.
+        settings : str or Path or SimSettings
+            The physical constants and Monte Carlo protocol (e.g., nucbp, llink,
+            mu) to apply to all runs in this batch. These can be read from a
+            configuration file.
         meth_prob : np.ndarray or dict
             The probability of methylation. If multiple chromosomes are
             provided, this must be a mapping of {chrom_name: data}. Data can
             be NumPy arrays or Pandas DataFrames.
-        out_path : str or pathlib.Path
+        out_dir : str or Path
             Directory where the simulation dataset will be initialized. The
             raw simulation data will be stored with a sub-directory called
-            `raw_data` and the analysis and metadata will be stored in an
-            HD5 file called `results.h5`
+            `raw_data`.
+        dataset_name : str, default = "results"
+            Name of the dataset HDF5 file storing the metadata and analysis of
+            the simulation results. The file directory of this HDF5 file is
+            `out_dir/{dataset_name}.h5` (e.g., `out_dir/results.h5`).
         out_types : str or iterable of str, default 'all'
             Types of data to record. Options include 'energy', 'position', 
             'temp', or 'all'.        
@@ -179,7 +183,7 @@ class SimManager:
         ValueError
             If the requested `out_types` are not recognized.
         FileExistsError
-            If the specified `out_path` already contains an existing dataset.
+            If the specified `out_dir` already contains an existing dataset.
         """
 
         chroms = utils.normalize_chroms(chroms)
@@ -263,15 +267,7 @@ class SimManager:
                 raise ValueError(f"Output type '{otype}' is not a valid "
                                  "option.")
             out_type |= otype
-
-        # Create the output directory
-        out_path = Path(out_path)
-        if out_path.exists():
-            raise FileExistsError(f"The output directory '{out_path}' already "
-                                  "exists.")
-        else:
-            out_path.mkdir(exist_ok=True, parents=True)
-
+        
         # Compute the methylation energy landscape
         eseq = None
         if store_eseq:
@@ -297,8 +293,8 @@ class SimManager:
             
         # Prepare the dataset object
         dataset = SimDataset.create(chroms=chroms, nmol=nmol, nsim=nsim,
-                                    nbp=nbp, settings=settings,
-                                    out_path=out_path, eseq=eseq)
+                                    nbp=nbp, settings=settings, eseq=eseq,
+                                    out_dir=out_dir, dataset_name=dataset_name)
         
         # Generate random seeds
         def seed_generator(parent_seed):
@@ -319,11 +315,11 @@ class SimManager:
                     pseq = np.asarray(1.0-meth_prob[chrom][molidx,:],
                                       dtype=np.float64).tobytes()
                     for run in range(nsim):
-                        sim_path = dataset.sim_path(chrom, idx, run)
+                        sim_file = dataset.sim_file(chrom, idx, run)
                         yield SimParams(chrom=chrom, mol=idx, run=run,
                                         settings=settings, seed=next(seed_gen),
                                         seq_prob=pseq, out_type=out_type,
-                                        out_path=sim_path, override=override)
+                                        out_file=sim_file, override=override)
         param_gen = params_generator(settings)
         
         # Progress bar
@@ -363,7 +359,7 @@ class SimManager:
                     progress.update(main_task, advance=1)
 
         # Save the dataset to file
-        dataset.save(out_path/"results.h5")
+        dataset.save()
         
         return dataset
         
@@ -388,7 +384,7 @@ class SimManager:
         cool_option = SimSettings._cool_map[get_param("cool_option")]
         try: 
             # Create the output directory
-            sim_dir = Path(p.out_path).parents[0]
+            sim_dir = Path(p.out_file).parents[0]
             sim_dir.mkdir(exist_ok=True, parents=True)
             # Initialize the methylation energy landscape
             pseq_list = np.frombuffer(p.seq_prob, dtype=np.float64).tolist()
@@ -398,7 +394,7 @@ class SimManager:
             model.setSeqEnergy(pseq_list, emax)
             # For tracking all simulation data
             model.addTracker(
-                sim.createDump(print_freq, str(p.out_path), p.out_type))
+                sim.createDump(print_freq, str(p.out_file), p.out_type))
             # Run the simulation
             model.run(nsweep, start_temp, end_temp, cool_option)
             return (p.chrom, p.mol, p.run, True)

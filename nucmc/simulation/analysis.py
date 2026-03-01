@@ -1,7 +1,6 @@
 # analysis.py
 
 from .results import SimDataset
-from pathlib import Path
 from dataclasses import dataclass
 from collections.abc import Iterable
 import numpy as np

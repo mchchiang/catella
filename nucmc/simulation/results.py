@@ -139,14 +139,14 @@ class SimData:
         return value.item() if np.ndim(value) == 0 else value
     
     @classmethod
-    def load(cls, path : str | Path) -> Self:
+    def load(cls, sim_file : str | Path) -> Self:
         """
         Load simulation data from a persistent HDF5 file.
 
         Parameters
         ----------
-        path : str or pathlib.Path
-            The path to the HDF5 file containing simulation results.
+        sim_file : str or Path
+            The HDF5 file containing simulation results.
 
         Returns
         -------
@@ -158,7 +158,7 @@ class SimData:
         OSError
             If the file cannot be opened or does not follow the SimData schema.
         """
-        with h5py.File(path, "r") as f:
+        with h5py.File(sim_file, "r") as f:
             # Load model parameters
             g = f["params"]
             nucbp = g.attrs["nucbp"]
@@ -190,7 +190,9 @@ class SimData:
 
     # Extract the data for a specific obesrvable for a single time point
     @classmethod
-    def extract(cls, path : str | Path, time : int, obs : str) -> np.ndarray:
+    def extract(cls, sim_file : str | Path,
+                time : int,
+                obs : str) -> np.ndarray:
         """
         Extract a specific observable from a file without loading the full
         dataset.
@@ -200,8 +202,8 @@ class SimData:
 
         Parameters
         ----------
-        path : str or pathlib.Path
-            The path to the simulation HDF5 file.
+        sim_file : str or Path
+            The simulation HDF5 file.
         time : int
             The target simulation time point.
         obs : str
@@ -220,17 +222,19 @@ class SimData:
         """
         if obs not in cls._obs_list:
             raise ValueError(f"'{obs}' is not a valid observable.")
-        norm_path = str(Path(path).resolve())
+        sim_file = str(Path(sim_file).resolve())
         try:
-            return cls._cached_extract(norm_path, time, obs)
+            return cls._cached_extract(sim_file, time, obs)
         except Exception:
             return np.array([np.nan]) if obs == "position" else np.nan
 
     @staticmethod
     @lru_cache(maxsize=1024)    
-    def _cached_extract(path : str, time : int, obs : str) -> np.ndarray:
+    def _cached_extract(sim_file :
+                        str, time :
+                        int, obs : str) -> np.ndarray:
         with MAX_OPEN_FILES:
-            with h5py.File(path, "r") as f:
+            with h5py.File(sim_file, "r") as f:
                 tdata = f["data/time"][()]
                 matches = np.where(tdata == time)[0]
                 if len(matches) == 0:
@@ -277,35 +281,40 @@ class SimData:
         repr_str = f"{self.__class__.__name__}({', '.join(public_attrs)})"
         return repr_str
     
-class SimPathMapper:
-    def __init__(self, root_dir : str, total_mols : int,
-                 max_mols_per_dir : int = 100):
-        self.root_path = Path(root_dir)
+class SimFileMapper:
+    def __init__(self, root_dir : str,
+                 total_mols : int,
+                 max_mols_per_dir : int = 100,
+                 max_runs_per_mol : int = 100):
+        self.root_dir = Path(root_dir)
         self.max_mols_per_dir = max_mols_per_dir
-        self.zpad = max(1, int(np.ceil(np.log10(total_mols))))
+        self.max_runs_per_mol = max_runs_per_mol
+        self.mol_pad = max(1, int(np.ceil(np.log10(total_mols))))
+        self.run_pad = max(1, int(np.ceil(np.log10(max_runs_per_mol))))
 
-    def params_to_path(self, chrom : str, molidx : int, run : int) -> Path:
+    def params_to_file(self, chrom : str, molidx : int, run : int) -> Path:
         # Compute range
         start = int((molidx // self.max_mols_per_dir) * self.max_mols_per_dir)
         end = int(start + self.max_mols_per_dir - 1)
         # Get name at each level
-        z = self.zpad
+        z = self.mol_pad
+        r = self.run_pad
         shard_name = f"mol_{int(start):0{z}d}-{int(end):0{z}d}"
         mol_name = f"mol_{int(molidx):0{z}d}"
-        run_name = f"run_{int(run):02d}"
+        run_name = f"run_{int(run):0{r}d}"
         sim_h5 = f"{chrom}_{mol_name}_{run_name}.h5"
-        return self.root_path/chrom/shard_name/mol_name/sim_h5
+        return self.root_dir/chrom/shard_name/mol_name/sim_h5
 
-    def path_to_params(self, path : str | Path):
-        path = Path(path)
-        chrom = path.parts[-4]
-        filename = path.name
+    def file_to_params(self, sim_file : str | Path):
+        sim_file = Path(sim_file)
+        chrom = sim_file.parts[-4]
+        filename = sim_file.name
         match = re.search(r"mol_(\d+)_run_(\d+)\.h5$", filename)
         if match:
             molidx = int(match.group(1))
             run = int(match.group(2))        
             return chrom, molidx, run
-        raise ValueError(f"Could not parse parameters from path: {path}") 
+        raise ValueError(f"Could not parse parameters from file: {sim_file}") 
     
 @dataclass(slots=True, init=False)
 class SimDataset:
@@ -343,17 +352,17 @@ class SimDataset:
             
         def __getitem__(self, keys):
             chrom, mol, run = keys
-            path = self._parent.sim_path(chrom, mol, run)
-            if path.exists():
-                return self._load_sim_data(str(path))
+            sim_file = self._parent.sim_file(chrom, mol, run)
+            if sim_file.exists():
+                return self._load_sim_data(str(sim_file))
             else:
                 raise ValueError("Cannot find the simulation for chrom "
                                  f"{chrom}, molecule {mol}, run {run}")
 
         @staticmethod
         @lru_cache(maxsize=1024)
-        def _load_sim_data(path : str):
-            return SimData.load(path)
+        def _load_sim_data(sim_file : str):
+            return SimData.load(sim_file)
     
     _chroms : Iterable[str]
     _nmol : Mapping[str,int]
@@ -362,8 +371,9 @@ class SimDataset:
     _settings : SimSettings
     _eseq : Mapping[str,np.ndarray]
     _view_eseq : Mapping[str,np.ndarray]
-    _raw_path : Path    
-    _path_map : SimPathMapper
+    _raw_dir : Path
+    _dataset_file : Path
+    _file_map : SimFileMapper
     _analysis : Mapping[str, DataFrameMap]
     _global_analysis : DataFrameMap
     _raw_accessor : SimDataAccessor
@@ -379,8 +389,9 @@ class SimDataset:
                 nsim : int,
                 nbp : Mapping[str,int],
                 settings : SimSettings,
-                raw_path : Path,
-                path_map : SimPathMapper,
+                raw_dir : Path,
+                dataset_file : Path,                
+                file_map : SimFileMapper,
                 eseq : Mapping[str, np.ndarray] | None):
         # Some validations
         if nsim <= 0:
@@ -400,8 +411,9 @@ class SimDataset:
         obj._nsim = int(nsim)
         obj._nbp = dict(nbp)
         obj._settings = settings
-        obj._raw_path = raw_path
-        obj._path_map = path_map
+        obj._raw_dir = raw_dir
+        obj._dataset_file = dataset_file
+        obj._file_map = file_map
         obj._analysis = {chrom : DataFrameMap() for chrom in obj._chroms}
         obj._global_analysis = DataFrameMap()        
         obj._raw_accessor = cls.SimDataAccessor(obj)
@@ -421,7 +433,8 @@ class SimDataset:
                nsim : int,
                nbp : int | Mapping[str,int],
                settings : SimSettings,
-               out_path : str | Path,
+               out_dir : str | Path,
+               dataset_name : str = "results",
                eseq : np.ndarray | Mapping[str,np.ndarray] | None = None) \
                -> Self:
         """
@@ -446,8 +459,13 @@ class SimDataset:
         settings : SimSettings
             The physical constants and Monte Carlo protocol (e.g., mu, temp,
             sweeps) that apply to all simulations in the dataset.
-        out_path : str or pathlib.Path
-            The directory path where the dataset and raw data will be stored.
+        out_dir : str or Path
+            The directory where the simulation analysis and raw data will be
+            stored. This directory must not exist beforehand.
+        dataset_name : str, default "results"
+            Name of the dataset HDF5 file storing the metadata and analysis of
+            the simulation reuslts. The file directory of this HDF5 file is
+            `out_dir/{dataset_name}.h5` (e.g,. `out_dir/results.h5`).
         eseq : np.ndarray or None, default None
             The sequence-specific energy landscape derived from the
             methylation data.
@@ -459,9 +477,10 @@ class SimDataset:
 
         Raises
         ------
+        FileExistsError
+            If `out_dir` already exists.
         ValueError
-            If the `raw_data` subdirectory already exists in `out_path`, or 
-            if the chromosome keys in `nmol` do not match `chroms`.
+            If the chromosome keys in `nmol` do not match `chroms`.
         """
         chroms = utils.normalize_chroms(chroms)
         if isinstance(nmol, int):
@@ -470,7 +489,7 @@ class SimDataset:
             raise ValueError("nmol must either be an int or a mapping")
         elif set(nmol.keys()) != set(chroms):
             raise ValueError("nmol must have the same set of chromosome "
-                             "identifiers as chroms")            
+                             "identifiers as chroms")
         
         # Find the maximum number of molecules
         max_nmol = 0
@@ -479,30 +498,31 @@ class SimDataset:
                 max_nmol = nmol[chrom]
 
         # Check validity of the output directory
-        raw_path = (Path(out_path)/"raw_data").resolve()
-        if raw_path.exists():
-            raise ValueError(f"The path '{raw_path}' already exists.")
+        out_dir = Path(out_dir).resolve()
+        if out_dir.exists():
+            raise FileExistsError(f"The directory '{out_dir}' already exists.")
         else:
-            raw_path.mkdir(exist_ok=True, parents=True)
-        path_map = SimPathMapper(raw_path, max_nmol)
-        return cls._create(chroms = chroms, nmol = nmol, nsim = nsim,
-                           nbp = nbp, settings = settings, eseq = eseq,
-                           raw_path = raw_path, path_map = path_map)
+            raw_dir = out_dir/"raw_data"
+            raw_dir.mkdir(exist_ok=True, parents=True)
+        dataset_file = out_dir/(dataset_name+".h5")
+        file_map = SimFileMapper(raw_dir, max_nmol)
+        return cls._create(chroms=chroms, nmol=nmol, nsim=nsim, nbp=nbp,
+                           settings=settings, eseq=eseq, raw_dir=raw_dir,
+                           dataset_file=dataset_file, file_map=file_map)
     
     @classmethod
     def load(cls,
-             path : str | Path,
-             new_raw_path : str | Path | None = None) -> Self:
+             dataset_file : str | Path,
+             new_raw_dir : str | Path | None = None) -> Self:
         """
         Load a simulation dataset and its analysis from an HDF5 file.
-
+        
         Parameters
         ----------
-        path : str or pathlib.Path
-            The path to the HDF5 file containing the dataset metadata and 
-            stored analysis results.
-        new_raw_path : str or pathlib.Path, optional
-            An updated path to the 'raw_data' directory. Use this if the 
+        dataset_file : str or Path
+            The HDF5 file containing the dataset metadata and analysis results.
+        new_raw_dir : str or Path, optional
+            An updated path to the `raw_data` directory. Use this if the 
             simulation files have been moved since the dataset was saved. 
             The default is None.
         
@@ -514,29 +534,33 @@ class SimDataset:
 
         Raises
         ------
-        OSError
+        FileNotFoundError
             If the HDF5 file cannot be opened or if the raw data directory 
             cannot be located at the expected path.
-        """        
-        with h5py.File(path, "r") as h5stream:
+        """
+        dataset_file = Path(dataset_file).resolve()
+        with h5py.File(dataset_file, "r") as h5stream:
             # Load metadata associated with raw simulation data
             gmeta = h5stream["metadata"]
-            if new_raw_path is None:                
-                raw_path = Path(gmeta.attrs["raw_path"]).resolve()
-                if not raw_path.exists():
-                    raise OSError("The raw simulation data directory cannot "
-                                  "be found.")
+            if new_raw_dir is None:
+                if "raw_path" in gmeta.attrs: # For old versions 
+                    raw_dir = Path(gmeta.attrs["raw_path"]).resolve()
+                else:
+                    raw_dir = Path(gmeta.attrs["raw_dir"]).resolve()
+                if not raw_dir.exists():
+                    raise FileNotFoundError("The raw simulation data directory "
+                                            "cannot be found.")
             else:
-                new_raw_path = Path(new_raw_path).resolve()
-                if not new_raw_path.exists():
-                    raise OSError("The raw simulation data directory cannot "
-                                  "be found.")
-                raw_path = new_raw_path
+                new_raw_dir = Path(new_raw_dir).resolve()
+                if not new_raw_dir.exists():
+                    raise FileNotFoundError("The raw simulation data directory "
+                                            "cannot be found.")
+                raw_dir = new_raw_dir
             nsim = gmeta.attrs["nsim"]
             chroms = list(gmeta["chroms"].asstr()[()])
             nmol_arr = gmeta["nmol"][()]
             nmol = {chrom:nmol_arr[i] for i,chrom in enumerate(chroms)}
-            path_map = SimPathMapper(raw_path, max(nmol_arr))
+            file_map = SimFileMapper(raw_dir, max(nmol_arr))
             nbp_arr = gmeta["nbp"][()]
             nbp = {chrom:nbp_arr[i] for i,chrom in enumerate(chroms)}
             # Load simulation settings
@@ -550,9 +574,9 @@ class SimDataset:
                     eseq[chrom] = geseq[chrom][()]
             else:
                 eseq = None
-            obj = cls._create(chroms = chroms, nmol = nmol, nsim = nsim,
-                              nbp = nbp, settings = settings, eseq = eseq,
-                              raw_path = raw_path, path_map = path_map)
+            obj = cls._create(chroms=chroms, nmol=nmol, nsim=nsim, nbp=nbp,
+                              settings=settings, eseq=eseq, raw_dir=raw_dir,
+                              file_map=file_map, dataset_file=dataset_file)
             # Load any analysis data
             gana = h5stream["analysis"]
             for chrom in gana:
@@ -564,19 +588,19 @@ class SimDataset:
                 obj._global_analysis[name] = h5_utils.load_df(name, gana)
             return obj
 
-    def save(self, path : str | Path):
+    def save(self, dataset_file : str | Path | None = None):
         """
         Save the dataset metadata and analysis results to an HDF5 file.
 
-        This method serializes the current state of all chromosome-specific 
-        and global analysis :class:`DataFrameMap` objects into a persistent 
-        HDF5 format.
+        Serialize the current state of all chromosome-specific and global
+        analysis :class:`DataFrameMap` objects into a persistent HDF5 format.
         
         Parameters
         ----------
-        path : str | pathlib.Path
-            The output file path. If the file already exists, analysis 
-            groups will be overwritten.
+        dataset_file : str | Path, optional
+            The output HDF5 file for the dataset. If the file already exists,
+            analysis groups will be overwritten. If None, data wil be written to
+            to the original dataset file from loading or creation.
         
         Raises
         ------
@@ -584,11 +608,14 @@ class SimDataset:
             If the file cannot be written to disk.
         """        
         dt = h5py.string_dtype(encoding="utf-8")
-        with h5py.File(path, "a") as h5stream:
+        if dataset_file is None:
+            dataset_file = self._dataset_file
+            
+        with h5py.File(dataset_file, "a") as h5stream:
             # Save metadata asssociated with raw simulation data
             if "metadata" not in h5stream:
                 gmeta = h5stream.create_group("metadata")
-                gmeta.attrs["raw_path"] = str(self._raw_path)
+                gmeta.attrs["raw_dir"] = str(self._raw_dir)
                 gmeta.attrs["nsim"] = self._nsim        
                 gmeta.create_dataset("chroms", data=self._chroms, dtype=dt)
                 nmol_arr = np.asarray([self._nmol[chrom]
@@ -624,14 +651,15 @@ class SimDataset:
         Yield simulation identifiers across specified chromosomes and
         molecules.
 
-        This generator traverses the dataset hierarchy, filtering by chromosome
-        and verifying the existence of data files before yielding.
+        This generator traverses the dataset raw data hierarchy, filtering by
+        chromosome and verifying the existence of simulation files before
+        yielding.
 
         Parameters
         ----------
         chroms : str or iterable of str, optional
-            The chromosome(s) to iterate over. If None (default), all 
-            available chromosomes in the dataset are processed.
+            The chromosome(s) to iterate over. If None, all available
+            chromosomes in the dataset are processed.
 
         Yields
         ------
@@ -644,16 +672,16 @@ class SimDataset:
 
         Notes
         -----
-        Only triplets (chrom, mol, run) that have an existing path on disk 
-        according to the internal path map are yielded.
+        Only triplets (chrom, mol, run) that have an existing simulation file on
+        disk according to the internal file map are yielded.
         """
         chroms = utils.normalize_chroms(chroms, default_chroms=self._chroms)
         for chrom in chroms:
             if chrom not in self._chroms: continue
             for mol in range(self._nmol[chrom]):
                 for run in range(self._nsim):
-                    path = self._path_map.params_to_path(chrom, mol, run)
-                    if path.exists(): yield (chrom, mol, run)
+                    sim_file = self._file_map.params_to_file(chrom, mol, run)
+                    if sim_file.exists(): yield (chrom, mol, run)
 
     def extract(self, *,
                 time : int,
@@ -667,8 +695,8 @@ class SimDataset:
         Extract and optionally aggregate simulation observables across the
         dataset.
 
-        This method uses a :class:`ThreadPoolExecutor` to extract data from
-        HDF5 files in parallel. Results are organized by chromosome and can be 
+        Use :class:`ThreadPoolExecutor` to extract data from simulation HDF5
+        files in parallel. Results are organized by chromosome and can be 
         processed via a custom aggregation function as they complete.
 
         Parameters
@@ -676,7 +704,8 @@ class SimDataset:
         time : int
             The specific time point to extract from the simulation.
         obs : str
-            The name of the observable to extract (e.g., 'position', 'energy').
+            The name of the observable to extract (i.e., 'position', 'energy',
+            or 'temp').
         nworker : int, default 1
             The maximum number of threads to use for parallel extraction.
         batch_size : int, default 1000
@@ -737,7 +766,7 @@ class SimDataset:
                     # Submit only this batch
                     tasks : Dict[Future,Tuple] = {
                         executor.submit(SimData.extract,
-                                        self._path_map.params_to_path(*sim_id),
+                                        self._file_map.params_to_file(*sim_id),
                                         time, obs): sim_id for sim_id in batch}
                     # Process this batch as it completes
                     for future in as_completed(tasks):
@@ -764,8 +793,8 @@ class SimDataset:
         else: # nworker = 1
             for sim_id in self.iter_runs(chroms):
                 chrom, mol, run = sim_id
-                path = self._path_map.params_to_path(chrom, mol, run)
-                results[chrom][mol][run] = SimData.extract(path, time, obs)
+                sim_file = self._file_map.params_to_file(chrom, mol, run)
+                results[chrom][mol][run] = SimData.extract(sim_file, time, obs)
                 key = (chrom, mol)
                 finished_counts[key] += 1
                 # Aggregate results from different runs if needed
@@ -782,9 +811,9 @@ class SimDataset:
                 results[chrom] = np.asarray(results[chrom])                
         return results
     
-    def sim_path(self, chrom : str, mol : int, run : int) -> Path:
+    def sim_file(self, chrom : str, mol : int, run : int) -> Path:
         """
-        Retrieve the file path for a specific simulation run.
+        Retrieve the file directory for a specific simulation run.
         
         Parameters
         ----------
@@ -797,15 +826,16 @@ class SimDataset:
 
         Returns
         -------
-        pathlib.Path
-            The filesystem path of the simulation data.
+        Path
+            The directory of the HDF5 file for the specified simulation run.
 
         Notes
         -----
-        This method returns the expected path based on the dataset mapping
-        structure, regardless of whether the file actually exists on disk.
+        This method returns the expected file directory based on the dataset
+        mapping structure, regardless of whether the file actually exists on
+        disk.
         """        
-        return self._path_map.params_to_path(chrom, mol, run)
+        return self._file_map.params_to_file(chrom, mol, run)
 
     @property
     def settings(self) -> Mapping[str,Any]:

@@ -48,14 +48,14 @@ class SimSettings:
                  "constant" : NucPosModel.Cooling.Constant}
     
     @classmethod
-    def load(cls, path: str | Path) -> Self:
+    def load(cls, config_file : str | Path) -> Self:
         """
         Load simulation settings from a configuration file.
 
         Parameters
         ----------
-        path : str or pathlib.Path
-            The path to the configuration file. Supported formats include 
+        config_file : str or Path
+            The directory of the configuration file. Supported formats include 
             JSON (.json) and YAML (.yaml, .yml).
 
         Returns
@@ -82,14 +82,15 @@ class SimSettings:
            exactly to the field names defined in this class (e.g., 'nucbp',
            'mu'). YAML support requires the `PyYAML` package to be installed.
         """
-        path = Path(path)
-        with path.open("r") as f:
-            if path.suffix == ".json":
+        config_file = Path(config_file)
+        with config_file.open("r") as f:
+            if config_file.suffix == ".json":
                 import json
                 data = json.load(f)
-            elif path.suffix in (".yaml", ".yml"):
+            elif config_file.suffix in (".yaml", ".yml"):
                 import yaml
                 data = yaml.safe_load(f)
             else:
-                raise ValueError(f"Unsupported file format: {path.suffix}")
+                raise ValueError(
+                    f"Unsupported file format: {config_file.suffix}")
         return cls(**data)

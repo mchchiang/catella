@@ -807,7 +807,7 @@
    "source": [
     "The normalization step in `preprocess` then tranforms these smoothed datasets into a methylation probability profile $p_M(x)$ for each molecule by scaling the data by their global minimum and maximum (see Simulation Model for more details). To avoid strong skewing arising from signal spikes, by default data are scaled with the extrema clipped such that any points rank below the 0.1% percentile (globally) are set to $p_M = 0$, and those rank above 99.9% are set to $p_M = 1$ (these thresholds can be altered via the `clip_low` and `clip_high` options).\n",
     "\n",
-    "Since we have provided control datasets (fully methlyated and unmethylated DNA fibers), the normalization was done taking into account of them. We also set the option `norm_by_strand=True`, which ensures that normalization is done $p_M$ is also stored in `exp_data.analysis`, and we look for the column `meth_prob` in the data frame:"
+    "Since we provide control datasets (fully methlyated and unmethylated DNA fibers), the normalization is done taking into account of them. Setting the option `norm_by_strand=True` ensures that normalization is done based on the strandedness of the molecule (i.e., data for `+` strand test molecules are normalized only against those for the `+` strand control molecules). The resulting $p_M$ is again stored in `exp_data.analysis`, and we look for its data via the key `meth_prob` in the data frame:"
    ]
   },
   {
@@ -1373,7 +1373,7 @@
    "id": "6ad4259b-934d-4a74-94d5-3ddd04dbb684",
    "metadata": {},
    "source": [
-    "We now use the `nucmc.run` method to run the simulations. This method requires specifying the chromosomes (DNA segments) we would like to perform the sampling, the number of simulations to conduct per molecule (`nsim`), the simulation parameters (`settings`), and the methylation probability profile for each molecule in each chromosome (`meth_prob`). We also need to specify the output directory (`out_path`) where the simulation results will be stored. The simulations can be run in parallel using multiple processes, and this is set via `nworker` (default is 1). By default, the `verbose` option is set to `True`, allowing a progress bar to be displayed in the terminal that provides an estimation of the time remaining before all jobs are complete."
+    "We now use the `nucmc.run` method to run the simulations. This method requires specifying the chromosomes (DNA segments) we would like to perform the sampling, the number of simulations to conduct per molecule (`nsim`), the simulation parameters (`settings`), and the methylation probability profile for each molecule in each chromosome (`meth_prob`). We also need to specify the output directory (`out_dir`) where the simulation results will be stored. The simulations can be run in parallel using multiple processes, and this is set via `nworker` (default is 1). By default, the `verbose` option is set to `True`, allowing a progress bar to be displayed in the terminal that provides an estimation of the time remaining before all jobs are complete."
    ]
   },
   {
@@ -1385,7 +1385,7 @@
     {
      "data": {
       "application/vnd.jupyter.widget-view+json": {
-       "model_id": "cb73224b86ee420ba13884e437fa3942",
+       "model_id": "50a74192b00a4d2caf115ae17d15bc59",
        "version_major": 2,
        "version_minor": 0
       },
@@ -1777,18 +1777,18 @@
   "widgets": {
    "application/vnd.jupyter.widget-state+json": {
     "state": {
-     "701a9a615cf842368ee2e559a580d333": {
+     "1978a39fa8924ebc94cd3eaf4d0e1002": {
       "model_module": "@jupyter-widgets/base",
       "model_module_version": "2.0.0",
       "model_name": "LayoutModel",
       "state": {}
      },
-     "cb73224b86ee420ba13884e437fa3942": {
+     "50a74192b00a4d2caf115ae17d15bc59": {
       "model_module": "@jupyter-widgets/output",
       "model_module_version": "1.0.0",
       "model_name": "OutputModel",
       "state": {
-       "layout": "IPY_MODEL_701a9a615cf842368ee2e559a580d333",
+       "layout": "IPY_MODEL_1978a39fa8924ebc94cd3eaf4d0e1002",
        "outputs": [
         {
          "data": {

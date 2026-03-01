@@ -9,6 +9,8 @@
   <title>Tutorial 1: Quick Start &mdash; nucmc 0.1.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../_static/jupyter-sphinx.css" />
+      <link rel="stylesheet" type="text/css" href="../../_static/thebelab.css" />
       <link rel="stylesheet" type="text/css" href="../../_static/custom.css?v=57874f38" />
       <link rel="stylesheet" type="text/css" href="../../_static/nbsphinx-code-cells.css?v=2aa19091" />
 
@@ -18,6 +20,9 @@
       <script src="../../_static/documentation_options.js?v=01f34227"></script>
       <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
       <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../_static/thebelab-helper.js"></script>
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+      <script src="https://cdn.jsdelivr.net/npm/@jupyter-widgets/html-manager@^1.0.1/dist/embed-amd.js"></script>
       <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
       <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true, "displayMath": [["$$", "$$"], ["\\[", "\\]"]], "tags": "ams", "tagSide": "right", "tagAlign": "center"}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
       <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
@@ -92,7 +97,7 @@ conda<span class="w"> </span>install<span class="w"> </span>jupyterlab<span clas
 </pre></div>
 </div>
 <div class="admonition note">
-<p><strong>Note:</strong> It is not required to use Jupyter notebook to run the commands in this tutorial. Using the terminal and the default Python interpreter will work just fine, although bash commands will need to be run without ‘!’ preceeding it.</p>
+<p><strong>Note:</strong> It is not required to use Jupyter notebook to run the commands in this tutorial. Using the terminal and the default Python interpreter will work just fine, although bash commands will need to be run without ‘!’ preceeding them.</p>
 </div>
 <section id="Prerequisite-data-files">
 <h2>Prerequisite data files<a class="headerlink" href="#Prerequisite-data-files" title="Link to this heading"></a></h2>
@@ -135,11 +140,11 @@ Oct4    5000
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-read_id ref_position    chrom   mod_qual        mod_code
-m84140_251219_135204_s2/221451669/ccs   0       Oct4    0       a
-m84140_251219_135204_s2/221451669/ccs   1       Oct4    0       a
-m84140_251219_135204_s2/221451669/ccs   2       Oct4    0       a
-m84140_251219_135204_s2/221451669/ccs   3       Oct4    0       a
+read_id ref_position    chrom   ref_strand      mod_qual        mod_code
+07d5beb4-3042-4944-b42e-013c35c65dd2    65      Oct4    +       0.42382813      a
+07d5beb4-3042-4944-b42e-013c35c65dd2    66      Oct4    +       0.8691406       a
+07d5beb4-3042-4944-b42e-013c35c65dd2    71      Oct4    +       0.39257813      a
+07d5beb4-3042-4944-b42e-013c35c65dd2    74      Oct4    +       0.17773438      a
 </pre></div></div>
 </div>
 <div class="admonition note">
@@ -166,13 +171,17 @@ m84140_251219_135204_s2/221451669/ccs   3       Oct4    0       a
 <td><p>name of aligned contig</p></td>
 <td><p>2</p></td>
 </tr>
-<tr class="row-odd"><td><p>mod_qual</p></td>
-<td><p>probability of the base modifcation in the next column</p></td>
+<tr class="row-odd"><td><p>ref_strand</p></td>
+<td><p>strand of the reference read is aligned to</p></td>
 <td><p>3</p></td>
 </tr>
-<tr class="row-even"><td><p>mod_code</p></td>
-<td><p>base modification code from the MM tag</p></td>
+<tr class="row-even"><td><p>mod_qual</p></td>
+<td><p>probability of the base modifcation in the next column</p></td>
 <td><p>4</p></td>
+</tr>
+<tr class="row-odd"><td><p>mod_code</p></td>
+<td><p>base modification code from the MM tag</p></td>
+<td><p>5</p></td>
 </tr>
 </tbody>
 </table>
@@ -205,7 +214,8 @@ m84140_251219_135204_s2/221451669/ccs   3       Oct4    0       a
 <span class="n">exp_data</span> <span class="o">=</span> <span class="n">nucmc</span><span class="o">.</span><span class="n">preprocess</span><span class="p">(</span><span class="n">chromsize</span><span class="o">=</span><span class="n">chromsize</span><span class="p">,</span>
                             <span class="n">test_file</span><span class="o">=</span><span class="n">test_file</span><span class="p">,</span>
                             <span class="n">unmeth_file</span><span class="o">=</span><span class="n">unmeth_file</span><span class="p">,</span>
-                            <span class="n">meth_file</span><span class="o">=</span><span class="n">meth_file</span><span class="p">)</span>
+                            <span class="n">meth_file</span><span class="o">=</span><span class="n">meth_file</span><span class="p">,</span>
+                            <span class="n">norm_by_strand</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -217,7 +227,6 @@ m84140_251219_135204_s2/221451669/ccs   3       Oct4    0       a
 Reading example/tut01_quick_start/experiment/raw_data/chromatin.tsv ...
 Reading example/tut01_quick_start/experiment/raw_data/unmethylated.tsv ...
 Reading example/tut01_quick_start/experiment/raw_data/methylated.tsv ...
-Normalizing against control samples ...
 </pre></div></div>
 </div>
 <p><code class="docutils literal notranslate"><span class="pre">exp_data</span></code> is a <code class="docutils literal notranslate"><span class="pre">MethPrintExperiment</span></code> object, which contains only the relevant attributes from the ModKit output that we need for running the simulations. We can use the <code class="docutils literal notranslate"><span class="pre">raw</span></code> property to access these underlying data (as <code class="docutils literal notranslate"><span class="pre">MethPrintData</span></code> objects). For instance, to view the methylation footprinting data for the chromatinized DNA fiber (i.e., the test condition) for <em>Oct4</em>, we use the <code class="docutils literal notranslate"><span class="pre">test_data</span></code> property, which returns a Pandas data frame of the underlying data:</p>
@@ -254,6 +263,7 @@ Normalizing against control samples ...
       <th></th>
       <th>mol_index</th>
       <th>pos</th>
+      <th>strand</th>
       <th>mod_qual</th>
       <th>mod_code</th>
     </tr>
@@ -262,37 +272,42 @@ Normalizing against control samples ...
     <tr>
       <th>0</th>
       <td>0</td>
-      <td>0</td>
-      <td>0.000000</td>
+      <td>94</td>
+      <td>-</td>
+      <td>0.267578</td>
       <td>a</td>
     </tr>
     <tr>
       <th>1</th>
       <td>0</td>
-      <td>1</td>
-      <td>0.000000</td>
+      <td>96</td>
+      <td>-</td>
+      <td>0.095703</td>
       <td>a</td>
     </tr>
     <tr>
       <th>2</th>
       <td>0</td>
-      <td>2</td>
-      <td>0.000000</td>
+      <td>102</td>
+      <td>-</td>
+      <td>0.470703</td>
       <td>a</td>
     </tr>
     <tr>
       <th>3</th>
       <td>0</td>
-      <td>3</td>
-      <td>0.000000</td>
+      <td>104</td>
+      <td>-</td>
+      <td>0.052734</td>
       <td>a</td>
     </tr>
     <tr>
       <th>4</th>
       <td>0</td>
-      <td>6</td>
-      <td>0.000000</td>
-      <td>a</td>
+      <td>107</td>
+      <td>-</td>
+      <td>0.896484</td>
+      <td>m</td>
     </tr>
     <tr>
       <th>...</th>
@@ -300,45 +315,51 @@ Normalizing against control samples ...
       <td>...</td>
       <td>...</td>
       <td>...</td>
+      <td>...</td>
     </tr>
     <tr>
-      <th>240224</th>
+      <th>122760</th>
       <td>99</td>
-      <td>4991</td>
-      <td>0.000000</td>
+      <td>4961</td>
+      <td>-</td>
+      <td>0.744141</td>
       <td>a</td>
     </tr>
     <tr>
-      <th>240225</th>
+      <th>122761</th>
       <td>99</td>
-      <td>4992</td>
-      <td>0.994141</td>
+      <td>4964</td>
+      <td>-</td>
+      <td>0.958984</td>
       <td>a</td>
     </tr>
     <tr>
-      <th>240226</th>
+      <th>122762</th>
       <td>99</td>
-      <td>4995</td>
-      <td>0.000000</td>
+      <td>4966</td>
+      <td>-</td>
+      <td>0.134766</td>
       <td>a</td>
     </tr>
     <tr>
-      <th>240227</th>
+      <th>122763</th>
       <td>99</td>
-      <td>4997</td>
-      <td>0.000000</td>
-      <td>a</td>
+      <td>4984</td>
+      <td>-</td>
+      <td>0.044922</td>
+      <td>m</td>
     </tr>
     <tr>
-      <th>240228</th>
+      <th>122764</th>
       <td>99</td>
-      <td>4998</td>
-      <td>0.000000</td>
+      <td>4987</td>
+      <td>-</td>
+      <td>0.044922</td>
       <td>a</td>
     </tr>
   </tbody>
 </table>
-<p>240229 rows × 4 columns</p>
+<p>122765 rows × 5 columns</p>
 </div></div>
 </div>
 <p>Here, the program has automatically replaced the actual string-based <code class="docutils literal notranslate"><span class="pre">read_id</span></code> of the molecule with <code class="docutils literal notranslate"><span class="pre">mol_index</span></code> (an integer) to save storage space. The actual mapping between <code class="docutils literal notranslate"><span class="pre">mol_index</span></code> and <code class="docutils literal notranslate"><span class="pre">read_id</span></code> (for the test condition) can be accessed using the <code class="docutils literal notranslate"><span class="pre">test_mol_id</span></code> property, and we show here the first 10 of these read IDs:</p>
@@ -357,16 +378,16 @@ Normalizing against control samples ...
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 &lt;StringArray&gt;
-[&#39;m84140_251219_135204_s2/101061342/ccs&#39;,
- &#39;m84140_251219_135204_s2/101583220/ccs&#39;,
- &#39;m84140_251219_135204_s2/105646491/ccs&#39;,
-  &#39;m84140_251219_135204_s2/10949257/ccs&#39;,
- &#39;m84140_251219_135204_s2/109513734/ccs&#39;,
- &#39;m84140_251219_135204_s2/110694551/ccs&#39;,
- &#39;m84140_251219_135204_s2/112396351/ccs&#39;,
- &#39;m84140_251219_135204_s2/115676811/ccs&#39;,
-  &#39;m84140_251219_135204_s2/12389686/ccs&#39;,
- &#39;m84140_251219_135204_s2/124256946/ccs&#39;]
+[&#39;03cbfa4f-8cb0-443d-83ca-4b52dd61d8a8&#39;,
+ &#39;07d5beb4-3042-4944-b42e-013c35c65dd2&#39;,
+ &#39;0b9d1d65-18dd-4457-b857-83970b889456&#39;,
+ &#39;0ccc2d6f-189a-456a-a687-2b4bcdb11591&#39;,
+ &#39;0cd8ec6e-f3fd-44fd-8246-e2aa19950583&#39;,
+ &#39;16f2beee-c0f0-4b6f-91c7-241247909960&#39;,
+ &#39;1735c610-483f-4bfd-a9b1-97771835bf1b&#39;,
+ &#39;1d87be49-5dbe-4b52-81b6-706c5897f57a&#39;,
+ &#39;1d9f713f-9e23-4a8b-8c45-107f0f222ee0&#39;,
+ &#39;1f3b094d-80c3-45d4-b8f3-1515501faa8b&#39;]
 Length: 10, dtype: str
 </pre></div></div>
 </div>
@@ -374,13 +395,13 @@ Length: 10, dtype: str
 <div class="admonition note">
 <p><strong>Note:</strong> Any operations on or modifications of the Pandas data frames containing the raw data are done on a copy, so the original data are unaffected. The data frame copies are not saved; hence, it is best to utilize the <code class="docutils literal notranslate"><span class="pre">analysis</span></code> property (see below) to add any modifications or annotations to the data. Note also that molecule read IDs are returned as non-writeable NumPy arrays.</p>
 </div>
-<p>As well as the raw data, the object also contains the normalized methylation signal, or the methylation probability <span class="math notranslate nohighlight">\(p_M(x)\)</span> for each molecule (see Simulation Model on how we defined it). Since we have provided control datasets (fully methlyated and unmethylated DNA fibers), the normalization was done taking into account of them. <span class="math notranslate nohighlight">\(p_M\)</span> is stored in <code class="docutils literal notranslate"><span class="pre">exp_data.analysis</span></code>, a dictionary of data frames containing any analysis results for each chromosome or DNA segment. More specifically,
-we look for the column <code class="docutils literal notranslate"><span class="pre">meth_prob</span></code> in the data frame:</p>
+<p>Apart from loading the raw data, the <code class="docutils literal notranslate"><span class="pre">preprocess</span></code> method performs smoothing and normalization so that the data are ready for performing simulations. The smoothing step applies a fixed-size rolling window averaging of the methylation score signal for each molecule, and the default window size <span class="math notranslate nohighlight">\(\ell_{\text{bin}}\)</span> is the typical footprint <span class="math notranslate nohighlight">\(\ell_{\text{nuc}} = 147\)</span> bp of a nucleosome bound to DNA. The smoothed data are stored in <code class="docutils literal notranslate"><span class="pre">exp_data.analysis</span></code>, a dictionary of data frames
+containing any analysis results for each chromosome or DNA segment. Specifically, we access these smoothed data via the keys <code class="docutils literal notranslate"><span class="pre">test_smoothed</span></code>, <code class="docutils literal notranslate"><span class="pre">unmeth_smoothed</span></code>, and <code class="docutils literal notranslate"><span class="pre">meth_smoothed</span></code>:</p>
 <div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">exp_data</span><span class="o">.</span><span class="n">analysis</span><span class="p">[</span><span class="s2">&quot;Oct4&quot;</span><span class="p">][</span><span class="s2">&quot;meth_prob&quot;</span><span class="p">]</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">exp_data</span><span class="o">.</span><span class="n">analysis</span><span class="p">[</span><span class="s2">&quot;Oct4&quot;</span><span class="p">][</span><span class="s2">&quot;test_smoothed&quot;</span><span class="p">]</span>
 </pre></div>
 </div>
 </div>
@@ -429,127 +450,151 @@ we look for the column <code class="docutils literal notranslate"><span class="p
       <th>4998</th>
       <th>4999</th>
     </tr>
+    <tr>
+      <th>mol_index</th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+    </tr>
   </thead>
   <tbody>
     <tr>
       <th>0</th>
-      <td>0.591933</td>
-      <td>0.591933</td>
-      <td>0.592183</td>
-      <td>0.619995</td>
-      <td>0.618872</td>
-      <td>0.642932</td>
-      <td>0.642932</td>
-      <td>0.642932</td>
-      <td>0.657117</td>
-      <td>0.668517</td>
+      <td>0.401786</td>
+      <td>0.401786</td>
+      <td>0.401786</td>
+      <td>0.380078</td>
+      <td>0.380078</td>
+      <td>0.380078</td>
+      <td>0.380078</td>
+      <td>0.380078</td>
+      <td>0.377197</td>
+      <td>0.392578</td>
       <td>...</td>
-      <td>0.587834</td>
-      <td>0.587834</td>
-      <td>0.587834</td>
-      <td>0.587834</td>
-      <td>0.587834</td>
-      <td>0.587834</td>
-      <td>0.587834</td>
-      <td>0.587834</td>
-      <td>0.587834</td>
-      <td>0.587834</td>
+      <td>0.510433</td>
+      <td>0.510433</td>
+      <td>0.510433</td>
+      <td>0.510433</td>
+      <td>0.510433</td>
+      <td>0.510433</td>
+      <td>0.510433</td>
+      <td>0.510433</td>
+      <td>0.510433</td>
+      <td>0.510433</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>0.692357</td>
-      <td>0.692357</td>
-      <td>0.692686</td>
-      <td>0.720485</td>
-      <td>0.719323</td>
-      <td>0.741835</td>
-      <td>0.741835</td>
-      <td>0.741835</td>
-      <td>0.753910</td>
-      <td>0.763212</td>
+      <td>0.422960</td>
+      <td>0.422960</td>
+      <td>0.422960</td>
+      <td>0.422960</td>
+      <td>0.422960</td>
+      <td>0.433491</td>
+      <td>0.433491</td>
+      <td>0.433491</td>
+      <td>0.433491</td>
+      <td>0.433491</td>
       <td>...</td>
-      <td>0.595421</td>
-      <td>0.595421</td>
-      <td>0.595421</td>
-      <td>0.595421</td>
-      <td>0.595421</td>
-      <td>0.595421</td>
-      <td>0.595421</td>
-      <td>0.595421</td>
-      <td>0.595421</td>
-      <td>0.595421</td>
+      <td>0.458999</td>
+      <td>0.458999</td>
+      <td>0.458999</td>
+      <td>0.458999</td>
+      <td>0.458999</td>
+      <td>0.458999</td>
+      <td>0.458999</td>
+      <td>0.458999</td>
+      <td>0.458999</td>
+      <td>0.458999</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>0.790831</td>
-      <td>0.790831</td>
-      <td>0.791238</td>
-      <td>0.819024</td>
-      <td>0.817825</td>
-      <td>0.838818</td>
-      <td>0.838818</td>
-      <td>0.838818</td>
-      <td>0.848823</td>
-      <td>0.856069</td>
+      <td>0.421725</td>
+      <td>0.421725</td>
+      <td>0.421725</td>
+      <td>0.421725</td>
+      <td>0.421725</td>
+      <td>0.443917</td>
+      <td>0.443917</td>
+      <td>0.443917</td>
+      <td>0.443917</td>
+      <td>0.443917</td>
       <td>...</td>
-      <td>0.583645</td>
-      <td>0.583645</td>
-      <td>0.583645</td>
-      <td>0.583645</td>
-      <td>0.583645</td>
-      <td>0.583645</td>
-      <td>0.583645</td>
-      <td>0.583645</td>
-      <td>0.583645</td>
-      <td>0.583645</td>
+      <td>0.431663</td>
+      <td>0.431663</td>
+      <td>0.431663</td>
+      <td>0.431663</td>
+      <td>0.431663</td>
+      <td>0.431663</td>
+      <td>0.431663</td>
+      <td>0.431663</td>
+      <td>0.431663</td>
+      <td>0.431663</td>
     </tr>
     <tr>
       <th>3</th>
-      <td>0.890475</td>
-      <td>0.890475</td>
-      <td>0.890960</td>
-      <td>0.918734</td>
-      <td>0.917496</td>
-      <td>0.936953</td>
-      <td>0.936953</td>
-      <td>0.936953</td>
-      <td>0.944864</td>
-      <td>0.950028</td>
+      <td>0.551693</td>
+      <td>0.551693</td>
+      <td>0.551693</td>
+      <td>0.561429</td>
+      <td>0.561429</td>
+      <td>0.561429</td>
+      <td>0.561429</td>
+      <td>0.561429</td>
+      <td>0.565918</td>
+      <td>0.558535</td>
       <td>...</td>
-      <td>0.635289</td>
-      <td>0.635289</td>
-      <td>0.635289</td>
-      <td>0.635289</td>
-      <td>0.635289</td>
-      <td>0.635289</td>
-      <td>0.635289</td>
-      <td>0.635289</td>
-      <td>0.635289</td>
-      <td>0.635289</td>
+      <td>0.491139</td>
+      <td>0.491139</td>
+      <td>0.491139</td>
+      <td>0.491139</td>
+      <td>0.491139</td>
+      <td>0.491139</td>
+      <td>0.491139</td>
+      <td>0.491139</td>
+      <td>0.491139</td>
+      <td>0.491139</td>
     </tr>
     <tr>
       <th>4</th>
-      <td>0.790441</td>
-      <td>0.790441</td>
-      <td>0.790847</td>
-      <td>0.818634</td>
-      <td>0.817435</td>
-      <td>0.838434</td>
-      <td>0.838434</td>
-      <td>0.838434</td>
-      <td>0.848447</td>
-      <td>0.855701</td>
+      <td>0.515104</td>
+      <td>0.515104</td>
+      <td>0.515104</td>
+      <td>0.523627</td>
+      <td>0.523627</td>
+      <td>0.523627</td>
+      <td>0.523627</td>
+      <td>0.523627</td>
+      <td>0.536865</td>
+      <td>0.527403</td>
       <td>...</td>
-      <td>0.603965</td>
-      <td>0.603965</td>
-      <td>0.603965</td>
-      <td>0.603965</td>
-      <td>0.603965</td>
-      <td>0.603965</td>
-      <td>0.603965</td>
-      <td>0.603965</td>
-      <td>0.603965</td>
-      <td>0.603965</td>
+      <td>0.459803</td>
+      <td>0.459803</td>
+      <td>0.459803</td>
+      <td>0.459803</td>
+      <td>0.459803</td>
+      <td>0.459803</td>
+      <td>0.459803</td>
+      <td>0.459803</td>
+      <td>0.459803</td>
+      <td>0.459803</td>
     </tr>
     <tr>
       <th>...</th>
@@ -577,123 +622,474 @@ we look for the column <code class="docutils literal notranslate"><span class="p
     </tr>
     <tr>
       <th>95</th>
-      <td>0.691577</td>
-      <td>0.691577</td>
-      <td>0.691906</td>
-      <td>0.719705</td>
-      <td>0.718543</td>
-      <td>0.741067</td>
-      <td>0.741067</td>
-      <td>0.741067</td>
-      <td>0.753158</td>
-      <td>0.762477</td>
+      <td>0.485286</td>
+      <td>0.485286</td>
+      <td>0.485286</td>
+      <td>0.489258</td>
+      <td>0.489258</td>
+      <td>0.489258</td>
+      <td>0.489258</td>
+      <td>0.489258</td>
+      <td>0.516889</td>
+      <td>0.510851</td>
       <td>...</td>
-      <td>0.569106</td>
-      <td>0.569106</td>
-      <td>0.569106</td>
-      <td>0.569106</td>
-      <td>0.569106</td>
-      <td>0.569106</td>
-      <td>0.569106</td>
-      <td>0.569106</td>
-      <td>0.569106</td>
-      <td>0.569106</td>
+      <td>0.450538</td>
+      <td>0.450538</td>
+      <td>0.450538</td>
+      <td>0.450538</td>
+      <td>0.450538</td>
+      <td>0.450538</td>
+      <td>0.450538</td>
+      <td>0.450538</td>
+      <td>0.450538</td>
+      <td>0.450538</td>
     </tr>
     <tr>
       <th>96</th>
-      <td>0.691577</td>
-      <td>0.691577</td>
-      <td>0.691906</td>
-      <td>0.719705</td>
-      <td>0.718543</td>
-      <td>0.741067</td>
-      <td>0.741067</td>
-      <td>0.741067</td>
-      <td>0.753158</td>
-      <td>0.762477</td>
+      <td>0.430525</td>
+      <td>0.430525</td>
+      <td>0.430525</td>
+      <td>0.441462</td>
+      <td>0.453585</td>
+      <td>0.453585</td>
+      <td>0.453585</td>
+      <td>0.466323</td>
+      <td>0.485973</td>
+      <td>0.488626</td>
       <td>...</td>
-      <td>0.580992</td>
-      <td>0.580992</td>
-      <td>0.580992</td>
-      <td>0.580992</td>
-      <td>0.580992</td>
-      <td>0.580992</td>
-      <td>0.580992</td>
-      <td>0.580992</td>
-      <td>0.580992</td>
-      <td>0.580992</td>
+      <td>0.464085</td>
+      <td>0.464085</td>
+      <td>0.464085</td>
+      <td>0.464085</td>
+      <td>0.464085</td>
+      <td>0.464085</td>
+      <td>0.464085</td>
+      <td>0.464085</td>
+      <td>0.464085</td>
+      <td>0.464085</td>
     </tr>
     <tr>
       <th>97</th>
-      <td>0.692747</td>
-      <td>0.692747</td>
-      <td>0.693077</td>
-      <td>0.720876</td>
-      <td>0.719713</td>
-      <td>0.742219</td>
-      <td>0.742219</td>
-      <td>0.742219</td>
-      <td>0.754286</td>
-      <td>0.763580</td>
+      <td>0.465541</td>
+      <td>0.465541</td>
+      <td>0.465541</td>
+      <td>0.454539</td>
+      <td>0.454539</td>
+      <td>0.454539</td>
+      <td>0.454539</td>
+      <td>0.454539</td>
+      <td>0.455599</td>
+      <td>0.461505</td>
       <td>...</td>
-      <td>0.621292</td>
-      <td>0.621292</td>
-      <td>0.621292</td>
-      <td>0.621292</td>
-      <td>0.621292</td>
-      <td>0.621292</td>
-      <td>0.621292</td>
-      <td>0.621292</td>
-      <td>0.621292</td>
-      <td>0.621292</td>
+      <td>0.439241</td>
+      <td>0.439241</td>
+      <td>0.439241</td>
+      <td>0.439241</td>
+      <td>0.439241</td>
+      <td>0.439241</td>
+      <td>0.439241</td>
+      <td>0.439241</td>
+      <td>0.439241</td>
+      <td>0.439241</td>
     </tr>
     <tr>
       <th>98</th>
-      <td>0.592713</td>
-      <td>0.592713</td>
-      <td>0.592964</td>
-      <td>0.620776</td>
-      <td>0.619652</td>
-      <td>0.643700</td>
-      <td>0.643700</td>
-      <td>0.643700</td>
-      <td>0.657869</td>
-      <td>0.669252</td>
+      <td>0.410224</td>
+      <td>0.424526</td>
+      <td>0.440032</td>
+      <td>0.440032</td>
+      <td>0.440032</td>
+      <td>0.430246</td>
+      <td>0.430246</td>
+      <td>0.430246</td>
+      <td>0.430246</td>
+      <td>0.444517</td>
       <td>...</td>
-      <td>0.599573</td>
-      <td>0.599573</td>
-      <td>0.599573</td>
-      <td>0.599573</td>
-      <td>0.599573</td>
-      <td>0.599573</td>
-      <td>0.599573</td>
-      <td>0.599573</td>
-      <td>0.599573</td>
-      <td>0.599573</td>
+      <td>0.438070</td>
+      <td>0.438070</td>
+      <td>0.438070</td>
+      <td>0.438070</td>
+      <td>0.438070</td>
+      <td>0.438070</td>
+      <td>0.438070</td>
+      <td>0.438070</td>
+      <td>0.438070</td>
+      <td>0.438070</td>
     </tr>
     <tr>
       <th>99</th>
-      <td>0.790831</td>
-      <td>0.790831</td>
-      <td>0.791238</td>
-      <td>0.819024</td>
-      <td>0.817825</td>
-      <td>0.838818</td>
-      <td>0.838818</td>
-      <td>0.838818</td>
-      <td>0.848823</td>
-      <td>0.856069</td>
+      <td>0.302434</td>
+      <td>0.302434</td>
+      <td>0.302434</td>
+      <td>0.325335</td>
+      <td>0.325335</td>
+      <td>0.325335</td>
+      <td>0.325335</td>
+      <td>0.325335</td>
+      <td>0.348828</td>
+      <td>0.334961</td>
       <td>...</td>
-      <td>0.599780</td>
-      <td>0.599780</td>
-      <td>0.599780</td>
-      <td>0.599780</td>
-      <td>0.599780</td>
-      <td>0.599780</td>
-      <td>0.599780</td>
-      <td>0.599780</td>
-      <td>0.599780</td>
-      <td>0.599780</td>
+      <td>0.429967</td>
+      <td>0.429967</td>
+      <td>0.429967</td>
+      <td>0.429967</td>
+      <td>0.429967</td>
+      <td>0.429967</td>
+      <td>0.429967</td>
+      <td>0.429967</td>
+      <td>0.429967</td>
+      <td>0.429967</td>
+    </tr>
+  </tbody>
+</table>
+<p>100 rows × 5000 columns</p>
+</div></div>
+</div>
+<p>The normalization step in <code class="docutils literal notranslate"><span class="pre">preprocess</span></code> then tranforms these smoothed datasets into a methylation probability profile <span class="math notranslate nohighlight">\(p_M(x)\)</span> for each molecule by scaling the data by their global minimum and maximum (see Simulation Model for more details). To avoid strong skewing arising from signal spikes, by default data are scaled with the extrema clipped such that any points rank below the 0.1% percentile (globally) are set to <span class="math notranslate nohighlight">\(p_M = 0\)</span>, and those rank above 99.9% are set to <span class="math notranslate nohighlight">\(p_M = 1\)</span>
+(these thresholds can be altered via the <code class="docutils literal notranslate"><span class="pre">clip_low</span></code> and <code class="docutils literal notranslate"><span class="pre">clip_high</span></code> options).</p>
+<p>Since we have provided control datasets (fully methlyated and unmethylated DNA fibers), the normalization was done taking into account of them. We also set the option <code class="docutils literal notranslate"><span class="pre">norm_by_strand=True</span></code>, which ensures that normalization is done <span class="math notranslate nohighlight">\(p_M\)</span> is also stored in <code class="docutils literal notranslate"><span class="pre">exp_data.analysis</span></code>, and we look for the column <code class="docutils literal notranslate"><span class="pre">meth_prob</span></code> in the data frame:</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[8]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">exp_data</span><span class="o">.</span><span class="n">analysis</span><span class="p">[</span><span class="s2">&quot;Oct4&quot;</span><span class="p">][</span><span class="s2">&quot;meth_prob&quot;</span><span class="p">]</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[8]:
+</pre></div>
+</div>
+<div class="output_area rendered_html docutils container">
+<div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>0</th>
+      <th>1</th>
+      <th>2</th>
+      <th>3</th>
+      <th>4</th>
+      <th>5</th>
+      <th>6</th>
+      <th>7</th>
+      <th>8</th>
+      <th>9</th>
+      <th>...</th>
+      <th>4990</th>
+      <th>4991</th>
+      <th>4992</th>
+      <th>4993</th>
+      <th>4994</th>
+      <th>4995</th>
+      <th>4996</th>
+      <th>4997</th>
+      <th>4998</th>
+      <th>4999</th>
+    </tr>
+    <tr>
+      <th>mol_index</th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>0.780063</td>
+      <td>0.780063</td>
+      <td>0.780063</td>
+      <td>0.799171</td>
+      <td>0.801012</td>
+      <td>0.801012</td>
+      <td>0.801012</td>
+      <td>0.803548</td>
+      <td>0.799836</td>
+      <td>0.789194</td>
+      <td>...</td>
+      <td>0.608282</td>
+      <td>0.608282</td>
+      <td>0.608282</td>
+      <td>0.608282</td>
+      <td>0.608282</td>
+      <td>0.608282</td>
+      <td>0.608282</td>
+      <td>0.608282</td>
+      <td>0.608282</td>
+      <td>0.608282</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>0.779043</td>
+      <td>0.783216</td>
+      <td>0.789117</td>
+      <td>0.789117</td>
+      <td>0.789117</td>
+      <td>0.786351</td>
+      <td>0.786351</td>
+      <td>0.786351</td>
+      <td>0.786351</td>
+      <td>0.764440</td>
+      <td>...</td>
+      <td>0.629272</td>
+      <td>0.629272</td>
+      <td>0.629272</td>
+      <td>0.629272</td>
+      <td>0.629272</td>
+      <td>0.629272</td>
+      <td>0.629272</td>
+      <td>0.629272</td>
+      <td>0.629272</td>
+      <td>0.629272</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>0.779829</td>
+      <td>0.783990</td>
+      <td>0.789871</td>
+      <td>0.789871</td>
+      <td>0.789871</td>
+      <td>0.780145</td>
+      <td>0.780145</td>
+      <td>0.780145</td>
+      <td>0.780145</td>
+      <td>0.757497</td>
+      <td>...</td>
+      <td>0.652278</td>
+      <td>0.652278</td>
+      <td>0.652278</td>
+      <td>0.652278</td>
+      <td>0.652278</td>
+      <td>0.652278</td>
+      <td>0.652278</td>
+      <td>0.652278</td>
+      <td>0.652278</td>
+      <td>0.652278</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>0.688662</td>
+      <td>0.688662</td>
+      <td>0.688662</td>
+      <td>0.692127</td>
+      <td>0.694729</td>
+      <td>0.694729</td>
+      <td>0.694729</td>
+      <td>0.698312</td>
+      <td>0.686904</td>
+      <td>0.689599</td>
+      <td>...</td>
+      <td>0.623597</td>
+      <td>0.623597</td>
+      <td>0.623597</td>
+      <td>0.623597</td>
+      <td>0.623597</td>
+      <td>0.623597</td>
+      <td>0.623597</td>
+      <td>0.623597</td>
+      <td>0.623597</td>
+      <td>0.623597</td>
+    </tr>
+    <tr>
+      <th>4</th>
+      <td>0.710971</td>
+      <td>0.710971</td>
+      <td>0.710971</td>
+      <td>0.714440</td>
+      <td>0.716884</td>
+      <td>0.716884</td>
+      <td>0.716884</td>
+      <td>0.720248</td>
+      <td>0.704290</td>
+      <td>0.708282</td>
+      <td>...</td>
+      <td>0.648470</td>
+      <td>0.648470</td>
+      <td>0.648470</td>
+      <td>0.648470</td>
+      <td>0.648470</td>
+      <td>0.648470</td>
+      <td>0.648470</td>
+      <td>0.648470</td>
+      <td>0.648470</td>
+      <td>0.648470</td>
+    </tr>
+    <tr>
+      <th>...</th>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+    </tr>
+    <tr>
+      <th>95</th>
+      <td>0.729151</td>
+      <td>0.729151</td>
+      <td>0.729151</td>
+      <td>0.734726</td>
+      <td>0.737026</td>
+      <td>0.737026</td>
+      <td>0.737026</td>
+      <td>0.740192</td>
+      <td>0.716244</td>
+      <td>0.718215</td>
+      <td>...</td>
+      <td>0.655823</td>
+      <td>0.655823</td>
+      <td>0.655823</td>
+      <td>0.655823</td>
+      <td>0.655823</td>
+      <td>0.655823</td>
+      <td>0.655823</td>
+      <td>0.655823</td>
+      <td>0.655823</td>
+      <td>0.655823</td>
+    </tr>
+    <tr>
+      <th>96</th>
+      <td>0.762541</td>
+      <td>0.762541</td>
+      <td>0.762541</td>
+      <td>0.762938</td>
+      <td>0.757933</td>
+      <td>0.757933</td>
+      <td>0.757933</td>
+      <td>0.753501</td>
+      <td>0.734744</td>
+      <td>0.731553</td>
+      <td>...</td>
+      <td>0.645071</td>
+      <td>0.645071</td>
+      <td>0.645071</td>
+      <td>0.645071</td>
+      <td>0.645071</td>
+      <td>0.645071</td>
+      <td>0.645071</td>
+      <td>0.645071</td>
+      <td>0.645071</td>
+      <td>0.645071</td>
+    </tr>
+    <tr>
+      <th>97</th>
+      <td>0.741190</td>
+      <td>0.741190</td>
+      <td>0.741190</td>
+      <td>0.755219</td>
+      <td>0.757373</td>
+      <td>0.757373</td>
+      <td>0.757373</td>
+      <td>0.760339</td>
+      <td>0.752920</td>
+      <td>0.747829</td>
+      <td>...</td>
+      <td>0.664791</td>
+      <td>0.664791</td>
+      <td>0.664791</td>
+      <td>0.664791</td>
+      <td>0.664791</td>
+      <td>0.664791</td>
+      <td>0.664791</td>
+      <td>0.664791</td>
+      <td>0.664791</td>
+      <td>0.664791</td>
+    </tr>
+    <tr>
+      <th>98</th>
+      <td>0.787144</td>
+      <td>0.782236</td>
+      <td>0.778701</td>
+      <td>0.778701</td>
+      <td>0.778701</td>
+      <td>0.788283</td>
+      <td>0.788283</td>
+      <td>0.788283</td>
+      <td>0.788283</td>
+      <td>0.757098</td>
+      <td>...</td>
+      <td>0.646886</td>
+      <td>0.646886</td>
+      <td>0.646886</td>
+      <td>0.646886</td>
+      <td>0.646886</td>
+      <td>0.646886</td>
+      <td>0.646886</td>
+      <td>0.646886</td>
+      <td>0.646886</td>
+      <td>0.646886</td>
+    </tr>
+    <tr>
+      <th>99</th>
+      <td>0.840640</td>
+      <td>0.840640</td>
+      <td>0.840640</td>
+      <td>0.831483</td>
+      <td>0.833095</td>
+      <td>0.833095</td>
+      <td>0.833095</td>
+      <td>0.835315</td>
+      <td>0.816812</td>
+      <td>0.823771</td>
+      <td>...</td>
+      <td>0.672152</td>
+      <td>0.672152</td>
+      <td>0.672152</td>
+      <td>0.672152</td>
+      <td>0.672152</td>
+      <td>0.672152</td>
+      <td>0.672152</td>
+      <td>0.672152</td>
+      <td>0.672152</td>
+      <td>0.672152</td>
     </tr>
   </tbody>
 </table>
@@ -702,7 +1098,7 @@ we look for the column <code class="docutils literal notranslate"><span class="p
 </div>
 <p>This is now a good checkpoint to save the processed experimental data, which can be done using the <code class="docutils literal notranslate"><span class="pre">save</span></code> method. This stores the relevant raw data and analyses we have done into a single HDF5 file.</p>
 <div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[8]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[9]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">exp_h5</span> <span class="o">=</span> <span class="n">exp_dir</span><span class="o">/</span><span class="s2">&quot;analysis.h5&quot;</span>
@@ -712,7 +1108,7 @@ we look for the column <code class="docutils literal notranslate"><span class="p
 </div>
 <p>We can reload this file later using the <code class="docutils literal notranslate"><span class="pre">load</span></code> method:</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[9]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">nucmc.experiment.methdata</span><span class="w"> </span><span class="kn">import</span> <span class="n">MethPrintExperiment</span>
@@ -765,13 +1161,13 @@ MethPrintExperiment(chroms, raw, analysis, global_analysis)
 <td><p>Frequency (in sweeps) at which to record simulation data</p></td>
 </tr>
 <tr class="row-even"><td><p>emax</p></td>
-<td><p>The maximum energy cost allowed from the methylation footprinting data</p></td>
+<td><p>The maximum energy cost allowed (in <span class="math notranslate nohighlight">\(k_BT\)</span>) from the methylation footprinting data</p></td>
 </tr>
 </tbody>
 </table>
 <p>The file can be in <code class="docutils literal notranslate"><span class="pre">.json</span></code> or <code class="docutils literal notranslate"><span class="pre">.yml</span></code> format. For example, in <code class="docutils literal notranslate"><span class="pre">.yml</span></code> format the file looks as follows:</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[11]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="o">!</span>cat<span class="w"> </span>example/tut01_quick_start/simulation/sim_params.yml
@@ -796,7 +1192,7 @@ emax:        10.0
 </div>
 <p>Alternatively, we can specify these parameters directly within python by utilizing the <code class="docutils literal notranslate"><span class="pre">SimSettings</span></code> object:</p>
 <div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[11]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[12]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">nucmc.simulation.engine</span><span class="w"> </span><span class="kn">import</span> <span class="n">SimSettings</span>
@@ -818,26 +1214,26 @@ emax:        10.0
 the option <code class="docutils literal notranslate"><span class="pre">use_zero_point_mu</span></code> in <code class="docutils literal notranslate"><span class="pre">nucmc.run</span></code> to modify <span class="math notranslate nohighlight">\(\mu = \mu_z\)</span>.</p>
 <p>Next, we need to extract the methylation probabilities <span class="math notranslate nohighlight">\(p_M\)</span> from the processed data and store them in a dictionary:</p>
 <div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[12]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[13]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">meth_prob</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;Oct4&quot;</span><span class="p">:</span> <span class="n">exp_data</span><span class="o">.</span><span class="n">analysis</span><span class="p">[</span><span class="s2">&quot;Oct4&quot;</span><span class="p">][</span><span class="s2">&quot;meth_prob&quot;</span><span class="p">]}</span>
 </pre></div>
 </div>
 </div>
-<p>We now use the <code class="docutils literal notranslate"><span class="pre">nucmc.run</span></code> method to run the simulations. This method requires specifying the chromosomes (DNA segments) we would like to perform the sampling, the number of simulations to conduct per molecule (<code class="docutils literal notranslate"><span class="pre">nsim</span></code>), the simulation parameters (<code class="docutils literal notranslate"><span class="pre">settings</span></code>) and the methylation probability profile for each molecule in each chromosome (<code class="docutils literal notranslate"><span class="pre">meth_prob</span></code>). We also need to specify the output directory (<code class="docutils literal notranslate"><span class="pre">out_path</span></code>) where the simulation results will be stored. The simulations can be run in
-parallel using multiple processes, and this is set using <code class="docutils literal notranslate"><span class="pre">nworker</span></code> (default is 1). By default, the <code class="docutils literal notranslate"><span class="pre">verbose</span></code> option is set to <code class="docutils literal notranslate"><span class="pre">True</span></code>, allowing a progress bar to be displayed in the terminal that provides an estimation of the time remaining before all jobs are complete.</p>
+<p>We now use the <code class="docutils literal notranslate"><span class="pre">nucmc.run</span></code> method to run the simulations. This method requires specifying the chromosomes (DNA segments) we would like to perform the sampling, the number of simulations to conduct per molecule (<code class="docutils literal notranslate"><span class="pre">nsim</span></code>), the simulation parameters (<code class="docutils literal notranslate"><span class="pre">settings</span></code>), and the methylation probability profile for each molecule in each chromosome (<code class="docutils literal notranslate"><span class="pre">meth_prob</span></code>). We also need to specify the output directory (<code class="docutils literal notranslate"><span class="pre">out_path</span></code>) where the simulation results will be stored. The simulations can be run in
+parallel using multiple processes, and this is set via <code class="docutils literal notranslate"><span class="pre">nworker</span></code> (default is 1). By default, the <code class="docutils literal notranslate"><span class="pre">verbose</span></code> option is set to <code class="docutils literal notranslate"><span class="pre">True</span></code>, allowing a progress bar to be displayed in the terminal that provides an estimation of the time remaining before all jobs are complete.</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[13]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[14]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">sim_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;example/tut01_quick_start/simulation/result/&quot;</span><span class="p">)</span> <span class="c1"># Note that this dir must not exists</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">sim_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;example/tut01_quick_start/simulation/result/&quot;</span><span class="p">)</span> <span class="c1"># Note that this dir must not exist</span>
 <span class="n">sim_data</span> <span class="o">=</span> <span class="n">nucmc</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">chroms</span><span class="o">=</span><span class="n">exp_data</span><span class="o">.</span><span class="n">chroms</span><span class="p">,</span>
                      <span class="n">nsim</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span>
                      <span class="n">seed</span><span class="o">=</span><span class="mi">2346</span><span class="p">,</span>
                      <span class="n">meth_prob</span><span class="o">=</span><span class="n">meth_prob</span><span class="p">,</span>
                      <span class="n">settings</span><span class="o">=</span><span class="n">settings</span><span class="p">,</span>
-                     <span class="n">out_path</span><span class="o">=</span><span class="n">sim_dir</span><span class="p">,</span>
+                     <span class="n">out_dir</span><span class="o">=</span><span class="n">sim_dir</span><span class="p">,</span>
                      <span class="n">nworker</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
 </pre></div>
 </div>
@@ -846,7 +1242,7 @@ parallel using multiple processes, and this is set using <code class="docutils l
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<script type="application/vnd.jupyter.widget-view+json">{"model_id": "d0d19f62117b4c81823a42a787365ecc", "version_major": 2, "version_minor": 0}</script></div>
+<script type="application/vnd.jupyter.widget-view+json">{"model_id": "cb73224b86ee420ba13884e437fa3942", "version_major": 2, "version_minor": 0}</script></div>
 </div>
 <div class="nboutput nblast docutils container">
 <div class="prompt empty docutils container">
@@ -854,7 +1250,8 @@ parallel using multiple processes, and this is set using <code class="docutils l
 <div class="output_area rendered_html docutils container">
 <pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
 </div>
-<p>With <code class="docutils literal notranslate"><span class="pre">nworker=10</span></code>, the simulations should take around a few minutes to complete. Each simulation generates an HDF5 file containing the output data as specified by the <code class="docutils literal notranslate"><span class="pre">out_types</span></code> option in <code class="docutils literal notranslate"><span class="pre">run</span></code>. The default value for this option is <code class="docutils literal notranslate"><span class="pre">all</span></code>, including all information about the system such as its energy and temperature over time as well as the nucleosome positions. All simulation HDF5 files are located within the sub-directory <code class="docutils literal notranslate"><span class="pre">raw_data</span></code> in <code class="docutils literal notranslate"><span class="pre">out_path</span></code>.</p>
+<p>With <code class="docutils literal notranslate"><span class="pre">nworker=10</span></code>, the simulations should take around a few minutes to complete. Each simulation generates an HDF5 file containing the output data as specified by the <code class="docutils literal notranslate"><span class="pre">out_types</span></code> option in <code class="docutils literal notranslate"><span class="pre">run</span></code>. The default value for this option is <code class="docutils literal notranslate"><span class="pre">all</span></code>, including all information about the system such as its energy and temperature over time as well as the nucleosome positions. All simulation HDF5 files are located within the sub-directory <code class="docutils literal notranslate"><span class="pre">raw_data</span></code> in <code class="docutils literal notranslate"><span class="pre">out_dir</span></code>. Additionally, an overall dataset
+HDF5 file containing the metadata of the simulations and the downstream analysis is created and stored in <code class="docutils literal notranslate"><span class="pre">out_dir/results.h5</span></code> by default. The name of this file can be changed via the <code class="docutils literal notranslate"><span class="pre">dataset_name</span></code> option in <code class="docutils literal notranslate"><span class="pre">run</span></code>.</p>
 <div class="admonition note">
 <p><strong>Note:</strong> Sub-directories within <code class="docutils literal notranslate"><span class="pre">raw_data</span></code> should not be touched, as <code class="docutils literal notranslate"><span class="pre">nucmc</span></code> relies on the file structure there to access the raw simulation data.</p>
 </div>
@@ -863,7 +1260,7 @@ parallel using multiple processes, and this is set using <code class="docutils l
 <h2>Analyzing the simulation results<a class="headerlink" href="#Analyzing-the-simulation-results" title="Link to this heading"></a></h2>
 <p>It is good practice to first inspect the raw simulation data and check that the results are reasonable before conducting any downstream analysis. To access the raw data from a specific simulation run (say run 0 for molecule 0 in <em>Oct4</em>), we use the <code class="docutils literal notranslate"><span class="pre">raw</span></code> property, which returns a <code class="docutils literal notranslate"><span class="pre">SimData</span></code> object:</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[14]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[15]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">sim_data</span><span class="o">.</span><span class="n">raw</span><span class="p">[</span><span class="s2">&quot;Oct4&quot;</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">]</span>
@@ -871,7 +1268,7 @@ parallel using multiple processes, and this is set using <code class="docutils l
 </div>
 </div>
 <div class="nboutput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[14]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[15]:
 </pre></div>
 </div>
 <div class="output_area docutils container">
@@ -884,7 +1281,7 @@ SimData(nucbp, nbp, llink, mu, seed, time, energy, position, temp)
 </div>
 <p>Here, we can for instance inspect the total energy of the system over time, using the property <code class="docutils literal notranslate"><span class="pre">energy</span></code>:</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[15]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[16]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">sim_data</span><span class="o">.</span><span class="n">raw</span><span class="p">[</span><span class="s2">&quot;Oct4&quot;</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">energy</span>
@@ -892,13 +1289,13 @@ SimData(nucbp, nbp, llink, mu, seed, time, energy, position, temp)
 </div>
 </div>
 <div class="nboutput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[15]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[16]:
 </pre></div>
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-array([ 0.        , -2.38651134,  0.5707656 , ..., -6.08010754,
-       -6.12096813, -6.03795022], shape=(1001,))
+array([ 0.        , -1.02862654, -1.8984876 , ..., -7.04209084,
+       -7.10258439, -7.11097922], shape=(1001,))
 </pre></div></div>
 </div>
 <div class="admonition note">
@@ -906,7 +1303,7 @@ array([ 0.        , -2.38651134,  0.5707656 , ..., -6.08010754,
 </div>
 <p>A good sanity check that we have run the simulation for long enough and that the system has reached a steady state is to see whether the total energy has stablized. We can plot the above time series of the energy values as follows:</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[16]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[17]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">nucmc</span><span class="o">.</span><span class="n">plot_energy</span><span class="p">(</span><span class="n">chrom</span><span class="o">=</span><span class="s2">&quot;Oct4&quot;</span><span class="p">,</span> <span class="n">mol</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">run</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">dataset</span><span class="o">=</span><span class="n">sim_data</span><span class="p">)</span>
@@ -917,13 +1314,13 @@ array([ 0.        , -2.38651134,  0.5707656 , ..., -6.08010754,
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../../_images/tutorials_tut01_quick_start_quick_start_33_0.png" src="../../_images/tutorials_tut01_quick_start_quick_start_33_0.png" />
+<img alt="../../_images/tutorials_tut01_quick_start_quick_start_35_0.png" src="../../_images/tutorials_tut01_quick_start_quick_start_35_0.png" />
 </div>
 </div>
-<p>We can see that the energy has gradually lowered over time and stablizes at around <span class="math notranslate nohighlight">\(-6 k_BT\)</span>, and that fluctuations have minimized over time (reported in units of MCS, or number of Monte Carlo sweeps).</p>
+<p>We can see that the energy has gradually lowered and stablized at around <span class="math notranslate nohighlight">\(-6 k_BT\)</span>, and that fluctuations have minimized over time (reported in units of MCS, or number of Monte Carlo sweeps).</p>
 <p>Another way to see whether the system has stablized is to plot the nucleosome positions over time as a heatmap. This can be done using the <code class="docutils literal notranslate"><span class="pre">nucmc.plot_nuc_pos</span></code> method, and it is useful to enable the <code class="docutils literal notranslate"><span class="pre">plot_eseq</span></code> option to show within the same plot the sequence-specific energy landscape <span class="math notranslate nohighlight">\(E_{\text{seq}}\)</span> for the molecule derived from its methylation footprinting data.</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[17]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[18]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">nucmc</span><span class="o">.</span><span class="n">plot_nuc_pos</span><span class="p">(</span><span class="n">chrom</span><span class="o">=</span><span class="s2">&quot;Oct4&quot;</span><span class="p">,</span> <span class="n">mol</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">run</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">dataset</span><span class="o">=</span><span class="n">sim_data</span><span class="p">,</span> <span class="n">plot_eseq</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
@@ -934,13 +1331,13 @@ array([ 0.        , -2.38651134,  0.5707656 , ..., -6.08010754,
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../../_images/tutorials_tut01_quick_start_quick_start_35_0.png" src="../../_images/tutorials_tut01_quick_start_quick_start_35_0.png" />
+<img alt="../../_images/tutorials_tut01_quick_start_quick_start_37_0.png" src="../../_images/tutorials_tut01_quick_start_quick_start_37_0.png" />
 </div>
 </div>
 <p>The nucleosome locations are shown in yellow in this plot, and they behave as one would expect: as the temperature decreases, the extent of repositioning and shuffling reduces, and the nucleosomes freeze into a final set of positions. Also, comparing with the energy landscape <span class="math notranslate nohighlight">\(E_{\text{seq}}\)</span>, we see that the nucleosomes tend to avoid the maxima and sit near the minima as expected.</p>
 <p>To get a sense of the overall picture of nucleosome positioning across all molecules, we use <code class="docutils literal notranslate"><span class="pre">nucmc.analyze</span></code> to perform some basic quantification of the simulated nucleosome positions:</p>
 <div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[18]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[19]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">nucmc</span><span class="o">.</span><span class="n">analyze</span><span class="p">(</span><span class="n">dataset</span><span class="o">=</span><span class="n">sim_data</span><span class="p">)</span>
@@ -953,7 +1350,7 @@ array([ 0.        , -2.38651134,  0.5707656 , ..., -6.08010754,
 <p>where <span class="math notranslate nohighlight">\(s_i^{(n)} = 1\)</span> if, in the <span class="math notranslate nohighlight">\(n\)</span>th simulation, a nucleosome occcupies base-pair <span class="math notranslate nohighlight">\(x\)</span> and <span class="math notranslate nohighlight">\(0\)</span> otherwise.</p>
 <p>These results are stored in <code class="docutils literal notranslate"><span class="pre">data.analysis</span></code>. For instance, to retrieve the average number of nucleosomes in each molecule in <em>Oct4</em>, we do the following:</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[19]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[20]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">sim_data</span><span class="o">.</span><span class="n">analysis</span><span class="p">[</span><span class="s2">&quot;Oct4&quot;</span><span class="p">][</span><span class="s2">&quot;mean_nnuc&quot;</span><span class="p">]</span>
@@ -961,7 +1358,7 @@ array([ 0.        , -2.38651134,  0.5707656 , ..., -6.08010754,
 </div>
 </div>
 <div class="nboutput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[19]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[20]:
 </pre></div>
 </div>
 <div class="output_area rendered_html docutils container">
@@ -989,23 +1386,23 @@ array([ 0.        , -2.38651134,  0.5707656 , ..., -6.08010754,
   <tbody>
     <tr>
       <th>0</th>
-      <td>20.0</td>
+      <td>16.9</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>17.9</td>
+      <td>16.6</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>19.0</td>
+      <td>15.6</td>
     </tr>
     <tr>
       <th>3</th>
-      <td>17.8</td>
+      <td>15.0</td>
     </tr>
     <tr>
       <th>4</th>
-      <td>18.2</td>
+      <td>15.0</td>
     </tr>
     <tr>
       <th>...</th>
@@ -1013,23 +1410,23 @@ array([ 0.        , -2.38651134,  0.5707656 , ..., -6.08010754,
     </tr>
     <tr>
       <th>95</th>
-      <td>18.6</td>
+      <td>13.1</td>
     </tr>
     <tr>
       <th>96</th>
-      <td>19.0</td>
+      <td>16.0</td>
     </tr>
     <tr>
       <th>97</th>
-      <td>16.8</td>
+      <td>12.1</td>
     </tr>
     <tr>
       <th>98</th>
-      <td>19.1</td>
+      <td>15.6</td>
     </tr>
     <tr>
       <th>99</th>
-      <td>19.0</td>
+      <td>12.9</td>
     </tr>
   </tbody>
 </table>
@@ -1038,7 +1435,7 @@ array([ 0.        , -2.38651134,  0.5707656 , ..., -6.08010754,
 </div>
 <p>To visualize the averaged nucleosome occupancy across all molecules, we use the <code class="docutils literal notranslate"><span class="pre">nucmc.plot_occup</span></code> method, and again we enable the <code class="docutils literal notranslate"><span class="pre">plot_eseq</span></code> option to see correspondence between the nucleosome positions and the underlying energy landscape:</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[20]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[21]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">nucmc</span><span class="o">.</span><span class="n">plot_occup</span><span class="p">(</span><span class="n">chrom</span><span class="o">=</span><span class="s2">&quot;Oct4&quot;</span><span class="p">,</span> <span class="n">dataset</span><span class="o">=</span><span class="n">sim_data</span><span class="p">,</span> <span class="n">plot_eseq</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
@@ -1049,19 +1446,21 @@ array([ 0.        , -2.38651134,  0.5707656 , ..., -6.08010754,
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../../_images/tutorials_tut01_quick_start_quick_start_41_0.png" src="../../_images/tutorials_tut01_quick_start_quick_start_41_0.png" />
+<img alt="../../_images/tutorials_tut01_quick_start_quick_start_43_0.png" src="../../_images/tutorials_tut01_quick_start_quick_start_43_0.png" />
 </div>
 </div>
-<p>Finally, we can save our analyses of the simulation results into an HDF5 file that can be retrieved later for further post-processing:</p>
+<p>Finally, we can save our analyses of the simulation results (in the HDF5 file <code class="docutils literal notranslate"><span class="pre">out_dir/results.h5</span></code>) that can be retrieved later for further post-processing:</p>
 <div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[21]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[22]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">sim_data</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">sim_dir</span><span class="o">/</span><span class="s2">&quot;results.h5&quot;</span><span class="p">)</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">sim_data</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
 </pre></div>
 </div>
 </div>
-</section>
+<script type="application/vnd.jupyter.widget-state+json">
+{"state": {"701a9a615cf842368ee2e559a580d333": {"model_module": "@jupyter-widgets/base", "model_module_version": "2.0.0", "model_name": "LayoutModel", "state": {}}, "cb73224b86ee420ba13884e437fa3942": {"model_module": "@jupyter-widgets/output", "model_module_version": "1.0.0", "model_name": "OutputModel", "state": {"layout": "IPY_MODEL_701a9a615cf842368ee2e559a580d333", "outputs": [{"data": {"text/html": "<pre style=\"white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace\"><span style=\"color: #008000; text-decoration-color: #008000\">\u2838</span> <span style=\"color: #008080; text-decoration-color: #008080\">Running simulations ...</span> <span style=\"color: #f92672; text-decoration-color: #f92672\">\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2578</span> <span style=\"color: #800080; text-decoration-color: #800080\">100%</span> <span style=\"color: #008080; text-decoration-color: #008080\">0:00:01</span>\n</pre>\n", "text/plain": "\u001b[32m\u2838\u001b[0m \u001b[36mRunning simulations ...\u001b[0m \u001b[38;2;249;38;114m\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u001b[0m\u001b[38;2;249;38;114m\u2578\u001b[0m \u001b[35m100%\u001b[0m \u001b[36m0:00:01\u001b[0m\n"}, "metadata": {}, "output_type": "display_data"}]}}}, "version_major": 2, "version_minor": 0}
+</script></section>
 </section>
 
 

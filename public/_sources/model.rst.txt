@@ -81,7 +81,8 @@ Finally, we convert :math:`p_{\text{seq}}(x)` to the energy
 
 .. math::
    
-   E_{\text{seq}} = \text{min}[-k_BT\log p(x), E_{\text{seq}}^{\text{max}}] \;,
+   E_{\text{seq}} = \text{min}[-k_BT\log p_{\text{seq}}(x),
+   E_{\text{seq}}^{\text{max}}] \;,
 
 where :math:`k_B` is the Boltzmann constant, :math:`T` is the temperature of
 the system, and :math:`E_{\text{seq}}^{\text{max}}` is a threshold maximum

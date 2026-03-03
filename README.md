@@ -13,7 +13,7 @@ git clone https://git.ecdf.ed.ac.uk/cchiang2/nucmc-project.git
 Next, use Conda to create a new environment with the package installed via the provided environment (.yml) file:
 
 ```bash
-conda env create -n environment.yml
+conda env create -f environment.yml
 ```
 
 For more information, please visit the page https://git-pages.ecdf.ed.ac.uk/cchiang2/nucmc-project/install.

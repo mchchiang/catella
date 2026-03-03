@@ -2,7 +2,7 @@
 
 from collections.abc import MutableMapping, Mapping
 from typing import Dict, Any, Iterator
-from dataclasses import fields
+from dataclasses import fields, is_dataclass
 import pandas as pd
 
 class DataFrameMap(MutableMapping):
@@ -80,3 +80,12 @@ class DataclassPublicProxy(Mapping):
 
     def __len__(self):
         return len(self._keys)
+
+    def __repr__(self) -> str:
+        if not is_dataclass(self._obj):
+            return super().__repr__()        
+        # Get field-value pairs dynamically
+        items = [f"{f.name}={getattr(self._obj, f.name)!r}" 
+                 for f in fields(self._obj)]        
+        return f"{self.__class__.__name__}" + \
+            f"({self._obj.__class__.__name__}({', '.join(items)}))"

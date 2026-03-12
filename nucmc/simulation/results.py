@@ -612,8 +612,12 @@ class SimDataset:
             dataset_file = self._dataset_file
             
         with h5py.File(dataset_file, "a") as h5stream:
-            # Save metadata asssociated with raw simulation data
-            if "metadata" not in h5stream:
+            # Ensure that the raw file directory is up-to-date
+            if "metadata" in h5stream:
+                gmeta = h5stream["metadata"]
+                gmeta.attrs["raw_dir"] = str(self._raw_dir)
+            else: # if "metadata" not in h5stream:
+                # Save metadata asssociated with raw simulation data
                 gmeta = h5stream.create_group("metadata")
                 gmeta.attrs["raw_dir"] = str(self._raw_dir)
                 gmeta.attrs["nsim"] = self._nsim        
@@ -843,6 +847,16 @@ class SimDataset:
         A read-only, live view of the simulation settings and parameters.
         
         Provide zero-copy access to the underlying simulation settings object.
+        To access a specific parameter, say the DNA linker length `llink`, one
+        can do the following:
+
+        >>> dataset = SimDataset.load("results/dataset.h5")
+        >>> dataset.settings['llink']
+
+        Returns
+        -------
+        Mapping[str,Any]
+            An immutable mapping of parameter names and their values.
         """
         return DataclassPublicProxy(self._settings)
     
@@ -853,7 +867,7 @@ class SimDataset:
 
         Returns
         -------
-        iterable of str
+        Iterable of str
             The chromosome names [e.g., ('chr1', 'chr2')].
         """
         return tuple(self._chroms)

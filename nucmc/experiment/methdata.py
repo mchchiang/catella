@@ -322,10 +322,10 @@ class MethPrintExperiment:
         test_ids, dfs_test = read_data(test_file, df_size, wrap, colidx)
         chroms = dfs_test.keys()
 
-        unmeth_ids = None
-        meth_ids = None
-        dfs_unmeth = None
-        dfs_meth = None
+        unmeth_ids = {chrom: None for chrom in chroms}
+        meth_ids = {chrom: None for chrom in chroms}
+        dfs_unmeth = {chrom: None for chrom in chroms}
+        dfs_meth = {chrom: None for chrom in chroms}
         if unmeth_file is not None:
             unmeth_ids, dfs_unmeth = read_data(unmeth_file, df_size, wrap,
                                                colidx)

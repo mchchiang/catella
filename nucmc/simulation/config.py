@@ -1,4 +1,4 @@
-# config.pyA
+# config.py
 
 from dataclasses import dataclass
 from nucmc_cpp import NucPosModel

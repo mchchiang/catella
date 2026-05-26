@@ -166,7 +166,7 @@ class SimManager:
             landscape derived from the methylation data to output dataset file.
         use_zero_point_mu : bool : default False
             Whether to modify the chemical potential parameter so that it is
-            equal to the median of the squence-specific nucleosome binding
+            equal to the median of the sequence-specific nucleosome binding
             energy.
 
         Returns

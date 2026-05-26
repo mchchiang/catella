@@ -464,7 +464,7 @@ class SimDataset:
             stored. This directory must not exist beforehand.
         dataset_name : str, default "results"
             Name of the dataset HDF5 file storing the metadata and analysis of
-            the simulation reuslts. The file directory of this HDF5 file is
+            the simulation results. The file directory of this HDF5 file is
             `out_dir/{dataset_name}.h5` (e.g,. `out_dir/results.h5`).
         eseq : np.ndarray or None, default None
             The sequence-specific energy landscape derived from the
@@ -599,7 +599,7 @@ class SimDataset:
         ----------
         dataset_file : str | Path, optional
             The output HDF5 file for the dataset. If the file already exists,
-            analysis groups will be overwritten. If None, data wil be written to
+            analysis groups will be overwritten. If None, data will be written to
             to the original dataset file from loading or creation.
         
         Raises

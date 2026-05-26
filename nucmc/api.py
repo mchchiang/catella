@@ -262,7 +262,7 @@ def plot_nuc_pos(*, chrom : str,
     out_file : str | Path, optional
         Path where the generated plot will be saved. If None, the plot 
         is not saved to disk.
-    plot_seq : boolm, default False
+    plot_eseq : bool, default False
         Whether to plot the underlying sequence-specific nucleosome binding 
         energy.
     show : bool, default True

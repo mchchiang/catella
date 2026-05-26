@@ -60,7 +60,7 @@ class MethPrintData:
 
     def __init__(self, **kwargs : Any):
         if not kwargs.pop("_internal", False):
-            raise TypeError("Use MethyPrintData._load() to instantiate ",
+            raise TypeError("Use MethPrintData._load() to instantiate ",
                             "this class.")
         for f in fields(self):
             val = kwargs.get(f.name)
@@ -155,7 +155,7 @@ class MethPrintExperiment:
             raise TypeError("Use MethPrintExperiment.load() or .load_raw()",
                             "to instantiate this class")
 
-        # Bulk assigmnet of fields
+        # Bulk assignment of fields
         for f in fields(self):
             val = kwargs.get(f.name)
             if val is not None:

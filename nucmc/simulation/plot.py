@@ -196,7 +196,7 @@ class SimPlot:
         out_file : str or Path, optional
             Path to save the generated figure. Directories are created if
             they do not exist.
-        plot_seq : bool, default False
+        plot_eseq : bool, default False
             Whether to plot the underlying sequence-specific nucleosome binding
             energy.
         show : bool, default True
@@ -314,7 +314,7 @@ class SimPlot:
         out_file : str or Path, optional
             Path to save the generated figure. Directories are created if
             they do not exist.
-        plot_seq : bool, default False
+        plot_eseq : bool, default False
             Whether to plot the underlying sequence-specific nucleosome binding
             energy, averaged across all molecules.
         show : bool, default True

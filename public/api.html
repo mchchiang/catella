@@ -1117,7 +1117,21 @@ disk.</p>
 <dt class="sig sig-object py" id="nucmc.simulation.results.SimDataset.settings">
 <span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">settings</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Mapping</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span></span><a class="headerlink" href="#nucmc.simulation.results.SimDataset.settings" title="Link to this definition"></a></dt>
 <dd><p>A read-only, live view of the simulation settings and parameters.</p>
-<p>Provide zero-copy access to the underlying simulation settings object.</p>
+<p>Provide zero-copy access to the underlying simulation settings object.
+To access a specific parameter, say the DNA linker length <cite>llink</cite>, one
+can do the following:</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">dataset</span> <span class="o">=</span> <span class="n">SimDataset</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s2">&quot;results/dataset.h5&quot;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">dataset</span><span class="o">.</span><span class="n">settings</span><span class="p">[</span><span class="s1">&#39;llink&#39;</span><span class="p">]</span>
+</pre></div>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>An immutable mapping of parameter names and their values.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>Mapping[str,Any]</p>
+</dd>
+</dl>
 </dd></dl>
 
 <dl class="py property">
@@ -1129,7 +1143,7 @@ disk.</p>
 <dd class="field-odd"><p>The chromosome names [e.g., (‘chr1’, ‘chr2’)].</p>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p>iterable of str</p>
+<dd class="field-even"><p>Iterable of str</p>
 </dd>
 </dl>
 </dd></dl>

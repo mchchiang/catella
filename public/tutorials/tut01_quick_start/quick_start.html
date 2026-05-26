@@ -1277,6 +1277,27 @@ HDF5 file containing the metadata of the simulations and the downstream analysis
 SimData(nucbp, nbp, llink, mu, seed, time, energy, position, temp)
 </pre></div></div>
 </div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">nucmc.simulation.results</span><span class="w"> </span><span class="kn">import</span> <span class="n">SimDataset</span>
+<span class="n">sim_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;example/tut01_quick_start/simulation/result/&quot;</span><span class="p">)</span>
+<span class="n">sim_data</span> <span class="o">=</span> <span class="n">SimDataset</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">sim_dir</span><span class="o">/</span><span class="s2">&quot;results.h5&quot;</span><span class="p">)</span>
+<span class="n">sim_data</span><span class="o">.</span><span class="n">settings</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
+</pre></div>
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+DataclassPublicProxy(SimSettings(nucbp=np.int64(147), llink=np.int64(50), mu=np.float64(1.0), start_temp=np.float64(1.0), end_temp=np.float64(0.01), cool_option=&#39;geometric&#39;, nsweep=np.int64(1000000), print_freq=np.int64(1000), emax=np.int64(10)))
+</pre></div></div>
+</div>
 <div class="admonition note">
 <p><strong>Note:</strong> All molecules and simulation runs are labelled using zero-based indexing.</p>
 </div>
@@ -1315,7 +1336,7 @@ array([ 0.        , -1.02862654, -1.8984876 , ..., -7.04209084,
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../../_images/tutorials_tut01_quick_start_quick_start_35_0.png" src="../../_images/tutorials_tut01_quick_start_quick_start_35_0.png" />
+<img alt="../../_images/tutorials_tut01_quick_start_quick_start_36_0.png" src="../../_images/tutorials_tut01_quick_start_quick_start_36_0.png" />
 </div>
 </div>
 <p>We can see that the energy has gradually lowered and stablized at around <span class="math notranslate nohighlight">\(-6 k_BT\)</span>, and that fluctuations have minimized over time (reported in units of MCS, or number of Monte Carlo sweeps).</p>
@@ -1332,7 +1353,7 @@ array([ 0.        , -1.02862654, -1.8984876 , ..., -7.04209084,
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../../_images/tutorials_tut01_quick_start_quick_start_37_0.png" src="../../_images/tutorials_tut01_quick_start_quick_start_37_0.png" />
+<img alt="../../_images/tutorials_tut01_quick_start_quick_start_38_0.png" src="../../_images/tutorials_tut01_quick_start_quick_start_38_0.png" />
 </div>
 </div>
 <p>The nucleosome locations are shown in yellow in this plot, and they behave as one would expect: as the temperature decreases, the extent of repositioning and shuffling reduces, and the nucleosomes freeze into a final set of positions. Also, comparing with the energy landscape <span class="math notranslate nohighlight">\(E_{\text{seq}}\)</span>, we see that the nucleosomes tend to avoid the maxima and sit near the minima as expected.</p>
@@ -1447,7 +1468,7 @@ array([ 0.        , -1.02862654, -1.8984876 , ..., -7.04209084,
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../../_images/tutorials_tut01_quick_start_quick_start_43_0.png" src="../../_images/tutorials_tut01_quick_start_quick_start_43_0.png" />
+<img alt="../../_images/tutorials_tut01_quick_start_quick_start_44_0.png" src="../../_images/tutorials_tut01_quick_start_quick_start_44_0.png" />
 </div>
 </div>
 <p>Finally, we can save our analyses of the simulation results (in the HDF5 file <code class="docutils literal notranslate"><span class="pre">out_dir/results.h5</span></code>) that can be retrieved later for further post-processing:</p>
@@ -1460,7 +1481,7 @@ array([ 0.        , -1.02862654, -1.8984876 , ..., -7.04209084,
 </div>
 </div>
 <script type="application/vnd.jupyter.widget-state+json">
-{"state": {"1978a39fa8924ebc94cd3eaf4d0e1002": {"model_module": "@jupyter-widgets/base", "model_module_version": "2.0.0", "model_name": "LayoutModel", "state": {}}, "50a74192b00a4d2caf115ae17d15bc59": {"model_module": "@jupyter-widgets/output", "model_module_version": "1.0.0", "model_name": "OutputModel", "state": {"layout": "IPY_MODEL_1978a39fa8924ebc94cd3eaf4d0e1002", "outputs": [{"data": {"text/html": "<pre style=\"white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace\"><span style=\"color: #008000; text-decoration-color: #008000\">\u2838</span> <span style=\"color: #008080; text-decoration-color: #008080\">Running simulations ...</span> <span style=\"color: #f92672; text-decoration-color: #f92672\">\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2578</span> <span style=\"color: #800080; text-decoration-color: #800080\">100%</span> <span style=\"color: #008080; text-decoration-color: #008080\">0:00:01</span>\n</pre>\n", "text/plain": "\u001b[32m\u2838\u001b[0m \u001b[36mRunning simulations ...\u001b[0m \u001b[38;2;249;38;114m\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u001b[0m\u001b[38;2;249;38;114m\u2578\u001b[0m \u001b[35m100%\u001b[0m \u001b[36m0:00:01\u001b[0m\n"}, "metadata": {}, "output_type": "display_data"}]}}}, "version_major": 2, "version_minor": 0}
+{"state": {}, "version_major": 2, "version_minor": 0}
 </script></section>
 </section>
 

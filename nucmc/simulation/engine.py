@@ -5,7 +5,6 @@ from pathlib import Path
 from dataclasses import dataclass
 from itertools import islice
 from collections.abc import Iterable, Mapping
-import array
 import multiprocess as mp
 import platform
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn

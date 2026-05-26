@@ -1,100 +1,147 @@
 # Configuration file for the Sphinx documentation builder.
 
-# -- Project information -----------------------------------------------------
-
 import os
 import sys
 import inspect
+import tomllib
+from datetime import datetime
+from importlib.metadata import metadata
+from pathlib import Path
 
-project = "nucmc"
-copyright = "2026, Michael Chiang"
-author = "Michael Chiang"
-release = "0.1.0"
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent.parent  # docs/source -> docs -> project root
 
-# -- General configuration ---------------------------------------------------
+sys.path.insert(0, str(ROOT / "src"))
 
-extensions = [
-    "nbsphinx",
-    "jupyter_sphinx",
-    "sphinx.ext.autodoc",
-    "sphinx_rtd_theme",
-    "sphinx.ext.napoleon",
-    "sphinx.ext.autosummary",
-    "sphinx.ext.mathjax",
-    "sphinx.ext.linkcode",
+# -- Project information (read from installed package metadata) ---------------
+
+info = metadata("nucmc")
+project   = info.get("Name") or "nucmc"
+author    = info.get("Author") or "Michael Chiang"
+copyright = f"{datetime.now():%Y}, {author}"
+version   = info["Version"]
+release   = version
+
+project_urls_raw = info.get_all("Project-URL") or []
+urls = {}
+for pu in project_urls_raw:
+    if ", " in pu:
+        k, v = pu.split(", ", 1)
+        urls[k] = v
+repository_url = urls.get("Homepage") or urls.get("Source") or ""
+
+# -- Mock imports (avoid needing compiled extension or all runtime deps) -------
+
+with open(ROOT / "pyproject.toml", "rb") as f:
+    pyproject = tomllib.load(f)
+
+deps = pyproject.get("project", {}).get("dependencies", [])
+autodoc_mock_imports = [
+    dep.split(">")[0].split("=")[0].split("<")[0].strip() for dep in deps
 ]
+autodoc_mock_imports.append("nucmc_cpp")
 
-mathjax4_config = {
-    "tex": {
-        "inlineMath": [ ["$","$"], ["\\(","\\)"] ],
-        "displayMath": [ ["$$","$$"], ["\\[","\\]"] ],
-        "processEscapes": True,
-        "tags": "ams",        # Enable numbering
-        "tagSide": "right",   # Place numbers on the RHS
-        "tagAlign": "center", # Vertically center the number
-    },
-}
+# -- Member visibility (honour __all__) ----------------------------------------
 
-templates_path = ["_templates"]
-exclude_patterns = []
-
-autosummary_generate = True
-autodoc_member_order = "bysource"
-
-# Disable global numbering
-numfig = False
-math_numfig = False
-
-# Make sure equations are numbered
-math_number_all = True
+def skip_unexported_members(app, what, name, obj, skip, options):
+    module = inspect.getmodule(obj)
+    if module is None:
+        return skip
+    if name.startswith("_"):
+        return True
+    exported = getattr(module, "__all__", None)
+    if exported is not None and name not in exported:
+        return True
+    return skip
 
 def setup(app):
     app.add_css_file("custom.css")
+    app.connect("autodoc-skip-member", skip_unexported_members)
 
-# Ensure your code is importable
-sys.path.insert(0, os.path.abspath(".."))
-    
+# -- Source linking ------------------------------------------------------------
+
 def linkcode_resolve(domain, info):
     if domain != "py" or not info["module"]:
         return None
-
-    # Get the module (nucmc)
     mod = sys.modules.get(info["module"])
     if mod is None:
         return None
-
-    # Get the actual object (e.g., nucmc.run)
     obj = mod
-    for part in info["fullname"].split('.'):
+    for part in info["fullname"].split("."):
         try:
             obj = getattr(obj, part)
         except AttributeError:
             return None
-
     try:
-        # Find the actual file where the code is defined (api.py)
-        # unwrap() handles cases where methods are decorated
         obj = inspect.unwrap(obj)
         filename = inspect.getsourcefile(obj)
         source, lineno = inspect.getsourcelines(obj)
     except Exception:
         return None
-
     if not filename:
         return None
-
-    # Convert absolute path to a relative path for GitLab
-    # This finds the "nucmc" folder and calculates the path from there
-    repo_root = os.path.abspath(".")
-    rel_path = os.path.relpath(filename, start=repo_root)
-
-    # GitLab URL Configuration
-    project_url = "https://git.ecdf.ed.ac.uk/cchiang2/nucmc-project"
+    rel_path = os.path.relpath(filename, start=str(ROOT))
     branch = "main"
+    return f"{repository_url}/-/blob/{branch}/{rel_path}#L{lineno}"
 
-    return f"{project_url}/-/blob/{branch}/{rel_path}#L{lineno}"
-    
-# -- Options for HTML output -------------------------------------------------
+# -- General configuration ----------------------------------------------------
 
-html_theme = "sphinx_rtd_theme"
+extensions = [
+    "nbsphinx",
+    "sphinx.ext.autodoc",
+    "sphinx.ext.autosummary",
+    "sphinx.ext.napoleon",
+    "sphinx.ext.mathjax",
+    "sphinx.ext.linkcode",
+    "sphinx_rtd_theme",
+    "myst_parser",
+]
+
+templates_path = ["_templates"]
+exclude_patterns = [
+    "_build",
+    "Thumbs.db",
+    ".DS_Store",
+    "**.ipynb_checkpoints",
+]
+
+autosummary_generate = True
+autosummary_generate_overwrite = True
+autodoc_member_order = "bysource"
+autodoc_typehints = "none"
+autodoc_class_signature = "separated"
+
+napoleon_google_docstring = False
+napoleon_numpy_docstring = True
+napoleon_preprocess_types = False
+napoleon_include_init_with_doc = False
+napoleon_use_rtype = True
+napoleon_use_param = True
+
+mathjax4_config = {
+    "tex": {
+        "inlineMath":   [["$", "$"], ["\\(", "\\)"]],
+        "displayMath":  [["$$", "$$"], ["\\[", "\\]"]],
+        "processEscapes": True,
+        "tags":     "ams",
+        "tagSide":  "right",
+        "tagAlign": "center",
+    },
+}
+numfig         = False
+math_numfig    = False
+math_number_all = True
+
+# -- HTML output --------------------------------------------------------------
+
+html_theme       = "sphinx_rtd_theme"
 html_static_path = ["_static"]
+
+html_context = {
+    "display_github":  False,
+    "display_gitlab":  True,
+    "gitlab_user":     "cchiang2",
+    "gitlab_repo":     "nucmc-project",
+    "gitlab_version":  "main",
+    "conf_py_path":    "/docs/source/",
+}

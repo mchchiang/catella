@@ -40,6 +40,8 @@ nucmc = "nucmc.cli:app"
 dev = ["ruff"]
 test = ["pytest"]
 doc = [
+    "numpy",
+    "pandas>=3.0",
     "jupyterlab",
     "ipywidgets",
     "nbsphinx",

@@ -35,9 +35,14 @@ repository_url = urls.get("Homepage") or urls.get("Source") or ""
 with open(ROOT / "pyproject.toml", "rb") as f:
     pyproject = tomllib.load(f)
 
+# numpy and pandas are installed in the docs env so their types resolve
+# correctly in Napoleon-parsed docstrings; only mock the rest.
+_no_mock = {"numpy", "pandas"}
 deps = pyproject.get("project", {}).get("dependencies", [])
 autodoc_mock_imports = [
-    dep.split(">")[0].split("=")[0].split("<")[0].strip() for dep in deps
+    dep.split(">")[0].split("=")[0].split("<")[0].strip()
+    for dep in deps
+    if dep.split(">")[0].split("=")[0].split("<")[0].strip() not in _no_mock
 ]
 autodoc_mock_imports.append("nucmc_cpp")
 

@@ -2,11 +2,10 @@
 
 import nucmc
 import typer
-import pandas as pd
-import numpy as np
 from pathlib import Path
-from typer import Option
 from typing import Annotated, Type, TypeVar, Callable, Optional
+from nucmc.experiment.methdata import MethPrintExperiment
+
 app = typer.Typer(help="Nucleosome Positioning Monte Carlo Simulation Suite")
 
 # Helper method for parsing a list of items for an option
@@ -14,7 +13,6 @@ T = TypeVar("T")
 def csv_parser(target_type: Type[T]) -> Callable[[str], list[T]]:
     def parser(value: str) -> list[T]:
         if not value: return []
-        # Split by comma, strip whitespace, and convert to target type
         return [target_type(item.strip()) for item in value.split(",")]
     return parser
 
@@ -40,7 +38,7 @@ def preprocess(
     wrap: Annotated[
         bool, typer.Option(help="Wrap relative to center")] = False,
     colidx: Annotated[
-        Optional[list[int]], 
+        Optional[list[int]],
         typer.Option(parser=csv_parser(int), help="ModKit column indices")
     ] = None,
     clip_low: Annotated[
@@ -57,7 +55,7 @@ def preprocess(
                             meth_file=meth_file, binsize=binsize, wrap=wrap,
                             colidx=colidx, clip_low=clip_low,
                             clip_high=clip_high, norm_by_strand=norm_by_strand)
-    
+
 
 @app.command()
 def run(
@@ -73,9 +71,9 @@ def run(
         Path, typer.Option(help="Experiment HDF5 file directory",
                            exists=True, file_okay=True, dir_okay=False,
                            readable=True)],
-    out_path: Annotated[Path, typer.Option(help="Output directory",
-                                           exists=False, file_okay=False,
-                                           dir_okay=True, readable=True)],
+    out_dir: Annotated[Path, typer.Option(help="Output directory",
+                                          exists=False, file_okay=False,
+                                          dir_okay=True, readable=True)],
     out_types: Annotated[
         Optional[list[str]], typer.Option(parser=csv_parser(str),
                                           help="energy,position...")] = "all",
@@ -94,14 +92,14 @@ def run(
     Execute a parallelized methylation simulation.
     """
     exp_data = MethPrintExperiment.load(exp_file)
-    meth_prob = {chrom:exp_data.analysis[chrom]["meth_prob"]
+    meth_prob = {chrom: exp_data.analysis[chrom]["meth_prob"]
                  for chrom in exp_data.chroms}
     return nucmc.run(
         chroms=chroms,
         nsim=nsim,
         settings=settings,
         meth_prob=meth_prob,
-        out_path=out_path,
+        out_dir=out_dir,
         out_types=out_types,
         seed=seed,
         nworker=nworker,

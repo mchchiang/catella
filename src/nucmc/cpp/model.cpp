@@ -86,7 +86,7 @@ void NucPosModel::setSeqEnergy(string dataFile, double emax) {
   ifstream reader;
   reader.open(dataFile);
   if (!reader) {
-    throw std::runtime_error("Cannot open the file " + dataFile);
+    throw std::runtime_error("Cannot open the file " + dataFile + ".");
   }
   string line;
   stringstream ss;
@@ -99,6 +99,8 @@ void NucPosModel::setSeqEnergy(string dataFile, double emax) {
     ss.str(line);
     ss >> pos >> p;
     if (pos >= 0 && pos < nbp) {
+      if (p < 0 || p > 1)
+	throw std::runtime_error("Probability must be in [0, 1].");
       eseq[pos] = p < pmin ? emax : -log(p); // E_seq = -kT log(p_seq)
     }
   }
@@ -110,10 +112,12 @@ void NucPosModel::setSeqEnergy(const std::vector<double>& pseq, double emax) {
   double p;
   if (static_cast<int>(pseq.size()) != nbp) {
     throw std::runtime_error("Probability array size does not match "
-			     "the size of the simulated fiber");
+			     "the size of the simulated fiber.");
   }
   for (int i = 0; i < nbp; i++) {
     p = pseq[i];
+    if (p < 0 || p > 1)
+      throw std::runtime_error("Probability must be in [0, 1].");
     eseq[i] = p < pmin ? emax : -log(p); // E_seq = -kT log(p_seq)
   }
 }
@@ -209,6 +213,8 @@ void NucPosModel::update() {
 
 void NucPosModel::run(lint nsweep, double startTemp, double endTemp,
 		      Cooling coolOption) {
+  if (startTemp <= 0)
+    throw std::runtime_error("startTemp must be positive.");
   temp = startTemp;
   for (auto& t : trackers) t->initialize(0, *this);
   output(0); // Output the frame without any nucleosome
@@ -251,7 +257,7 @@ double NucPosModel::getEnergy() const {
     totalEseq += eseq[pos];
     if (i > 0) {
       int dpos = nucpos[i]-nucpos[i-1];
-      if (dpos < nucbp+llink) totalErep += erep[dpos-nucbp];
+      if (dpos >= nucbp && dpos < nucbp+llink) totalErep += erep[dpos-nucbp];
     }
   }
   return totalEseq + totalErep - mu*nucpos.size();

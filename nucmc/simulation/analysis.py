@@ -230,7 +230,7 @@ class SimAnalysis:
                 has_occup = False
                 break
         if not has_occup:
-            self.compute_occupancy(dataset = dataset, time = time,
+            self.compute_occup(dataset=dataset, time=time,
                                    chroms = chroms, name = occup_name,
                                    record_time = record_time)
         # Compute accessibility A = 1.0 - O

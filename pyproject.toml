@@ -1,24 +1,74 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel", "pybind11"]
-build-backend = "setuptools.build_meta"
-
-[tool.setuptools]
-packages = ["nucmc"]
+requires = ["scikit-build-core>=0.9", "pybind11"]
+build-backend = "scikit_build_core.build"
 
 [project]
 name = "nucmc"
-version = "0.1.0"
+dynamic = ["version"]
+description = "A Monte-Carlo simulator for predicting nucleosome positions based on DNA methylation footprinting data"
+readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.13"
-description = "Nucleosome Positioning Monte Carlo Simulation Suite"
+authors = [
+    { name = "Michael Chiang", email = "michael.chiang@ed.ac.uk" },
+]
+maintainers = [
+    { name = "Davide Marenduzzo" },
+    { name = "Nick Gilbert" },
+]
+classifiers = [
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.13",
+]
 dependencies = [
     "numpy",
-    "pandas",
+    "pandas>=3.0",
     "h5py",
     "typer",
     "rich",
-    "pybind11",
-    "matplotlib"
+    "matplotlib",
+    "multiprocess",
 ]
+
+[project.urls]
+Homepage = "https://git.ecdf.ed.ac.uk/cchiang2/nucmc-project"
 
 [project.scripts]
 nucmc = "nucmc.cli:app"
+
+[dependency-groups]
+dev = ["ruff"]
+test = ["pytest"]
+doc = [
+    "jupyterlab",
+    "ipywidgets",
+    "nbsphinx",
+    "sphinx",
+    "sphinx-rtd-theme",
+    "myst-parser",
+]
+
+[tool.scikit-build]
+cmake.build-type = "Release"
+wheel.packages = ["src/nucmc"]
+
+[tool.scikit-build.metadata.version]
+provider = "scikit_build_core.metadata.regex"
+input = "src/nucmc/__about__.py"
+regex = "__version__ = ['\"](?P<value>[^'\"]+)['\"]"
+
+[tool.hatch.envs.docs]
+type = "virtual"
+path = ".docs_venv"
+dependency-groups = ["doc"]
+dev-mode = true
+scripts.build = "sphinx-build -M html docs/ docs/_build -W {args}"
+scripts.open = "python -m webbrowser -t docs/_build/html/index.html"
+
+[tool.hatch.envs.test]
+dependency-groups = ["dev", "test"]
+
+[tool.ruff]
+line-length = 80
+src = ["src/nucmc"]
+lint.pydocstyle.convention = "numpy"

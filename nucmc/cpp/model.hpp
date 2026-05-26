@@ -43,7 +43,6 @@ private:
   
   // Other variables
   int npos;
-  int maxNumOfNuc;
   double temp;
   std::vector<double> eseq;
   std::vector<double> erep;

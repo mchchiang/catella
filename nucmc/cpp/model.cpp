@@ -42,7 +42,6 @@ NucPosModel::NucPosModel(int _nucbp, int _nbp, int _llink, double _mu,
     double sr6 = pow(sigma/(i+1.0),6.0);
     erep[i] = 4*(sr6*sr6-sr6+0.25);
   }
-  maxNumOfNuc = nbp/nucbp;
   npos = nbp-nucbp;
   eseq = vector<double>(nbp);
   reset();
@@ -58,7 +57,6 @@ NucPosModel::NucPosModel(const Params& p) :
     double sr6 = pow(sigma/(i+1.0),6.0);
     erep[i] = 4*(sr6*sr6-sr6+0.25);
   }
-  maxNumOfNuc = nbp/nucbp;
   npos = nbp-nucbp;
   eseq = vector<double>(nbp);
   reset();
@@ -103,8 +101,8 @@ void NucPosModel::setSeqEnergy(string dataFile, double emax) {
     if (pos >= 0 && pos < nbp) {
       eseq[pos] = p < pmin ? emax : -log(p); // E_seq = -kT log(p_seq)
     }
-    reader.close();
   }
+  reader.close();  
 }
     
 void NucPosModel::setSeqEnergy(const std::vector<double>& pseq, double emax) {
@@ -180,7 +178,7 @@ void NucPosModel::update() {
       if (dpos < nucbp) return; // Nucleosomes cannot overlap
       else if (dpos < llink+nucbp) dErep += erep[dpos-nucbp];
     }
-    if (p < min(1.0, nbp/static_cast<double>((nnuc+1.0)*nucbp)*
+    if (p < min(1.0, static_cast<double>(npos)/(nnuc+1.0)*
 		exp((mu-eseq[pos]-dErep)/temp))) {
       nucpos.insert(itup, pos);
     }
@@ -202,7 +200,7 @@ void NucPosModel::update() {
       int dpos = pos-nucpos[idown];
       if (dpos < llink+nucbp) dErep -= erep[dpos-nucbp];
     }
-    if (p < min(1.0, (nnuc*nucbp)/static_cast<double>(nbp)*
+    if (p < min(1.0, nnuc/static_cast<double>(npos)*
 		exp((-mu+eseq[pos]-dErep)/temp))) {
       nucpos.erase(nucpos.begin()+inuc);
     }
@@ -224,8 +222,10 @@ void NucPosModel::run(lint nsweep, double startTemp, double endTemp,
       temp = startTemp * pow(endTemp/startTemp, progress); break;
     case Cooling::Constant:
       break; // Do nothing
-    }    
-    for (int i = 0; i < maxNumOfNuc; i++) {
+    }
+    // nsweep = 3*npos as there are 3 modes for changing the system (adding,
+    // removing, and shifting a nucleosome)
+    for (int i = 0; i < 3*npos; i++) {
       update();
     }
     output(n+1);

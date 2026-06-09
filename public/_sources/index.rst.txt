@@ -8,4 +8,5 @@ Welcome to nucmc's documentation!
    install
    model
    api
+   tutorials/tut00_data_prep/data_prep   
    tutorials/tut01_quick_start/quick_start

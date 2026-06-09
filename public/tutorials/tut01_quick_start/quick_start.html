@@ -9,8 +9,6 @@
   <title>Tutorial 1: Quick Start &mdash; nucmc 0.1.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
-      <link rel="stylesheet" type="text/css" href="../../_static/jupyter-sphinx.css?v=572af1d6" />
-      <link rel="stylesheet" type="text/css" href="../../_static/thebelab.css" />
       <link rel="stylesheet" type="text/css" href="../../_static/custom.css?v=57874f38" />
       <link rel="stylesheet" type="text/css" href="../../_static/nbsphinx-code-cells.css?v=2aa19091" />
 
@@ -20,16 +18,14 @@
       <script src="../../_static/documentation_options.js?v=01f34227"></script>
       <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
       <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
-      <script src="../../_static/thebelab-helper.js"></script>
-      <script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
-      <script src="https://cdn.jsdelivr.net/npm/@jupyter-widgets/html-manager@^1.0.1/dist/embed-amd.js"></script>
       <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+      <script src="https://cdn.jsdelivr.net/npm/@jupyter-widgets/html-manager@^1.0.1/dist/embed-amd.js"></script>
       <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true, "displayMath": [["$$", "$$"], ["\\[", "\\]"]], "tags": "ams", "tagSide": "right", "tagAlign": "center"}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
       <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
     <script src="../../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../../genindex.html" />
     <link rel="search" title="Search" href="../../search.html" />
-    <link rel="prev" title="API Reference" href="../../api.html" /> 
+    <link rel="prev" title="Tutorial 0: Data Preparation" href="../tut00_data_prep/data_prep.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -56,6 +52,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../install.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../model.html">Simulation Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../api.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../tut00_data_prep/data_prep.html">Tutorial 0: Data Preparation</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Tutorial 1: Quick Start</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#Prerequisite-data-files">Prerequisite data files</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#Loading-the-data-files-and-performing-normalization">Loading the data files and performing normalization</a></li>
@@ -81,7 +78,7 @@
       <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
       <li class="breadcrumb-item active">Tutorial 1: Quick Start</li>
       <li class="wy-breadcrumbs-aside">
-            <a href="../../_sources/tutorials/tut01_quick_start/quick_start.ipynb.txt" rel="nofollow"> View page source</a>
+              <a href="https://gitlab.com/cchiang2/nucmc-project/blob/main/docs/source/tutorials/tut01_quick_start/quick_start.ipynb" class="fa fa-gitlab"> Edit on GitLab</a>
       </li>
   </ul>
   <hr/>
@@ -1097,9 +1094,363 @@ the data frame:</p>
 <p>100 rows × 5000 columns</p>
 </div></div>
 </div>
+<p>Here we show how to transform the data from left-aligned to center-aligned:</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[9]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">nucmc.mapping</span><span class="w"> </span><span class="kn">import</span> <span class="n">CoordsTransform</span>
+<span class="n">binsize</span> <span class="o">=</span> <span class="mi">147</span>
+<span class="n">coords</span> <span class="o">=</span> <span class="n">CoordsTransform</span><span class="p">(</span><span class="n">binsize</span><span class="o">=</span><span class="n">binsize</span><span class="p">)</span>
+<span class="n">centered</span> <span class="o">=</span> <span class="n">coords</span><span class="o">.</span><span class="n">left_to_center_aligned</span><span class="p">(</span><span class="n">exp_data</span><span class="o">.</span><span class="n">analysis</span><span class="p">[</span><span class="s2">&quot;Oct4&quot;</span><span class="p">][</span><span class="s2">&quot;meth_prob&quot;</span><span class="p">])</span>
+<span class="n">exp_data</span><span class="o">.</span><span class="n">analysis</span><span class="p">[</span><span class="s2">&quot;Oct4&quot;</span><span class="p">][</span><span class="s2">&quot;meth_prob_centered&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">centered</span>
+<span class="n">centered</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[9]:
+</pre></div>
+</div>
+<div class="output_area rendered_html docutils container">
+<div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>0</th>
+      <th>1</th>
+      <th>2</th>
+      <th>3</th>
+      <th>4</th>
+      <th>5</th>
+      <th>6</th>
+      <th>7</th>
+      <th>8</th>
+      <th>9</th>
+      <th>...</th>
+      <th>4990</th>
+      <th>4991</th>
+      <th>4992</th>
+      <th>4993</th>
+      <th>4994</th>
+      <th>4995</th>
+      <th>4996</th>
+      <th>4997</th>
+      <th>4998</th>
+      <th>4999</th>
+    </tr>
+    <tr>
+      <th>mol_index</th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>...</td>
+      <td>0.608282</td>
+      <td>0.608282</td>
+      <td>0.608282</td>
+      <td>0.608282</td>
+      <td>0.608282</td>
+      <td>0.608282</td>
+      <td>0.608282</td>
+      <td>0.608282</td>
+      <td>0.608282</td>
+      <td>0.608282</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>...</td>
+      <td>0.629272</td>
+      <td>0.629272</td>
+      <td>0.629272</td>
+      <td>0.629272</td>
+      <td>0.629272</td>
+      <td>0.629272</td>
+      <td>0.629272</td>
+      <td>0.629272</td>
+      <td>0.629272</td>
+      <td>0.629272</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>...</td>
+      <td>0.652278</td>
+      <td>0.652278</td>
+      <td>0.652278</td>
+      <td>0.652278</td>
+      <td>0.652278</td>
+      <td>0.652278</td>
+      <td>0.652278</td>
+      <td>0.652278</td>
+      <td>0.652278</td>
+      <td>0.652278</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>...</td>
+      <td>0.623597</td>
+      <td>0.623597</td>
+      <td>0.623597</td>
+      <td>0.623597</td>
+      <td>0.623597</td>
+      <td>0.623597</td>
+      <td>0.623597</td>
+      <td>0.623597</td>
+      <td>0.623597</td>
+      <td>0.623597</td>
+    </tr>
+    <tr>
+      <th>4</th>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>...</td>
+      <td>0.648470</td>
+      <td>0.648470</td>
+      <td>0.648470</td>
+      <td>0.648470</td>
+      <td>0.648470</td>
+      <td>0.648470</td>
+      <td>0.648470</td>
+      <td>0.648470</td>
+      <td>0.648470</td>
+      <td>0.648470</td>
+    </tr>
+    <tr>
+      <th>...</th>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
+    </tr>
+    <tr>
+      <th>95</th>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>...</td>
+      <td>0.655823</td>
+      <td>0.655823</td>
+      <td>0.655823</td>
+      <td>0.655823</td>
+      <td>0.655823</td>
+      <td>0.655823</td>
+      <td>0.655823</td>
+      <td>0.655823</td>
+      <td>0.655823</td>
+      <td>0.655823</td>
+    </tr>
+    <tr>
+      <th>96</th>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>...</td>
+      <td>0.645071</td>
+      <td>0.645071</td>
+      <td>0.645071</td>
+      <td>0.645071</td>
+      <td>0.645071</td>
+      <td>0.645071</td>
+      <td>0.645071</td>
+      <td>0.645071</td>
+      <td>0.645071</td>
+      <td>0.645071</td>
+    </tr>
+    <tr>
+      <th>97</th>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>...</td>
+      <td>0.664791</td>
+      <td>0.664791</td>
+      <td>0.664791</td>
+      <td>0.664791</td>
+      <td>0.664791</td>
+      <td>0.664791</td>
+      <td>0.664791</td>
+      <td>0.664791</td>
+      <td>0.664791</td>
+      <td>0.664791</td>
+    </tr>
+    <tr>
+      <th>98</th>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>...</td>
+      <td>0.646886</td>
+      <td>0.646886</td>
+      <td>0.646886</td>
+      <td>0.646886</td>
+      <td>0.646886</td>
+      <td>0.646886</td>
+      <td>0.646886</td>
+      <td>0.646886</td>
+      <td>0.646886</td>
+      <td>0.646886</td>
+    </tr>
+    <tr>
+      <th>99</th>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>NaN</td>
+      <td>...</td>
+      <td>0.672152</td>
+      <td>0.672152</td>
+      <td>0.672152</td>
+      <td>0.672152</td>
+      <td>0.672152</td>
+      <td>0.672152</td>
+      <td>0.672152</td>
+      <td>0.672152</td>
+      <td>0.672152</td>
+      <td>0.672152</td>
+    </tr>
+  </tbody>
+</table>
+<p>100 rows × 5000 columns</p>
+</div></div>
+</div>
 <p>This is now a good checkpoint to save the processed experimental data, which can be done using the <code class="docutils literal notranslate"><span class="pre">save</span></code> method. This stores the relevant raw data and analyses we have done into a single HDF5 file.</p>
 <div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[9]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">exp_h5</span> <span class="o">=</span> <span class="n">exp_dir</span><span class="o">/</span><span class="s2">&quot;analysis.h5&quot;</span>
@@ -1109,7 +1460,7 @@ the data frame:</p>
 </div>
 <p>We can reload this file later using the <code class="docutils literal notranslate"><span class="pre">load</span></code> method:</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[11]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">nucmc.experiment.methdata</span><span class="w"> </span><span class="kn">import</span> <span class="n">MethPrintExperiment</span>
@@ -1168,7 +1519,7 @@ MethPrintExperiment(chroms, raw, analysis, global_analysis)
 </table>
 <p>The file can be in <code class="docutils literal notranslate"><span class="pre">.json</span></code> or <code class="docutils literal notranslate"><span class="pre">.yml</span></code> format. For example, in <code class="docutils literal notranslate"><span class="pre">.yml</span></code> format the file looks as follows:</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[11]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[12]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="o">!</span>cat<span class="w"> </span>example/tut01_quick_start/simulation/sim_params.yml
@@ -1193,7 +1544,7 @@ emax:        10.0
 </div>
 <p>Alternatively, we can specify these parameters directly within python by utilizing the <code class="docutils literal notranslate"><span class="pre">SimSettings</span></code> object:</p>
 <div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[12]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[17]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">nucmc.simulation.engine</span><span class="w"> </span><span class="kn">import</span> <span class="n">SimSettings</span>
@@ -1205,8 +1556,8 @@ emax:        10.0
     <span class="n">start_temp</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
     <span class="n">end_temp</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
     <span class="n">cool_option</span><span class="o">=</span><span class="s2">&quot;geometric&quot;</span><span class="p">,</span>
-    <span class="n">nsweep</span><span class="o">=</span><span class="mi">1000000</span><span class="p">,</span>
-    <span class="n">print_freq</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span>
+    <span class="n">nsweep</span><span class="o">=</span><span class="mi">20000</span><span class="p">,</span>
+    <span class="n">print_freq</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span>
     <span class="n">emax</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
 </pre></div>
 </div>
@@ -1215,7 +1566,7 @@ emax:        10.0
 the option <code class="docutils literal notranslate"><span class="pre">use_zero_point_mu</span></code> in <code class="docutils literal notranslate"><span class="pre">nucmc.run</span></code> to modify <span class="math notranslate nohighlight">\(\mu = \mu_z\)</span>.</p>
 <p>Next, we need to extract the methylation probabilities <span class="math notranslate nohighlight">\(p_M\)</span> from the processed data and store them in a dictionary:</p>
 <div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[13]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[18]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">meth_prob</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;Oct4&quot;</span><span class="p">:</span> <span class="n">exp_data</span><span class="o">.</span><span class="n">analysis</span><span class="p">[</span><span class="s2">&quot;Oct4&quot;</span><span class="p">][</span><span class="s2">&quot;meth_prob&quot;</span><span class="p">]}</span>
@@ -1225,7 +1576,7 @@ the option <code class="docutils literal notranslate"><span class="pre">use_zero
 <p>We now use the <code class="docutils literal notranslate"><span class="pre">nucmc.run</span></code> method to run the simulations. This method requires specifying the chromosomes (DNA segments) we would like to perform the sampling, the number of simulations to conduct per molecule (<code class="docutils literal notranslate"><span class="pre">nsim</span></code>), the simulation parameters (<code class="docutils literal notranslate"><span class="pre">settings</span></code>), and the methylation probability profile for each molecule in each chromosome (<code class="docutils literal notranslate"><span class="pre">meth_prob</span></code>). We also need to specify the output directory (<code class="docutils literal notranslate"><span class="pre">out_dir</span></code>) where the simulation results will be stored. The simulations can be run in
 parallel using multiple processes, and this is set via <code class="docutils literal notranslate"><span class="pre">nworker</span></code> (default is 1). By default, the <code class="docutils literal notranslate"><span class="pre">verbose</span></code> option is set to <code class="docutils literal notranslate"><span class="pre">True</span></code>, allowing a progress bar to be displayed in the terminal that provides an estimation of the time remaining before all jobs are complete.</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[14]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[20]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">sim_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;example/tut01_quick_start/simulation/result/&quot;</span><span class="p">)</span> <span class="c1"># Note that this dir must not exist</span>
@@ -1235,7 +1586,7 @@ parallel using multiple processes, and this is set via <code class="docutils lit
                      <span class="n">meth_prob</span><span class="o">=</span><span class="n">meth_prob</span><span class="p">,</span>
                      <span class="n">settings</span><span class="o">=</span><span class="n">settings</span><span class="p">,</span>
                      <span class="n">out_dir</span><span class="o">=</span><span class="n">sim_dir</span><span class="p">,</span>
-                     <span class="n">nworker</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+                     <span class="n">nworker</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -1243,7 +1594,7 @@ parallel using multiple processes, and this is set via <code class="docutils lit
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<script type="application/vnd.jupyter.widget-view+json">{"model_id": "50a74192b00a4d2caf115ae17d15bc59", "version_major": 2, "version_minor": 0}</script></div>
+<script type="application/vnd.jupyter.widget-view+json">{"model_id": "b3f58a555a6344d2a32b0db48a25bfa0", "version_major": 2, "version_minor": 0}</script></div>
 </div>
 <div class="nboutput nblast docutils container">
 <div class="prompt empty docutils container">
@@ -1261,7 +1612,7 @@ HDF5 file containing the metadata of the simulations and the downstream analysis
 <h2>Analyzing the simulation results<a class="headerlink" href="#Analyzing-the-simulation-results" title="Link to this heading"></a></h2>
 <p>It is good practice to first inspect the raw simulation data and check that the results are reasonable before conducting any downstream analysis. To access the raw data from a specific simulation run (say run 0 for molecule 0 in <em>Oct4</em>), we use the <code class="docutils literal notranslate"><span class="pre">raw</span></code> property, which returns a <code class="docutils literal notranslate"><span class="pre">SimData</span></code> object:</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[15]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[21]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">sim_data</span><span class="o">.</span><span class="n">raw</span><span class="p">[</span><span class="s2">&quot;Oct4&quot;</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">]</span>
@@ -1269,7 +1620,7 @@ HDF5 file containing the metadata of the simulations and the downstream analysis
 </div>
 </div>
 <div class="nboutput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[15]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[21]:
 </pre></div>
 </div>
 <div class="output_area docutils container">
@@ -1278,7 +1629,7 @@ SimData(nucbp, nbp, llink, mu, seed, time, energy, position, temp)
 </pre></div></div>
 </div>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[22]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
@@ -1290,12 +1641,12 @@ SimData(nucbp, nbp, llink, mu, seed, time, energy, position, temp)
 </div>
 </div>
 <div class="nboutput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[22]:
 </pre></div>
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-DataclassPublicProxy(SimSettings(nucbp=np.int64(147), llink=np.int64(50), mu=np.float64(1.0), start_temp=np.float64(1.0), end_temp=np.float64(0.01), cool_option=&#39;geometric&#39;, nsweep=np.int64(1000000), print_freq=np.int64(1000), emax=np.int64(10)))
+DataclassPublicProxy(SimSettings(nucbp=np.int64(147), llink=np.int64(50), mu=np.float64(1.0), start_temp=np.float64(1.0), end_temp=np.float64(0.01), cool_option=&#39;geometric&#39;, nsweep=np.int64(10000), print_freq=np.int64(100), emax=np.int64(10)))
 </pre></div></div>
 </div>
 <div class="admonition note">
@@ -1303,7 +1654,7 @@ DataclassPublicProxy(SimSettings(nucbp=np.int64(147), llink=np.int64(50), mu=np.
 </div>
 <p>Here, we can for instance inspect the total energy of the system over time, using the property <code class="docutils literal notranslate"><span class="pre">energy</span></code>:</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[16]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[23]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">sim_data</span><span class="o">.</span><span class="n">raw</span><span class="p">[</span><span class="s2">&quot;Oct4&quot;</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">energy</span>
@@ -1311,13 +1662,32 @@ DataclassPublicProxy(SimSettings(nucbp=np.int64(147), llink=np.int64(50), mu=np.
 </div>
 </div>
 <div class="nboutput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[16]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[23]:
 </pre></div>
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-array([ 0.        , -1.02862654, -1.8984876 , ..., -7.04209084,
-       -7.10258439, -7.11097922], shape=(1001,))
+array([ 0.        , -2.73845435, -2.17959596, -1.45790704, -2.86863286,
+       -1.42772633, -3.0349709 , -1.84353031, -0.61031815, -3.95692419,
+       -3.44079702, -3.57442209, -2.35565329, -1.2601394 , -3.32111432,
+       -3.37797878, -1.56918081, -0.9364412 , -2.30745513, -2.46110411,
+       -2.01102868, -2.4808871 , -3.07179163, -4.44969119, -3.71369336,
+       -2.51878973, -3.78297562, -2.73615019, -3.49513142, -4.0933008 ,
+       -3.72294679, -3.40356905, -3.65133488, -3.54216277, -4.24543757,
+       -4.15190316, -3.61333107, -3.29850408, -4.82274224, -5.0679466 ,
+       -4.53114746, -4.93960287, -4.24936631, -4.54644763, -4.98138385,
+       -5.41446171, -4.97174527, -5.63218579, -5.52146154, -4.97605022,
+       -4.78811087, -5.70792442, -5.60601155, -5.29767727, -5.51642697,
+       -5.14732509, -6.02600842, -5.96661141, -5.8089735 , -5.81177031,
+       -6.09000712, -5.4075985 , -5.80816375, -6.32185281, -6.32219455,
+       -5.25614107, -5.70283049, -5.75739464, -6.29832775, -6.7194262 ,
+       -6.52526084, -6.29988304, -6.45416507, -6.26193215, -6.63259066,
+       -6.66962627, -6.58150299, -6.88682003, -6.77609487, -6.91474145,
+       -6.75426578, -6.72483251, -6.89098384, -6.80651529, -6.86753772,
+       -6.78278348, -6.97230157, -7.01365601, -6.98375941, -6.93444222,
+       -7.07478033, -7.15101251, -7.07305815, -7.06896358, -7.08026013,
+       -7.1313922 , -7.04228424, -7.12050754, -7.12374176, -7.15600376,
+       -7.18051782])
 </pre></div></div>
 </div>
 <div class="admonition note">
@@ -1325,7 +1695,7 @@ array([ 0.        , -1.02862654, -1.8984876 , ..., -7.04209084,
 </div>
 <p>A good sanity check that we have run the simulation for long enough and that the system has reached a steady state is to see whether the total energy has stablized. We can plot the above time series of the energy values as follows:</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[17]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[24]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">nucmc</span><span class="o">.</span><span class="n">plot_energy</span><span class="p">(</span><span class="n">chrom</span><span class="o">=</span><span class="s2">&quot;Oct4&quot;</span><span class="p">,</span> <span class="n">mol</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">run</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">dataset</span><span class="o">=</span><span class="n">sim_data</span><span class="p">)</span>
@@ -1336,13 +1706,13 @@ array([ 0.        , -1.02862654, -1.8984876 , ..., -7.04209084,
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../../_images/tutorials_tut01_quick_start_quick_start_36_0.png" src="../../_images/tutorials_tut01_quick_start_quick_start_36_0.png" />
+<img alt="../../_images/tutorials_tut01_quick_start_quick_start_38_0.png" src="../../_images/tutorials_tut01_quick_start_quick_start_38_0.png" />
 </div>
 </div>
 <p>We can see that the energy has gradually lowered and stablized at around <span class="math notranslate nohighlight">\(-6 k_BT\)</span>, and that fluctuations have minimized over time (reported in units of MCS, or number of Monte Carlo sweeps).</p>
 <p>Another way to see whether the system has stablized is to plot the nucleosome positions over time as a heatmap. This can be done using the <code class="docutils literal notranslate"><span class="pre">nucmc.plot_nuc_pos</span></code> method, and it is useful to enable the <code class="docutils literal notranslate"><span class="pre">plot_eseq</span></code> option to show within the same plot the sequence-specific energy landscape <span class="math notranslate nohighlight">\(E_{\text{seq}}\)</span> for the molecule derived from its methylation footprinting data.</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[18]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[25]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">nucmc</span><span class="o">.</span><span class="n">plot_nuc_pos</span><span class="p">(</span><span class="n">chrom</span><span class="o">=</span><span class="s2">&quot;Oct4&quot;</span><span class="p">,</span> <span class="n">mol</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">run</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">dataset</span><span class="o">=</span><span class="n">sim_data</span><span class="p">,</span> <span class="n">plot_eseq</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
@@ -1353,13 +1723,13 @@ array([ 0.        , -1.02862654, -1.8984876 , ..., -7.04209084,
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../../_images/tutorials_tut01_quick_start_quick_start_38_0.png" src="../../_images/tutorials_tut01_quick_start_quick_start_38_0.png" />
+<img alt="../../_images/tutorials_tut01_quick_start_quick_start_40_0.png" src="../../_images/tutorials_tut01_quick_start_quick_start_40_0.png" />
 </div>
 </div>
 <p>The nucleosome locations are shown in yellow in this plot, and they behave as one would expect: as the temperature decreases, the extent of repositioning and shuffling reduces, and the nucleosomes freeze into a final set of positions. Also, comparing with the energy landscape <span class="math notranslate nohighlight">\(E_{\text{seq}}\)</span>, we see that the nucleosomes tend to avoid the maxima and sit near the minima as expected.</p>
 <p>To get a sense of the overall picture of nucleosome positioning across all molecules, we use <code class="docutils literal notranslate"><span class="pre">nucmc.analyze</span></code> to perform some basic quantification of the simulated nucleosome positions:</p>
 <div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[19]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[26]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">nucmc</span><span class="o">.</span><span class="n">analyze</span><span class="p">(</span><span class="n">dataset</span><span class="o">=</span><span class="n">sim_data</span><span class="p">)</span>
@@ -1372,7 +1742,7 @@ array([ 0.        , -1.02862654, -1.8984876 , ..., -7.04209084,
 <p>where <span class="math notranslate nohighlight">\(s_i^{(n)} = 1\)</span> if, in the <span class="math notranslate nohighlight">\(n\)</span>th simulation, a nucleosome occcupies base-pair <span class="math notranslate nohighlight">\(x\)</span> and <span class="math notranslate nohighlight">\(0\)</span> otherwise.</p>
 <p>These results are stored in <code class="docutils literal notranslate"><span class="pre">data.analysis</span></code>. For instance, to retrieve the average number of nucleosomes in each molecule in <em>Oct4</em>, we do the following:</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[20]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[27]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">sim_data</span><span class="o">.</span><span class="n">analysis</span><span class="p">[</span><span class="s2">&quot;Oct4&quot;</span><span class="p">][</span><span class="s2">&quot;mean_nnuc&quot;</span><span class="p">]</span>
@@ -1380,7 +1750,7 @@ array([ 0.        , -1.02862654, -1.8984876 , ..., -7.04209084,
 </div>
 </div>
 <div class="nboutput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[20]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[27]:
 </pre></div>
 </div>
 <div class="output_area rendered_html docutils container">
@@ -1408,23 +1778,23 @@ array([ 0.        , -1.02862654, -1.8984876 , ..., -7.04209084,
   <tbody>
     <tr>
       <th>0</th>
-      <td>16.9</td>
+      <td>18.1</td>
     </tr>
     <tr>
       <th>1</th>
-      <td>16.6</td>
+      <td>17.3</td>
     </tr>
     <tr>
       <th>2</th>
-      <td>15.6</td>
+      <td>17.0</td>
     </tr>
     <tr>
       <th>3</th>
-      <td>15.0</td>
+      <td>15.9</td>
     </tr>
     <tr>
       <th>4</th>
-      <td>15.0</td>
+      <td>16.5</td>
     </tr>
     <tr>
       <th>...</th>
@@ -1432,23 +1802,23 @@ array([ 0.        , -1.02862654, -1.8984876 , ..., -7.04209084,
     </tr>
     <tr>
       <th>95</th>
-      <td>13.1</td>
+      <td>15.4</td>
     </tr>
     <tr>
       <th>96</th>
-      <td>16.0</td>
+      <td>17.9</td>
     </tr>
     <tr>
       <th>97</th>
-      <td>12.1</td>
+      <td>13.6</td>
     </tr>
     <tr>
       <th>98</th>
-      <td>15.6</td>
+      <td>17.5</td>
     </tr>
     <tr>
       <th>99</th>
-      <td>12.9</td>
+      <td>14.5</td>
     </tr>
   </tbody>
 </table>
@@ -1457,7 +1827,7 @@ array([ 0.        , -1.02862654, -1.8984876 , ..., -7.04209084,
 </div>
 <p>To visualize the averaged nucleosome occupancy across all molecules, we use the <code class="docutils literal notranslate"><span class="pre">nucmc.plot_occup</span></code> method, and again we enable the <code class="docutils literal notranslate"><span class="pre">plot_eseq</span></code> option to see correspondence between the nucleosome positions and the underlying energy landscape:</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[21]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[28]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">nucmc</span><span class="o">.</span><span class="n">plot_occup</span><span class="p">(</span><span class="n">chrom</span><span class="o">=</span><span class="s2">&quot;Oct4&quot;</span><span class="p">,</span> <span class="n">dataset</span><span class="o">=</span><span class="n">sim_data</span><span class="p">,</span> <span class="n">plot_eseq</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
@@ -1468,7 +1838,7 @@ array([ 0.        , -1.02862654, -1.8984876 , ..., -7.04209084,
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../../_images/tutorials_tut01_quick_start_quick_start_44_0.png" src="../../_images/tutorials_tut01_quick_start_quick_start_44_0.png" />
+<img alt="../../_images/tutorials_tut01_quick_start_quick_start_46_0.png" src="../../_images/tutorials_tut01_quick_start_quick_start_46_0.png" />
 </div>
 </div>
 <p>Finally, we can save our analyses of the simulation results (in the HDF5 file <code class="docutils literal notranslate"><span class="pre">out_dir/results.h5</span></code>) that can be retrieved later for further post-processing:</p>
@@ -1489,7 +1859,7 @@ array([ 0.        , -1.02862654, -1.8984876 , ..., -7.04209084,
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="../../api.html" class="btn btn-neutral float-left" title="API Reference" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="../tut00_data_prep/data_prep.html" class="btn btn-neutral float-left" title="Tutorial 0: Data Preparation" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
     </div>
 
   <hr/>

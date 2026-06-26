@@ -159,8 +159,8 @@ def run(*, chroms : str | Iterable[str],
                          verbose=verbose)
     dataset = manager.run(chroms=chroms, nsim=nsim, settings=settings,
                           meth_prob=meth_prob, out_types=out_types,
-                          out_dir=out_dir, dataset_name=dataset_name, seed=seed,
-                          mols=mols, store_eseq=store_eseq,
+                          out_dir=out_dir, dataset_name=dataset_name,
+                          seed=seed, mols=mols, store_eseq=store_eseq,
                           use_zero_point_mu=use_zero_point_mu)    
     return dataset
 

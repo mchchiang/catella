@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from itertools import islice
 from collections.abc import Iterable, Mapping
 import multiprocess as mp
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import platform
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
 from rich.progress import TimeRemainingColumn
@@ -78,9 +79,6 @@ class SimManager:
     ----------
     nworker : int, default 1
         Number of parallel processes to use.
-    mp_context : {'spawn', 'forkserver'}, optional
-        The multiprocessing start method. Default to 'spawn' on macOS 
-        and 'forkserver' on other platforms.
     verbose : bool, default True
         If True, display a progress bar when running simulations.
 
@@ -88,8 +86,6 @@ class SimManager:
     ------
     ValueError
         If the number of parallel processes `nworker` is invalid.
-    ValueError
-        If an invalid `mp_context` is provided.
     """
     
     def __init__(self, *,
@@ -99,12 +95,6 @@ class SimManager:
 
         if nworker <= 0:
             raise ValueError("nworker must be greater than zero.")
-        
-        if mp_context is None:
-            mp_context = "spawn" if platform.system() == "Darwin" \
-                else "forkserver"
-        elif mp_context != "spawn" and mp_context != "forkserver":
-            raise ValueError("mp_context must be 'spawn' or 'forkserver'")
         
         self.nworker = nworker
         self.mp_context = mp_context
@@ -329,29 +319,27 @@ class SimManager:
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TimeRemainingColumn(),
             disable=not self.verbose)
-        
+
         with progress:
             main_task = progress.add_task("[cyan]Running simulations ...",
-                                          total=total_sim)
+                                          total=total_sim)    
             if self.nworker > 1:
-                ctx = mp.get_context(self.mp_context)
-                with ctx.Pool(processes=self.nworker) as pool:
-                    iterator = pool.imap_unordered(SimManager._run_job,
-                                                   param_gen)
-                    while True:
-                        try:
-                            result = next(iterator)
-                            if result[3]:
-                                pass
-                            else:
-                                chrom, mol, run, _, err_msg = result
-                                progress.console.print(
-                                    "[red]Error[/red] Simulation for chrom "
-                                    f"{chrom}, molecule {mol}, run {run} "
-                                    f"failed: {err_msg}")
-                            progress.update(main_task, advance=1)
-                        except StopIteration:
-                            break
+                if platform.system() == "Darwin":
+                    # Disable Apple's fork-safety blocker
+                    os.environ["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
+                ctx = mp.get_context("fork")
+                with ProcessPoolExecutor(max_workers=self.nworker,
+                                         mp_context=ctx) as executor:
+                    futures = [executor.submit(SimManager._run_job, param)
+                               for param in param_gen]
+                    for future in as_completed(futures):
+                        result = future.result()
+                        if not result:
+                            chrom, mol, run, _, err_msg = result
+                            progress.console.print(
+                                "[red]Error[/red] Simulation failed: "
+                                f"{err_msg}")
+                        progress.update(main_task, advance=1)                
             else: # nworker = 1
                 for param in param_gen:
                     SimManager._run_job(param)
@@ -396,6 +384,6 @@ class SimManager:
                 sim.createDump(print_freq, str(p.out_file), p.out_type))
             # Run the simulation
             model.run(nsweep, start_temp, end_temp, cool_option)
-            return (p.chrom, p.mol, p.run, True)
+            return (p.chrom, p.mol, p.run, True, None)
         except Exception as e:
             return (p.chrom, p.mol, p.run, False, str(e))

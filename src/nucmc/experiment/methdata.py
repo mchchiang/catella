@@ -174,7 +174,9 @@ class MethPrintExperiment:
                  unmeth_file : str | Path | None = None,
                  meth_file : str | Path | None = None,
                  wrap : bool = False,
-                 colidx : List | None = None) -> Self:
+                 colidx : List | None = None,
+                 max_nmol : int | None = None,
+                 seed : int | None = None) -> Self:
         """
         Create an experiment by processing raw sequencing data files.
 
@@ -199,6 +201,11 @@ class MethPrintExperiment:
         colidx : list of int, optional
             Specific column indices to use if the input file does not follow 
             the standard modkit format.
+        max_nmol : int or None
+            Maximum number of molecules to extract for each chromosome.
+        seed : int or None
+            The seed for the random number generator selecting the molecules
+            if `max_nmol` is specified.        
 
         Returns
         -------
@@ -238,9 +245,13 @@ class MethPrintExperiment:
                              (df_size["length"]/2).astype(int)))
         else:
             sizes = dict(zip(df_size["chrom"], df_size["length"].astype(int)))
+
+        # Random generator for downsampling
+        rng = None if max_nmol is None else np.random.default_rng(seed)
         
         # Read the raw data as a data frame
-        def read_data(data_file, df_size, wrap=False, colidx=None, sep="\t"):
+        def read_data(data_file, df_size, wrap=False, colidx=None, sep="\t",
+                      max_nmol=None, rng=None):
             """
             Internal parser for raw methylation sequencing files.
 
@@ -262,6 +273,11 @@ class MethPrintExperiment:
                 standard Modkit output.
             sep : str, default "\\t"
                 The delimiter used in the input file.
+            max_nmol : int or None
+                Maximum number of molecules to extract for each chromosome.
+            rng : np.random.Generator
+                The random number generator selecting molecules if `max_nmol`
+                is specified.
 
             Returns
             -------
@@ -286,14 +302,39 @@ class MethPrintExperiment:
                                "ref_strand", "mod_qual", "mod_code"]
             colnames = ["mol_id", "upos", "chrom", "strand", "mod_qual",
                         "mod_code"]
-            usecols = lambda c : c.lstrip("#").strip() in modkit_colnames
+
             print(f"Reading {data_file} ...")
             if colidx is None:
-                df = pd.read_csv(data_file, sep=sep, usecols=usecols)
+                header_df = pd.read_csv(data_file, sep=sep, nrows=0)
+                matched_cols = [col for col in header_df.columns
+                                if col.lstrip("#").strip() in modkit_colnames]
+                df = pd.read_csv(data_file, sep=sep, usecols=matched_cols,
+                                 engine="pyarrow")
             else:
                 df = pd.read_csv(data_file, header=None, sep=sep,
-                                 usecols=colidx)
-            df.columns = colnames
+                                 usecols=colidx, engine="pyarrow")
+            # Create a flexible mapping dictionary that strips '#' and
+            # whitespace
+            rename_map = {src: dest for src, dest in
+                          zip(modkit_colnames, colnames)}
+
+            # Apply the map dynamically based on what columns actually exist
+            # in df
+            df = df.rename(columns=lambda c: rename_map.get(
+                str(c).lstrip("#").strip(), c))
+            
+            # Downsample the data if necessary
+            if max_nmol is not None:
+                mol_map = df[["chrom", "mol_id"]].drop_duplicates()
+                sampled_mols = []
+                for chrom, group in mol_map.groupby("chrom"):
+                    mols = group["mol_id"].values
+                    if len(mols) > max_nmol:
+                        mols = rng.choice(mols, max_nmol, replace=False)
+                    sampled_mols.append(mols)
+                sampled_mols = np.concatenate(sampled_mols)
+                df = df.set_index("mol_id").loc[sampled_mols].reset_index()
+            
             # Add chromosome length column
             df = pd.merge(df, df_size, on="chrom") 
             if wrap:
@@ -301,25 +342,26 @@ class MethPrintExperiment:
                                      df["length"]-df["upos"]-1, df["upos"])
             else:
                 df["pos"] = df["upos"]
-            
-            # Split the data by chromosomes
-            chroms = df["chrom"].unique()
-            dfs = {c:df[df["chrom"] == c] for c in chroms}
 
-            # Sort by position. Note that each molecule only has one chrom
-            mol_ids = dict()
-            for c in chroms:
-                dfs[c] = dfs[c].sort_values(["mol_id","pos"]).reset_index()
-                mol_ids[c] = dfs[c]["mol_id"].unique()
-                id2idx = {rid:i for i,rid in enumerate(mol_ids[c])}
-                dfs[c]["mol_index"] = dfs[c]["mol_id"].map(id2idx)
-                dfs[c] = dfs[c][["mol_index", "pos", "strand", "mod_qual",
-                                 "mod_code"]]
+            # Sort and split the data by chromosomes
+            df = df.sort_values(["chrom", "mol_id", "pos"]).reset_index(
+                drop=True)
+            df["mol_index"] = df.groupby("chrom")["mol_id"].transform(
+                lambda x: pd.factorize(x)[0])
+            mol_ids = {chrom: group["mol_id"].unique()
+                       for chrom, group in df.groupby("chrom")}
+            keep_cols = ["chrom", "mol_index", "pos", "strand", "mod_qual",
+                         "mod_code"]
+            df = df[keep_cols]
+            dfs = {chrom: group.drop(columns="chrom")
+                   for chrom, group in df.groupby("chrom")}            
             return mol_ids, dfs
         
         # Read footprinting data and re-orientate the data with pos as index
         # and mod_qual score at each pos for each molecule as columns        
-        test_ids, dfs_test = read_data(test_file, df_size, wrap, colidx)
+        test_ids, dfs_test = read_data(
+            test_file, df_size, wrap=wrap, colidx=colidx, max_nmol=max_nmol,
+            rng=rng)
         chroms = dfs_test.keys()
 
         unmeth_ids = {chrom: None for chrom in chroms}
@@ -327,13 +369,16 @@ class MethPrintExperiment:
         dfs_unmeth = {chrom: None for chrom in chroms}
         dfs_meth = {chrom: None for chrom in chroms}
         if unmeth_file is not None:
-            unmeth_ids, dfs_unmeth = read_data(unmeth_file, df_size, wrap,
-                                               colidx)
+            unmeth_ids, dfs_unmeth = read_data(
+                unmeth_file, df_size, wrap=wrap, colidx=colidx,
+                max_nmol=max_nmol, rng=rng)
             if set(chroms) != set(dfs_unmeth.keys()):
                 raise ValueError("Different number of chromosomes in test and"
                                  "unmeth datasets")            
         if meth_file is not None:
-            meth_ids, dfs_meth = read_data(meth_file, df_size, wrap, colidx)
+            meth_ids, dfs_meth = read_data(
+                meth_file, df_size, wrap=wrap, colidx=colidx,
+                max_nmol=max_nmol, rng=rng)
             if set(chroms) != set(dfs_meth.keys()):
                 raise ValueError("Different number of chromosomes in test and"
                                  "meth datasets")

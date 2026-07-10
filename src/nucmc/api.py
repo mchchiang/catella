@@ -24,6 +24,8 @@ def preprocess(*, chromsize : str | Path,
                binsize : int = 147,               
                wrap : bool = False,
                colidx : Iterable | None = None,
+               max_nmol : int | None = None,
+               seed : int | None = None,
                clip_low : float = 0.1,
                clip_high : float = 99.9,
                norm_by_strand : bool = False) -> MethPrintExperiment:
@@ -53,10 +55,15 @@ def preprocess(*, chromsize : str | Path,
         default value corresponds to the typical DNA footprint of a nucleosome.
     wrap : bool, default False
         If True, calculates positions relative to the fiber center
-        (useful for circular or symmetrical fibers). 
+        (useful for circular or symmetrical fibers).
     colidx : Iterable, optional
         Specific column indices to use if the input file does not follow    
         the standard ModKit format.
+    max_nmol : int, optional
+        Maximum number of molecules to extract for each chromosome.
+    seed : int, optional
+        The seed for the random number generator selecting the molecules if
+        `max_nmol` is specified.        
     clip_low : float, default 0.1
         Lower percentile bound for signal clipping. Values below this
         percentile are set to 0. 
@@ -77,7 +84,8 @@ def preprocess(*, chromsize : str | Path,
     # Load the raw data (generated from ModKit)
     exp_data = MethPrintExperiment.load_raw(
         chromsize=chromsize, test_file=test_file, unmeth_file=unmeth_file,
-        meth_file=meth_file, wrap=wrap, colidx=colidx)
+        meth_file=meth_file, wrap=wrap, colidx=colidx, max_nmol=max_nmol,
+        seed=seed)
 
     # Smooth and normalize the data - compute methylation probability
     ana = MethPrintAnalysis()

@@ -19,11 +19,12 @@ dependencies:
   - typer
   - rich
   - multiprocess
+  - pyarrow
   # Documentation dependencies
-  - nbsphinx
-  - sphinx
-  - sphinx-rtd-theme
-  - myst-parser
+  #- nbsphinx
+  #- sphinx
+  #- sphinx-rtd-theme
+  #- myst-parser
   - pip:
     - -e .
 variables:

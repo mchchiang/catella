@@ -1,5 +1,7 @@
 # methdata.py
 
+from collections import OrderedDict
+from collections.abc import Mapping as ABCMapping
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 from types import MappingProxyType
@@ -131,6 +133,44 @@ class MethPrintData:
         # Create a string of the public attribute names (not values)
         repr_str = f"{self.__class__.__name__}({', '.join(public_attrs)})"
         return repr_str
+
+
+class LazyRawDataMap(ABCMapping):
+    """
+    Load per-chromosome MethPrintData from an HDF5 file on demand.
+
+    Chromosome data is read from disk the first time it is accessed and
+    kept in a small least-recently-used cache. Accessing a different
+    chromosome once the cache is full evicts the least-recently-used
+    entry, bounding how many chromosomes' raw data can be resident in
+    memory at once, while repeated access to the same chromosome avoids
+    re-reading it from disk.
+    """
+
+    def __init__(self, path, chroms, *, max_cached=1):
+        self._path = str(path)
+        self._chroms = tuple(chroms)
+        self._max_cached = max_cached
+        self._cache = OrderedDict()
+
+    def __getitem__(self, chrom):
+        if chrom not in self._chroms:
+            raise KeyError(chrom)
+        if chrom in self._cache:
+            self._cache.move_to_end(chrom)
+            return self._cache[chrom]
+        with h5py.File(self._path, "r") as h5stream:
+            data = MethPrintData._load(h5stream["raw_data"], chrom)
+        self._cache[chrom] = data
+        if len(self._cache) > self._max_cached:
+            self._cache.popitem(last=False)
+        return data
+
+    def __iter__(self):
+        return iter(self._chroms)
+
+    def __len__(self):
+        return len(self._chroms)
 
 
 @dataclass(slots=True, init=False)
@@ -448,14 +488,25 @@ class MethPrintExperiment:
                     h5_utils.save_df(name, entry, gana)
                 
     @classmethod
-    def load(cls, path: str | Path) -> Self:
+    def load(cls, path: str | Path,
+             max_cached_chroms: int = 1) -> Self:
         """
         Load an experiment from a persistent HDF5 file.
+
+        Raw per-chromosome data is loaded lazily: `MethPrintData` for a
+        chromosome is only read from disk when accessed via `raw`, and
+        is cached for at most `max_cached_chroms` chromosomes at a time
+        (least-recently-used eviction), so not all chromosomes need to
+        be resident in memory simultaneously.
 
         Parameters
         ----------
         path : str or pathlib.Path
             Path to the HDF5 file containing the experiment.
+        max_cached_chroms : int, default 1
+            Maximum number of chromosomes' raw data kept in memory at
+            once. Accessing more distinct chromosomes than this evicts
+            the least-recently-used one.
 
         Returns
         -------
@@ -463,11 +514,10 @@ class MethPrintExperiment:
             The loaded experiment object with all data and analysis maps.
         """
         with h5py.File(path, "r") as h5stream:
-            # Load the raw data
-            graw = h5stream["raw_data"]
-            raw_data = {}
-            for chrom in graw:
-                raw_data[chrom] = MethPrintData._load(graw, chrom)
+            # Set up lazy, memory-bounded access to the raw data
+            chroms = list(h5stream["raw_data"].keys())
+            raw_data = LazyRawDataMap(path, chroms,
+                                      max_cached=max_cached_chroms)
             obj = cls._create(_raw_data=raw_data)
             
             # Load any analysis data

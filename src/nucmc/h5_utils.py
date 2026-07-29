@@ -31,6 +31,91 @@ def save_df(name, df, group):
             g.create_dataset(f"str_{col}", data=sdata, dtype=dt,
                              compression="gzip")
 
+class AppendableDF:
+    """
+    Incrementally write a DataFrame to an HDF5 group, in the same
+    on-disk layout `save_df` produces, without holding the full table
+    in memory. Read back by the unmodified `load_df`.
+
+    The column schema (order, and which columns are numeric vs. string)
+    is fixed up front and does not change across `append` calls.
+    """
+
+    def __init__(self, group, name, *, columns, dtypes):
+        """
+        Parameters
+        ----------
+        group : h5py.Group
+            Parent group; a new sub-group `name` is created within it.
+        name : str
+            Name of the sub-group to create.
+        columns : list of str
+            Full, fixed column order.
+        dtypes : dict of str to {"numeric", "string"}
+            Per-column kind, used to route values into the numeric block
+            or a per-column string dataset.
+        """
+        dt = h5py.string_dtype(encoding="utf-8")
+        self._group = group.create_group(name)
+        self._columns = list(columns)
+        self._num_cols = [c for c in self._columns if dtypes[c] == "numeric"]
+        self._str_cols = [c for c in self._columns if dtypes[c] == "string"]
+
+        self._group.create_dataset(
+            "_column_order", data=[str(c) for c in self._columns], dtype=dt)
+        self._group.attrs["_column_index_dtype"] = "object"
+
+        self._num_ds = None
+        if self._num_cols:
+            self._num_ds = self._group.create_dataset(
+                "num_values", shape=(0, len(self._num_cols)),
+                maxshape=(None, len(self._num_cols)), dtype=np.float64,
+                compression="gzip")
+            self._group.create_dataset(
+                "num_names", dtype=dt,
+                data=[str(c) for c in self._num_cols])
+        self._str_ds = {}
+        for col in self._str_cols:
+            self._str_ds[col] = self._group.create_dataset(
+                f"str_{col}", shape=(0,), maxshape=(None,), dtype=dt,
+                compression="gzip")
+        self._nrows = 0
+
+    def append(self, df_chunk):
+        """
+        Append rows from a DataFrame chunk.
+
+        Parameters
+        ----------
+        df_chunk : pd.DataFrame
+            Rows to append; must contain all columns passed to the
+            constructor. Extra columns are ignored.
+        """
+        n = len(df_chunk)
+        if n == 0:
+            return
+        if self._num_cols:
+            block = df_chunk[self._num_cols].to_numpy(dtype=np.float64)
+            old = self._num_ds.shape[0]
+            self._num_ds.resize(old + n, axis=0)
+            self._num_ds[old:old + n, :] = block
+        for col in self._str_cols:
+            ds = self._str_ds[col]
+            old = ds.shape[0]
+            ds.resize(old + n, axis=0)
+            ds[old:old + n] = df_chunk[col].astype(str).to_numpy()
+        self._nrows += n
+
+    @property
+    def nrows(self) -> int:
+        """int: Number of rows appended so far."""
+        return self._nrows
+
+    def close(self):
+        """No-op; reserved for symmetry with other streaming writers."""
+        pass
+
+
 def load_df(name, group):
     if name in group:
         g = group[name]

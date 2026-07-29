@@ -4,6 +4,7 @@ from collections.abc import MutableMapping, Mapping
 from typing import Dict, Any, Iterator
 from dataclasses import fields, is_dataclass
 import pandas as pd
+from .h5_array import H5Array
 
 class DataFrameMap(MutableMapping):
     def __init__(self, data: Dict[str, Any] = None, **kwargs):
@@ -12,16 +13,16 @@ class DataFrameMap(MutableMapping):
         if data is not None:
             self.update(data)
         if kwargs:
-            self.update(kwargs)    
-        
+            self.update(kwargs)
+
     def __getitem__(self, key: str) -> Any:
         return self._data[key]
 
     def __setitem__(self, key: str, value: Any) -> None:
         # Strict type enforcement
-        if not isinstance(value, pd.DataFrame):
+        if not isinstance(value, (pd.DataFrame, H5Array)):
             raise TypeError(f"Value for key '{key}' must be a pandas "
-                            "DataFrame")
+                            "DataFrame or H5Array")
         self._data[key] = value
         
     def __delitem__(self, key: str) -> None:

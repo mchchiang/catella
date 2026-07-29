@@ -78,6 +78,29 @@ def test_repr_mentions_shape_and_dtype():
     assert "float64" in text
 
 
+def test_repr_truncates_like_numpy_for_large_arrays():
+    nrow, ncol = 50, 8
+    values = np.arange(nrow * ncol, dtype=np.float64).reshape(nrow, ncol)
+    arr = H5Array.create((nrow, ncol))
+    arr.write_batch(0, nrow, values)
+
+    text = repr(arr)
+    assert "..." in text
+    expected_body = np.array2string(values, threshold=0, edgeitems=3)
+    assert text.endswith(expected_body)
+
+
+def test_repr_no_truncation_for_small_arrays():
+    values = np.arange(12, dtype=np.float64).reshape(4, 3)
+    arr = H5Array.create((4, 3))
+    arr.write_batch(0, 4, values)
+
+    text = repr(arr)
+    assert "..." not in text
+    expected_body = np.array2string(values, threshold=0, edgeitems=3)
+    assert text.endswith(expected_body)
+
+
 def test_iloc_matches_getitem():
     arr, values = _filled((6, 3))
     np.testing.assert_array_equal(arr.iloc[1:4, :], values[1:4, :])

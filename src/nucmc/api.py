@@ -29,9 +29,12 @@ def preprocess(*, chromsize : str | Path,
                clip_low : float = 0.1,
                clip_high : float = 99.9,
                norm_by_strand : bool = False,
-               batch_size : int = 20_000,
-               percentile_sample_size : int = 100_000,
-               tmp_dir : str | Path | None = None) -> MethPrintExperiment:
+               batch_size : int = 20000,
+               percentile_sample_size : int = 100000,
+               tmp_dir : str | Path | None = None,
+               chunk_size : int = 1000000,
+               staging_file : str | Path | None = None,
+               max_cached_chroms : int = 1) -> MethPrintExperiment:
     """
     Preprocess raw methylation data to create a MethPrintExperiment.
 
@@ -75,15 +78,25 @@ def preprocess(*, chromsize : str | Path,
         percentile are set to 1.    
     norm_by_strand : bool, default False
         Whether to perform normalization separately based on strandedness.
-    batch_size : int, default 20_000
+    batch_size : int, default 20000
         Number of molecules processed (and held in memory) per batch
         during smoothing and probability calculation.
-    percentile_sample_size : int, default 100_000
+    percentile_sample_size : int, default 100000
         Approximate number of molecules used to estimate percentile clip
         bounds during probability calculation.
     tmp_dir : str or Path, optional
         Directory used for scratch files backing intermediate analysis
-        results. If None, the system default temporary directory is used.
+        results and, if `staging_file` is None, the raw data staging
+        file. If None, the system default temporary directory is used.
+    chunk_size : int, default 1000000
+        Approximate number of rows read (and held in memory) per
+        streamed chunk while ingesting raw data files.
+    staging_file : str or Path, optional
+        Location of the HDF5 file backing the experiment's raw data.
+        If None, a scratch file is created and removed once the
+        returned experiment is closed or garbage-collected.
+    max_cached_chroms : int, default 1
+        Maximum number of chromosomes' raw data kept in memory at once.
 
     Returns
     -------
@@ -97,7 +110,8 @@ def preprocess(*, chromsize : str | Path,
     exp_data = MethPrintExperiment.load_raw(
         chromsize=chromsize, test_file=test_file, unmeth_file=unmeth_file,
         meth_file=meth_file, wrap=wrap, colidx=colidx, max_nmol=max_nmol,
-        seed=seed)
+        seed=seed, chunk_size=chunk_size, staging_file=staging_file,
+        tmp_dir=tmp_dir, max_cached_chroms=max_cached_chroms)
 
     # Smooth and normalize the data - compute methylation probability
     ana = MethPrintAnalysis()

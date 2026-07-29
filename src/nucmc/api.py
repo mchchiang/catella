@@ -205,7 +205,8 @@ def plot_occup(*, chrom : str,
                dataset : SimDataset,
                out_file : str | Path | None = None,
                occup_name : str = "occup",
-               plot_eseq : bool = False,               
+               plot_eseq : bool = False,
+               sort_data : bool = False,
                show : bool = True):
     """
     Visualize nucleosome occupancy profiles for a specific chromosome.
@@ -226,9 +227,12 @@ def plot_occup(*, chrom : str,
     occup_name : str, default "occup"
         The key or name of the occupancy data to retrieve from the dataset. 
         This should match the name used during the `analyze` step.
-    plot_eseq : bool, default True
+    plot_eseq : bool, default False
         Whether to plot the underlying sequence-specific nucleosome binding 
         energy, averaged across all molecules.
+    sort_data : bool, default False
+        Whether to sort the molecules based on similarity in their occupancy
+        signal.
     show : bool, default True
         If True, invokes the active plotting backend to display the 
         figure immediately.
@@ -240,7 +244,8 @@ def plot_occup(*, chrom : str,
     """
     simplot = SimPlot()
     simplot.plot_occup(chrom=chrom, dataset=dataset, occup_name=occup_name,
-                       out_file=out_file, plot_eseq=plot_eseq, show=show)
+                       out_file=out_file, plot_eseq=plot_eseq,
+                       sort_data=sort_data, show=show)
 
 def plot_nuc_pos(*, chrom : str,
                  mol : int,

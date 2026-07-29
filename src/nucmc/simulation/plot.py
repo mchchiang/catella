@@ -8,6 +8,9 @@ from .analysis import NucFiberMap, SimAnalysis
 from pathlib import Path
 from matplotlib.colors import Normalize
 import numpy as np
+import scipy.cluster.hierarchy as sch
+from scipy.spatial.distance import pdist
+from nucmc.mapping import CoordsTransform
 
 @dataclass(slots=True, kw_only=True)
 class SimPlot:
@@ -257,15 +260,20 @@ class SimPlot:
         # Plot the sequence energy if needed
         if plot_eseq:
             eseq = dataset.eseq[chrom][mol,:]
-            ax[1].plot(np.arange(0,data.nbp)/xscale, eseq)
-            ax[1].set_ylabel(r"$E_{\text{seq}}$ [$k_BT$]")            
-            ax[1].set_xlim(0, data.nbp/xscale)
             med = np.median(eseq)
             sigma = np.median(np.abs(eseq-med)) * 1.4826 # MAD to SD
             nsig = 3 # Plot up to how many sigma
             emin = max(-nsig*sigma+med,0)
             emax = min(med+nsig*sigma,dataset.settings["emax"])
-            ax[1].set_ylim(emin,emax)
+            ax[1].set_ylim(emin,emax)            
+            binsize = dataset.settings["nucbp"]            
+            trans = CoordsTransform(binsize=binsize)
+            eseq = trans.left_to_center_aligned(eseq)
+            eseq[:binsize//2] = np.nan
+            eseq[len(eseq)-binsize//2:] = np.nan            
+            ax[1].plot(np.arange(0,data.nbp)/xscale, eseq)
+            ax[1].set_ylabel(r"$E_{\text{seq}}$ [$k_BT$]")            
+            ax[1].set_xlim(0, data.nbp/xscale)
 
         # Common x-axis label
         ax[nplots-1].set_xlabel(rf"Position $x$ [{xpow_str} bp]")
@@ -289,6 +297,7 @@ class SimPlot:
                    xscale : int = 1000,
                    out_file : str | Path | None = None,
                    plot_eseq : bool = False,
+                   sort_data : bool = False,
                    show : bool = True):
         """
         Plot the nucleosome occupancy across all molecules for a specific
@@ -317,6 +326,9 @@ class SimPlot:
         plot_eseq : bool, default False
             Whether to plot the underlying sequence-specific nucleosome binding
             energy, averaged across all molecules.
+        sort_data : bool, default False
+            Whether to sort the molecules based on similarity in their
+             occupancy signal.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
@@ -336,48 +348,77 @@ class SimPlot:
                               name=occup_name)
         occup = dataset.analysis[chrom][occup_name]
 
+        # Calculate linkage tree and sort if requested
+        link_mat = None
+        if sort_data:
+            dist_vec = pdist(occup, metric="euclidean")
+            link_mat = sch.linkage(dist_vec, method="ward")
+            sort_idx = sch.leaves_list(link_mat)
+            occup = occup.iloc[sort_idx]
+        
         # Set up the figure
+        ncols = 2 if sort_data else 1
+        gridspec_kw = {"width_ratios": [5, 1]} if sort_data else {}
         if plot_eseq:
-            nplots = 2
-            fig, ax = plt.subplots(nrows=nplots, ncols=1,
-                                   gridspec_kw={"height_ratios": [4, 1]})
+            nrows = 2
+            gridspec_kw["height_ratios"] = [4, 1]
+            fig, ax = plt.subplots(nrows=nrows, ncols=ncols,
+                                   gridspec_kw=gridspec_kw)
             w, h = fig.get_size_inches()
-            fig.set_size_inches(w, h*1.25) 
+            fig.set_size_inches(w*1.25, h*1.25)
+            hm_ax = ax[0,0] if sort_data else ax[0]
+            dend_ax = ax[0,1] if sort_data else None
+            seq_ax = ax[1,0] if sort_data else ax[1]
+            if sort_data: ax[1,1].axis("off")
         else:
-            nplots = 1
-            fig, ax = plt.subplots(nrows=nplots, ncols=1)
-            ax = [ax]
-
+            nrows = 1
+            fig, ax = plt.subplots(nrows=nrows, ncols=ncols,
+                                   gridspec_kw=gridspec_kw)
+            hm_ax = ax[0] if sort_data else ax
+            dend_ax = ax[1] if sort_data else None
+            seq_ax = None
         
         # Plot the nucleosome position as a heat map
         nbp = dataset.nbp[chrom]
         norm = Normalize(vmin=0, vmax=1)
-        ax[0].imshow(occup, cmap=self.cmap, norm=norm, aspect="auto",
+        hm_ax.imshow(occup, cmap=self.cmap, norm=norm, aspect="auto",
                      origin="lower", interpolation="none",
                      extent=[0,occup.shape[1]/xscale,0,occup.shape[0]])
         xpow_str = rf"$10^{{{xpow}}}$"
-        ax[0].set_xlim(0, nbp/xscale)
+        hm_ax.set_xlim(0, nbp/xscale)
         if plot_eseq:
-            ax[0].get_xaxis().set_visible(False)
-        ax[0].set_ylabel(r"Molecule index")
+            hm_ax.get_xaxis().set_visible(False)
+        hm_ax.set_ylabel(r"Molecule index")
+
+        # Plot dendrogram on the right panel
+        if sort_data and link_mat is not None:
+            sch.dendrogram(link_mat, orientation="right", ax=dend_ax,
+                           no_labels=True, link_color_func=lambda x : "black")
+            dend_ax.axis("off")
 
         # Plot the sequence energy if needed
         if plot_eseq:
             eseq = np.mean(dataset.eseq[chrom], axis=0)
-            ax[1].plot(np.arange(0,nbp)/xscale, eseq)
-            ax[1].set_ylabel(r"$\langle E_{\text{seq}} \rangle$ [$k_BT$]")
-            ax[1].set_xlim(0, nbp/xscale)
             med = np.median(eseq)
             sigma = np.median(np.abs(eseq-med)) * 1.4826 # MAD to SD
             nsig = 3 # Plot up to how many sigma
             emin = max(-nsig*sigma+med,0)
             emax = min(med+nsig*sigma,dataset.settings["emax"])
-            ax[1].set_ylim(emin,emax)
+            seq_ax.set_ylim(emin,emax)            
+            binsize = dataset.settings["nucbp"]            
+            trans = CoordsTransform(binsize=binsize)
+            eseq = trans.left_to_center_aligned(eseq)
+            eseq[:binsize//2] = np.nan
+            eseq[len(eseq)-binsize//2:] = np.nan
+            seq_ax.plot(np.arange(0,nbp)/xscale, eseq)
+            seq_ax.set_ylabel(r"$\langle E_{\text{seq}} \rangle$ [$k_BT$]")
+            seq_ax.set_xlim(0, nbp/xscale)
 
         # Common x-axis label
-        ax[nplots-1].set_xlabel(rf"Position $x$ [{xpow_str} bp]")
-        
-        fig.tight_layout()
+        btm_ax = seq_ax if plot_eseq else hm_ax
+        btm_ax.set_xlabel(rf"Position $x$ [{xpow_str} bp]")
+
+        hm_ax.set_title(f"Occupancy Profile for {chrom}", pad=12)
         
         if show: plt.show()
 

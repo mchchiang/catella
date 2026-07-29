@@ -5,6 +5,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Tuple, List, Mapping, Dict, Self, Any
 from ..containers import DataFrameMap, FixedKeyMap
+from ..h5_array import H5Array
 from .. import utils
 from .. import h5_utils
 import numpy as np
@@ -407,7 +408,20 @@ class MethPrintExperiment:
         ------
         OSError
             If the file cannot be written to disk.
+        ValueError
+            If `path` is the same file that backs an `H5Array` analysis
+            entry already held by this experiment.
         """
+        dest = str(Path(path).resolve())
+        for data in list(self._analysis.values()) + [self._global_analysis]:
+            for entry in data.values():
+                if isinstance(entry, H5Array) and \
+                        str(Path(entry.path).resolve()) == dest:
+                    raise ValueError(
+                        "Cannot save to the same file that backs an "
+                        "existing H5Array analysis entry; save to a "
+                        "different path.")
+
         with h5py.File(path, "a") as h5stream:
             # Save the raw data - write once if raw_data does not exist
             if not "raw_data" in h5stream:
@@ -420,12 +434,18 @@ class MethPrintExperiment:
             gana = h5stream.create_group("analysis")
             for chrom, data in self._analysis.items():
                 gchrom = gana.create_group(chrom)
-                for name, df in data.items():
-                    h5_utils.save_df(name, df, gchrom)
+                for name, entry in data.items():
+                    if isinstance(entry, H5Array):
+                        entry.save_to(gchrom, name)
+                    else:
+                        h5_utils.save_df(name, entry, gchrom)
             if "global_analysis" in h5stream: del h5stream["global_analysis"]
             gana = h5stream.create_group("global_analysis")
-            for name, df in self._global_analysis.items():
-                h5_utils.save_df(name, df, gana)
+            for name, entry in self._global_analysis.items():
+                if isinstance(entry, H5Array):
+                    entry.save_to(gana, name)
+                else:
+                    h5_utils.save_df(name, entry, gana)
                 
     @classmethod
     def load(cls, path: str | Path) -> Self:
@@ -455,10 +475,19 @@ class MethPrintExperiment:
             for chrom in gana:
                 gchrom = gana[chrom]
                 for name in gchrom:
-                    obj._analysis[chrom][name] = h5_utils.load_df(name, gchrom)
+                    if isinstance(gchrom[name], h5py.Dataset):
+                        obj._analysis[chrom][name] = H5Array.load_from(
+                            path, f"analysis/{chrom}/{name}")
+                    else:
+                        obj._analysis[chrom][name] = h5_utils.load_df(
+                            name, gchrom)
             gana = h5stream["global_analysis"]
             for name in gana:
-                obj._global_analysis[name] = h5_utils.load_df(name, gana)
+                if isinstance(gana[name], h5py.Dataset):
+                    obj._global_analysis[name] = H5Array.load_from(
+                        path, f"global_analysis/{name}")
+                else:
+                    obj._global_analysis[name] = h5_utils.load_df(name, gana)
             return obj
                 
     @classmethod

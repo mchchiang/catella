@@ -235,15 +235,44 @@ class H5Array:
 
     def __repr__(self):
         kind = "scratch" if self._owns_file else "permanent"
-        nrow, ncol = self.shape
-        preview = self._dataset[:min(5, nrow), :min(5, ncol)]
-        return (f"H5Array(shape={self.shape}, dtype={self.dtype}, "
-               f"{kind})\n{preview!r}")
+        header = f"H5Array(shape={self.shape}, dtype={self.dtype}, {kind})"
+        return f"{header}\n{self._preview_str()}"
 
     def _repr_html_(self):
         kind = "scratch" if self._owns_file else "permanent"
-        return (f"<b>H5Array</b> shape={self.shape} dtype={self.dtype} "
-               f"({kind})")
+        header = (f"<b>H5Array</b> shape={self.shape} dtype={self.dtype} "
+                 f"({kind})")
+        return f"{header}<pre>{self._preview_str()}</pre>"
+
+    def _preview_str(self, edgeitems=3) -> str:
+        # Numpy-style preview (first/last `edgeitems` rows and columns,
+        # with '...' in between) built from a handful of bounded disk
+        # reads -- never touches the middle of the array. A dummy
+        # all-zero row/column stands in for the skipped region; numpy's
+        # own summarization (forced via threshold=0) never formats it,
+        # since it only prints the first/last `edgeitems` per axis.
+        nrow, ncol = self.shape
+        if nrow == 0 or ncol == 0:
+            return "[]"
+
+        row_trunc = nrow > 2 * edgeitems
+        col_trunc = ncol > 2 * edgeitems
+
+        row_idx = (list(range(edgeitems)) + list(range(nrow-edgeitems, nrow))
+                  if row_trunc else list(range(nrow)))
+        block = self._dataset[row_idx, :]
+
+        if col_trunc:
+            left, right = block[:, :edgeitems], block[:, -edgeitems:]
+            gap_col = np.zeros((block.shape[0], 1), dtype=block.dtype)
+            block = np.concatenate([left, gap_col, right], axis=1)
+
+        if row_trunc:
+            top, bottom = block[:edgeitems], block[edgeitems:]
+            gap_row = np.zeros((1, block.shape[1]), dtype=block.dtype)
+            block = np.concatenate([top, gap_row, bottom], axis=0)
+
+        return np.array2string(block, threshold=0, edgeitems=edgeitems)
 
     def __len__(self):
         return self.shape[0]

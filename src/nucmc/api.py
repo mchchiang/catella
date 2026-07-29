@@ -28,7 +28,10 @@ def preprocess(*, chromsize : str | Path,
                seed : int | None = None,
                clip_low : float = 0.1,
                clip_high : float = 99.9,
-               norm_by_strand : bool = False) -> MethPrintExperiment:
+               norm_by_strand : bool = False,
+               batch_size : int = 20_000,
+               percentile_sample_size : int = 100_000,
+               tmp_dir : str | Path | None = None) -> MethPrintExperiment:
     """
     Preprocess raw methylation data to create a MethPrintExperiment.
 
@@ -72,7 +75,16 @@ def preprocess(*, chromsize : str | Path,
         percentile are set to 1.    
     norm_by_strand : bool, default False
         Whether to perform normalization separately based on strandedness.
-    
+    batch_size : int, default 20_000
+        Number of molecules processed (and held in memory) per batch
+        during smoothing and probability calculation.
+    percentile_sample_size : int, default 100_000
+        Approximate number of molecules used to estimate percentile clip
+        bounds during probability calculation.
+    tmp_dir : str or Path, optional
+        Directory used for scratch files backing intermediate analysis
+        results. If None, the system default temporary directory is used.
+
     Returns
     -------
     MethPrintExperiment
@@ -89,9 +101,12 @@ def preprocess(*, chromsize : str | Path,
 
     # Smooth and normalize the data - compute methylation probability
     ana = MethPrintAnalysis()
-    ana.smooth(binsize=binsize, exp=exp_data)
+    ana.smooth(binsize=binsize, exp=exp_data, batch_size=batch_size,
+              tmp_dir=tmp_dir)
     ana.meth_prob(exp=exp_data, clip_low=clip_low, clip_high=clip_high,
-                  norm_by_strand=norm_by_strand)
+                  norm_by_strand=norm_by_strand, batch_size=batch_size,
+                  percentile_sample_size=percentile_sample_size,
+                  tmp_dir=tmp_dir)
     
     # Save the results
     if out_file is not None:

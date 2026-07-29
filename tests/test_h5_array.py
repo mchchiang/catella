@@ -61,3 +61,83 @@ def test_create_with_dir_uses_given_directory(tmp_path):
     arr = H5Array.create((2, 2), dir=tmp_path)
     assert Path(arr.path).parent == tmp_path
     arr.close()
+
+
+def _filled(shape, seed=0):
+    rng = np.random.default_rng(seed)
+    values = rng.random(shape)
+    arr = H5Array.create(shape)
+    arr.write_batch(0, shape[0], values)
+    return arr, values
+
+
+def test_repr_mentions_shape_and_dtype():
+    arr, _ = _filled((5, 4))
+    text = repr(arr)
+    assert "(5, 4)" in text
+    assert "float64" in text
+
+
+def test_iloc_matches_getitem():
+    arr, values = _filled((6, 3))
+    np.testing.assert_array_equal(arr.iloc[1:4, :], values[1:4, :])
+    np.testing.assert_array_equal(arr.iloc[:, 0], values[:, 0])
+
+
+def test_array_protocol_round_trips():
+    arr, values = _filled((4, 4))
+    np.testing.assert_array_equal(np.asarray(arr), values)
+    assert np.asarray(arr, dtype=np.float32).dtype == np.float32
+
+
+def test_len_returns_row_count():
+    arr, _ = _filled((7, 2))
+    assert len(arr) == 7
+
+
+def test_to_pandas_default_range_index():
+    arr, values = _filled((3, 2))
+    df = arr.to_pandas()
+    np.testing.assert_array_equal(df.to_numpy(), values)
+    assert list(df.index) == [0, 1, 2]
+    assert list(df.columns) == [0, 1]
+
+
+def test_to_pandas_uses_explicit_labels():
+    values = np.arange(6, dtype=np.float64).reshape(3, 2)
+    arr = H5Array.create((3, 2), index=["m0", "m1", "m2"],
+                         columns=["x", "y"])
+    arr.write_batch(0, 3, values)
+    df = arr.to_pandas()
+    assert list(df.index) == ["m0", "m1", "m2"]
+    assert list(df.columns) == ["x", "y"]
+    np.testing.assert_array_equal(df.to_numpy(), values)
+
+
+def test_labels_survive_save_to_and_load_from(tmp_path):
+    import h5py
+
+    values = np.arange(6, dtype=np.float64).reshape(3, 2)
+    src = H5Array.create((3, 2), index=["a", "b", "c"], columns=["x", "y"])
+    src.write_batch(0, 3, values)
+
+    dest_path = tmp_path / "dest.h5"
+    with h5py.File(dest_path, "w") as f:
+        group = f.create_group("analysis")
+        src.save_to(group, "meth_prob")
+
+    loaded = H5Array.load_from(dest_path, "analysis/meth_prob")
+    assert list(loaded.index) == ["a", "b", "c"]
+    assert list(loaded.columns) == ["x", "y"]
+    np.testing.assert_array_equal(loaded.to_numpy(), values)
+
+
+@pytest.mark.parametrize("batch_size", [2, 1000])
+@pytest.mark.parametrize("op", ["mean", "sum", "min", "max"])
+def test_streaming_reductions_match_numpy(op, batch_size):
+    arr, values = _filled((9, 5), seed=1)
+    numpy_op = getattr(np, op)
+    for axis in (0, 1):
+        result = getattr(arr, op)(axis=axis, batch_size=batch_size)
+        expected = numpy_op(values, axis=axis)
+        np.testing.assert_allclose(result, expected)

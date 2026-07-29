@@ -182,22 +182,10 @@ class MethPrintAnalysis:
             return labels
 
         def streamed_nanmean(arr, row_mask=None):
-            # Per-position mean over molecules (rows), streamed in batches
-            nmol, nbp = arr.shape
-            total_sum = np.zeros(nbp)
-            total_count = np.zeros(nbp)
-            for start in range(0, nmol, batch_size):
-                stop = min(start + batch_size, nmol)
-                batch = arr[start:stop, :]
-                if row_mask is not None:
-                    sel = row_mask[start:stop]
-                    if not np.any(sel):
-                        continue
-                    batch = batch[sel]
-                total_sum += np.nansum(batch, axis=0)
-                total_count += (~np.isnan(batch)).sum(axis=0)
-            with np.errstate(invalid="ignore"):
-                return total_sum / total_count
+            # Per-position mean over molecules (rows), streamed in
+            # batches, delegating to H5Array's shared reduction logic
+            return arr._streamed_reduce("mean", 0, batch_size,
+                                        row_mask=row_mask)
 
         def apply_norm(test_batch, meth_avg, unmeth_avg):
             denom = meth_avg - unmeth_avg

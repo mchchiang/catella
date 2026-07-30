@@ -9,6 +9,8 @@ import numpy as np
 import pandas as pd
 from .experiment.preprocessing import MethPrintAnalysis
 from .experiment.methdata import MethPrintExperiment
+from .experiment.plot import MethPlot
+from .h5_array import H5Array
 from .simulation.config import SimSettings
 from .simulation.engine import SimManager
 from .simulation.results import SimDataset
@@ -348,4 +350,59 @@ def plot_energy(*, chrom : str,
     simplot = SimPlot()
     simplot.plot_energy(chrom=chrom, mol=mol, run=run, dataset=dataset,
                         out_file=out_file, show=show)
-    
+
+
+def plot_methmap(*, data : H5Array | pd.DataFrame | np.ndarray,
+                 max_rows : int = 2000,
+                 how : str = "mean",
+                 batch_size : int = 20000,
+                 vmin : float | None = None,
+                 vmax : float | None = None,
+                 out_file : str | Path | None = None,
+                 show : bool = True):
+    """
+    Plot a methylation heatmap, downsampled to bounded memory.
+
+    Visualize a dense molecule-by-position signal matrix, streaming
+    from disk (for `H5Array` data) or binning in memory (for
+    `pd.DataFrame`/`np.ndarray` data) so the full array is never
+    materialized regardless of its row count.
+
+    Parameters
+    ----------
+    data : H5Array, pd.DataFrame, or np.ndarray
+        Dense signal matrix to plot (rows=molecules, columns=bp
+        position), e.g. `exp.analysis[chrom]["meth_prob"]`,
+        `exp.analysis[chrom]["test_smoothed"]`, or the result of
+        `MethPrintExperiment.to_dense()`.
+    max_rows : int, default 2000
+        Target number of rows to plot.
+    how : {"mean", "sum", "min", "max", "stride"}, default "mean"
+        How to collapse groups of consecutive rows into one plotted
+        row.
+    batch_size : int, default 20000
+        Number of rows read (and held in memory) per streamed chunk.
+        Only used when `data` is an `H5Array`.
+    vmin : float, optional
+        Lower bound for the color scale. If None, inferred from the
+        downsampled data.
+    vmax : float, optional
+        Upper bound for the color scale. If None, inferred from the
+        downsampled data.
+    out_file : str | Path, optional
+        Path where the generated plot will be saved. If None, the plot
+        is not saved to disk.
+    show : bool, default True
+        Whether to display the figure using the active plotting
+        backend.
+
+    Raises
+    ------
+    ValueError
+        If `how` is not a recognized option.
+    """
+    methplot = MethPlot()
+    methplot.plot_methmap(data, max_rows=max_rows, how=how,
+                          batch_size=batch_size, vmin=vmin, vmax=vmax,
+                          out_file=out_file, show=show)
+

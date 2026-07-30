@@ -2,6 +2,7 @@
 
 import os
 import tempfile
+import warnings
 import weakref
 from collections import OrderedDict
 from collections.abc import Mapping as ABCMapping
@@ -34,6 +35,11 @@ _CANONICAL_PA_TYPES = {
 _RAW_COLUMN_SPEC = {"mol_index": "numeric", "pos": "numeric",
                     "strand": "string", "mod_qual": "numeric",
                     "mod_code": "string"}
+
+# Molecule-count threshold above which MethPrintExperiment.to_dense()
+# warns when materializing a pd.DataFrame (as opposed to streaming to
+# an H5Array).
+_DENSE_WARN_ROWS = 5000
 
 
 def _resolve_modkit_schema(data_file, sep, colidx):
@@ -895,7 +901,117 @@ class MethPrintExperiment:
             A mutable map containing global analysis results.
         """
         return self._global_analysis
-    
+
+    def to_dense(self, chrom, which="test", *, mols=None,
+                as_h5array=True, dtype=np.float64, batch_size=20000):
+        """
+        Convert a raw long-format methylation table to a dense
+        representation.
+
+        Parameters
+        ----------
+        chrom : str
+            Chromosome identifier.
+        which : {"test", "meth", "unmeth"}, default "test"
+            Which raw table to convert.
+        mols : int or sequence of int, optional
+            Molecule index/indices (values of `mol_index`) to include.
+            If None (default), every molecule is included.
+        as_h5array : bool, default True
+            Whether to stream the result to a disk-backed `H5Array`
+            (True) or materialize it as an in-memory `pd.DataFrame`
+            (False). Independent of `mols` -- e.g. `mols=[3, 7]` with
+            `as_h5array=True` (the default) returns a 2-row `H5Array`.
+        dtype : data-type, default np.float64
+            Numeric dtype of the returned dense data. Must be a
+            floating dtype, since missing (mol_index, pos) combinations
+            are represented as NaN.
+        batch_size : int, default 20000
+            Number of molecules processed (and held in memory) per
+            batch. Only used when `as_h5array` is True.
+
+        Returns
+        -------
+        H5Array or pd.DataFrame
+            `H5Array` if `as_h5array` is True; otherwise a
+            `pd.DataFrame`, indexed by the selected `mol_index` values.
+
+        Raises
+        ------
+        ValueError
+            If no data of the requested kind exists for `chrom`, or if
+            `dtype` is not a floating dtype.
+
+        Warns
+        -----
+        UserWarning
+            If `as_h5array` is False and more than `_DENSE_WARN_ROWS`
+            molecules would be materialized in memory.
+
+        Notes
+        -----
+        Scratch files backing a resulting `H5Array` are written to this
+        experiment's scratch directory (see `resolve_tmp_dir`), shared
+        with any other scratch files from the same experiment (e.g.
+        from `load_raw`, `smooth`, or `meth_prob`).
+        """
+        if not np.issubdtype(np.dtype(dtype), np.floating):
+            raise ValueError("'dtype' must be a floating dtype to "
+                             f"represent missing values as NaN, got "
+                             f"{dtype}")
+
+        raw = self.raw[chrom]
+        df = getattr(raw, f"{which}_data")
+        mol_id = getattr(raw, f"{which}_mol_id")
+        if df is None or mol_id is None:
+            raise ValueError(
+                f"No '{which}' data available for chrom '{chrom}'")
+        nbp = raw.nbp
+        all_pos = pd.Index(range(nbp))
+
+        mol_ids = np.arange(len(mol_id)) if mols is None \
+            else np.atleast_1d(mols)
+        if mols is not None:
+            df = df[df["mol_index"].isin(mol_ids)]
+
+        if not as_h5array:
+            if len(mol_ids) > _DENSE_WARN_ROWS:
+                warnings.warn(
+                    f"Materializing {len(mol_ids)} molecules as a "
+                    f"pd.DataFrame ({len(mol_ids)}x{nbp}); this may "
+                    "use significant memory. Pass as_h5array=True to "
+                    "stream to disk instead.", stacklevel=2)
+            piv = df.pivot(index="mol_index", columns="pos",
+                           values="mod_qual").reindex(index=mol_ids,
+                                                      columns=all_pos)
+            return piv.astype(dtype)
+
+        df = df.sort_values("mol_index", kind="stable")
+        mol_index = df["mol_index"].to_numpy()
+        nmol_out = len(mol_ids)
+        out = H5Array.create((nmol_out, nbp), dtype=dtype,
+                             index=(mol_ids if mols is not None
+                                   else None),
+                             dir=self.resolve_tmp_dir())
+        for start in range(0, nmol_out, batch_size):
+            stop = min(start + batch_size, nmol_out)
+            chunk_ids = mol_ids[start:stop]
+            if mols is None:
+                # mol_ids == arange(nmol_out): contiguous, sorted --
+                # take the fast searchsorted range slice.
+                lo, hi = np.searchsorted(mol_index, [start, stop])
+                batch_df = df.iloc[lo:hi]
+            else:
+                # chunk_ids may be an arbitrary (unsorted,
+                # non-contiguous) subset -- select by membership.
+                batch_df = df[df["mol_index"].isin(chunk_ids)]
+            piv = batch_df.pivot(
+                index="mol_index", columns="pos",
+                values="mod_qual").reindex(index=chunk_ids,
+                                           columns=all_pos)
+            out.write_batch(start, stop, piv.to_numpy())
+        return out
+
     def __repr__(self):
         # Get all public attributes by filtering out private attributes
         # (those starting with '_')

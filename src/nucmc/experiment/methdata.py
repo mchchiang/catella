@@ -493,6 +493,7 @@ class MethPrintExperiment:
                  test_file : str | Path,
                  unmeth_file : str | Path | None = None,
                  meth_file : str | Path | None = None,
+                 chroms : List[str] | None = None,
                  wrap : bool = False,
                  colidx : List | None = None,
                  max_nmol : int | None = None,
@@ -524,6 +525,9 @@ class MethPrintExperiment:
             Path to the unmethylated control data file.
         meth_file : str or pathlib.Path, optional
             Path to the fully methylated control data file.
+        chroms : list of str, optional
+            Restrict processing to these chromosomes. If None
+            (default), all chromosomes in `chromsize` are processed.
         wrap : bool, default False
             If True, calculates positions relative to the fiber center
             (useful for circular or symmetrical fibers).
@@ -564,8 +568,9 @@ class MethPrintExperiment:
         Raises
         ------
         ValueError
-            If chromosome names are not unique or if control datasets contain
-            chromosomes not found in the test dataset.
+            If chromosome names are not unique, if control datasets
+            contain chromosomes not found in the test dataset, or if
+            `chroms` contains a chromosome not found in `chromsize`.
         """
 
         # Read chromosome sizes
@@ -596,6 +601,15 @@ class MethPrintExperiment:
                              (df_size["length"]/2).astype(int)))
         else:
             sizes = full_sizes
+
+        if chroms is not None:
+            unknown = set(chroms) - set(df_size["chrom"])
+            if unknown:
+                raise ValueError(
+                    f"Chromosomes not found in chromsize: {sorted(unknown)}")
+            full_sizes = {c: v for c, v in full_sizes.items()
+                         if c in chroms}
+            sizes = {c: v for c, v in sizes.items() if c in chroms}
 
         # Random generator for downsampling
         rng = None if max_nmol is None else np.random.default_rng(seed)
@@ -732,6 +746,7 @@ class MethPrintExperiment:
                 
     @classmethod
     def load(cls, path: str | Path,
+             chroms: List[str] | None = None,
              max_cached_chroms: int = 1) -> Self:
         """
         Load an experiment from a persistent HDF5 file.
@@ -746,6 +761,9 @@ class MethPrintExperiment:
         ----------
         path : str or pathlib.Path
             Path to the HDF5 file containing the experiment.
+        chroms : list of str, optional
+            Restrict the loaded experiment to these chromosomes. If
+            None (default), all chromosomes in the file are exposed.
         max_cached_chroms : int, default 1
             Maximum number of chromosomes' raw data kept in memory at
             once. Accessing more distinct chromosomes than this evicts
@@ -755,17 +773,33 @@ class MethPrintExperiment:
         -------
         MethPrintExperiment
             The loaded experiment object with all data and analysis maps.
+
+        Raises
+        ------
+        ValueError
+            If `chroms` contains a chromosome not found in the file.
         """
         with h5py.File(path, "r") as h5stream:
             # Set up lazy, memory-bounded access to the raw data
-            chroms = list(h5stream["raw_data"].keys())
-            raw_data = LazyRawDataMap(path, chroms,
+            available_chroms = list(h5stream["raw_data"].keys())
+            if chroms is not None:
+                unknown = set(chroms) - set(available_chroms)
+                if unknown:
+                    raise ValueError(
+                        f"Chromosomes not found in {path}: "
+                        f"{sorted(unknown)}")
+                selected = list(chroms)
+            else:
+                selected = available_chroms
+            raw_data = LazyRawDataMap(path, selected,
                                       max_cached=max_cached_chroms)
             obj = cls._create(_raw_data=raw_data)
-            
+
             # Load any analysis data
             gana = h5stream["analysis"]
             for chrom in gana:
+                if chrom not in selected:
+                    continue
                 gchrom = gana[chrom]
                 for name in gchrom:
                     if isinstance(gchrom[name], h5py.Dataset):

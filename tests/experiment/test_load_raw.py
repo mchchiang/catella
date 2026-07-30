@@ -217,6 +217,37 @@ class TestColidx:
         exp.close()
 
 
+class TestChromSelection:
+    def test_selects_subset_of_chromosomes(self, tmp_path):
+        rows = (_make_rows("chr1", ["m0"], [1, 2])
+               + _make_rows("chr2", ["m0"], [1, 2])
+               + _make_rows("chr3", ["m0"], [1, 2]))
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 100, "chr2": 100, "chr3": 100})
+
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file,
+            chroms=["chr1", "chr3"])
+        assert set(exp.chroms) == {"chr1", "chr3"}
+        with pytest.raises(KeyError):
+            exp.raw["chr2"]
+        exp.close()
+
+    def test_unknown_chromosome_raises(self, tmp_path):
+        rows = _make_rows("chr1", ["m0"], [1, 2])
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 100})
+
+        with pytest.raises(ValueError):
+            MethPrintExperiment.load_raw(
+                chromsize=chromsize, test_file=test_file,
+                chroms=["chrX"])
+
+
 class TestLazyAndScratchLifecycle:
     def test_raw_data_loaded_lazily(self, tmp_path):
         rows = (_make_rows("chr1", ["m0"], [1, 2])

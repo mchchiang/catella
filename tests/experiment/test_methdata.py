@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from nucmc.experiment.methdata import (
     LazyRawDataMap, MethPrintData, MethPrintExperiment)
@@ -86,3 +87,23 @@ class TestLazyRawDataMap:
         exp.raw["chr1"]
         exp.raw["chr2"]
         assert len(raw_map._cache) == 1
+
+
+class TestChromSelection:
+    def test_selects_subset_of_chromosomes(self, tmp_path):
+        chroms = ["chr1", "chr2", "chr3"]
+        raw = {c: _make_raw(c, nmol=2, nbp=6, seed=i)
+              for i, c in enumerate(chroms)}
+        exp = MethPrintExperiment._create(_raw_data=raw)
+        exp.analysis["chr2"]["stat"] = pd.DataFrame({"x": [1, 2]})
+        path = tmp_path / "experiment.h5"
+        exp.save(path)
+
+        loaded = MethPrintExperiment.load(path, chroms=["chr1", "chr3"])
+        assert set(loaded.chroms) == {"chr1", "chr3"}
+        assert set(loaded.analysis.keys()) == {"chr1", "chr3"}
+
+    def test_unknown_chromosome_raises(self, tmp_path):
+        path = _make_multi_chrom_experiment_file(tmp_path, ["chr1", "chr2"])
+        with pytest.raises(ValueError):
+            MethPrintExperiment.load(path, chroms=["chrX"])

@@ -1,6 +1,7 @@
 # methdata.py
 
 import os
+import shutil
 import tempfile
 import warnings
 import weakref
@@ -481,14 +482,16 @@ class MethPrintExperiment:
         self._tmp_dir = kwargs.get("_tmp_dir")
 
     @staticmethod
-    def _cleanup_scratch(path):
-        Path(path).unlink(missing_ok=True)
+    def _cleanup_tmp_dir(tmp_dir):
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
     def resolve_tmp_dir(self):
         """
         Return this experiment's scratch directory for temporary HDF5
         files, creating and caching one under the system default
-        temporary directory the first time it's needed.
+        temporary directory the first time it's needed. The directory
+        is removed once the experiment is closed or garbage-collected;
+        see `close`.
 
         Returns
         -------
@@ -497,13 +500,17 @@ class MethPrintExperiment:
         """
         if self._tmp_dir is None:
             self._tmp_dir = h5_utils.fresh_tmp_dir()
+            self._finalizer = weakref.finalize(
+                self, MethPrintExperiment._cleanup_tmp_dir, self._tmp_dir)
         return self._tmp_dir
 
     def close(self):
         """
-        Delete the scratch staging file backing this experiment's raw
-        data, if `load_raw` created one. No-op for experiments obtained
-        via `.load()` or `_create`.
+        Delete this experiment's scratch directory (all temporary HDF5
+        files created for it, e.g. by `load_raw`, `smooth`, or
+        `meth_prob`), if one was created. No-op for experiments with no
+        scratch directory (e.g. from `.load()` with no later
+        `smooth`/`meth_prob` calls).
         """
         if self._finalizer is not None:
             self._finalizer()
@@ -710,9 +717,9 @@ class MethPrintExperiment:
 
         exp = cls.load(staging_path, max_cached_chroms=max_cached_chroms)
         exp._scratch_path = staging_path
-        exp._finalizer = weakref.finalize(
-            exp, MethPrintExperiment._cleanup_scratch, staging_path)
         exp._tmp_dir = tmp_dir
+        exp._finalizer = weakref.finalize(
+            exp, MethPrintExperiment._cleanup_tmp_dir, tmp_dir)
         return exp
                 
     def save(self, path: str | Path):

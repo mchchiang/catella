@@ -283,3 +283,18 @@ class TestLazyAndScratchLifecycle:
         exp.close()
         assert not os.path.exists(scratch_path)
 
+    def test_scratch_dir_cleaned_up_on_close(self, tmp_path):
+        import os
+        rows = _make_rows("chr1", ["m0"], [1, 2])
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 100})
+
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file)
+        tmp_dir = exp.resolve_tmp_dir()
+        assert os.path.isdir(tmp_dir)
+        exp.close()
+        assert not os.path.exists(tmp_dir)
+

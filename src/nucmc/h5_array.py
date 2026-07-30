@@ -45,6 +45,15 @@ _COL_ACCUMULATORS = {"mean": _acc_mean, "sum": _acc_sum,
 
 _DOWNSAMPLE_HOW = ("mean", "sum", "min", "max", "stride")
 
+_DEFAULT_CHUNK_TARGET_BYTES = 1 << 20  # ~1 MiB per chunk
+
+
+def _default_chunk_shape(shape, dtype):
+    nrow, ncol = shape
+    row_bytes = ncol * np.dtype(dtype).itemsize
+    chunk_rows = max(1, min(nrow, _DEFAULT_CHUNK_TARGET_BYTES // row_bytes))
+    return (chunk_rows, ncol)
+
 
 def _finalize_mean(acc, ncol):
     if acc is None:
@@ -107,7 +116,9 @@ class H5Array:
 
     @classmethod
     def create(cls, shape, *, dtype=np.float64, path=None, dir=None,
-              index=None, columns=None):
+              index=None, columns=None,
+              compression="gzip", compression_opts=None,
+              shuffle=True, chunks=None):
         """
         Create a new disk-backed array.
 
@@ -133,6 +144,33 @@ class H5Array:
         columns : array-like, optional
             Column labels, length `shape[1]`. If None, `.columns` falls
             back to a `pd.RangeIndex`.
+        compression : str, optional
+            HDF5 compression filter for the backing dataset, e.g.
+            "gzip" or "lzf". Default "gzip". Pass None to disable
+            compression and store the dataset contiguous and
+            uncompressed.
+        compression_opts : int, optional
+            Filter-specific compression setting (e.g. gzip level
+            0-9). If None (default), HDF5's own default for the
+            chosen filter is used (level 4 for gzip). Ignored if
+            `compression` is None.
+        shuffle : bool, default True
+            Whether to apply HDF5's byte-shuffle filter before
+            compression. Reorders bytes so same-significance bytes
+            across elements are grouped together, which improves
+            compression of correlated numeric data (e.g. smoothed
+            signal arrays, where neighboring values are similar but
+            not bit-identical) at negligible cost. Ignored if
+            `compression` is None.
+        chunks : tuple of int, optional
+            Chunk shape for the backing dataset. If None (default)
+            and `compression` is given, a chunk shape spanning the
+            full column width is chosen automatically, sized to
+            ~1 MiB and matching this class's row-batch access
+            pattern (`write_batch`/`downsample`/streamed reducers all
+            read or write contiguous row ranges across every column).
+            Ignored if `compression` is None and `chunks` is not
+            explicitly given.
 
         Returns
         -------
@@ -148,8 +186,21 @@ class H5Array:
         else:
             path = str(path)
         file = h5py.File(path, "w")
+
+        dataset_kwargs = {}
+        nrow, ncol = shape
+        if compression is not None and nrow > 0 and ncol > 0:
+            dataset_kwargs["compression"] = compression
+            if compression_opts is not None:
+                dataset_kwargs["compression_opts"] = compression_opts
+            dataset_kwargs["shuffle"] = shuffle
+            dataset_kwargs["chunks"] = chunks if chunks is not None \
+                else _default_chunk_shape(shape, dtype)
+        elif chunks is not None:
+            dataset_kwargs["chunks"] = chunks
+
         dataset = file.create_dataset(_DATASET_NAME, shape=shape,
-                                      dtype=dtype)
+                                      dtype=dtype, **dataset_kwargs)
         if index is not None:
             H5Array._write_label(file, f"{_DATASET_NAME}__index", index)
         if columns is not None:

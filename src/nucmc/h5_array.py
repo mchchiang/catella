@@ -392,6 +392,61 @@ class H5Array:
             acc = _COL_ACCUMULATORS[op](acc, batch)
         return _COL_FINALIZERS[op](acc, ncol)
 
+    def downsample(self, max_rows, *, how="mean", batch_size=20000):
+        """
+        Collapse rows to at most `max_rows` without materializing the
+        full array in memory.
+
+        Parameters
+        ----------
+        max_rows : int
+            Target number of rows in the output.
+        how : {"mean", "sum", "min", "max", "stride"}, default "mean"
+            How to collapse groups of consecutive rows into one output
+            row. "mean"/"sum"/"min"/"max" aggregate every contiguous
+            bin of rows, so no rows are dropped. "stride" instead reads
+            every k-th row directly from disk, skipping the rest --
+            cheaper, but can miss features between sampled rows.
+        batch_size : int, default 20000
+            Number of rows read (and held in memory) per streamed
+            chunk within a bin, when `how` aggregates bins. Ignored
+            for "stride".
+
+        Returns
+        -------
+        np.ndarray
+            Array of shape (min(nrow, max_rows), ncol).
+
+        Raises
+        ------
+        ValueError
+            If `how` is not a recognized option.
+        """
+        if how not in _DOWNSAMPLE_HOW:
+            raise ValueError(f"'how' must be one of {_DOWNSAMPLE_HOW}")
+        nrow, ncol = self.shape
+
+        if nrow <= max_rows:
+            return self._dataset[:]
+
+        if how == "stride":
+            step = -(-nrow // max_rows)
+            return self._dataset[0:nrow:step, :]
+
+        acc_fn = _COL_ACCUMULATORS[how]
+        fin_fn = _COL_FINALIZERS[how]
+        edges = np.linspace(0, nrow, max_rows + 1).astype(int)
+        out = np.empty((max_rows, ncol))
+        for i in range(max_rows):
+            start, stop = edges[i], edges[i+1]
+            acc = None
+            for sub_start in range(start, stop, batch_size):
+                sub_stop = min(sub_start + batch_size, stop)
+                batch = self._dataset[sub_start:sub_stop, :]
+                acc = acc_fn(acc, batch)
+            out[i] = fin_fn(acc, ncol)
+        return out
+
     def save_to(self, group, name):
         """
         Stream-copy the underlying dataset into another HDF5 group.

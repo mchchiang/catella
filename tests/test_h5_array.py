@@ -234,3 +234,101 @@ def test_downsample_all_nan_bin_produces_nan_without_raising():
     result = arr.downsample(max_rows, how="mean")
     assert np.all(np.isnan(result[0]))
     np.testing.assert_allclose(result[1], [8.0, 9.0])
+
+
+def _sparse_array(nrow, ncol, frac_observed, seed):
+    rng = np.random.default_rng(seed)
+    values = np.full((nrow, ncol), np.nan)
+    n_observed = int(frac_observed * nrow * ncol)
+    idx = rng.choice(nrow * ncol, size=n_observed, replace=False)
+    values.flat[idx] = rng.random(n_observed)
+    return values
+
+
+def _dense_correlated_array(nrow, ncol):
+    x = np.linspace(0, 4 * np.pi, ncol)
+    row = np.sin(x)
+    return np.tile(row, (nrow, 1))
+
+
+def test_default_compression_shrinks_sparse_array(tmp_path):
+    values = _sparse_array(500, 200, frac_observed=0.02, seed=0)
+
+    gz_path = tmp_path / "gz.h5"
+    gz = H5Array.create(values.shape, path=gz_path)
+    gz.write_batch(0, values.shape[0], values)
+    gz.close()
+
+    none_path = tmp_path / "none.h5"
+    none = H5Array.create(values.shape, path=none_path, compression=None)
+    none.write_batch(0, values.shape[0], values)
+    none.close()
+
+    gz_size = gz_path.stat().st_size
+    none_size = none_path.stat().st_size
+    assert gz_size * 5 < none_size
+
+
+def test_default_compression_round_trips_values_exactly():
+    values = _sparse_array(50, 20, frac_observed=0.3, seed=1)
+    arr = H5Array.create(values.shape)
+    arr.write_batch(0, values.shape[0], values)
+    np.testing.assert_array_equal(arr.to_numpy(), values)
+
+
+def test_compression_none_disables_compression_and_chunking():
+    arr = H5Array.create((10, 5), compression=None)
+    assert arr._dataset.compression is None
+    assert arr._dataset.chunks is None
+
+
+def test_compression_and_chunks_can_be_overridden():
+    arr = H5Array.create((10, 5), compression="lzf", chunks=(3, 5))
+    assert arr._dataset.compression == "lzf"
+    assert arr._dataset.chunks == (3, 5)
+
+
+def test_shuffle_false_disables_shuffle_filter():
+    arr = H5Array.create((10, 5), shuffle=False)
+    assert arr._dataset.shuffle is False
+
+
+def test_shuffle_reduces_size_for_dense_correlated_array(tmp_path):
+    values = _dense_correlated_array(2000, 300)
+
+    shuffled_path = tmp_path / "shuffled.h5"
+    shuffled = H5Array.create(values.shape, path=shuffled_path,
+                              shuffle=True)
+    shuffled.write_batch(0, values.shape[0], values)
+    shuffled.close()
+
+    unshuffled_path = tmp_path / "unshuffled.h5"
+    unshuffled = H5Array.create(values.shape, path=unshuffled_path,
+                                shuffle=False)
+    unshuffled.write_batch(0, values.shape[0], values)
+    unshuffled.close()
+
+    assert shuffled_path.stat().st_size < unshuffled_path.stat().st_size
+
+
+def test_save_to_and_load_from_preserves_compression(tmp_path):
+    import h5py
+
+    values = _sparse_array(50, 20, frac_observed=0.3, seed=2)
+    src = H5Array.create(values.shape)
+    src.write_batch(0, values.shape[0], values)
+
+    dest_path = tmp_path / "dest.h5"
+    with h5py.File(dest_path, "w") as f:
+        group = f.create_group("analysis")
+        src.save_to(group, "test_raw")
+
+    loaded = H5Array.load_from(dest_path, "analysis/test_raw")
+    assert loaded._dataset.compression is not None
+    np.testing.assert_array_equal(loaded.to_numpy(), values)
+
+
+@pytest.mark.parametrize("shape", [(0, 5), (5, 0)])
+def test_create_with_degenerate_shape_does_not_raise(shape):
+    arr = H5Array.create(shape)
+    assert arr.shape == shape

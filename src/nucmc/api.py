@@ -33,7 +33,6 @@ def preprocess(*, chromsize : str | Path,
                percentile_sample_size : int = 100000,
                tmp_dir : str | Path | None = None,
                chunk_size : int = 1000000,
-               staging_file : str | Path | None = None,
                max_cached_chroms : int = 1) -> MethPrintExperiment:
     """
     Preprocess raw methylation data to create a MethPrintExperiment.
@@ -85,16 +84,17 @@ def preprocess(*, chromsize : str | Path,
         Approximate number of molecules used to estimate percentile clip
         bounds during probability calculation.
     tmp_dir : str or Path, optional
-        Directory used for scratch files backing intermediate analysis
-        results and, if `staging_file` is None, the raw data staging
-        file. If None, the system default temporary directory is used.
+        Directory used for the scratch file backing the experiment's
+        raw data staging file. A fresh `nucmc_<timestamp>_<hex>`
+        subfolder is created for it — under this directory if given,
+        otherwise under the system default temporary directory — and
+        reused for the scratch files backing the smoothing and
+        probability calculation steps that follow. The staging file is
+        removed once the returned experiment is closed or
+        garbage-collected.
     chunk_size : int, default 1000000
         Approximate number of rows read (and held in memory) per
         streamed chunk while ingesting raw data files.
-    staging_file : str or Path, optional
-        Location of the HDF5 file backing the experiment's raw data.
-        If None, a scratch file is created and removed once the
-        returned experiment is closed or garbage-collected.
     max_cached_chroms : int, default 1
         Maximum number of chromosomes' raw data kept in memory at once.
 
@@ -110,17 +110,15 @@ def preprocess(*, chromsize : str | Path,
     exp_data = MethPrintExperiment.load_raw(
         chromsize=chromsize, test_file=test_file, unmeth_file=unmeth_file,
         meth_file=meth_file, wrap=wrap, colidx=colidx, max_nmol=max_nmol,
-        seed=seed, chunk_size=chunk_size, staging_file=staging_file,
+        seed=seed, chunk_size=chunk_size,
         tmp_dir=tmp_dir, max_cached_chroms=max_cached_chroms)
 
     # Smooth and normalize the data - compute methylation probability
     ana = MethPrintAnalysis()
-    ana.smooth(binsize=binsize, exp=exp_data, batch_size=batch_size,
-              tmp_dir=tmp_dir)
+    ana.smooth(binsize=binsize, exp=exp_data, batch_size=batch_size)
     ana.meth_prob(exp=exp_data, clip_low=clip_low, clip_high=clip_high,
                   norm_by_strand=norm_by_strand, batch_size=batch_size,
-                  percentile_sample_size=percentile_sample_size,
-                  tmp_dir=tmp_dir)
+                  percentile_sample_size=percentile_sample_size)
     
     # Save the results
     if out_file is not None:

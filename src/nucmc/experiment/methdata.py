@@ -446,6 +446,7 @@ class MethPrintExperiment:
     _global_analysis : DataFrameMap
     _scratch_path : str | None
     _finalizer : Any | None
+    _tmp_dir : str | None
 
     def __init__(self, **kwargs : Any):
         if not kwargs.pop("_internal", False):
@@ -467,15 +468,36 @@ class MethPrintExperiment:
         self._scratch_path = kwargs.get("_scratch_path")
         self._finalizer = kwargs.get("_finalizer")
 
+        # Scratch directory shared by this experiment's own staging
+        # file and any later smooth()/meth_prob() calls that don't
+        # specify their own tmp_dir (set by load_raw() when it
+        # generates one, or lazily by resolve_tmp_dir()).
+        self._tmp_dir = kwargs.get("_tmp_dir")
+
     @staticmethod
     def _cleanup_scratch(path):
         Path(path).unlink(missing_ok=True)
+
+    def resolve_tmp_dir(self):
+        """
+        Return this experiment's scratch directory for temporary HDF5
+        files, creating and caching one under the system default
+        temporary directory the first time it's needed.
+
+        Returns
+        -------
+        str
+            Path to the resolved scratch directory.
+        """
+        if self._tmp_dir is None:
+            self._tmp_dir = h5_utils.fresh_tmp_dir()
+        return self._tmp_dir
 
     def close(self):
         """
         Delete the scratch staging file backing this experiment's raw
         data, if `load_raw` created one. No-op for experiments obtained
-        via `.load()`, a permanent `staging_file`, or `_create`.
+        via `.load()` or `_create`.
         """
         if self._finalizer is not None:
             self._finalizer()
@@ -499,7 +521,6 @@ class MethPrintExperiment:
                  max_nmol : int | None = None,
                  seed : int | None = None,
                  chunk_size : int = 1000000,
-                 staging_file : str | Path | None = None,
                  tmp_dir : str | Path | None = None,
                  max_cached_chroms : int = 1) -> Self:
         """
@@ -546,15 +567,15 @@ class MethPrintExperiment:
         chunk_size : int, default 1000000
             Approximate number of rows read (and held in memory) per
             streamed chunk.
-        staging_file : str or Path, optional
-            Location of the HDF5 file backing the returned experiment's
-            raw data. If None, a scratch file is created and removed
-            once the returned experiment is closed or garbage-collected
-            (see `close`); if given, the file is kept.
         tmp_dir : str or Path, optional
-            Directory used for the scratch staging file when
-            `staging_file` is None. If None, the system default
-            temporary directory is used.
+            Directory used for the scratch staging file backing the
+            returned experiment's raw data (removed once the experiment
+            is closed or garbage-collected; see `close`). A fresh
+            `nucmc_<timestamp>_<hex>` subfolder is created for it —
+            under this directory if given, otherwise under the system
+            default temporary directory — and cached on the returned
+            experiment so that later `smooth`/`meth_prob` calls on it
+            reuse the same subfolder by default.
         max_cached_chroms : int, default 1
             Maximum number of chromosomes' raw data kept in memory at
             once by the returned experiment (forwarded to `load`).
@@ -617,12 +638,9 @@ class MethPrintExperiment:
         sep = "\t"
         block_size = 64 * 1024 * 1024
 
-        owns_staging = staging_file is None
-        if owns_staging:
-            fd, staging_path = tempfile.mkstemp(suffix=".h5", dir=tmp_dir)
-            os.close(fd)
-        else:
-            staging_path = str(staging_file)
+        tmp_dir = h5_utils.fresh_tmp_dir(base_dir=tmp_dir)
+        fd, staging_path = tempfile.mkstemp(suffix=".h5", dir=tmp_dir)
+        os.close(fd)
 
         dt = h5py.string_dtype(encoding="utf-8")
 
@@ -685,10 +703,10 @@ class MethPrintExperiment:
             raise
 
         exp = cls.load(staging_path, max_cached_chroms=max_cached_chroms)
-        if owns_staging:
-            exp._scratch_path = staging_path
-            exp._finalizer = weakref.finalize(
-                exp, MethPrintExperiment._cleanup_scratch, staging_path)
+        exp._scratch_path = staging_path
+        exp._finalizer = weakref.finalize(
+            exp, MethPrintExperiment._cleanup_scratch, staging_path)
+        exp._tmp_dir = tmp_dir
         return exp
                 
     def save(self, path: str | Path):

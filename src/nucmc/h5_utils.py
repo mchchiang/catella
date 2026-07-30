@@ -1,9 +1,38 @@
 # h5_utils.py
 
+import os
+import tempfile
+import uuid
+from datetime import datetime
 import pandas as pd
 import numpy as np
 import h5py
-    
+
+
+def fresh_tmp_dir(base_dir=None):
+    """
+    Create a fresh scratch directory for temporary HDF5 files.
+
+    Parameters
+    ----------
+    base_dir : str or pathlib.Path, optional
+        Parent directory in which to create the scratch directory. If
+        None, the system default temporary directory is used.
+
+    Returns
+    -------
+    str
+        Path to the newly created scratch directory, named
+        `nucmc_<timestamp>_<hex>`.
+    """
+    base = str(base_dir) if base_dir is not None else tempfile.gettempdir()
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    suffix = uuid.uuid4().hex[:8]
+    path = os.path.join(base, f"nucmc_{stamp}_{suffix}")
+    os.makedirs(path)
+    return path
+
+
 # Helper functions for loading and saving data frames in h5 files
 def save_df(name, df, group):
     g = group.create_group(name)

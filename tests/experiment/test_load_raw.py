@@ -283,16 +283,3 @@ class TestLazyAndScratchLifecycle:
         exp.close()
         assert not os.path.exists(scratch_path)
 
-    def test_permanent_staging_file_is_kept(self, tmp_path):
-        rows = _make_rows("chr1", ["m0"], [1, 2])
-        test_file = tmp_path / "test.tsv"
-        _write_tsv(test_file, rows)
-        chromsize = tmp_path / "sizes.tsv"
-        _write_chromsize(chromsize, {"chr1": 100})
-
-        staging_file = tmp_path / "staging.h5"
-        exp = MethPrintExperiment.load_raw(
-            chromsize=chromsize, test_file=test_file,
-            staging_file=staging_file)
-        exp.close()
-        assert staging_file.exists()

@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import h5py
+from . import h5_utils
 
 _DATASET_NAME = "data"
 
@@ -41,6 +42,8 @@ def _acc_max(acc, batch):
 
 _COL_ACCUMULATORS = {"mean": _acc_mean, "sum": _acc_sum,
                      "min": _acc_min, "max": _acc_max}
+
+_DOWNSAMPLE_HOW = ("mean", "sum", "min", "max", "stride")
 
 
 def _finalize_mean(acc, ncol):
@@ -121,8 +124,9 @@ class H5Array:
             ignored.
         dir : str or pathlib.Path, optional
             Directory in which to create the scratch file when `path` is
-            None. If None, the system default temporary directory is
-            used.
+            None. If None, a fresh `nucmc_<timestamp>_<hex>` subfolder
+            is created under the system default temporary directory and
+            used instead.
         index : array-like, optional
             Row labels, length `shape[0]`. If None, `.index` falls back
             to a `pd.RangeIndex`.
@@ -137,6 +141,8 @@ class H5Array:
         """
         owns_file = path is None
         if path is None:
+            if dir is None:
+                dir = h5_utils.fresh_tmp_dir()
             fd, path = tempfile.mkstemp(suffix=".h5", dir=dir)
             os.close(fd)
         else:

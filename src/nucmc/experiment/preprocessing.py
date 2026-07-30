@@ -2,7 +2,6 @@
 
 import numpy as np
 import pandas as pd
-from pathlib import Path
 from typing import List
 from .methdata import MethPrintExperiment
 from ..h5_array import H5Array
@@ -25,8 +24,7 @@ class MethPrintAnalysis:
     def smooth(self, *, binsize : int,
                exp : MethPrintExperiment,
                name : str = "smoothed",
-               batch_size : int = 20000,
-               tmp_dir : str | Path | None = None):
+               batch_size : int = 20000):
         """
         Smooth methylation signals across an experiment using a rolling
         average.
@@ -48,13 +46,18 @@ class MethPrintAnalysis:
             Results are stored as 'test_{name}', 'meth_{name}', etc.
         batch_size : int, default 20000
             Number of molecules processed (and held in memory) per batch.
-        tmp_dir : str or Path, optional
-            Directory used for the scratch files backing the resulting
-            `H5Array` objects. If None, the system default temporary
-            directory is used.
+
+        Notes
+        -----
+        Scratch files backing the resulting `H5Array` objects are
+        written to `exp`'s scratch directory (see
+        `MethPrintExperiment.resolve_tmp_dir`), shared with any other
+        scratch files from the same experiment (e.g. from `load_raw` or
+        `meth_prob`).
         """
 
         self._binsize = binsize
+        tmp_dir = exp.resolve_tmp_dir()
 
         # Some helper functions
         def smooth_df(df, nbp, nmol):
@@ -107,7 +110,6 @@ class MethPrintAnalysis:
                   norm_by_strand : bool = False,
                   batch_size : int = 20000,
                   percentile_sample_size : int = 100000,
-                  tmp_dir : str | Path | None = None,
                   seed : int | None = None):
 
         """
@@ -150,11 +152,6 @@ class MethPrintAnalysis:
             Approximate number of molecules used to estimate `clip_low`/
             `clip_high` percentile bounds. If the chromosome has fewer
             molecules than this, all of them are used (exact bounds).
-        tmp_dir : str or Path, optional
-            Directory used for the scratch file backing the resulting
-            probability `H5Array`, and forwarded to `smooth` if smoothing
-            is triggered lazily. If None, the system default temporary
-            directory is used.
         seed : int, optional
             Seed for the random number generator used for percentile
             subsampling.
@@ -165,6 +162,14 @@ class MethPrintAnalysis:
             If `binsize` is not provided and no cached `binsize` exists.
             If `norm_by_strand` is True but molecules with unmapped strands
             ('.') exist.
+
+        Notes
+        -----
+        The scratch file backing the resulting probability `H5Array`,
+        and any scratch files from smoothing triggered lazily, are
+        written to `exp`'s scratch directory (see
+        `MethPrintExperiment.resolve_tmp_dir`), shared with any other
+        scratch files from the same experiment.
         """
 
         # Some helper functions
@@ -194,6 +199,8 @@ class MethPrintAnalysis:
                              self._EPSILON, denom)
             return (test_batch - unmeth_avg) / denom
 
+        tmp_dir = exp.resolve_tmp_dir()
+
         # Check for cached binsize or perform smoothing if data missing
         if binsize is None:
             binsize = self._binsize
@@ -203,7 +210,7 @@ class MethPrintAnalysis:
                 raise ValueError("'binsize' must be specified if data are not "
                                  "already smoothed.")
             self.smooth(binsize=binsize, exp=exp, name=smoothed_name,
-                       batch_size=batch_size, tmp_dir=tmp_dir)
+                       batch_size=batch_size)
 
         rng = np.random.default_rng(seed)
 

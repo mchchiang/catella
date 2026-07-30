@@ -164,3 +164,73 @@ def test_streaming_reductions_match_numpy(op, batch_size):
         result = getattr(arr, op)(axis=axis, batch_size=batch_size)
         expected = numpy_op(values, axis=axis)
         np.testing.assert_allclose(result, expected)
+
+
+def test_downsample_noop_when_nrow_within_max_rows():
+    arr, values = _filled((5, 3), seed=2)
+    np.testing.assert_array_equal(arr.downsample(10), values)
+    np.testing.assert_array_equal(arr.downsample(5), values)
+
+
+@pytest.mark.parametrize("batch_size", [1, 3, 1000])
+@pytest.mark.parametrize("op", ["mean", "sum", "min", "max"])
+def test_downsample_aggregate_matches_manual_bins(op, batch_size):
+    nrow, ncol, max_rows = 10, 4, 3
+    values = np.arange(nrow * ncol, dtype=np.float64).reshape(nrow, ncol)
+    arr = H5Array.create((nrow, ncol))
+    arr.write_batch(0, nrow, values)
+
+    result = arr.downsample(max_rows, how=op, batch_size=batch_size)
+    assert result.shape == (max_rows, ncol)
+
+    edges = np.linspace(0, nrow, max_rows + 1).astype(int)
+    numpy_op = getattr(np, op)
+    expected = np.stack([numpy_op(values[edges[i]:edges[i+1]], axis=0)
+                         for i in range(max_rows)])
+    np.testing.assert_allclose(result, expected)
+
+
+def test_downsample_stride_selects_expected_rows():
+    nrow, ncol, max_rows = 10, 3, 3
+    values = np.arange(nrow * ncol, dtype=np.float64).reshape(nrow, ncol)
+    arr = H5Array.create((nrow, ncol))
+    arr.write_batch(0, nrow, values)
+
+    result = arr.downsample(max_rows, how="stride")
+    step = -(-nrow // max_rows)
+    np.testing.assert_array_equal(result, values[0:nrow:step, :])
+
+
+def test_downsample_invalid_how_raises():
+    arr, _ = _filled((5, 2), seed=3)
+    with pytest.raises(ValueError):
+        arr.downsample(2, how="bogus")
+
+
+def test_downsample_nan_aware_within_a_bin():
+    nrow, ncol, max_rows = 4, 2, 2
+    values = np.array([[1.0, np.nan],
+                       [3.0, 4.0],
+                       [5.0, 6.0],
+                       [7.0, 8.0]])
+    arr = H5Array.create((nrow, ncol))
+    arr.write_batch(0, nrow, values)
+
+    result = arr.downsample(max_rows, how="mean")
+    expected = np.stack([np.nanmean(values[0:2], axis=0),
+                         np.nanmean(values[2:4], axis=0)])
+    np.testing.assert_allclose(result, expected)
+
+
+def test_downsample_all_nan_bin_produces_nan_without_raising():
+    nrow, ncol, max_rows = 4, 2, 2
+    values = np.array([[np.nan, np.nan],
+                       [np.nan, np.nan],
+                       [7.0, 8.0],
+                       [9.0, 10.0]])
+    arr = H5Array.create((nrow, ncol))
+    arr.write_batch(0, nrow, values)
+
+    result = arr.downsample(max_rows, how="mean")
+    assert np.all(np.isnan(result[0]))
+    np.testing.assert_allclose(result[1], [8.0, 9.0])

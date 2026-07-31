@@ -118,3 +118,29 @@ class TestSimManagerRun:
         assert dataset.nmol["chr1"] == 2
         captured = capsys.readouterr()
         assert "Simulation failed" in captured.out
+
+    def test_broken_pool_is_reported_and_reraised(self, tmp_path, capsys):
+        # Regression test for the sliding-window dispatch: if a future's
+        # result() raises for a reason _run_job's own try/except can't
+        # catch (e.g. the worker process itself died), that must be
+        # reported distinctly and re-raised rather than silently hanging
+        # or being swallowed. A genuine worker crash is hard to trigger
+        # portably, so an unpicklable settings field is used instead: it
+        # makes ProcessPoolExecutor.submit()'s payload fail to serialize,
+        # which surfaces via future.result() the same way a broken pool
+        # would, without needing to actually kill a subprocess.
+        class Unpicklable:
+            def __reduce__(self):
+                raise TypeError("cannot pickle this")
+
+        settings = _make_settings(mu=Unpicklable())
+        meth_prob = _make_meth_prob(nmol=2, nbp=100)
+        manager = SimManager(nworker=2, verbose=False)
+
+        with pytest.raises(TypeError, match="cannot pickle"):
+            manager.run(chroms="chr1", nsim=1, settings=settings,
+                       meth_prob=meth_prob, out_dir=tmp_path / "broken",
+                       seed=1, store_eseq=False)
+
+        captured = capsys.readouterr()
+        assert "Worker pool crashed" in captured.out

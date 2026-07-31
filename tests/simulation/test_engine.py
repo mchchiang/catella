@@ -78,6 +78,23 @@ class TestSimManagerRun:
                               seed=1)
         assert dataset.nmol["chr1"] == 3
 
+    def test_multiple_out_types_combine_correctly(self, tmp_path):
+        # Regression test: combining more than one out_type previously
+        # always raised ValueError (the validation checked the resolved
+        # enum value against a dict of string keys, which never matches),
+        # and even past that, Dump.OutputType is a scoped C++ enum class
+        # that pybind11 doesn't bind '|' for directly.
+        meth_prob = _make_meth_prob(nmol=1, nbp=50)
+        manager = SimManager(nworker=1, verbose=False)
+        dataset = manager.run(chroms="chr1", nsim=1, settings=_make_settings(),
+                              meth_prob=meth_prob, out_dir=tmp_path / "multi",
+                              seed=1, out_types=["energy", "position"])
+        sim_file = dataset.sim_file("chr1", 0, 0)
+        with h5py.File(sim_file, "r") as f:
+            keys = set(f["data"].keys())
+        assert "energy" in keys
+        assert {"position_flat", "position_offset"} <= keys
+
     def test_parallel_run_produces_same_shape_dataset(self, tmp_path):
         # Regression test: parallel dispatch previously hardcoded a
         # 'fork' multiprocessing context, which raised NameError on

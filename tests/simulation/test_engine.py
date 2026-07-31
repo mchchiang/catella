@@ -28,7 +28,7 @@ def _make_sim_run(out_file, **overrides):
                           dtype=np.float64).tobytes()
     defaults = dict(chrom="chr1", mol=0, run=0, seed=1, seq_prob=seq_prob,
                     out_type=Dump.OutputType.All, out_file=out_file,
-                    settings=_make_settings(), override={})
+                    settings=_make_settings())
     defaults.update(overrides)
     return SimRun(**defaults)
 

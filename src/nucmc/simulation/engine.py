@@ -2,7 +2,7 @@
 
 from typing import Tuple, Dict, List, Self, Any
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from itertools import islice
 from collections.abc import Iterable, Mapping
 import multiprocessing as mp
@@ -59,9 +59,6 @@ class SimRun:
 
     settings : SimSettings
     """The physical constants and Monte Carlo protocol used for this run."""
-
-    override : Mapping[str,Any]
-    """Override any of the parameter values in settings."""
 
     _out_map = {"energy" : Dump.OutputType.Energy,
                 "position" : Dump.OutputType.Position,
@@ -272,14 +269,13 @@ class SimManager:
                     eseq[chrom][i] = model.getSeqEnergy()
 
         # Adjust the chemical potential if needed
-        override = {}
         if use_zero_point_mu:
             avg_eseq = np.empty(len(chroms))
             for i,chrom in enumerate(chroms):
                 avg_eseq[i] = np.median(eseq[chrom])
             avg_eseq = np.mean(avg_eseq)
             print(f"Using zero point mu: {avg_eseq}")
-            override["mu"] = avg_eseq
+            settings = replace(settings, mu=avg_eseq)
             
         # Prepare the dataset object
         dataset = SimDataset.create(chroms=chroms, nmol=nmol, nsim=nsim,
@@ -309,7 +305,7 @@ class SimManager:
                         yield SimRun(chrom=chrom, mol=idx, run=run,
                                         settings=settings, seed=next(seed_gen),
                                         seq_prob=pseq, out_type=out_type,
-                                        out_file=sim_file, override=override)
+                                        out_file=sim_file)
         param_gen = params_generator(settings)
         
         # Progress bar
@@ -370,23 +366,9 @@ class SimManager:
     # Run a single simulation
     @staticmethod
     def _run_job(p : SimRun):
-        def get_param(name):
-            if name in p.override and name in dir(p.settings):
-                return p.override[name]
-            elif name in dir(p.settings):
-                return getattr(p.settings, name)
-            else:
-                return None
-        nucbp = get_param("nucbp")
-        llink = get_param("llink")
-        mu = get_param("mu")
-        nsweep = get_param("nsweep")
-        start_temp = get_param("start_temp")
-        end_temp = get_param("end_temp")
-        print_freq = get_param("print_freq")
-        emax = get_param("emax")
-        cool_option = SimSettings._cool_map[get_param("cool_option")]
-        try: 
+        settings = p.settings
+        cool_option = SimSettings._cool_map[settings.cool_option]
+        try:
             # Create the output directory
             sim_dir = Path(p.out_file).parents[0]
             sim_dir.mkdir(exist_ok=True, parents=True)
@@ -394,13 +376,16 @@ class SimManager:
             pseq_list = np.frombuffer(p.seq_prob, dtype=np.float64).tolist()
             nbp = len(pseq_list)
             # Create the cpp backend Monte Carlo simulation model
-            model = NucPosModel(nucbp, nbp, llink, mu, p.seed)
-            model.setSeqEnergy(pseq_list, emax)
+            model = NucPosModel(settings.nucbp, nbp, settings.llink,
+                                settings.mu, p.seed)
+            model.setSeqEnergy(pseq_list, settings.emax)
             # For tracking all simulation data
             model.addTracker(
-                sim.createDump(print_freq, str(p.out_file), p.out_type))
+                sim.createDump(settings.print_freq, str(p.out_file),
+                               p.out_type))
             # Run the simulation
-            model.run(nsweep, start_temp, end_temp, cool_option)
+            model.run(settings.nsweep, settings.start_temp,
+                     settings.end_temp, cool_option)
             return (p.chrom, p.mol, p.run, True, None)
         except Exception as e:
             return (p.chrom, p.mol, p.run, False, str(e))

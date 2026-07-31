@@ -249,11 +249,14 @@ class SimManager:
 
         out_type = SimRun._out_map[out_types[0]]
         for i in range(1,len(out_types)):
+            if out_types[i] not in SimRun._out_map:
+                raise ValueError(f"Output type '{out_types[i]}' is not a "
+                                 "valid option.")
             otype = SimRun._out_map[out_types[i]]
-            if otype not in SimRun._out_map:
-                raise ValueError(f"Output type '{otype}' is not a valid "
-                                 "option.")
-            out_type |= otype
+            # Dump.OutputType is a scoped C++ enum class, so pybind11
+            # doesn't bind '|' between two enum values directly; combine
+            # via their underlying int values instead.
+            out_type = Dump.OutputType(int(out_type) | int(otype))
         
         # Compute the methylation energy landscape
         eseq = None

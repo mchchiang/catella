@@ -9,6 +9,7 @@ from nucmc_cpp import Dump
 
 from nucmc.simulation.config import SimSettings
 from nucmc.simulation.engine import SimManager, SimRun
+from nucmc.simulation.results import SimDataset
 
 
 def _make_settings(**overrides):
@@ -167,23 +168,32 @@ class TestSimManagerRun:
         # Regression test for the sliding-window dispatch: if a future's
         # result() raises for a reason _run_job's own try/except can't
         # catch (e.g. the worker process itself died), that must be
-        # reported distinctly and re-raised rather than silently hanging
-        # or being swallowed. A genuine worker crash is hard to trigger
+        # reported distinctly (including the status of every run that was
+        # still in flight) and re-raised rather than silently hanging or
+        # being swallowed. A genuine worker crash is hard to trigger
         # portably, so an unpicklable settings field is used instead: it
         # makes ProcessPoolExecutor.submit()'s payload fail to serialize,
         # which surfaces via future.result() the same way a broken pool
         # would, without needing to actually kill a subprocess. Exercised
         # directly against _dispatch() (rather than the full run()) so it
-        # doesn't need a real SimDataset.
+        # doesn't also need a dataset.save()-writable settings object.
         class Unpicklable:
             def __reduce__(self):
                 raise TypeError("cannot pickle this")
 
-        bad_run = _make_sim_run(tmp_path / "out.h5", settings=Unpicklable())
+        dataset = SimDataset.create(
+            chroms=["chr1"], nmol={"chr1": 1}, nsim=1, nbp={"chr1": 10},
+            settings=_make_settings(), out_dir=tmp_path / "broken",
+            out_type=Dump.OutputType.All)
+
+        bad_run = _make_sim_run(dataset.sim_file("chr1", 0, 0),
+                                settings=Unpicklable())
         manager = SimManager(nworker=2, verbose=False)
 
         with pytest.raises(TypeError, match="cannot pickle"):
-            manager._dispatch(iter([bad_run]), 1)
+            manager._dispatch(dataset, iter([bad_run]), 1)
 
         captured = capsys.readouterr()
         assert "Worker pool crashed" in captured.out
+        assert "chr1" in captured.out
+        assert "missing" in captured.out

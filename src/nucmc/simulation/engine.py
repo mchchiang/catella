@@ -347,14 +347,15 @@ class SimManager:
                                         out_file=sim_file)
         param_gen = params_generator(settings)
 
-        self._dispatch(param_gen, total_sim)
+        self._dispatch(dataset, param_gen, total_sim)
 
         # Save the dataset to file
         dataset.save()
 
         return dataset
 
-    def _dispatch(self, param_gen : Iterator[SimRun], total : int,
+    def _dispatch(self, dataset : SimDataset, param_gen : Iterator[SimRun],
+                  total : int,
                   progress_desc : str = "[cyan]Running simulations ...") \
                   -> None:
         """
@@ -362,6 +363,9 @@ class SimManager:
 
         Parameters
         ----------
+        dataset : SimDataset
+            The dataset being populated. Used only to classify runs that
+            were still in flight if the worker pool crashes.
         param_gen : Iterator[SimRun]
             A (possibly lazy) generator of jobs to execute.
         total : int
@@ -396,25 +400,37 @@ class SimManager:
                 window = self.nworker * 2
                 with ProcessPoolExecutor(max_workers=self.nworker,
                                          mp_context=ctx) as executor:
-                    in_flight = set()
+                    in_flight = {}
                     for param in islice(param_gen, window):
-                        in_flight.add(
-                            executor.submit(SimManager._run_job, param))
+                        future = executor.submit(SimManager._run_job, param)
+                        in_flight[future] = param
                     while in_flight:
-                        done, in_flight = wait(
+                        done, _ = wait(
                             in_flight, return_when=FIRST_COMPLETED)
                         for future in done:
+                            param = in_flight[future]
                             try:
                                 result = future.result()
                             except Exception:
                                 progress.console.print(
                                     "[red]Error[/red] Worker pool crashed; "
                                     "aborting the remaining batch.")
+                                for p in in_flight.values():
+                                    try:
+                                        status = dataset._classify_run(
+                                            p.chrom, p.mol, p.run) or "ok"
+                                    except Exception:
+                                        status = "unknown"
+                                    progress.console.print(
+                                        f"  chrom={p.chrom} mol={p.mol} "
+                                        f"run={p.run}: {status}")
                                 raise
+                            del in_flight[future]
                             _handle_result(result)
                         for param in islice(param_gen, len(done)):
-                            in_flight.add(
-                                executor.submit(SimManager._run_job, param))
+                            future = executor.submit(SimManager._run_job,
+                                                     param)
+                            in_flight[future] = param
             else: # nworker = 1
                 for param in param_gen:
                     _handle_result(SimManager._run_job(param))

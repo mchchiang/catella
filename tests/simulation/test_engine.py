@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import h5py
 import numpy as np
 import pytest
 from nucmc_cpp import Dump
@@ -118,6 +119,49 @@ class TestSimManagerRun:
         assert dataset.nmol["chr1"] == 2
         captured = capsys.readouterr()
         assert "Simulation failed" in captured.out
+
+    def test_persists_out_type_seed_and_seed_table(self, tmp_path):
+        meth_prob = _make_meth_prob(nmol=2, nbp=50)
+        manager = SimManager(nworker=1, verbose=False)
+        dataset = manager.run(chroms="chr1", nsim=2, settings=_make_settings(),
+                              meth_prob=meth_prob, out_dir=tmp_path / "persist",
+                              seed=7)
+
+        assert dataset.out_type == Dump.OutputType.All
+        assert dataset.seed == 7
+        assert dataset.seed_table["chr1"].shape == (2, 2)
+
+        sim_file = dataset.sim_file("chr1", 1, 0)
+        with h5py.File(sim_file, "r") as f:
+            recorded_seed = int(f["params"].attrs["seed"])
+        assert int(dataset.seed_table["chr1"][1, 0]) == recorded_seed
+
+    def test_zero_point_mu_reflected_in_persisted_settings(self, tmp_path):
+        # Regression test: use_zero_point_mu used to adjust mu only via a
+        # per-job SimRun.override dict, so dataset.settings.mu silently
+        # kept showing the pre-adjustment value. It's now applied via
+        # dataclasses.replace() before the dataset is created, so the
+        # persisted settings reflect the mu actually used.
+        meth_prob = _make_meth_prob(nmol=2, nbp=50)
+        manager = SimManager(nworker=1, verbose=False)
+        dataset = manager.run(chroms="chr1", nsim=1, settings=_make_settings(),
+                              meth_prob=meth_prob,
+                              out_dir=tmp_path / "zeropoint", seed=1,
+                              use_zero_point_mu=True)
+        assert dataset.settings["mu"] == np.median(dataset.eseq["chr1"])
+
+    def test_same_seed_gives_same_seed_table_regardless_of_mols(self, tmp_path):
+        # The seed table is order-independent: a triplet's seed doesn't
+        # depend on which other molecules were selected via 'mols'.
+        meth_prob = _make_meth_prob(nmol=3, nbp=50)
+        manager = SimManager(nworker=1, verbose=False)
+        full = manager.run(chroms="chr1", nsim=1, settings=_make_settings(),
+                           meth_prob=meth_prob, out_dir=tmp_path / "full",
+                           seed=3)
+        subset = manager.run(chroms="chr1", nsim=1, settings=_make_settings(),
+                             meth_prob=meth_prob, out_dir=tmp_path / "subset",
+                             seed=3, mols=slice(2, 3))
+        assert (full.seed_table["chr1"] == subset.seed_table["chr1"]).all()
 
     def test_broken_pool_is_reported_and_reraised(self, tmp_path, capsys):
         # Regression test for the sliding-window dispatch: if a future's

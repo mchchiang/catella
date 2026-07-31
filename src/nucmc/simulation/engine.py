@@ -320,10 +320,14 @@ class SimManager:
                                                          mol, run)
             seed_table[chrom] = arr
 
-        # Prepare the dataset object
+        # Prepare the dataset object and save it immediately so a valid,
+        # loadable manifest exists on disk even if the run is interrupted
         dataset = SimDataset.create(chroms=chroms, nmol=nmol, nsim=nsim,
                                     nbp=nbp, settings=settings, eseq=eseq,
-                                    out_dir=out_dir, dataset_name=dataset_name)
+                                    out_dir=out_dir, dataset_name=dataset_name,
+                                    out_type=out_type, seed=seed,
+                                    seed_table=seed_table)
+        dataset.save()
 
         # Generate the parameter list
         def params_generator(settings):

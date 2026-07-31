@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from itertools import islice
 from collections.abc import Iterable, Mapping
 import multiprocessing as mp
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, wait, FIRST_COMPLETED
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
 from rich.progress import TimeRemainingColumn
 import numpy as np
@@ -17,7 +17,6 @@ from .. import utils
 from .config import SimSettings
 from nucmc_cpp import NucPosModel, Dump
 import nucmc_cpp as sim
-import matplotlib.pyplot as plt
 
 # Store parameters for a specific simulation run
 @dataclass(frozen=True, kw_only=True)
@@ -321,31 +320,44 @@ class SimManager:
 
         with progress:
             main_task = progress.add_task("[cyan]Running simulations ...",
-                                          total=total_sim)    
+                                          total=total_sim)
+
+            def _handle_result(result):
+                chrom, mol, run, success, err_msg = result
+                if not success:
+                    progress.console.print(
+                        "[red]Error[/red] Simulation failed "
+                        f"(chrom={chrom}, mol={mol}, run={run}): "
+                        f"{err_msg}")
+                progress.update(main_task, advance=1)
+
             if self.nworker > 1:
                 ctx = mp.get_context("spawn")
+                window = self.nworker * 2
                 with ProcessPoolExecutor(max_workers=self.nworker,
                                          mp_context=ctx) as executor:
-                    futures = [executor.submit(SimManager._run_job, param)
-                               for param in param_gen]
-                    for future in as_completed(futures):
-                        chrom, mol, run, success, err_msg = future.result()
-                        if not success:
-                            progress.console.print(
-                                "[red]Error[/red] Simulation failed "
-                                f"(chrom={chrom}, mol={mol}, run={run}): "
-                                f"{err_msg}")
-                        progress.update(main_task, advance=1)
+                    in_flight = set()
+                    for param in islice(param_gen, window):
+                        in_flight.add(
+                            executor.submit(SimManager._run_job, param))
+                    while in_flight:
+                        done, in_flight = wait(
+                            in_flight, return_when=FIRST_COMPLETED)
+                        for future in done:
+                            try:
+                                result = future.result()
+                            except Exception:
+                                progress.console.print(
+                                    "[red]Error[/red] Worker pool crashed; "
+                                    "aborting the remaining batch.")
+                                raise
+                            _handle_result(result)
+                        for param in islice(param_gen, len(done)):
+                            in_flight.add(
+                                executor.submit(SimManager._run_job, param))
             else: # nworker = 1
                 for param in param_gen:
-                    chrom, mol, run, success, err_msg = \
-                        SimManager._run_job(param)
-                    if not success:
-                        progress.console.print(
-                            "[red]Error[/red] Simulation failed "
-                            f"(chrom={chrom}, mol={mol}, run={run}): "
-                            f"{err_msg}")
-                    progress.update(main_task, advance=1)
+                    _handle_result(SimManager._run_job(param))
 
         # Save the dataset to file
         dataset.save()

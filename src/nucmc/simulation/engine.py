@@ -95,6 +95,33 @@ class SimManager:
         self.nworker = nworker
         self.verbose = verbose
 
+    @staticmethod
+    def _job_seed(master_seed : int, chrom_idx : int, mol : int,
+                  run : int) -> int:
+        """
+        Derive a deterministic, order-independent seed for a single run.
+
+        Parameters
+        ----------
+        master_seed : int
+            The batch-level seed the whole dataset was generated from.
+        chrom_idx : int
+            The index of the chromosome within the dataset's chromosome
+            list.
+        mol : int
+            The molecule index.
+        run : int
+            The replicate run index.
+
+        Returns
+        -------
+        int
+            A seed depending only on its inputs, not on generation order.
+        """
+        return int(np.random.SeedSequence(
+            entropy=master_seed, spawn_key=(chrom_idx, mol, run)
+        ).generate_state(1)[0])
+
     def run(self, *,
             chroms : str | Iterable[str],
             nsim : int,
@@ -277,19 +304,26 @@ class SimManager:
             print(f"Using zero point mu: {avg_eseq}")
             settings = replace(settings, mu=avg_eseq)
             
+        # Resolve the master seed and precompute a full per-run seed table
+        # (covers every (chrom, mol, run) combination, independent of any
+        # 'mols' filtering, so it can be persisted and later used to
+        # reproduce or rerun any individual simulation exactly)
+        if seed is None:
+            rng = np.random.default_rng()
+            seed = int(rng.bit_generator.seed_seq.entropy)
+        seed_table = {}
+        for chrom_idx, chrom in enumerate(chroms):
+            arr = np.empty((nmol[chrom], nsim), dtype=np.uint32)
+            for mol in range(nmol[chrom]):
+                for run in range(nsim):
+                    arr[mol, run] = SimManager._job_seed(seed, chrom_idx,
+                                                         mol, run)
+            seed_table[chrom] = arr
+
         # Prepare the dataset object
         dataset = SimDataset.create(chroms=chroms, nmol=nmol, nsim=nsim,
                                     nbp=nbp, settings=settings, eseq=eseq,
                                     out_dir=out_dir, dataset_name=dataset_name)
-        
-        # Generate random seeds
-        def seed_generator(parent_seed):
-            ss = np.random.SeedSequence(parent_seed)
-            while True: yield ss.spawn(1)[0].generate_state(1)[0]
-        if seed is None:
-            rng = np.random.default_rng()
-            seed = rng.bit_generator.seed_seq.entropy
-        seed_gen = seed_generator(seed)
 
         # Generate the parameter list
         def params_generator(settings):
@@ -303,7 +337,8 @@ class SimManager:
                     for run in range(nsim):
                         sim_file = dataset.sim_file(chrom, idx, run)
                         yield SimRun(chrom=chrom, mol=idx, run=run,
-                                        settings=settings, seed=next(seed_gen),
+                                        settings=settings,
+                                        seed=int(seed_table[chrom][idx, run]),
                                         seq_prob=pseq, out_type=out_type,
                                         out_file=sim_file)
         param_gen = params_generator(settings)

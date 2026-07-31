@@ -17,6 +17,7 @@ from ..containers import DataFrameMap, FixedKeyMap, DataclassPublicProxy
 from .config import SimSettings
 from .. import utils
 from .. import h5_utils
+from nucmc_cpp import Dump
 
 # Limit the concurrent open files to stay under OS limits
 MAX_OPEN_FILES = Semaphore(500)
@@ -371,6 +372,9 @@ class SimDataset:
     _settings : SimSettings
     _eseq : Mapping[str,np.ndarray]
     _view_eseq : Mapping[str,np.ndarray]
+    _out_type : Any
+    _seed : int
+    _seed_table : Mapping[str,np.ndarray]
     _raw_dir : Path
     _dataset_file : Path
     _file_map : SimFileMapper
@@ -390,9 +394,12 @@ class SimDataset:
                 nbp : Mapping[str,int],
                 settings : SimSettings,
                 raw_dir : Path,
-                dataset_file : Path,                
+                dataset_file : Path,
                 file_map : SimFileMapper,
-                eseq : Mapping[str, np.ndarray] | None):
+                eseq : Mapping[str, np.ndarray] | None,
+                out_type : Any | None = None,
+                seed : int | None = None,
+                seed_table : Mapping[str, np.ndarray] | None = None):
         # Some validations
         if nsim <= 0:
             raise ValueError("Number of simulations must be positive")
@@ -424,6 +431,9 @@ class SimDataset:
             obj._view_eseq = {chrom:obj._eseq[chrom] for chrom in chroms}
             for chrom in chroms:
                 obj._view_eseq[chrom].flags.writeable = False
+        obj._out_type = out_type
+        obj._seed = seed
+        obj._seed_table = seed_table
         return obj
         
     @classmethod
@@ -435,7 +445,10 @@ class SimDataset:
                settings : SimSettings,
                out_dir : str | Path,
                dataset_name : str = "results",
-               eseq : np.ndarray | Mapping[str,np.ndarray] | None = None) \
+               eseq : np.ndarray | Mapping[str,np.ndarray] | None = None,
+               out_type : Any | None = None,
+               seed : int | None = None,
+               seed_table : Mapping[str,np.ndarray] | None = None) \
                -> Self:
         """
         Create a new simulation dataset with the specified parameters.
@@ -469,7 +482,17 @@ class SimDataset:
         eseq : np.ndarray or None, default None
             The sequence-specific energy landscape derived from the
             methylation data.
-        
+        out_type : Dump.OutputType, optional
+            The format or scope of data recorded for each simulation run.
+        seed : int, optional
+            The batch-level master seed the dataset's simulations were
+            generated from.
+        seed_table : Mapping[str, np.ndarray], optional
+            The per-`(chrom, mol, run)` seed used for each simulation, one
+            array per chromosome with shape `(nmol[chrom], nsim)`. Enables
+            exact reproduction of any individual run later, even ones
+            whose raw output file is missing or corrupted.
+
         Returns
         -------
         SimDataset
@@ -508,7 +531,9 @@ class SimDataset:
         file_map = SimFileMapper(raw_dir, max_nmol)
         return cls._create(chroms=chroms, nmol=nmol, nsim=nsim, nbp=nbp,
                            settings=settings, eseq=eseq, raw_dir=raw_dir,
-                           dataset_file=dataset_file, file_map=file_map)
+                           dataset_file=dataset_file, file_map=file_map,
+                           out_type=out_type, seed=seed,
+                           seed_table=seed_table)
     
     @classmethod
     def load(cls,
@@ -574,9 +599,23 @@ class SimDataset:
                     eseq[chrom] = geseq[chrom][()]
             else:
                 eseq = None
+            # Load out_type, seed and the per-run seed table (if stored)
+            if "out_type" in gmeta.attrs:
+                out_type = Dump.OutputType(int(gmeta.attrs["out_type"]))
+            else:
+                out_type = None
+            seed = int(gmeta.attrs["seed"]) if "seed" in gmeta.attrs \
+                else None
+            if "seed_table" in gmeta:
+                gseeds = gmeta["seed_table"]
+                seed_table = {chrom: gseeds[chrom][()] for chrom in chroms}
+            else:
+                seed_table = None
             obj = cls._create(chroms=chroms, nmol=nmol, nsim=nsim, nbp=nbp,
                               settings=settings, eseq=eseq, raw_dir=raw_dir,
-                              file_map=file_map, dataset_file=dataset_file)
+                              file_map=file_map, dataset_file=dataset_file,
+                              out_type=out_type, seed=seed,
+                              seed_table=seed_table)
             # Load any analysis data
             gana = h5stream["analysis"]
             for chrom in gana:
@@ -637,6 +676,15 @@ class SimDataset:
                     for chrom in self._chroms:
                         geseq.create_dataset(chrom, data=self._eseq[chrom],
                                               compression="gzip")
+                if self._out_type is not None:
+                    gmeta.attrs["out_type"] = int(self._out_type)
+                if self._seed is not None:
+                    gmeta.attrs["seed"] = int(self._seed)
+                if self._seed_table is not None:
+                    gseeds = gmeta.create_group("seed_table")
+                    for chrom in self._chroms:
+                        gseeds.create_dataset(chrom,
+                                              data=self._seed_table[chrom])
             # Save any analysis data
             if "analysis" in h5stream: del h5stream["analysis"]
             gana = h5stream.create_group("analysis")
@@ -927,7 +975,53 @@ class SimDataset:
             immutable; neither keys nor counts can be modified.
         """        
         return MappingProxyType(self._view_eseq)
-    
+
+    @property
+    def out_type(self) -> Any | None:
+        """
+        The format or scope of data recorded for each simulation run.
+
+        Returns
+        -------
+        Dump.OutputType or None
+            The output type used when the dataset's simulations were run,
+            or None if the dataset predates this being persisted.
+        """
+        return self._out_type
+
+    @property
+    def seed(self) -> int | None:
+        """
+        The batch-level master seed the dataset's simulations were
+        generated from.
+
+        Returns
+        -------
+        int or None
+            The master seed, or None if the dataset predates this being
+            persisted. See `seed_table` for the actual per-run seed used
+            by each simulation.
+        """
+        return self._seed
+
+    @property
+    def seed_table(self) -> Mapping[str, np.ndarray] | None:
+        """
+        The per-`(chrom, mol, run)` seed used for each simulation.
+
+        Returns
+        -------
+        types.MappingProxyType
+            A read-only mapping of chromosome names to an array of shape
+            `(nmol[chrom], nsim)` holding the seed used for each molecule
+            and run, or None if the dataset predates this being
+            persisted. Enables exact reproduction of any individual run,
+            even ones whose raw output file is missing or corrupted.
+        """
+        if self._seed_table is None:
+            return None
+        return MappingProxyType(self._seed_table)
+
     @property
     def raw(self) -> SimDataAccessor:
         """

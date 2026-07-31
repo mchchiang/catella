@@ -860,9 +860,112 @@ class SimDataset:
         # Tidy up results and return a numpy array for each chromosome data
         if agg_func is None and obs != "position":
             for chrom in chroms:
-                results[chrom] = np.asarray(results[chrom])                
+                results[chrom] = np.asarray(results[chrom])
         return results
-    
+
+    def _classify_run(self, chrom : str, mol : int, run : int) -> str | None:
+        """
+        Classify the on-disk status of a single simulation run.
+
+        Parameters
+        ----------
+        chrom : str
+            The chromosome identifier.
+        mol : int
+            The molecule index.
+        run : int
+            The simulation run index.
+
+        Returns
+        -------
+        str or None
+            One of 'missing' (no file on disk), 'corrupted' (the file
+            exists but cannot be read), 'truncated' (the file is readable
+            but its trajectory is shorter than `nsweep // print_freq + 1`
+            expects), or None if the run is complete.
+        """
+        sim_file = self._file_map.params_to_file(chrom, mol, run)
+        if not sim_file.exists():
+            return "missing"
+        try:
+            with MAX_OPEN_FILES:
+                data = SimData.load(sim_file)
+        except Exception:
+            return "corrupted"
+        expected = self._settings.nsweep // self._settings.print_freq + 1
+        if len(data.time) < expected:
+            return "truncated"
+        return None
+
+    def find_incomplete_runs(self, *,
+                             chroms : str | Iterable[str] | None = None,
+                             nworker : int = 1,
+                             batch_size : int = 1000
+                             ) -> Dict[str, List[Tuple[str,int,int]]]:
+        """
+        Find simulation runs that are missing, corrupted, or truncated.
+
+        Scans every `(chrom, mol, run)` combination expected for this
+        dataset -- not just ones with an existing raw file -- and checks
+        whether each one completed successfully.
+
+        Parameters
+        ----------
+        chroms : str or iterable of str, optional
+            Specific chromosome(s) to check. If None (default), all
+            chromosomes in the dataset are included.
+        nworker : int, default 1
+            The maximum number of threads to use for parallel scanning.
+        batch_size : int, default 1000
+            The number of simulation files to queue in a single processing
+            batch to manage memory and thread overhead.
+
+        Returns
+        -------
+        dict
+            A dictionary with keys 'missing', 'corrupted', and 'truncated',
+            each mapping to a list of `(chrom, mol, run)` triplets. Runs
+            that completed successfully are not included.
+
+        Notes
+        -----
+        This opens every expected file that exists on disk to verify it,
+        so cost scales with the size of the dataset. Use `nworker > 1` to
+        speed up scanning of large datasets.
+        """
+        chroms = utils.normalize_chroms(chroms, default_chroms=self._chroms)
+
+        def all_triplets():
+            for chrom in chroms:
+                for mol in range(self._nmol[chrom]):
+                    for run in range(self._nsim):
+                        yield (chrom, mol, run)
+
+        incomplete = {"missing": [], "corrupted": [], "truncated": []}
+
+        if nworker > 1:
+            with ThreadPoolExecutor(max_workers=nworker) as executor:
+                triplet_gen = all_triplets()
+                while True:
+                    batch = list(islice(triplet_gen, batch_size))
+                    if not batch: break
+                    tasks : Dict[Future,Tuple] = {
+                        executor.submit(self._classify_run, *sim_id): sim_id
+                        for sim_id in batch}
+                    for future in as_completed(tasks):
+                        sim_id = tasks[future]
+                        status = future.result()
+                        if status is not None:
+                            incomplete[status].append(sim_id)
+                    tasks.clear()
+        else: # nworker = 1
+            for sim_id in all_triplets():
+                status = self._classify_run(*sim_id)
+                if status is not None:
+                    incomplete[status].append(sim_id)
+
+        return incomplete
+
     def sim_file(self, chrom : str, mol : int, run : int) -> Path:
         """
         Retrieve the file directory for a specific simulation run.

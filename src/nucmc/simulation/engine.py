@@ -354,6 +354,113 @@ class SimManager:
 
         return dataset
 
+    def rerun(self, *,
+             dataset : SimDataset,
+             meth_prob : np.ndarray | Mapping[str,np.ndarray|pd.DataFrame],
+             only : Iterable[Tuple[str,int,int]] | None = None,
+             seed : int | None = None,
+             out_type : Any | None = None) -> SimDataset:
+        """
+        Rerun specific simulations, by default the incomplete ones.
+
+        Parameters
+        ----------
+        dataset : SimDataset
+            The dataset to rerun simulations for. Modified in place.
+        meth_prob : np.ndarray or dict
+            The same methylation probability data originally passed to
+            `run()`. This is never persisted in `dataset`, so it must be
+            re-supplied here; given the same data, reruns reproduce the
+            exact original simulation by default.
+        only : iterable of (str, int, int), optional
+            The specific `(chrom, mol, run)` triplets to rerun. If None
+            (default), `dataset.find_incomplete_runs()` is used to rerun
+            every missing, corrupted, and truncated run.
+        seed : int, optional
+            If None (default), each rerun reproduces the exact original
+            seed via `dataset.seed_table`. If given, reruns instead use
+            fresh seeds derived from this new master seed -- a
+            deliberately different simulation, not a reproduction.
+        out_type : Dump.OutputType, optional
+            The output type to use. If None (default), `dataset.out_type`
+            is used. Required if the dataset predates `out_type` being
+            persisted.
+
+        Returns
+        -------
+        SimDataset
+            The same `dataset`, updated in place.
+
+        Raises
+        ------
+        ValueError
+            If `out_type` is not given and `dataset.out_type` is None, or
+            if `seed` is not given and `dataset.seed_table` is None --
+            both indicate the dataset predates that being persisted.
+        """
+        resolved_out_type = out_type if out_type is not None \
+            else dataset.out_type
+        if resolved_out_type is None:
+            raise ValueError("dataset predates out_type persistence; "
+                             "pass out_type= explicitly")
+
+        if only is None:
+            incomplete = dataset.find_incomplete_runs()
+            targets = (incomplete["missing"] + incomplete["corrupted"]
+                      + incomplete["truncated"])
+        else:
+            targets = list(only)
+
+        if seed is None:
+            if dataset.seed_table is None:
+                raise ValueError("dataset predates seed persistence; "
+                                 "pass seed= explicitly")
+            resolved_seeds = {(chrom, mol, run):
+                              int(dataset.seed_table[chrom][mol, run])
+                              for chrom, mol, run in targets}
+        else:
+            # Caller explicitly wants different (not reproduced) seeds.
+            resolved_seeds = {(chrom, mol, run):
+                              SimManager._job_seed(
+                                  seed, dataset.chroms.index(chrom),
+                                  mol, run)
+                              for chrom, mol, run in targets}
+
+        settings = SimSettings(**dict(dataset.settings))
+
+        # Normalize methylation data the same way run() does
+        chroms = dataset.chroms
+        if isinstance(meth_prob, np.ndarray):
+            if not len(chroms) == 1:
+                raise TypeError("Methylation probability array 'meth_prob' "
+                                "provided but dataset has multiple chroms.")
+            meth_prob = {chroms[0]: meth_prob}
+        elif isinstance(meth_prob, Mapping):
+            meth_prob = {chrom: meth_prob[chrom] for chrom in chroms}
+        else:
+            raise TypeError("'meth_prob' must be a numpy array or a mapping.")
+        for chrom in chroms:
+            if isinstance(meth_prob[chrom], pd.DataFrame):
+                meth_prob[chrom] = meth_prob[chrom].to_numpy()
+            meth_prob[chrom] = np.atleast_2d(meth_prob[chrom])
+
+        def rerun_param_generator():
+            for chrom, mol, run in targets:
+                pseq = np.asarray(1.0 - meth_prob[chrom][mol,:],
+                                  dtype=np.float64).tobytes()
+                yield SimRun(chrom=chrom, mol=mol, run=run,
+                            settings=settings,
+                            seed=resolved_seeds[(chrom, mol, run)],
+                            seq_prob=pseq, out_type=resolved_out_type,
+                            out_file=dataset.sim_file(chrom, mol, run))
+
+        self._dispatch(dataset, rerun_param_generator(), len(targets),
+                       progress_desc="[cyan]Rerunning simulations ...")
+
+        dataset.save()
+
+        return dataset
+
     def _dispatch(self, dataset : SimDataset, param_gen : Iterator[SimRun],
                   total : int,
                   progress_desc : str = "[cyan]Running simulations ...") \

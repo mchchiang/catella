@@ -197,3 +197,94 @@ class TestSimManagerRun:
         assert "Worker pool crashed" in captured.out
         assert "chr1" in captured.out
         assert "missing" in captured.out
+
+
+class TestSimManagerRerun:
+    def test_only_none_fixes_missing_run(self, tmp_path):
+        meth_prob = _make_meth_prob(nmol=2, nbp=50)
+        manager = SimManager(nworker=1, verbose=False)
+        dataset = manager.run(chroms="chr1", nsim=1, settings=_make_settings(),
+                              meth_prob=meth_prob, out_dir=tmp_path / "rr1",
+                              seed=5)
+
+        target_file = dataset.sim_file("chr1", 1, 0)
+        original_seed = int(dataset.seed_table["chr1"][1, 0])
+        target_file.unlink()
+        assert dataset.find_incomplete_runs()["missing"] == [("chr1", 1, 0)]
+
+        manager.rerun(dataset=dataset, meth_prob=meth_prob)
+
+        incomplete = dataset.find_incomplete_runs()
+        assert incomplete == {"missing": [], "corrupted": [], "truncated": []}
+        with h5py.File(target_file, "r") as f:
+            assert int(f["params"].attrs["seed"]) == original_seed
+
+    def test_explicit_only_reruns_exactly_that_target(self, tmp_path,
+                                                       monkeypatch):
+        meth_prob = _make_meth_prob(nmol=2, nbp=50)
+        manager = SimManager(nworker=1, verbose=False)
+        dataset = manager.run(chroms="chr1", nsim=1, settings=_make_settings(),
+                              meth_prob=meth_prob, out_dir=tmp_path / "rr2",
+                              seed=5)
+
+        calls = []
+        real_run_job = SimManager._run_job
+
+        def spy_run_job(p):
+            calls.append((p.chrom, p.mol, p.run))
+            return real_run_job(p)
+
+        monkeypatch.setattr(SimManager, "_run_job", staticmethod(spy_run_job))
+
+        manager.rerun(dataset=dataset, meth_prob=meth_prob,
+                     only=[("chr1", 0, 0)])
+        assert calls == [("chr1", 0, 0)]
+
+    def test_legacy_dataset_requires_explicit_out_type_and_seed(self,
+                                                                 tmp_path):
+        dataset = SimDataset.create(
+            chroms=["chr1"], nmol={"chr1": 1}, nsim=1, nbp={"chr1": 50},
+            settings=_make_settings(), out_dir=tmp_path / "legacy")
+        meth_prob = _make_meth_prob(nmol=1, nbp=50)
+        manager = SimManager(nworker=1, verbose=False)
+
+        with pytest.raises(ValueError, match="out_type"):
+            manager.rerun(dataset=dataset, meth_prob=meth_prob,
+                         only=[("chr1", 0, 0)])
+
+        with pytest.raises(ValueError, match="seed"):
+            manager.rerun(dataset=dataset, meth_prob=meth_prob,
+                         only=[("chr1", 0, 0)], out_type=Dump.OutputType.All)
+
+    def test_explicit_seed_override_differs_from_reproduction(self,
+                                                               tmp_path):
+        meth_prob = _make_meth_prob(nmol=1, nbp=50)
+        manager = SimManager(nworker=1, verbose=False)
+        dataset = manager.run(chroms="chr1", nsim=1, settings=_make_settings(),
+                              meth_prob=meth_prob, out_dir=tmp_path / "rr3",
+                              seed=5)
+        original_seed = int(dataset.seed_table["chr1"][0, 0])
+        target_file = dataset.sim_file("chr1", 0, 0)
+
+        manager.rerun(dataset=dataset, meth_prob=meth_prob,
+                     only=[("chr1", 0, 0)], seed=999)
+
+        with h5py.File(target_file, "r") as f:
+            reran_seed = int(f["params"].attrs["seed"])
+        assert reran_seed != original_seed
+
+    def test_rerun_overwrites_corrupted_file(self, tmp_path):
+        meth_prob = _make_meth_prob(nmol=1, nbp=50)
+        manager = SimManager(nworker=1, verbose=False)
+        dataset = manager.run(chroms="chr1", nsim=1,
+                              settings=_make_settings(nsweep=10),
+                              meth_prob=meth_prob, out_dir=tmp_path / "rr4",
+                              seed=5)
+        target_file = dataset.sim_file("chr1", 0, 0)
+        target_file.write_bytes(b"not a valid hdf5 file")
+        assert dataset.find_incomplete_runs()["corrupted"] == [("chr1", 0, 0)]
+
+        manager.rerun(dataset=dataset, meth_prob=meth_prob)
+
+        assert dataset.find_incomplete_runs() == \
+            {"missing": [], "corrupted": [], "truncated": []}

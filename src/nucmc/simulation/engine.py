@@ -4,7 +4,7 @@ from typing import Tuple, Dict, List, Self, Any
 from pathlib import Path
 from dataclasses import dataclass, replace
 from itertools import islice
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 import multiprocessing as mp
 from concurrent.futures import ProcessPoolExecutor, wait, FIRST_COMPLETED
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
@@ -342,7 +342,30 @@ class SimManager:
                                         seq_prob=pseq, out_type=out_type,
                                         out_file=sim_file)
         param_gen = params_generator(settings)
-        
+
+        self._dispatch(param_gen, total_sim)
+
+        # Save the dataset to file
+        dataset.save()
+
+        return dataset
+
+    def _dispatch(self, param_gen : Iterator[SimRun], total : int,
+                  progress_desc : str = "[cyan]Running simulations ...") \
+                  -> None:
+        """
+        Dispatch a stream of `SimRun` jobs and report progress/errors.
+
+        Parameters
+        ----------
+        param_gen : Iterator[SimRun]
+            A (possibly lazy) generator of jobs to execute.
+        total : int
+            The total number of jobs `param_gen` will yield, used for the
+            progress bar.
+        progress_desc : str, default "[cyan]Running simulations ..."
+            The label shown next to the progress bar.
+        """
         # Progress bar
         progress = Progress(
             SpinnerColumn(),
@@ -353,8 +376,7 @@ class SimManager:
             disable=not self.verbose)
 
         with progress:
-            main_task = progress.add_task("[cyan]Running simulations ...",
-                                          total=total_sim)
+            main_task = progress.add_task(progress_desc, total=total)
 
             def _handle_result(result):
                 chrom, mol, run, success, err_msg = result
@@ -393,11 +415,6 @@ class SimManager:
                 for param in param_gen:
                     _handle_result(SimManager._run_job(param))
 
-        # Save the dataset to file
-        dataset.save()
-        
-        return dataset
-        
     # Run a single simulation
     @staticmethod
     def _run_job(p : SimRun):

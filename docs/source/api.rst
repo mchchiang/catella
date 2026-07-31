@@ -32,7 +32,7 @@ Simulation classes
 .. automodule:: nucmc.simulation.engine
     :members:
     :undoc-members:
-    :exclude-members: SimParams
+    :exclude-members: SimRun
 
 .. automodule:: nucmc.simulation.analysis
     :members:

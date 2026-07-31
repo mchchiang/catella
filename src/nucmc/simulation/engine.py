@@ -5,9 +5,8 @@ from pathlib import Path
 from dataclasses import dataclass
 from itertools import islice
 from collections.abc import Iterable, Mapping
-import multiprocess as mp
+import multiprocessing as mp
 from concurrent.futures import ProcessPoolExecutor, as_completed
-import platform
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
 from rich.progress import TimeRemainingColumn
 import numpy as np
@@ -22,12 +21,14 @@ import matplotlib.pyplot as plt
 
 # Store parameters for a specific simulation run
 @dataclass(frozen=True, kw_only=True)
-class SimParams:
+class SimRun:
     """
     The complete execution manifest for a single chromatin fiber simulation.
-    
-    This class combines the physical 'recipe' (SimSettings) with specific 
-    identifying metadata for a unique simulation run.
+
+    This class combines the physical 'recipe' (SimSettings) with specific
+    identifying metadata for a unique simulation run. All fields are
+    self-contained so an instance can be sent as-is to a freshly spawned
+    worker process.
     """
     
     chrom : str
@@ -90,14 +91,12 @@ class SimManager:
     
     def __init__(self, *,
                  nworker : int = 1,
-                 mp_context : str | None = None,
                  verbose : bool = True):
 
         if nworker <= 0:
             raise ValueError("nworker must be greater than zero.")
-        
+
         self.nworker = nworker
-        self.mp_context = mp_context
         self.verbose = verbose
 
     def run(self, *,
@@ -242,17 +241,17 @@ class SimManager:
         
         # Combine output types
         if isinstance(out_types, str):
-            if out_types not in SimParams._out_map:
+            if out_types not in SimRun._out_map:
                 raise ValueError(f"Output type '{out_types}' is not a valid "
                                  "option.")
             out_types = [out_types]
         elif not isinstance(out_types, Iterable):
             raise TypeError("'out_types' must be a str or an iterable.")
-        
-        out_type = SimParams._out_map[out_types[0]]
+
+        out_type = SimRun._out_map[out_types[0]]
         for i in range(1,len(out_types)):
-            otype = SimParams._out_map[out_types[i]]
-            if otype not in SimParams._out_map:
+            otype = SimRun._out_map[out_types[i]]
+            if otype not in SimRun._out_map:
                 raise ValueError(f"Output type '{otype}' is not a valid "
                                  "option.")
             out_type |= otype
@@ -305,7 +304,7 @@ class SimManager:
                                       dtype=np.float64).tobytes()
                     for run in range(nsim):
                         sim_file = dataset.sim_file(chrom, idx, run)
-                        yield SimParams(chrom=chrom, mol=idx, run=run,
+                        yield SimRun(chrom=chrom, mol=idx, run=run,
                                         settings=settings, seed=next(seed_gen),
                                         seq_prob=pseq, out_type=out_type,
                                         out_file=sim_file, override=override)
@@ -324,25 +323,28 @@ class SimManager:
             main_task = progress.add_task("[cyan]Running simulations ...",
                                           total=total_sim)    
             if self.nworker > 1:
-                if platform.system() == "Darwin":
-                    # Disable Apple's fork-safety blocker
-                    os.environ["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
-                ctx = mp.get_context("fork")
+                ctx = mp.get_context("spawn")
                 with ProcessPoolExecutor(max_workers=self.nworker,
                                          mp_context=ctx) as executor:
                     futures = [executor.submit(SimManager._run_job, param)
                                for param in param_gen]
                     for future in as_completed(futures):
-                        result = future.result()
-                        if not result:
-                            chrom, mol, run, _, err_msg = result
+                        chrom, mol, run, success, err_msg = future.result()
+                        if not success:
                             progress.console.print(
-                                "[red]Error[/red] Simulation failed: "
+                                "[red]Error[/red] Simulation failed "
+                                f"(chrom={chrom}, mol={mol}, run={run}): "
                                 f"{err_msg}")
-                        progress.update(main_task, advance=1)                
+                        progress.update(main_task, advance=1)
             else: # nworker = 1
                 for param in param_gen:
-                    SimManager._run_job(param)
+                    chrom, mol, run, success, err_msg = \
+                        SimManager._run_job(param)
+                    if not success:
+                        progress.console.print(
+                            "[red]Error[/red] Simulation failed "
+                            f"(chrom={chrom}, mol={mol}, run={run}): "
+                            f"{err_msg}")
                     progress.update(main_task, advance=1)
 
         # Save the dataset to file
@@ -352,7 +354,7 @@ class SimManager:
         
     # Run a single simulation
     @staticmethod
-    def _run_job(p : SimParams):
+    def _run_job(p : SimRun):
         def get_param(name):
             if name in p.override and name in dir(p.settings):
                 return p.override[name]

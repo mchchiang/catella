@@ -27,7 +27,6 @@ dependencies = [
     "typer",
     "rich",
     "matplotlib",
-    "multiprocess",
 ]
 
 [project.urls]

@@ -141,7 +141,6 @@ def run(*, chroms : str | Iterable[str],
         store_eseq : bool = True,
         use_zero_point_mu : bool = False,
         nworker : int = 1,
-        mp_context : str | None = None,
         verbose : bool = True) -> SimDataset:
     """
     Execute a parallelized methylation simulation.
@@ -180,9 +179,6 @@ def run(*, chroms : str | Iterable[str],
         equal to the mean of the methlyation energy.    
     nworker : int, default 1
         Number of parallel processes to spawn.
-    mp_context : {'spawn', 'forkserver'}, optional
-        The multiprocessing start method. Default to 'spawn' on macOS
-        and 'forkserver' on other platforms. 
     verbose : bool, default True
         If True, print progress updates to the console.
 
@@ -192,8 +188,7 @@ def run(*, chroms : str | Iterable[str],
         A container object providing access to the generated simulation
         results.
     """
-    manager = SimManager(nworker=nworker, mp_context=mp_context,
-                         verbose=verbose)
+    manager = SimManager(nworker=nworker, verbose=verbose)
     dataset = manager.run(chroms=chroms, nsim=nsim, settings=settings,
                           meth_prob=meth_prob, out_types=out_types,
                           out_dir=out_dir, dataset_name=dataset_name,

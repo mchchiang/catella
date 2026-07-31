@@ -18,7 +18,6 @@ dependencies:
   - matplotlib
   - typer
   - rich
-  - multiprocess
   - pyarrow
   # Documentation dependencies
   #- nbsphinx

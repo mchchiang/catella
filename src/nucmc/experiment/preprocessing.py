@@ -24,6 +24,8 @@ class MethPrintAnalysis:
     def smooth(self, *, binsize : int,
                exp : MethPrintExperiment,
                name : str = "smoothed",
+               nan_method : str = "mean",
+               fill_edge : float | str = np.nan,
                batch_size : int = 20000):
         """
         Smooth methylation signals across an experiment using a rolling
@@ -44,8 +46,21 @@ class MethPrintAnalysis:
         name : str, default "smoothed"
             The suffix used to store the resulting array in `exp.analysis`.
             Results are stored as 'test_{name}', 'meth_{name}', etc.
+        nan_method : {"mean", "interpolate"}, default "mean"
+            How to fill interior nan values (gaps with valid data on both
+            sides): molecule mean, or linear interpolation.
+        fill_edge : float or "mean", default np.nan
+            How to fill leading/trailing edge nan values, independent of
+            `nan_method`. A literal float must lie within the data range.
+            See `nucmc.mapping.CoordsTransform.fill_edge`.
         batch_size : int, default 20000
             Number of molecules processed (and held in memory) per batch.
+
+        Raises
+        ------
+        ValueError
+            If `nan_method` is not "mean" or "interpolate".
+            If `fill_edge` is a literal float outside the data range.
 
         Notes
         -----
@@ -56,11 +71,22 @@ class MethPrintAnalysis:
         `meth_prob`).
         """
 
+        if nan_method not in ("mean", "interpolate"):
+            raise ValueError("'nan_method' must be 'mean' or 'interpolate', "
+                             f"got {nan_method!r}.")
+
         self._binsize = binsize
         tmp_dir = exp.resolve_tmp_dir()
 
         # Some helper functions
         def smooth_df(df, nbp, nmol):
+            if not isinstance(fill_edge, str) and not np.isnan(fill_edge):
+                vmin, vmax = df["mod_qual"].min(), df["mod_qual"].max()
+                if not (vmin <= fill_edge <= vmax):
+                    raise ValueError(
+                        f"'fill_edge'={fill_edge} is outside the data "
+                        f"range [{vmin}, {vmax}].")
+
             all_pos = pd.Index(range(0, nbp))
             df = df.sort_values("mol_index", kind="stable")
             mol_index = df["mol_index"].to_numpy()
@@ -83,8 +109,24 @@ class MethPrintAnalysis:
                     window=binsize, min_periods=1).mean().shift(
                         -(binsize-1))
 
-                # Fill nan values with the mean score for each molecule
-                res = res.fillna(res.mean())
+                # Interior nans (bounded by valid data on both sides) are
+                # filled per nan_method; interpolate() with
+                # limit_area="inside" only fills those, leaving edge nans
+                # untouched so they can be probed for below.
+                interior_interp = res.interpolate(method="linear",
+                                                   limit_area="inside")
+                if nan_method == "interpolate":
+                    res = interior_interp
+                else:
+                    interior_mask = res.isna() & interior_interp.notna()
+                    res = res.where(~interior_mask, res.fillna(res.mean()))
+
+                # Fill remaining edge nans independently of nan_method
+                if isinstance(fill_edge, str) and fill_edge == "mean":
+                    res = res.fillna(res.mean())
+                else:
+                    res = res.fillna(fill_edge)
+
                 out.write_batch(start, stop, res.to_numpy().T)
             return out
 
@@ -108,6 +150,8 @@ class MethPrintAnalysis:
                   clip_low : float = 0.1,
                   clip_high : float = 99.9,
                   norm_by_strand : bool = False,
+                  nan_method : str = "mean",
+                  fill_edge : float | str = np.nan,
                   batch_size : int = 20000,
                   percentile_sample_size : int = 100000,
                   seed : int | None = None):
@@ -146,6 +190,10 @@ class MethPrintAnalysis:
             percentile are set to 1.
         norm_by_strand : bool, default False
             Whether to perform normalization separately based on strandedness.
+        nan_method : {"mean", "interpolate"}, default "mean"
+            Passed through to `smooth` if smoothing is triggered lazily.
+        fill_edge : float or "mean", default np.nan
+            Passed through to `smooth` if smoothing is triggered lazily.
         batch_size : int, default 20000
             Number of molecules processed (and held in memory) per batch.
         percentile_sample_size : int, default 100000
@@ -210,6 +258,7 @@ class MethPrintAnalysis:
                 raise ValueError("'binsize' must be specified if data are not "
                                  "already smoothed.")
             self.smooth(binsize=binsize, exp=exp, name=smoothed_name,
+                       nan_method=nan_method, fill_edge=fill_edge,
                        batch_size=batch_size)
 
         rng = np.random.default_rng(seed)

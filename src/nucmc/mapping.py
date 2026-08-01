@@ -12,7 +12,7 @@ class CoordsTransform:
     binsize : int
     """The smoothing binsize size used to calculate the original mean."""
 
-    fill_value : float = np.nan
+    fill_edge : float = np.nan
     """The value used to fill empty spaces created by shifting data. Default
        np.nan."""
 
@@ -22,7 +22,7 @@ class CoordsTransform:
         axis = axis if axis >= 0 else x.ndim + axis
         # For Pandas DataFrame
         if isinstance(x, (pd.DataFrame, pd.Series)):
-            return x.shift(delta, axis=axis, fill_value=self.fill_value)
+            return x.shift(delta, axis=axis, fill_value=self.fill_edge)
         # For NumPy arrays
         res = np.roll(x, delta, axis=axis)
         idx = [slice(None)] * x.ndim
@@ -30,8 +30,8 @@ class CoordsTransform:
             idx[axis] = slice(0, delta)
         elif delta < 0:
             idx[axis] = slice(delta, None)
-        res[tuple(idx)] = self.fill_value
-        return res        
+        res[tuple(idx)] = self.fill_edge
+        return res
 
     def left_to_center_aligned(self,
                                x : np.ndarray | pd.DataFrame | pd.Series,

@@ -45,6 +45,20 @@ def _make_experiment(*, nmol=6, nbp=10, with_controls=True, seed=0,
     return MethPrintExperiment._create(_raw_data={"chr1": raw})
 
 
+def _make_single_mol_experiment(*, positions, values, nbp):
+    # One molecule with data at explicit positions/values, gaps elsewhere.
+    # Deterministic layout for testing nan_method/fill_edge behavior.
+    rows = [(0, p, "+", v, 0) for p, v in zip(positions, values)]
+    df = pd.DataFrame(rows, columns=["mol_index", "pos", "strand",
+                                     "mod_qual", "mod_code"])
+    mol_id = np.array(["mol0"], dtype=object)
+    raw = MethPrintData._create(
+        chrom="chr1", nbp=nbp, test_mol_id=mol_id, test_data=df,
+        meth_mol_id=None, meth_data=None,
+        unmeth_mol_id=None, unmeth_data=None)
+    return MethPrintExperiment._create(_raw_data={"chr1": raw})
+
+
 class TestSmooth:
     def test_output_shape(self):
         exp = _make_experiment(nmol=5, nbp=8)
@@ -66,13 +80,85 @@ class TestSmooth:
             b = exp_b.analysis["chr1"][key].to_numpy()
             np.testing.assert_array_equal(a, b)
 
+    def test_nan_method_interior_only(self):
+        # Valid data at pos 1, 2, 5; interior gap at 3, 4 (bounded by
+        # valid data on both sides); edge gaps at 0 (leading) and 6
+        # (trailing). binsize=1 keeps res identical to the raw pivot so
+        # gap locations are exact.
+        exp_mean = _make_single_mol_experiment(
+            positions=[1, 2, 5], values=[0.0, 0.4, 1.0], nbp=7)
+        exp_interp = _make_single_mol_experiment(
+            positions=[1, 2, 5], values=[0.0, 0.4, 1.0], nbp=7)
+        ana = MethPrintAnalysis()
+        ana.smooth(binsize=1, exp=exp_mean, nan_method="mean",
+                  fill_edge=0.0, batch_size=100)
+        ana.smooth(binsize=1, exp=exp_interp, nan_method="interpolate",
+                  fill_edge=0.0, batch_size=100)
+        row_mean = exp_mean.analysis["chr1"]["test_smoothed"].to_numpy()[0]
+        row_interp = exp_interp.analysis["chr1"]["test_smoothed"].to_numpy()[0]
+
+        # nan_method="mean" fills both interior gap positions identically
+        col_mean = (0.0 + 0.4 + 1.0) / 3
+        np.testing.assert_allclose(row_mean[3:5], [col_mean, col_mean])
+
+        # nan_method="interpolate" fills them along the line from pos 2 to
+        # pos 5
+        np.testing.assert_allclose(row_interp[3:5], [0.6, 0.8])
+
+        # fill_edge is identical across both nan_method choices
+        np.testing.assert_allclose(row_mean[[0, 6]], [0.0, 0.0])
+        np.testing.assert_allclose(row_interp[[0, 6]], [0.0, 0.0])
+
+    def test_fill_edge_choices(self):
+        make = lambda: _make_single_mol_experiment(
+            positions=[1, 2, 5], values=[0.0, 0.4, 1.0], nbp=7)
+        ana = MethPrintAnalysis()
+
+        exp_nan = make()
+        ana.smooth(binsize=1, exp=exp_nan, nan_method="interpolate",
+                  fill_edge=np.nan, batch_size=100)
+        row_nan = exp_nan.analysis["chr1"]["test_smoothed"].to_numpy()[0]
+        assert np.isnan(row_nan[0]) and np.isnan(row_nan[6])
+
+        exp_lit = make()
+        ana.smooth(binsize=1, exp=exp_lit, nan_method="interpolate",
+                  fill_edge=0.5, batch_size=100)
+        row_lit = exp_lit.analysis["chr1"]["test_smoothed"].to_numpy()[0]
+        np.testing.assert_allclose(row_lit[[0, 6]], [0.5, 0.5])
+
+        exp_avg = make()
+        ana.smooth(binsize=1, exp=exp_avg, nan_method="interpolate",
+                  fill_edge="mean", batch_size=100)
+        row_avg = exp_avg.analysis["chr1"]["test_smoothed"].to_numpy()[0]
+        # Mean of all non-edge values after interior interpolation
+        expected = np.mean([0.0, 0.4, 0.6, 0.8, 1.0])
+        np.testing.assert_allclose(row_avg[[0, 6]], [expected, expected])
+
+        # Interior values are unchanged by fill_edge
+        for row in (row_nan, row_lit, row_avg):
+            np.testing.assert_allclose(row[3:5], [0.6, 0.8])
+
+    def test_nan_method_invalid_raises(self):
+        exp = _make_experiment(nmol=3, nbp=6)
+        ana = MethPrintAnalysis()
+        with pytest.raises(ValueError):
+            ana.smooth(binsize=2, exp=exp, nan_method="bogus",
+                      batch_size=100)
+
+    def test_fill_edge_out_of_range_raises(self):
+        exp = _make_single_mol_experiment(
+            positions=[1, 2, 5], values=[0.0, 0.4, 1.0], nbp=7)
+        ana = MethPrintAnalysis()
+        with pytest.raises(ValueError):
+            ana.smooth(binsize=1, exp=exp, fill_edge=1.5, batch_size=100)
+
 
 class TestMethProb:
     def test_output_in_unit_range(self):
         exp = _make_experiment(nmol=6, nbp=10)
         ana = MethPrintAnalysis()
         ana.meth_prob(exp=exp, binsize=3, batch_size=100,
-                      percentile_sample_size=1000)
+                      percentile_sample_size=1000, fill_edge="mean")
         prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
         assert prob.shape == (6, 10)
         assert np.all(prob >= 0.0) and np.all(prob <= 1.0)
@@ -107,6 +193,23 @@ class TestMethProb:
         with pytest.raises(ValueError):
             ana.meth_prob(exp=exp, binsize=2, batch_size=100,
                           norm_by_strand=True)
+
+    def test_nan_method_forwarded_to_lazy_smooth(self):
+        exp_lazy = _make_single_mol_experiment(
+            positions=[1, 2, 5], values=[0.0, 0.4, 1.0], nbp=7)
+        exp_direct = _make_single_mol_experiment(
+            positions=[1, 2, 5], values=[0.0, 0.4, 1.0], nbp=7)
+        ana = MethPrintAnalysis()
+
+        ana.meth_prob(exp=exp_lazy, binsize=1, nan_method="interpolate",
+                      fill_edge=0, batch_size=100,
+                      percentile_sample_size=1000)
+        ana.smooth(binsize=1, exp=exp_direct, nan_method="interpolate",
+                  fill_edge=0, batch_size=100)
+
+        lazy = exp_lazy.analysis["chr1"]["test_smoothed"].to_numpy()
+        direct = exp_direct.analysis["chr1"]["test_smoothed"].to_numpy()
+        np.testing.assert_allclose(lazy, direct)
 
 
 class TestSaveLoadRoundTrip:

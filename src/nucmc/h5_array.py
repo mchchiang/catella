@@ -498,6 +498,58 @@ class H5Array:
             out[i] = fin_fn(acc, ncol)
         return out
 
+    def reorder_rows(self, order, *, path=None, dir=None, batch_size=20000):
+        """
+        Gather rows into a new disk-backed array, in an arbitrary order.
+
+        Reads one source row at a time (the only way to support an
+        arbitrary permutation, since HDF5 fancy indexing requires
+        increasing order) and accumulates into `batch_size`-sized
+        blocks before each write, so peak memory scales with
+        `batch_size` rather than the number of rows.
+
+        Parameters
+        ----------
+        order : array-like of int
+            Row indices into this array, in output order. May repeat
+            or omit indices; its length sets the output row count.
+        path : str or pathlib.Path, optional
+            Location of the new array's backing HDF5 file. See
+            `create`.
+        dir : str or pathlib.Path, optional
+            Directory for the new scratch file when `path` is None.
+            See `create`.
+        batch_size : int, default 20000
+            Number of rows accumulated in memory before each write.
+
+        Returns
+        -------
+        H5Array
+            A new array of shape (len(order), ncol) with this array's
+            rows rearranged according to `order`.
+        """
+        order = np.asarray(order)
+        nrow_out = len(order)
+        ncol = self.shape[1]
+
+        index_ds = self._label_dataset("__index")
+        columns_ds = self._label_dataset("__columns")
+        index = (H5Array._read_label(index_ds)[order]
+                if index_ds is not None else None)
+        columns = (H5Array._read_label(columns_ds)
+                  if columns_ds is not None else None)
+
+        out = H5Array.create((nrow_out, ncol), dtype=self.dtype,
+                             path=path, dir=dir, index=index,
+                             columns=columns)
+        for start in range(0, nrow_out, batch_size):
+            stop = min(start + batch_size, nrow_out)
+            block = np.empty((stop - start, ncol), dtype=self.dtype)
+            for i, src in enumerate(order[start:stop]):
+                block[i] = self._dataset[int(src), :]
+            out.write_batch(start, stop, block)
+        return out
+
     def save_to(self, group, name):
         """
         Stream-copy the underlying dataset into another HDF5 group.

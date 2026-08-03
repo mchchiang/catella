@@ -24,6 +24,7 @@ dependencies = [
     "numpy",
     "pandas>=3.0",
     "h5py",
+    "scipy",
     "typer",
     "rich",
     "matplotlib",

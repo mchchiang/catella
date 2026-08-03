@@ -45,6 +45,34 @@ def _make_experiment(*, nmol=6, nbp=10, with_controls=True, seed=0,
     return MethPrintExperiment._create(_raw_data={"chr1": raw})
 
 
+def _make_comparability_experiment(*, test_values, nbp=1):
+    # Fixed (identical, non-random) meth/unmeth controls plus a given
+    # test population, for testing that clip bounds derived from the
+    # controls don't depend on what the test population looks like.
+    cols = ["mol_index", "pos", "strand", "mod_qual", "mod_code"]
+    meth_df = pd.DataFrame(
+        [(m, 0, "+", v, 0)
+         for m, v in enumerate([0.8, 0.9, 1.0, 0.95, 0.85])], columns=cols)
+    unmeth_df = pd.DataFrame(
+        [(m, 0, "+", v, 0)
+         for m, v in enumerate([0.0, 0.05, 0.1, 0.02, 0.08])], columns=cols)
+    test_df = pd.DataFrame(
+        [(m, 0, "+", v, 0) for m, v in enumerate(test_values)], columns=cols)
+
+    meth_mol_id = np.array([f"m{m}" for m in range(len(meth_df))],
+                           dtype=object)
+    unmeth_mol_id = np.array([f"u{m}" for m in range(len(unmeth_df))],
+                             dtype=object)
+    test_mol_id = np.array([f"t{m}" for m in range(len(test_values))],
+                           dtype=object)
+
+    raw = MethPrintData._create(
+        chrom="chr1", nbp=nbp, test_mol_id=test_mol_id, test_data=test_df,
+        meth_mol_id=meth_mol_id, meth_data=meth_df,
+        unmeth_mol_id=unmeth_mol_id, unmeth_data=unmeth_df)
+    return MethPrintExperiment._create(_raw_data={"chr1": raw})
+
+
 def _make_single_mol_experiment(*, positions, values, nbp):
     # One molecule with data at explicit positions/values, gaps elsewhere.
     # Deterministic layout for testing nan_method/fill_edge behavior.
@@ -182,9 +210,38 @@ class TestMethProb:
         exp = _make_experiment(nmol=4, nbp=6, with_controls=False)
         ana = MethPrintAnalysis()
         ana.meth_prob(exp=exp, binsize=2, batch_size=100,
-                      percentile_sample_size=1000)
+                      percentile_sample_size=1000, fill_edge="mean")
         prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
         assert prob.shape == (4, 6)
+        assert np.all(prob >= 0.0) and np.all(prob <= 1.0)
+
+    def test_clip_bounds_independent_of_test_condition(self):
+        # Same (fixed) meth/unmeth controls, but different test
+        # populations -- one narrow, one wide -- sharing one common
+        # "probe" value. Since clip bounds should come from the
+        # controls (not the test signal's own range), the probe must
+        # map to the same probability in both, regardless of what other
+        # test molecules are present.
+        probe = 0.5
+        narrow_values = [0.48, probe, 0.52]
+        wide_values = [probe, 0.6, 0.7, 0.8, 0.9]
+
+        exp_narrow = _make_comparability_experiment(test_values=narrow_values)
+        exp_wide = _make_comparability_experiment(test_values=wide_values)
+
+        ana = MethPrintAnalysis()
+        ana.meth_prob(exp=exp_narrow, binsize=1, batch_size=100,
+                      percentile_sample_size=1000)
+        ana.meth_prob(exp=exp_wide, binsize=1, batch_size=100,
+                      percentile_sample_size=1000)
+
+        prob_narrow = exp_narrow.analysis["chr1"]["meth_prob"].to_numpy()
+        prob_wide = exp_wide.analysis["chr1"]["meth_prob"].to_numpy()
+
+        idx_narrow = narrow_values.index(probe)
+        idx_wide = wide_values.index(probe)
+        np.testing.assert_allclose(prob_narrow[idx_narrow, 0],
+                                   prob_wide[idx_wide, 0])
 
     def test_norm_by_strand_rejects_unmapped_strand(self):
         exp = _make_experiment(nmol=4, nbp=6, with_controls=True,

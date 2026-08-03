@@ -184,10 +184,16 @@ class MethPrintAnalysis:
             probabilities in `exp.analysis`.
         clip_low : float, default 0.1
             Lower percentile bound for signal clipping. Values below this
-            percentile are set to 0.
+            percentile are set to 0. If `exp` has meth/unmeth controls,
+            this percentile is estimated from the normalized unmeth
+            control channel (making the bound condition-independent);
+            otherwise it is estimated from the test signal itself.
         clip_high : float, default 99.9
             Upper percentile bound for signal clipping. Values above this
-            percentile are set to 1.
+            percentile are set to 1. If `exp` has meth/unmeth controls,
+            this percentile is estimated from the normalized meth
+            control channel (making the bound condition-independent);
+            otherwise it is estimated from the test signal itself.
         norm_by_strand : bool, default False
             Whether to perform normalization separately based on strandedness.
         nan_method : {"mean", "interpolate"}, default "mean"
@@ -198,8 +204,10 @@ class MethPrintAnalysis:
             Number of molecules processed (and held in memory) per batch.
         percentile_sample_size : int, default 100000
             Approximate number of molecules used to estimate `clip_low`/
-            `clip_high` percentile bounds. If the chromosome has fewer
-            molecules than this, all of them are used (exact bounds).
+            `clip_high` percentile bounds. If the relevant channel (the
+            unmeth/meth controls when present, otherwise the test
+            signal) has fewer molecules than this, all of them are used
+            (exact bounds).
         seed : int, optional
             Seed for the random number generator used for percentile
             subsampling.
@@ -322,23 +330,54 @@ class MethPrintAnalysis:
             # Exclude trailing edge created by rolling window
             end_idx = -(binsize-1) if binsize > 1 else None
 
-            # Estimate percentile bounds from a subsample of molecules,
-            # sampled proportionally within each contiguously-read batch
-            sample_size = min(percentile_sample_size, nmol)
-            sample_frac = sample_size / nmol
-            sample_chunks = []
-            for start in range(0, nmol, batch_size):
-                stop = min(start + batch_size, nmol)
-                batch = normalized_batch(start, stop)
-                n_take = min(stop - start,
-                            max(1, round((stop - start) * sample_frac)))
-                rows = rng.choice(stop - start, size=n_take, replace=False)
-                sample_chunks.append(batch[rows, :end_idx])
-            valid = np.concatenate(sample_chunks, axis=0)
+            def normalized_sample(arr, strand_labels):
+                # Random subsample of an array's molecules, normalized
+                # the same way as `normalized_batch` when controls are
+                # available (or left raw otherwise), sampled
+                # proportionally within each contiguously-read batch.
+                n_total = arr.shape[0]
+                sample_size = min(percentile_sample_size, n_total)
+                sample_frac = sample_size / n_total
+                chunks = []
+                for start in range(0, n_total, batch_size):
+                    stop = min(start + batch_size, n_total)
+                    batch = arr[start:stop, :]
+                    if has_controls:
+                        if norm_by_strand:
+                            labels = strand_labels[start:stop]
+                            normed = np.empty_like(batch)
+                            pos, neg = labels == "+", labels == "-"
+                            normed[pos] = apply_norm(
+                                batch[pos], meth_avg_pos, unmeth_avg_pos)
+                            normed[neg] = apply_norm(
+                                batch[neg], meth_avg_neg, unmeth_avg_neg)
+                            batch = normed
+                        else:
+                            batch = apply_norm(batch, meth_avg, unmeth_avg)
+                    n_take = min(stop - start,
+                                max(1, round((stop - start) * sample_frac)))
+                    rows = rng.choice(stop - start, size=n_take,
+                                      replace=False)
+                    chunks.append(batch[rows, :end_idx])
+                return np.concatenate(chunks, axis=0)
 
-            # Calculate the floor and ceiling from the subsample
-            vmin = np.percentile(valid, clip_low)
-            vmax = np.percentile(valid, clip_high)
+            # Estimate vmin/vmax from the normalized control channels
+            # when available, so bounds depend only on the controls
+            # (and are therefore comparable across test conditions
+            # sharing the same controls) rather than on the test
+            # signal's own, condition-dependent dynamic range. Fall
+            # back to the test signal itself when there are no controls.
+            if has_controls:
+                unmeth_sample = normalized_sample(
+                    unmeth_arr, unmeth_strand if norm_by_strand else None)
+                meth_sample = normalized_sample(
+                    meth_arr, meth_strand if norm_by_strand else None)
+                vmin = np.percentile(unmeth_sample, clip_low)
+                vmax = np.percentile(meth_sample, clip_high)
+            else:
+                test_sample = normalized_sample(test_arr, None)
+                vmin = np.percentile(test_sample, clip_low)
+                vmax = np.percentile(test_sample, clip_high)
 
             # Use the difference between percentiles as the scaling factor
             denom = np.maximum(vmax-vmin, self._EPSILON)

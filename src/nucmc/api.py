@@ -73,10 +73,18 @@ def preprocess(*, chromsize : str | Path,
         `max_nmol` is specified.        
     clip_low : float, default 0.1
         Lower percentile bound for signal clipping. Values below this
-        percentile are set to 0. 
+        percentile are set to 0. If `unmeth_file`/`meth_file` controls
+        are provided, this percentile is estimated from the normalized
+        unmeth control channel (making the bound independent of which
+        test data is processed); otherwise it is estimated from the
+        test signal itself.
     clip_high : float, default 99.9
         Upper percentile bound for signal clipping. Values above this
-        percentile are set to 1.    
+        percentile are set to 1. If `unmeth_file`/`meth_file` controls
+        are provided, this percentile is estimated from the normalized
+        meth control channel (making the bound independent of which
+        test data is processed); otherwise it is estimated from the
+        test signal itself.
     norm_by_strand : bool, default False
         Whether to perform normalization separately based on strandedness.
     batch_size : int, default 20000

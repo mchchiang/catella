@@ -354,7 +354,7 @@ class SimPlot:
             dist_vec = pdist(occup, metric="euclidean")
             link_mat = sch.linkage(dist_vec, method="ward")
             sort_idx = sch.leaves_list(link_mat)
-            occup = occup.iloc[sort_idx]
+            occup = np.asarray(occup)[sort_idx]
         
         # Set up the figure
         ncols = 2 if sort_data else 1

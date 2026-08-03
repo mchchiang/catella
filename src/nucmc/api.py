@@ -238,13 +238,13 @@ def plot_occup(*, chrom : str,
                out_file : str | Path | None = None,
                occup_name : str = "occup",
                plot_eseq : bool = False,
-               sort_data : bool = False,
+               link_mat : np.ndarray | None = None,
                show : bool = True):
     """
     Visualize nucleosome occupancy profiles for a specific chromosome.
 
-    Generate a plot showing the probability of nucleosome occupancy across 
-    the genomic coordinates based on previously computed analysis within 
+    Generate a plot showing the probability of nucleosome occupancy across
+    the genomic coordinates based on previously computed analysis within
     the SimDataset.
 
     Parameters
@@ -254,30 +254,32 @@ def plot_occup(*, chrom : str,
     dataset : SimDataset
         The simulation dataset containing the computed occupancy data.
     out_file : str | Path, optional
-        Path where the generated plot will be saved. If None, the plot 
+        Path where the generated plot will be saved. If None, the plot
         is not saved to disk.
     occup_name : str, default "occup"
-        The key or name of the occupancy data to retrieve from the dataset. 
+        The key or name of the occupancy data to retrieve from the dataset.
         This should match the name used during the `analyze` step.
     plot_eseq : bool, default False
-        Whether to plot the underlying sequence-specific nucleosome binding 
+        Whether to plot the underlying sequence-specific nucleosome binding
         energy, averaged across all molecules.
-    sort_data : bool, default False
-        Whether to sort the molecules based on similarity in their occupancy
-        signal.
+    link_mat : np.ndarray, optional
+        Linkage matrix to draw as a dendrogram alongside the heatmap (as
+        returned by `SimAnalysis.sort_by_linkage`). If given, `occup_name`
+        should point at the correspondingly-sorted array rather than the
+        unsorted data. If None (default), no dendrogram is drawn.
     show : bool, default True
-        If True, invokes the active plotting backend to display the 
+        If True, invokes the active plotting backend to display the
         figure immediately.
 
     Notes
     -----
-    This function requires that `analyze()` (specifically `compute_occup`) 
+    This function requires that `analyze()` (specifically `compute_occup`)
     has been called on the dataset prior to plotting.
     """
     simplot = SimPlot()
     simplot.plot_occup(chrom=chrom, dataset=dataset, occup_name=occup_name,
                        out_file=out_file, plot_eseq=plot_eseq,
-                       sort_data=sort_data, show=show)
+                       link_mat=link_mat, show=show)
 
 def plot_nuc_pos(*, chrom : str,
                  mol : int,

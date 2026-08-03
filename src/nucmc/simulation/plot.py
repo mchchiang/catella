@@ -9,7 +9,6 @@ from pathlib import Path
 from matplotlib.colors import Normalize
 import numpy as np
 import scipy.cluster.hierarchy as sch
-from scipy.spatial.distance import pdist
 from nucmc.mapping import CoordsTransform
 
 @dataclass(slots=True, kw_only=True)
@@ -293,17 +292,17 @@ class SimPlot:
                    chrom : str,
                    dataset : SimDataset,
                    time : int | None = None,
-                   occup_name : str = "occup",                       
+                   occup_name : str = "occup",
                    xscale : int = 1000,
                    out_file : str | Path | None = None,
                    plot_eseq : bool = False,
-                   sort_data : bool = False,
+                   link_mat : np.ndarray | None = None,
                    show : bool = True):
         """
         Plot the nucleosome occupancy across all molecules for a specific
         chromosome.
 
-        If the occupancy data is not found in the dataset analysis, it will be 
+        If the occupancy data is not found in the dataset analysis, it will be
         computed on-the-fly using `SimAnalysis`.
 
         Parameters
@@ -326,9 +325,13 @@ class SimPlot:
         plot_eseq : bool, default False
             Whether to plot the underlying sequence-specific nucleosome binding
             energy, averaged across all molecules.
-        sort_data : bool, default False
-            Whether to sort the molecules based on similarity in their
-             occupancy signal.
+        link_mat : np.ndarray, optional
+            Linkage matrix to draw as a dendrogram alongside the heatmap
+            (as returned by `SimAnalysis.sort_by_linkage`). If given,
+            `occup_name` should point at the correspondingly-sorted
+            array (e.g. `SimAnalysis.sort_by_linkage`'s output) rather
+            than the unsorted data. If None (default), no dendrogram is
+            drawn and `occup_name` is plotted as-is.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
@@ -339,7 +342,7 @@ class SimPlot:
             computation.
         """
         xpow = int(self._log10(xscale, "xscale"))
-        
+
         # Retrieve the occupancy data
         if occup_name not in dataset.analysis[chrom]:
             # Compute occupancy on-the-fly if the analysis cannot be found
@@ -347,14 +350,7 @@ class SimPlot:
             ana.compute_occup(dataset=dataset, time=time, chroms=chrom,
                               name=occup_name)
         occup = dataset.analysis[chrom][occup_name]
-
-        # Calculate linkage tree and sort if requested
-        link_mat = None
-        if sort_data:
-            dist_vec = pdist(occup, metric="euclidean")
-            link_mat = sch.linkage(dist_vec, method="ward")
-            sort_idx = sch.leaves_list(link_mat)
-            occup = np.asarray(occup)[sort_idx]
+        sort_data = link_mat is not None
         
         # Set up the figure
         ncols = 2 if sort_data else 1
@@ -391,7 +387,7 @@ class SimPlot:
         hm_ax.set_ylabel(r"Molecule index")
 
         # Plot dendrogram on the right panel
-        if sort_data and link_mat is not None:
+        if sort_data:
             sch.dendrogram(link_mat, orientation="right", ax=dend_ax,
                            no_labels=True, link_color_func=lambda x : "black")
             dend_ax.axis("off")

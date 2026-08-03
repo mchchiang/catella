@@ -9,7 +9,7 @@ import numpy as np
 import scipy.cluster.hierarchy as sch
 from scipy.spatial.distance import pdist, cdist, squareform
 from . import h5_utils
-from .h5_array import H5Array
+from .h5_array import H5Array, _DOWNSAMPLE_HOW
 
 IndexType = int | slice | Sequence[int]
 
@@ -63,6 +63,65 @@ def normalize_chroms(chroms: str | Iterable[str] | None = None,
     if not isinstance(chroms, Iterable):
         raise TypeError("chroms must be a str or an iterable.")
     return list(chroms)
+
+def downsample(arr, max_rows, *, how="mean", batch_size=20000):
+    """
+    Collapse rows of a dense array to at most `max_rows`.
+
+    Parameters
+    ----------
+    arr : H5Array, pd.DataFrame, or np.ndarray
+        2D data to collapse (rows=molecules, columns=bp position).
+        `H5Array` input is dispatched to its own `.downsample`
+        (streamed from disk); other input is binned in memory.
+    max_rows : int
+        Target number of rows.
+    how : {"mean", "sum", "min", "max", "stride"}, default "mean"
+        How to collapse groups of consecutive rows into one row.
+        "stride" reads every k-th row instead of aggregating bins.
+    batch_size : int, default 20000
+        Number of rows read per streamed chunk. Only used when `arr`
+        is an `H5Array`.
+
+    Returns
+    -------
+    np.ndarray
+        Array of shape (min(nrow, max_rows), ncol).
+
+    Raises
+    ------
+    ValueError
+        If `how` is not a recognized option.
+    """
+    if isinstance(arr, H5Array):
+        return arr.downsample(max_rows, how=how, batch_size=batch_size)
+    if how not in _DOWNSAMPLE_HOW:
+        raise ValueError(f"'how' must be one of {_DOWNSAMPLE_HOW}")
+
+    dense = arr.to_numpy() if isinstance(arr, pd.DataFrame) \
+        else np.asarray(arr)
+    nrow = dense.shape[0]
+    if nrow <= max_rows:
+        return dense
+    if how == "stride":
+        step = -(-nrow // max_rows)  # ceil div
+        return dense[0:nrow:step]
+    edges = _bin_edges(nrow, max_rows)
+    return np.stack([_reduce_rows(dense[edges[i]:edges[i+1]], how)
+                     for i in range(len(edges) - 1)])
+
+def _bin_edges(n, max_rows):
+    n_bins = min(n, max_rows)
+    return np.linspace(0, n, n_bins + 1).astype(int)
+
+def _reduce_rows(block, how):
+    if block.shape[0] == 0:
+        return np.full(block.shape[1], np.nan)
+    fn = {"mean": np.nanmean, "sum": np.nansum,
+         "min": np.nanmin, "max": np.nanmax}[how]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        return fn(block, axis=0)
 
 def compute_linkage(matrix, *, metric="euclidean", method="ward",
                     batch_size=20000, dir=None):

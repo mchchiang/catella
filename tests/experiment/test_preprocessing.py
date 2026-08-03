@@ -7,6 +7,7 @@ import pytest
 from nucmc.experiment.methdata import MethPrintData, MethPrintExperiment
 from nucmc.experiment.preprocessing import MethPrintAnalysis
 from nucmc.h5_array import H5Array
+from nucmc import utils
 
 
 def _make_mol_data(nmol, nbp, rng, unmapped_mol=None):
@@ -296,3 +297,99 @@ class TestSaveLoadRoundTrip:
         loaded = MethPrintExperiment.load(out_file)
         with pytest.raises(ValueError):
             loaded.save(out_file)
+
+
+class TestSortByLinkage:
+    def test_default_falls_back_to_raw_test_before_smoothing(self):
+        exp = _make_experiment(nmol=6, nbp=10)
+        ana = MethPrintAnalysis()
+
+        link_mats = ana.sort_by_linkage(exp=exp, batch_size=2)
+        sorted_arr = exp.analysis["chr1"]["test_sorted"]
+        assert isinstance(sorted_arr, H5Array)
+        assert sorted_arr.shape == (6, 10)
+        assert "chr1" in link_mats
+
+    def test_default_prefers_smoothed_once_available(self):
+        exp = _make_experiment(nmol=5, nbp=8)
+        ana = MethPrintAnalysis()
+        ana.smooth(binsize=2, exp=exp, batch_size=2, fill_edge="mean")
+
+        ana.sort_by_linkage(exp=exp, batch_size=2)
+        assert "test_smoothed_sorted" in exp.analysis["chr1"]
+        assert "test_sorted" not in exp.analysis["chr1"]
+
+    def test_default_handles_unfilled_smoothing_edge_nan(self):
+        # smooth()'s default fill_edge=np.nan leaves trailing-edge nan;
+        # sort_by_linkage must not choke on it.
+        exp = _make_experiment(nmol=5, nbp=8)
+        ana = MethPrintAnalysis()
+        ana.smooth(binsize=3, exp=exp, batch_size=2)
+
+        ana.sort_by_linkage(exp=exp, batch_size=2)
+        assert "test_smoothed_sorted" in exp.analysis["chr1"]
+
+    def test_meth_prob_data_name_works(self):
+        exp = _make_experiment(nmol=5, nbp=8)
+        ana = MethPrintAnalysis()
+        ana.smooth(binsize=2, exp=exp, batch_size=2, fill_edge="mean")
+        ana.meth_prob(exp=exp, binsize=2, batch_size=2,
+                      percentile_sample_size=1000)
+
+        ana.sort_by_linkage(exp=exp, data_name="meth_prob", batch_size=2)
+        sorted_arr = exp.analysis["chr1"]["meth_prob_sorted"]
+        assert isinstance(sorted_arr, H5Array)
+        assert sorted_arr.shape == (5, 8)
+
+    def test_raw_which_works_without_smoothing(self):
+        exp = _make_experiment(nmol=6, nbp=10)
+        ana = MethPrintAnalysis()
+
+        ana.sort_by_linkage(exp=exp, raw_which="meth", batch_size=2)
+        assert "meth_sorted" in exp.analysis["chr1"]
+
+    def test_raw_which_takes_priority_over_data_name(self):
+        exp = _make_experiment(nmol=5, nbp=8)
+        ana = MethPrintAnalysis()
+
+        ana.sort_by_linkage(exp=exp, raw_which="test",
+                            data_name="does_not_exist", batch_size=2)
+        assert "test_sorted" in exp.analysis["chr1"]
+
+    def test_missing_non_default_data_name_raises_key_error(self):
+        exp = _make_experiment(nmol=4, nbp=6)
+        ana = MethPrintAnalysis()
+        with pytest.raises(KeyError):
+            ana.sort_by_linkage(exp=exp, data_name="meth_prob")
+
+    def test_custom_sorted_name(self):
+        exp = _make_experiment(nmol=4, nbp=6)
+        ana = MethPrintAnalysis()
+        ana.sort_by_linkage(exp=exp, sorted_name="custom", batch_size=2)
+        assert "custom" in exp.analysis["chr1"]
+
+    def test_sorted_rows_are_a_permutation_of_original_rows(self):
+        exp = _make_experiment(nmol=6, nbp=8)
+        ana = MethPrintAnalysis()
+        ana.smooth(binsize=2, exp=exp, batch_size=2, fill_edge="mean")
+        original = exp.analysis["chr1"]["test_smoothed"].to_numpy()
+
+        ana.sort_by_linkage(exp=exp, batch_size=2)
+        sorted_arr = exp.analysis["chr1"]["test_smoothed_sorted"].to_numpy()
+
+        orig_rows = sorted(map(tuple, original.tolist()))
+        got_rows = sorted(map(tuple, sorted_arr.tolist()))
+        assert orig_rows == got_rows
+
+    def test_works_with_legacy_dataframe_source(self):
+        exp = _make_experiment(nmol=5, nbp=6)
+        ana = MethPrintAnalysis()
+        ana.smooth(binsize=2, exp=exp, batch_size=2, fill_edge="mean")
+        smoothed = exp.analysis["chr1"]["test_smoothed"].to_numpy()
+        exp.analysis["chr1"]["test_df"] = pd.DataFrame(smoothed)
+
+        ana.sort_by_linkage(exp=exp, data_name="test_df", batch_size=2)
+        sorted_df = exp.analysis["chr1"]["test_df_sorted"]
+        order, _ = utils.compute_linkage(smoothed)
+        assert isinstance(sorted_df, pd.DataFrame)
+        np.testing.assert_allclose(sorted_df.to_numpy(), smoothed[order])

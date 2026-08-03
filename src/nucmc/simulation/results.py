@@ -696,8 +696,9 @@ class SimDataset:
             gana = h5stream.create_group("global_analysis")
             for name, df in self._global_analysis.items():
                 h5_utils.save_df(name, df, gana)
-            
-    def iter_runs(self, chroms : str | Iterable[str] | None = None) \
+
+    def iter_runs(self, chroms : str | Iterable[str] | None = None,
+                  mols : Iterable[int] | None = None) \
                   -> Iterator[Tuple[str,int,int]]:
         """
         Yield simulation identifiers across specified chromosomes and
@@ -712,6 +713,10 @@ class SimDataset:
         chroms : str or iterable of str, optional
             The chromosome(s) to iterate over. If None, all available
             chromosomes in the dataset are processed.
+        mols : iterable of int, optional
+            Molecule indices to restrict iteration to, applied to every
+            chromosome in `chroms`. If None (default), all molecules of
+            each chromosome are iterated.
 
         Yields
         ------
@@ -730,7 +735,8 @@ class SimDataset:
         chroms = utils.normalize_chroms(chroms, default_chroms=self._chroms)
         for chrom in chroms:
             if chrom not in self._chroms: continue
-            for mol in range(self._nmol[chrom]):
+            mol_range = range(self._nmol[chrom]) if mols is None else mols
+            for mol in mol_range:
                 for run in range(self._nsim):
                     sim_file = self._file_map.params_to_file(chrom, mol, run)
                     if sim_file.exists(): yield (chrom, mol, run)
@@ -741,6 +747,7 @@ class SimDataset:
                 nworker : int = 1,
                 batch_size : int = 1000,
                 chroms : str | Iterable[str] | None = None,
+                mols : Iterable[int] | None = None,
                 agg_func : Callable[...,Any] | None = None,
                 **agg_kwargs : Any):
         """
@@ -748,7 +755,7 @@ class SimDataset:
         dataset.
 
         Use :class:`ThreadPoolExecutor` to extract data from simulation HDF5
-        files in parallel. Results are organized by chromosome and can be 
+        files in parallel. Results are organized by chromosome and can be
         processed via a custom aggregation function as they complete.
 
         Parameters
@@ -764,8 +771,14 @@ class SimDataset:
             The number of simulation files to queue in a single processing
             batch to manage memory and thread overhead.
         chroms : str or iterable of str, optional
-            Specific chromosome(s) to process. If None (default), all 
+            Specific chromosome(s) to process. If None (default), all
             chromosomes in the dataset are included.
+        mols : iterable of int, optional
+            Molecule indices to restrict extraction to, applied to every
+            chromosome in `chroms`. If None (default), all molecules of
+            each chromosome are processed. Use this to extract in
+            molecule batches and bound peak memory when `agg_func`
+            condenses each molecule's data.
         agg_func : callable, optional
             A function used to aggregate results once all runs for a specific 
             molecule are finished. If provided, it is called as:
@@ -805,15 +818,16 @@ class SimDataset:
         # Get the expected number of simulations per molecule
         finished_counts = Counter()
         expected_counts = Counter()
-        for sim_id in self.iter_runs(chroms):
+        for sim_id in self.iter_runs(chroms, mols):
             chrom, mol, _ = sim_id
             expected_counts[(chrom,mol)] += 1
 
         if nworker > 1:
-            with ThreadPoolExecutor(max_workers=nworker) as executor:        
+            with ThreadPoolExecutor(max_workers=nworker) as executor:
                 while True:
                     # Grab a chunk of work
-                    batch = list(islice(self.iter_runs(chroms), batch_size))
+                    batch = list(islice(self.iter_runs(chroms, mols),
+                                        batch_size))
                     if not batch: break
                     # Submit only this batch
                     tasks : Dict[Future,Tuple] = {
@@ -843,7 +857,7 @@ class SimDataset:
                     # Clean up batch
                     tasks.clear()
         else: # nworker = 1
-            for sim_id in self.iter_runs(chroms):
+            for sim_id in self.iter_runs(chroms, mols):
                 chrom, mol, run = sim_id
                 sim_file = self._file_map.params_to_file(chrom, mol, run)
                 results[chrom][mol][run] = SimData.extract(sim_file, time, obs)

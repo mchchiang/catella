@@ -6,6 +6,7 @@ from collections.abc import Iterable
 import numpy as np
 import pandas as pd
 from .. import utils
+from ..h5_array import H5Array
 
 @dataclass(slots=True)
 class NucFiberMap:
@@ -143,15 +144,19 @@ class SimAnalysis:
     """
     def compute_occup(self, *,
                       dataset : SimDataset,
-                      time : int | None = None,                      
-                      chroms : str | Iterable[str] | None = None, 
+                      time : int | None = None,
+                      chroms : str | Iterable[str] | None = None,
                       name : str = "occup",
-                      record_time : bool = False):
+                      record_time : bool = False,
+                      batch_size : int = 20000):
         """
         Calculate nucleosome occupancy at a specific time point.
 
-        Occupancy is defined as the fraction of simulation runs where a 
-        base pair is covered by a nucleosome.
+        Occupancy is defined as the fraction of simulation runs where a
+        base pair is covered by a nucleosome. Molecules are processed in
+        batches and streamed to a disk-backed array so that peak memory
+        scales with `batch_size` rather than the total number of
+        molecules.
 
         Parameters
         ----------
@@ -161,14 +166,16 @@ class SimAnalysis:
             The simulation time point (snapshot) to analyze. If None, the
             final time frame will be used.
         chroms : str or iterable of str, optional
-            The chromosome(s) to process. If None (default), all chromosomes 
+            The chromosome(s) to process. If None (default), all chromosomes
             in the dataset are analyzed.
         name : str, default "occup"
-            The key name used to store the resulting DataFrame in 
+            The key name used to store the resulting `H5Array` in
             `dataset.analysis`.
         record_time : bool, default False
-            If True, the time point is appended to the storage name 
+            If True, the time point is appended to the storage name
             (e.g., "occup_t_100").
+        batch_size : int, default 20000
+            Number of molecules processed (and held in memory) per batch.
         """
         chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)
         nuc_map = {chrom:NucFiberMap(dataset.settings["nucbp"],
@@ -178,26 +185,37 @@ class SimAnalysis:
             time = dataset.raw[chroms[0],0,0].time[-1]
         def occup_agg(chrom, mol, nucpos):
             return nuc_map[chrom].aggregate(nucpos, norm=True)
-        occup = dataset.extract(time=time, obs="position", agg_func=occup_agg)
 
-        # Store the results 
         if record_time: name = f"{name}_t_{time}"
+        tmp_dir = dataset.resolve_tmp_dir()
         for chrom in chroms:
-            dataset.analysis[chrom][name] = pd.DataFrame(occup[chrom])
+            nmol = dataset.nmol[chrom]
+            nbp = dataset.nbp[chrom]
+            out = H5Array.create((nmol, nbp), dtype=np.float64, dir=tmp_dir)
+            for start in range(0, nmol, batch_size):
+                stop = min(start + batch_size, nmol)
+                batch = dataset.extract(time=time, obs="position",
+                                        chroms=[chrom],
+                                        mols=range(start, stop),
+                                        agg_func=occup_agg)
+                block = np.asarray(batch[chrom][start:stop])
+                out.write_batch(start, stop, block)
+            dataset.analysis[chrom][name] = out
 
     def compute_access(self, *,
                        dataset : SimDataset,
-                       time : int | None = None,                       
+                       time : int | None = None,
                        chroms : str | Iterable[str] | None = None,
                        occup_name : str = "occup",
                        access_name : str = "access",
-                       record_time : bool = False):
+                       record_time : bool = False,
+                       batch_size : int = 20000):
         """
         Calculate DNA accessibility based on nucleosome occupancy.
 
-        Accessibility (A) is defined as 1.0 minus Occupancy (O). This method 
-        automatically triggers occupancy computation if the required data 
-        is not found in the dataset.
+        Accessibility (A) is defined as 1.0 minus Occupancy (O). This
+        method automatically triggers occupancy computation if the
+        required data is not found in the dataset.
 
         Parameters
         ----------
@@ -205,17 +223,19 @@ class SimAnalysis:
             The dataset containing the raw simulation results.
         time : int, optional
             The simulation time point (snapshot) to analyse. If None, the
-            final time frame will be used.        
+            final time frame will be used.
         chroms : str or iterable of str, optional
             The chromosome(s) to process.
         occup_name : str, default "occup"
             The name of the occupancy data to use or create.
         access_name : str, default "access"
-            The key name used to store the resulting accessibility 
-            DataFrame in `dataset.analysis`.
+            The key name used to store the resulting accessibility
+            `H5Array` in `dataset.analysis`.
         record_time : bool, default False
-            If True, the time point is appended to the storage name 
+            If True, the time point is appended to the storage name
             (e.g., "access_t_100").
+        batch_size : int, default 20000
+            Number of molecules processed (and held in memory) per batch.
         """
         chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)
         if time is None:
@@ -232,11 +252,18 @@ class SimAnalysis:
         if not has_occup:
             self.compute_occup(dataset=dataset, time=time,
                                    chroms = chroms, name = occup_name,
-                                   record_time = record_time)
+                                   record_time = record_time,
+                                   batch_size = batch_size)
         # Compute accessibility A = 1.0 - O
+        tmp_dir = dataset.resolve_tmp_dir()
         for chrom in chroms:
-            df_occup = dataset.analysis[chrom][occup_name]
-            dataset.analysis[chrom][access_name] = 1.0-df_occup
+            occup_arr = dataset.analysis[chrom][occup_name]
+            nmol, nbp = occup_arr.shape
+            out = H5Array.create((nmol, nbp), dtype=np.float64, dir=tmp_dir)
+            for start in range(0, nmol, batch_size):
+                stop = min(start + batch_size, nmol)
+                out.write_batch(start, stop, 1.0 - occup_arr[start:stop, :])
+            dataset.analysis[chrom][access_name] = out
 
     def compute_mean_nnuc(self, *,
                           dataset : SimDataset,

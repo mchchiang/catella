@@ -319,7 +319,7 @@ class SimFileMapper:
             return chrom, molidx, run
         raise ValueError(f"Could not parse parameters from file: {sim_file}") 
     
-@dataclass(slots=True, init=False)
+@dataclass(slots=True, init=False, weakref_slot=True)
 class SimDataset:
     """
     A collection of simulation results and analyses across multiple

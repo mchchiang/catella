@@ -5,6 +5,7 @@ import tempfile
 import warnings
 
 import numpy as np
+import pandas as pd
 import pytest
 from scipy.spatial.distance import pdist, squareform
 import scipy.cluster.hierarchy as sch
@@ -137,3 +138,50 @@ def test_non_euclidean_metric_without_nan_still_works():
     ref_order, ref_link = _reference_linkage(data, metric="cityblock")
     np.testing.assert_array_equal(order, ref_order)
     np.testing.assert_allclose(link_mat, ref_link)
+
+
+@pytest.mark.parametrize("how", ["mean", "sum", "min", "max", "stride"])
+def test_downsample_h5array_and_array_paths_agree(how):
+    values = np.random.default_rng(9).random((23, 3))
+    max_rows = 4
+
+    arr = H5Array.create(values.shape)
+    arr.write_batch(0, values.shape[0], values)
+
+    h5_matrix = utils.downsample(arr, max_rows, how=how)
+    arr_matrix = utils.downsample(values, max_rows, how=how)
+    df_matrix = utils.downsample(pd.DataFrame(values), max_rows, how=how)
+
+    np.testing.assert_allclose(h5_matrix, arr_matrix)
+    np.testing.assert_allclose(h5_matrix, df_matrix)
+
+
+def test_downsample_dispatches_h5array_to_its_own_method():
+    values = np.random.default_rng(10).random((10, 3))
+    arr = H5Array.create(values.shape)
+    arr.write_batch(0, values.shape[0], values)
+
+    expected = arr.downsample(3, how="mean")
+    result = utils.downsample(arr, 3, how="mean")
+    np.testing.assert_allclose(result, expected)
+
+
+def test_downsample_noop_when_nrow_within_max_rows():
+    values = np.random.default_rng(11).random((5, 2))
+    np.testing.assert_array_equal(utils.downsample(values, 10), values)
+
+
+@pytest.mark.parametrize("kind", ["h5array", "dataframe", "ndarray"])
+def test_downsample_invalid_how_raises(kind):
+    values = np.random.default_rng(12).random((5, 3))
+    data = {"h5array": lambda: _filled_h5array(values),
+           "dataframe": lambda: pd.DataFrame(values),
+           "ndarray": lambda: values}[kind]()
+    with pytest.raises(ValueError):
+        utils.downsample(data, 2, how="bogus")
+
+
+def _filled_h5array(values):
+    arr = H5Array.create(values.shape)
+    arr.write_batch(0, values.shape[0], values)
+    return arr

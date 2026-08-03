@@ -9,6 +9,7 @@ from nucmc.simulation.engine import SimManager
 from nucmc.simulation.analysis import SimAnalysis
 from nucmc.simulation.results import SimDataset
 from nucmc.h5_array import H5Array
+from nucmc import utils
 
 
 def _make_settings(**overrides):
@@ -126,3 +127,80 @@ class TestSaveLoadRoundTrip:
 
         with pytest.raises(ValueError):
             loaded.save(loaded._dataset_file)
+
+
+class TestSortByLinkage:
+    def test_output_is_h5array_and_matches_oracle(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=6, nbp=20)
+        ana = SimAnalysis()
+        ana.compute_occup(dataset=dataset, batch_size=2)
+        occup = dataset.analysis["chr1"]["occup"].to_numpy()
+
+        link_mats = ana.sort_by_linkage(dataset=dataset, batch_size=2)
+        sorted_arr = dataset.analysis["chr1"]["occup_sorted"]
+        assert isinstance(sorted_arr, H5Array)
+        assert sorted_arr.shape == occup.shape
+
+        order, ref_link = utils.compute_linkage(occup)
+        np.testing.assert_allclose(sorted_arr.to_numpy(), occup[order])
+        np.testing.assert_allclose(link_mats["chr1"], ref_link)
+
+    def test_sorted_rows_are_a_permutation_of_original_rows(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=5, nbp=12)
+        ana = SimAnalysis()
+        ana.compute_occup(dataset=dataset, batch_size=2)
+        occup = dataset.analysis["chr1"]["occup"].to_numpy()
+
+        ana.sort_by_linkage(dataset=dataset, batch_size=2)
+        sorted_arr = dataset.analysis["chr1"]["occup_sorted"].to_numpy()
+
+        orig_rows = sorted(map(tuple, occup.tolist()))
+        got_rows = sorted(map(tuple, sorted_arr.tolist()))
+        assert orig_rows == got_rows
+
+    def test_default_and_custom_sorted_name(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=4, nbp=10)
+        ana = SimAnalysis()
+        ana.compute_occup(dataset=dataset, batch_size=2)
+
+        ana.sort_by_linkage(dataset=dataset, batch_size=2)
+        assert "occup_sorted" in dataset.analysis["chr1"]
+
+        ana.sort_by_linkage(dataset=dataset, sorted_name="my_sorted",
+                            batch_size=2)
+        assert "my_sorted" in dataset.analysis["chr1"]
+
+    def test_chroms_filter_only_processes_selected_chromosome(self,
+                                                               tmp_path):
+        rng = np.random.default_rng(2)
+        meth_prob = {"chr1": rng.random((4, 10)), "chr2": rng.random((4, 10))}
+        manager = SimManager(nworker=1, verbose=False)
+        dataset = manager.run(chroms=["chr1", "chr2"], nsim=2,
+                              settings=_make_settings(), meth_prob=meth_prob,
+                              out_dir=tmp_path / "dataset", seed=2)
+        ana = SimAnalysis()
+        ana.compute_occup(dataset=dataset, batch_size=2)
+
+        ana.sort_by_linkage(dataset=dataset, chroms="chr1", batch_size=2)
+        assert "occup_sorted" in dataset.analysis["chr1"]
+        assert "occup_sorted" not in dataset.analysis["chr2"]
+
+    def test_missing_data_name_raises_key_error(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=3, nbp=10)
+        ana = SimAnalysis()
+        with pytest.raises(KeyError):
+            ana.sort_by_linkage(dataset=dataset)
+
+    def test_works_with_legacy_dataframe_source(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=5, nbp=8)
+        ana = SimAnalysis()
+        ana.compute_occup(dataset=dataset, batch_size=2)
+        occup = dataset.analysis["chr1"]["occup"].to_numpy()
+        dataset.analysis["chr1"]["occup_df"] = pd.DataFrame(occup)
+
+        ana.sort_by_linkage(dataset=dataset, data_name="occup_df",
+                            batch_size=2)
+        sorted_df = dataset.analysis["chr1"]["occup_df_sorted"]
+        order, _ = utils.compute_linkage(occup)
+        assert isinstance(sorted_df, pd.DataFrame)
+        np.testing.assert_allclose(sorted_df.to_numpy(), occup[order])

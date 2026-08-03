@@ -16,6 +16,7 @@ from collections import Counter
 from collections.abc import Iterator, Iterable, Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed, Future
 from ..containers import DataFrameMap, FixedKeyMap, DataclassPublicProxy
+from ..h5_array import H5Array
 from .config import SimSettings
 from .. import utils
 from .. import h5_utils
@@ -627,10 +628,19 @@ class SimDataset:
             for chrom in gana:
                 gchrom = gana[chrom]
                 for name in gchrom:
-                    obj._analysis[chrom][name] = h5_utils.load_df(name, gchrom)
+                    if isinstance(gchrom[name], h5py.Dataset):
+                        obj._analysis[chrom][name] = H5Array.load_from(
+                            dataset_file, f"analysis/{chrom}/{name}")
+                    else:
+                        obj._analysis[chrom][name] = h5_utils.load_df(
+                            name, gchrom)
             gana = h5stream["global_analysis"]
             for name in gana:
-                obj._global_analysis[name] = h5_utils.load_df(name, gana)
+                if isinstance(gana[name], h5py.Dataset):
+                    obj._global_analysis[name] = H5Array.load_from(
+                        dataset_file, f"global_analysis/{name}")
+                else:
+                    obj._global_analysis[name] = h5_utils.load_df(name, gana)
             return obj
 
     def save(self, dataset_file : str | Path | None = None):
@@ -651,11 +661,24 @@ class SimDataset:
         ------
         OSError
             If the file cannot be written to disk.
-        """        
+        ValueError
+            If `dataset_file` is the same file that backs an `H5Array`
+            analysis entry already held by this dataset.
+        """
         dt = h5py.string_dtype(encoding="utf-8")
         if dataset_file is None:
             dataset_file = self._dataset_file
-            
+
+        dest = str(Path(dataset_file).resolve())
+        for data in list(self._analysis.values()) + [self._global_analysis]:
+            for entry in data.values():
+                if isinstance(entry, H5Array) and \
+                        str(Path(entry.path).resolve()) == dest:
+                    raise ValueError(
+                        "Cannot save to the same file that backs an "
+                        "existing H5Array analysis entry; save to a "
+                        "different path.")
+
         with h5py.File(dataset_file, "a") as h5stream:
             # Ensure that the raw file directory is up-to-date
             if "metadata" in h5stream:
@@ -696,12 +719,18 @@ class SimDataset:
             gana = h5stream.create_group("analysis")
             for chrom, data in self._analysis.items():
                 gchrom = gana.create_group(chrom)
-                for name, df in data.items():
-                    h5_utils.save_df(name, df, gchrom)
+                for name, entry in data.items():
+                    if isinstance(entry, H5Array):
+                        entry.save_to(gchrom, name)
+                    else:
+                        h5_utils.save_df(name, entry, gchrom)
             if "global_analysis" in h5stream: del h5stream["global_analysis"]
             gana = h5stream.create_group("global_analysis")
-            for name, df in self._global_analysis.items():
-                h5_utils.save_df(name, df, gana)
+            for name, entry in self._global_analysis.items():
+                if isinstance(entry, H5Array):
+                    entry.save_to(gana, name)
+                else:
+                    h5_utils.save_df(name, entry, gana)
 
     @staticmethod
     def _cleanup_tmp_dir(tmp_dir):

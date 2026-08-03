@@ -13,6 +13,8 @@ dependencies:
   # Runtime dependencies (Conda versions)
   - pyyaml
   - numpy
+  - scipy
+  - pytest
   - pandas>=3.0
   - h5py
   - matplotlib

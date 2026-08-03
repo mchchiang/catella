@@ -332,3 +332,71 @@ def test_save_to_and_load_from_preserves_compression(tmp_path):
 def test_create_with_degenerate_shape_does_not_raise(shape):
     arr = H5Array.create(shape)
     assert arr.shape == shape
+
+
+def test_h5py_dataset_rejects_decreasing_order_indices():
+    # Regression/documentation test: this is the exact limitation
+    # reorder_rows works around -- a plain HDF5 dataset only accepts
+    # strictly increasing fancy-index arrays.
+    arr, _ = _filled((5, 3))
+    with pytest.raises(TypeError):
+        arr._dataset[np.array([3, 0, 4, 1])]
+
+
+def test_reorder_rows_matches_fancy_indexing_for_increasing_order():
+    arr, values = _filled((6, 3))
+    order = np.array([1, 3, 4])
+    result = arr.reorder_rows(order)
+    np.testing.assert_array_equal(result.to_numpy(), values[order])
+
+
+def test_reorder_rows_handles_arbitrary_permutation():
+    arr, values = _filled((6, 3))
+    order = np.array([3, 0, 4, 1, 2, 5])
+    result = arr.reorder_rows(order)
+    np.testing.assert_array_equal(result.to_numpy(), values[order])
+
+
+def test_reorder_rows_supports_repeated_indices():
+    arr, values = _filled((5, 2))
+    order = np.array([0, 0, 2])
+    result = arr.reorder_rows(order)
+    np.testing.assert_array_equal(result.to_numpy(), values[order])
+
+
+@pytest.mark.parametrize("batch_size", [1, 3, 1000])
+def test_reorder_rows_batch_size_does_not_affect_result(batch_size):
+    arr, values = _filled((7, 4), seed=5)
+    order = np.array([5, 0, 6, 2, 1, 4, 3])
+    result = arr.reorder_rows(order, batch_size=batch_size)
+    np.testing.assert_array_equal(result.to_numpy(), values[order])
+
+
+def test_reorder_rows_result_is_new_independent_array():
+    arr, _ = _filled((4, 2))
+    result = arr.reorder_rows([2, 0, 1, 3])
+    assert isinstance(result, H5Array)
+    assert result.path != arr.path
+
+
+def test_reorder_rows_preserves_column_labels_and_permutes_index_labels():
+    values = np.arange(8, dtype=np.float64).reshape(4, 2)
+    arr = H5Array.create((4, 2), index=["a", "b", "c", "d"],
+                         columns=["x", "y"])
+    arr.write_batch(0, 4, values)
+    result = arr.reorder_rows([3, 1, 0])
+    assert list(result.index) == ["d", "b", "a"]
+    assert list(result.columns) == ["x", "y"]
+    np.testing.assert_array_equal(result.to_numpy(), values[[3, 1, 0]])
+
+
+def test_reorder_rows_empty_order_produces_empty_array():
+    arr, _ = _filled((4, 3))
+    result = arr.reorder_rows([])
+    assert result.shape == (0, 3)
+
+
+def test_reorder_rows_respects_dir_kwarg(tmp_path):
+    arr, _ = _filled((4, 2))
+    result = arr.reorder_rows([1, 0, 2, 3], dir=tmp_path)
+    assert Path(result.path).parent == tmp_path

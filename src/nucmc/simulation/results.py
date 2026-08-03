@@ -3,6 +3,8 @@
 import numpy as np
 import h5py
 import re
+import shutil
+import weakref
 from functools import lru_cache
 from itertools import islice
 from threading import Semaphore
@@ -381,6 +383,8 @@ class SimDataset:
     _analysis : Mapping[str, DataFrameMap]
     _global_analysis : DataFrameMap
     _raw_accessor : SimDataAccessor
+    _tmp_dir : str | None
+    _finalizer : Any | None
 
     def __init__(self, *args : Any, **kwargs : Any):
         raise TypeError("Use SimDataset.load() or create() to instantiate "
@@ -434,6 +438,8 @@ class SimDataset:
         obj._out_type = out_type
         obj._seed = seed
         obj._seed_table = seed_table
+        obj._tmp_dir = None
+        obj._finalizer = None
         return obj
         
     @classmethod
@@ -696,6 +702,45 @@ class SimDataset:
             gana = h5stream.create_group("global_analysis")
             for name, df in self._global_analysis.items():
                 h5_utils.save_df(name, df, gana)
+
+    @staticmethod
+    def _cleanup_tmp_dir(tmp_dir):
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    def resolve_tmp_dir(self):
+        """
+        Return this dataset's scratch directory for temporary HDF5
+        files, creating and caching one under the system default
+        temporary directory the first time it is needed. The directory
+        is removed once the dataset is closed or garbage-collected; see
+        `close`.
+
+        Returns
+        -------
+        str
+            Path to the resolved scratch directory.
+        """
+        if self._tmp_dir is None:
+            self._tmp_dir = h5_utils.fresh_tmp_dir()
+            self._finalizer = weakref.finalize(
+                self, SimDataset._cleanup_tmp_dir, self._tmp_dir)
+        return self._tmp_dir
+
+    def close(self):
+        """
+        Delete this dataset's scratch directory (all temporary HDF5
+        files created for it, e.g. by `SimAnalysis.compute_occup` or
+        `compute_access`), if one was created. No-op for datasets with
+        no scratch directory.
+        """
+        if self._finalizer is not None:
+            self._finalizer()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        self.close()
 
     def iter_runs(self, chroms : str | Iterable[str] | None = None,
                   mols : Iterable[int] | None = None) \

@@ -5,6 +5,7 @@ import pandas as pd
 from typing import List
 from .methdata import MethPrintExperiment
 from ..h5_array import H5Array
+from .. import utils
 import matplotlib.pyplot as plt
 
 class MethPrintAnalysis:
@@ -392,4 +393,104 @@ class MethPrintAnalysis:
                 prob = np.clip((batch-vmin)/denom, 0.0, 1.0)
                 out.write_batch(start, stop, prob)
             ana[prob_name] = out
-            
+
+    def sort_by_linkage(self, *,
+                        exp : MethPrintExperiment,
+                        data_name : str = "test_smoothed",
+                        raw_which : str | None = None,
+                        sorted_name : str | None = None,
+                        metric : str = "euclidean",
+                        method : str = "ward",
+                        batch_size : int = 20000) -> dict[str, np.ndarray]:
+        """
+        Sort molecules by hierarchical-clustering similarity.
+
+        Iterate through all chromosomes, reordering rows (molecules)
+        of a dense methylation signal so that similar molecules sit
+        next to each other, matching the leaf order of a
+        hierarchical-clustering dendrogram. By default, sorts the
+        smoothed test signal if `smooth` has been run, or the raw
+        test signal otherwise -- so this works whether or not `smooth`
+        has been called first.
+
+        Parameters
+        ----------
+        exp : MethPrintExperiment
+            The experiment object containing raw data and analysis maps.
+        data_name : str, default "test_smoothed"
+            The key of the dense analysis array to sort, looked up in
+            `exp.analysis[chrom]` (e.g. a `smooth` or `meth_prob`
+            output). Ignored if `raw_which` is given. If left at its
+            default and not found, falls back to raw test data (see
+            above); any other missing `data_name` raises `KeyError`.
+        raw_which : {"test", "meth", "unmeth"}, optional
+            If given, source the data to sort from the raw long-form
+            table instead of `exp.analysis`, via
+            `exp.to_dense(chrom, which=raw_which)`. Takes priority
+            over `data_name`.
+        sorted_name : str, optional
+            The key used to store the sorted result. If None
+            (default), `f"{data_name}_sorted"` is used, or
+            `f"{raw_which}_sorted"` if `raw_which` is given.
+        metric : str, default "euclidean"
+            Distance metric, forwarded to `utils.compute_linkage`.
+        method : str, default "ward"
+            Linkage method, forwarded to `utils.compute_linkage`.
+        batch_size : int, default 20000
+            Number of molecules processed (and held in memory) per
+            batch.
+
+        Returns
+        -------
+        dict of str to np.ndarray
+            A mapping from chromosome name to that chromosome's
+            linkage matrix, for optional dendrogram plotting. Not
+            persisted into `exp.analysis`.
+
+        Raises
+        ------
+        KeyError
+            If `raw_which` is None, `data_name` is not `"test_smoothed"`
+            (its default), and not found in `exp.analysis[chrom]` for
+            some chromosome.
+        """
+        tmp_dir = exp.resolve_tmp_dir()
+        link_mats = {}
+        for chrom in exp.chroms:
+            ana = exp.analysis[chrom]
+            if raw_which is not None:
+                data = exp.to_dense(chrom, which=raw_which,
+                                    as_h5array=True, batch_size=batch_size)
+                name = sorted_name if sorted_name is not None \
+                    else f"{raw_which}_sorted"
+            elif data_name not in ana and data_name == "test_smoothed":
+                # Default target not computed yet -- fall back to the
+                # raw test signal rather than requiring smooth() first.
+                data = exp.to_dense(chrom, which="test",
+                                    as_h5array=True, batch_size=batch_size)
+                name = sorted_name if sorted_name is not None \
+                    else "test_sorted"
+            else:
+                if data_name not in ana:
+                    raise KeyError(
+                        f"'{data_name}' not found in "
+                        f"exp.analysis['{chrom}']. Run 'smooth' or "
+                        "'meth_prob' first (matching the name/prob_name "
+                        "used there), or pass 'raw_which' to source "
+                        "from the raw long-form data instead.")
+                data = ana[data_name]
+                name = sorted_name if sorted_name is not None \
+                    else f"{data_name}_sorted"
+
+            order, link_mat = utils.compute_linkage(
+                data, metric=metric, method=method, batch_size=batch_size,
+                dir=tmp_dir)
+            if isinstance(data, H5Array):
+                sorted_data = data.reorder_rows(order, dir=tmp_dir,
+                                                batch_size=batch_size)
+            else:
+                sorted_data = data.iloc[order]
+            exp.analysis[chrom][name] = sorted_data
+            link_mats[chrom] = link_mat
+        return link_mats
+

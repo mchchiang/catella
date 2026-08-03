@@ -104,6 +104,14 @@ def compute_linkage(matrix, *, metric="euclidean", method="ward",
         matter how it is built or stored, so this may be slow and
         memory-intensive. Downsample first (e.g. via `H5Array.downsample`)
         to avoid it.
+
+    Notes
+    -----
+    Rows with `nan` (e.g. missing coverage, or unfilled `smooth` edges)
+    are handled by masking: each distance uses only the jointly
+    non-`nan` columns of that pair, scaled to the full column count.
+    Only implemented for `metric="euclidean"`; other metrics raise
+    `ValueError` if any row-block being compared contains `nan`.
     """
     nrow = matrix.shape[0]
     if nrow > _CLUSTER_WARN_ROWS:
@@ -117,11 +125,33 @@ def compute_linkage(matrix, *, metric="euclidean", method="ward",
         dist_vec = _streamed_pdist(matrix, metric=metric,
                                    batch_size=batch_size, dir=dir)
     else:
-        dist_vec = pdist(np.asarray(matrix), metric=metric)
+        dense = np.asarray(matrix)
+        dist_vec = pdist(dense, metric=_resolve_metric(
+            metric, np.isnan(dense).any()))
 
     link_mat = sch.linkage(dist_vec, method=method)
     order = sch.leaves_list(link_mat)
     return order, link_mat
+
+def _nan_euclidean(u, v):
+    # Euclidean distance using only jointly-observed columns, scaled
+    # up to the full column count -- matches
+    # sklearn.metrics.pairwise.nan_euclidean_distances.
+    mask = ~np.isnan(u) & ~np.isnan(v)
+    n_present = mask.sum()
+    if n_present == 0:
+        return np.nan
+    sq = np.sum((u[mask] - v[mask]) ** 2)
+    return np.sqrt(len(u) / n_present * sq)
+
+def _resolve_metric(metric, has_nan):
+    if not has_nan:
+        return metric
+    if metric != "euclidean":
+        raise ValueError(
+            "NaN-masked distances are only supported for "
+            f"metric='euclidean', got {metric!r} with nan present.")
+    return _nan_euclidean
 
 def _streamed_pdist(h5arr, *, metric, batch_size, dir):
     # Builds the nrow x nrow distance matrix on disk in row-blocks (so
@@ -137,15 +167,21 @@ def _streamed_pdist(h5arr, *, metric, batch_size, dir):
     for a0 in range(0, nrow, batch_size):
         a1 = min(a0 + batch_size, nrow)
         block_a = h5arr[a0:a1, :]
+        has_nan_a = np.isnan(block_a).any()
         row_block = np.empty((a1 - a0, nrow), dtype=np.float64)
         for b0 in range(0, nrow, batch_size):
             b1 = min(b0 + batch_size, nrow)
             if b0 == a0:
-                row_block[:, b0:b1] = 0.0 if a1 - a0 == 1 else \
-                    squareform(pdist(block_a, metric=metric))
+                if a1 - a0 == 1:
+                    row_block[:, b0:b1] = 0.0
+                else:
+                    m = _resolve_metric(metric, has_nan_a)
+                    row_block[:, b0:b1] = squareform(pdist(block_a, metric=m))
             else:
                 block_b = h5arr[b0:b1, :]
-                row_block[:, b0:b1] = cdist(block_a, block_b, metric=metric)
+                m = _resolve_metric(
+                    metric, has_nan_a or np.isnan(block_b).any())
+                row_block[:, b0:b1] = cdist(block_a, block_b, metric=m)
         dist.write_batch(a0, a1, row_block)
     dense = dist.to_numpy()
     dist.close()

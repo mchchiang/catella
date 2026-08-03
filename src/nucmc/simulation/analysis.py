@@ -302,8 +302,75 @@ class SimAnalysis:
             return mean_nnuc
         mean_nnuc = dataset.extract(time=time, obs="position",
                                     agg_func=mean_nnuc_agg)
-        # Store the results 
+        # Store the results
         if record_time: name = f"{name}_t_{time}"
         for chrom in chroms:
             dataset.analysis[chrom][name] = pd.DataFrame(mean_nnuc[chrom])
-        
+
+    def sort_by_linkage(self, *,
+                        dataset : SimDataset,
+                        chroms : str | Iterable[str] | None = None,
+                        data_name : str = "occup",
+                        sorted_name : str | None = None,
+                        metric : str = "euclidean",
+                        method : str = "ward",
+                        batch_size : int = 20000) -> dict[str, np.ndarray]:
+        """
+        Sort molecules by hierarchical-clustering similarity.
+
+        Reorder the rows of a previously-computed analysis array so
+        that similar molecules sit next to each other, matching the
+        leaf order of a hierarchical-clustering dendrogram.
+
+        Parameters
+        ----------
+        dataset : SimDataset
+            The dataset containing the analysis array to sort.
+        chroms : str or iterable of str, optional
+            The chromosome(s) to process. If None (default), all
+            chromosomes in the dataset are processed.
+        data_name : str, default "occup"
+            The key of the analysis array to sort, looked up in
+            `dataset.analysis[chrom]`.
+        sorted_name : str, optional
+            The key used to store the sorted result. If None
+            (default), `f"{data_name}_sorted"` is used.
+        metric : str, default "euclidean"
+            Distance metric, forwarded to `utils.compute_linkage`.
+        method : str, default "ward"
+            Linkage method, forwarded to `utils.compute_linkage`.
+        batch_size : int, default 20000
+            Number of rows processed (and held in memory) per batch.
+
+        Returns
+        -------
+        dict of str to np.ndarray
+            A mapping from chromosome name to that chromosome's
+            linkage matrix, for optional dendrogram plotting. Not
+            persisted into `dataset.analysis`.
+
+        Raises
+        ------
+        KeyError
+            If `data_name` is not found in `dataset.analysis[chrom]`
+            for any of the selected chromosomes.
+        """
+        chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)
+        tmp_dir = dataset.resolve_tmp_dir()
+        link_mats = {}
+        for chrom in chroms:
+            data = dataset.analysis[chrom][data_name]
+            order, link_mat = utils.compute_linkage(
+                data, metric=metric, method=method, batch_size=batch_size,
+                dir=tmp_dir)
+            if isinstance(data, H5Array):
+                sorted_data = data.reorder_rows(order, dir=tmp_dir,
+                                                batch_size=batch_size)
+            else:
+                sorted_data = data.iloc[order]
+            name = sorted_name if sorted_name is not None \
+                else f"{data_name}_sorted"
+            dataset.analysis[chrom][name] = sorted_data
+            link_mats[chrom] = link_mat
+        return link_mats
+

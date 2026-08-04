@@ -451,9 +451,9 @@ class MethPrintExperiment:
     _raw_data : Mapping[str,MethPrintData]
     _analysis : Mapping[str,DataFrameMap]
     _global_analysis : DataFrameMap
-    _scratch_path : str | None
     _finalizer : Any | None
     _tmp_dir : str | None
+    _exp_file : str | None
 
     def __init__(self, **kwargs : Any):
         if not kwargs.pop("_internal", False):
@@ -471,8 +471,6 @@ class MethPrintExperiment:
                           for chrom in self._raw_data.keys()}
         self._global_analysis = DataFrameMap()
 
-        # Scratch staging file (set by load_raw() when it owns one)
-        self._scratch_path = kwargs.get("_scratch_path")
         self._finalizer = kwargs.get("_finalizer")
 
         # Scratch directory shared by this experiment's own staging
@@ -480,6 +478,10 @@ class MethPrintExperiment:
         # specify their own tmp_dir (set by load_raw() when it
         # generates one, or lazily by resolve_tmp_dir()).
         self._tmp_dir = kwargs.get("_tmp_dir")
+
+        # File this experiment was loaded from, or last saved to (None
+        # if never saved); used as save()'s default destination.
+        self._exp_file = kwargs.get("_exp_file")
 
     @staticmethod
     def _cleanup_tmp_dir(tmp_dir):
@@ -652,7 +654,7 @@ class MethPrintExperiment:
         block_size = 64 * 1024 * 1024
 
         tmp_dir = h5_utils.fresh_tmp_dir(base_dir=tmp_dir)
-        fd, staging_path = tempfile.mkstemp(suffix=".h5", dir=tmp_dir)
+        fd, tmp_file = tempfile.mkstemp(suffix=".h5", dir=tmp_dir)
         os.close(fd)
 
         dt = h5py.string_dtype(encoding="utf-8")
@@ -666,7 +668,7 @@ class MethPrintExperiment:
             return gchrom.require_group("data")
 
         try:
-            with h5py.File(staging_path, "w") as h5stream:
+            with h5py.File(tmp_file, "w") as h5stream:
                 graw = h5stream.create_group("raw_data")
                 h5stream.create_group("analysis")
                 h5stream.create_group("global_analysis")
@@ -712,45 +714,73 @@ class MethPrintExperiment:
                         data_file, header_names, name_for, sep, chunk_size,
                         block_size, full_sizes, wrap, mol_maps, appenders)
         except Exception:
-            Path(staging_path).unlink(missing_ok=True)
+            Path(tmp_file).unlink(missing_ok=True)
             raise
 
-        exp = cls.load(staging_path, max_cached_chroms=max_cached_chroms)
-        exp._scratch_path = staging_path
+        exp = cls.load(tmp_file, max_cached_chroms=max_cached_chroms)
+        # tmp_file is an internal staging file, not a real save target
+        exp._exp_file = None
         exp._tmp_dir = tmp_dir
         exp._finalizer = weakref.finalize(
             exp, MethPrintExperiment._cleanup_tmp_dir, tmp_dir)
         return exp
                 
-    def save(self, path: str | Path):
+    def save(self, exp_file: str | Path | None = None, *,
+            overwrite : bool = False):
         """
         Save the experiment data and analysis to an HDF5 file.
 
         Parameters
         ----------
-        path : str or pathlib.Path
-            The output file path. Raw data is only written if it does not 
-            already exist in the file.
+        exp_file : str or pathlib.Path, optional
+            The output file path. Raw data is only written if it does not
+            already exist in the file. If None, saves to the file this
+            experiment was loaded from or last saved to.
+        overwrite : bool, default False
+            If True, allow saving to the same file that backs an
+            existing `H5Array` analysis entry, by writing to a temporary
+            sibling file and atomically renaming it into place.
 
         Raises
         ------
+        ValueError
+            If `exp_file` is None and this experiment has no file to
+            default to (e.g. fresh from `load_raw()` and never saved),
+            or if `exp_file` is the same file that backs an `H5Array`
+            analysis entry already held by this experiment and
+            `overwrite` is False.
         OSError
             If the file cannot be written to disk.
-        ValueError
-            If `path` is the same file that backs an `H5Array` analysis
-            entry already held by this experiment.
         """
-        dest = str(Path(path).resolve())
-        for data in list(self._analysis.values()) + [self._global_analysis]:
-            for entry in data.values():
-                if isinstance(entry, H5Array) and \
-                        str(Path(entry.path).resolve()) == dest:
-                    raise ValueError(
-                        "Cannot save to the same file that backs an "
-                        "existing H5Array analysis entry; save to a "
-                        "different path.")
+        if exp_file is None:
+            exp_file = self._exp_file
+            if exp_file is None:
+                raise ValueError(
+                    "No exp_file given and this experiment has not "
+                    "been saved before; pass 'exp_file' explicitly.")
 
-        with h5py.File(path, "a") as h5stream:
+        dest_path = Path(exp_file)
+        dest = str(dest_path.resolve())
+        collision = any(
+            isinstance(entry, H5Array)
+            and str(Path(entry.path).resolve()) == dest
+            for data in list(self._analysis.values()) + [self._global_analysis]
+            for entry in data.values())
+        if collision:
+            if not overwrite:
+                raise ValueError(
+                    "Cannot save to the same file that backs an "
+                    "existing H5Array analysis entry; save to a "
+                    "different path, or pass overwrite=True to safely "
+                    "replace it in place.")
+            tmp_path = dest_path.with_name(
+                dest_path.name + f".tmp{os.getpid()}")
+            self.save(tmp_path)
+            os.replace(tmp_path, dest_path)
+            self._exp_file = dest
+            return
+
+        with h5py.File(exp_file, "a") as h5stream:
             # Save the raw data - write once if raw_data does not exist
             if not "raw_data" in h5stream:
                 graw = h5stream.create_group("raw_data")
@@ -774,9 +804,10 @@ class MethPrintExperiment:
                     entry.save_to(gana, name)
                 else:
                     h5_utils.save_df(name, entry, gana)
+        self._exp_file = dest
                 
     @classmethod
-    def load(cls, path: str | Path,
+    def load(cls, exp_file: str | Path,
              chroms: List[str] | None = None,
              max_cached_chroms: int = 1) -> Self:
         """
@@ -790,7 +821,7 @@ class MethPrintExperiment:
 
         Parameters
         ----------
-        path : str or pathlib.Path
+        exp_file : str or pathlib.Path
             Path to the HDF5 file containing the experiment.
         chroms : list of str, optional
             Restrict the loaded experiment to these chromosomes. If
@@ -810,21 +841,22 @@ class MethPrintExperiment:
         ValueError
             If `chroms` contains a chromosome not found in the file.
         """
-        with h5py.File(path, "r") as h5stream:
+        with h5py.File(exp_file, "r") as h5stream:
             # Set up lazy, memory-bounded access to the raw data
             available_chroms = list(h5stream["raw_data"].keys())
             if chroms is not None:
                 unknown = set(chroms) - set(available_chroms)
                 if unknown:
                     raise ValueError(
-                        f"Chromosomes not found in {path}: "
+                        f"Chromosomes not found in {exp_file}: "
                         f"{sorted(unknown)}")
                 selected = list(chroms)
             else:
                 selected = available_chroms
-            raw_data = LazyRawDataMap(path, selected,
+            raw_data = LazyRawDataMap(exp_file, selected,
                                       max_cached=max_cached_chroms)
-            obj = cls._create(_raw_data=raw_data)
+            obj = cls._create(_raw_data=raw_data,
+                              _exp_file=str(Path(exp_file).resolve()))
 
             # Load any analysis data
             gana = h5stream["analysis"]
@@ -835,7 +867,7 @@ class MethPrintExperiment:
                 for name in gchrom:
                     if isinstance(gchrom[name], h5py.Dataset):
                         obj._analysis[chrom][name] = H5Array.load_from(
-                            path, f"analysis/{chrom}/{name}")
+                            exp_file, f"analysis/{chrom}/{name}")
                     else:
                         obj._analysis[chrom][name] = h5_utils.load_df(
                             name, gchrom)
@@ -843,7 +875,7 @@ class MethPrintExperiment:
             for name in gana:
                 if isinstance(gana[name], h5py.Dataset):
                     obj._global_analysis[name] = H5Array.load_from(
-                        path, f"global_analysis/{name}")
+                        exp_file, f"global_analysis/{name}")
                 else:
                     obj._global_analysis[name] = h5_utils.load_df(name, gana)
             return obj

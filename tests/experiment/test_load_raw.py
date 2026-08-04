@@ -268,21 +268,6 @@ class TestLazyAndScratchLifecycle:
             assert spy.call_count == 2
         exp.close()
 
-    def test_scratch_file_cleaned_up_on_close(self, tmp_path):
-        import os
-        rows = _make_rows("chr1", ["m0"], [1, 2])
-        test_file = tmp_path / "test.tsv"
-        _write_tsv(test_file, rows)
-        chromsize = tmp_path / "sizes.tsv"
-        _write_chromsize(chromsize, {"chr1": 100})
-
-        exp = MethPrintExperiment.load_raw(
-            chromsize=chromsize, test_file=test_file)
-        scratch_path = exp._scratch_path
-        assert os.path.exists(scratch_path)
-        exp.close()
-        assert not os.path.exists(scratch_path)
-
     def test_scratch_dir_cleaned_up_on_close(self, tmp_path):
         import os
         rows = _make_rows("chr1", ["m0"], [1, 2])

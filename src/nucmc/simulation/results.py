@@ -2,6 +2,7 @@
 
 import numpy as np
 import h5py
+import os
 import re
 import shutil
 import weakref
@@ -643,41 +644,57 @@ class SimDataset:
                     obj._global_analysis[name] = h5_utils.load_df(name, gana)
             return obj
 
-    def save(self, dataset_file : str | Path | None = None):
+    def save(self, dataset_file : str | Path | None = None, *,
+            overwrite : bool = False):
         """
         Save the dataset metadata and analysis results to an HDF5 file.
 
         Serialize the current state of all chromosome-specific and global
         analysis :class:`DataFrameMap` objects into a persistent HDF5 format.
-        
+
         Parameters
         ----------
         dataset_file : str | Path, optional
             The output HDF5 file for the dataset. If the file already exists,
-            analysis groups will be overwritten. If None, data will be written to
+            analysis groups will be overwritten. If None, data will be written
             to the original dataset file from loading or creation.
-        
+        overwrite : bool, default False
+            If True, allow saving to the same file that backs an
+            existing `H5Array` analysis entry, by writing to a temporary
+            sibling file and atomically renaming it into place.
+
         Raises
         ------
         OSError
             If the file cannot be written to disk.
         ValueError
             If `dataset_file` is the same file that backs an `H5Array`
-            analysis entry already held by this dataset.
+            analysis entry already held by this dataset, and `overwrite`
+            is False.
         """
         dt = h5py.string_dtype(encoding="utf-8")
         if dataset_file is None:
             dataset_file = self._dataset_file
 
-        dest = str(Path(dataset_file).resolve())
-        for data in list(self._analysis.values()) + [self._global_analysis]:
-            for entry in data.values():
-                if isinstance(entry, H5Array) and \
-                        str(Path(entry.path).resolve()) == dest:
-                    raise ValueError(
-                        "Cannot save to the same file that backs an "
-                        "existing H5Array analysis entry; save to a "
-                        "different path.")
+        dest_path = Path(dataset_file)
+        dest = str(dest_path.resolve())
+        collision = any(
+            isinstance(entry, H5Array)
+            and str(Path(entry.path).resolve()) == dest
+            for data in list(self._analysis.values()) + [self._global_analysis]
+            for entry in data.values())
+        if collision:
+            if not overwrite:
+                raise ValueError(
+                    "Cannot save to the same file that backs an "
+                    "existing H5Array analysis entry; save to a "
+                    "different path, or pass overwrite=True to safely "
+                    "replace it in place.")
+            tmp_path = dest_path.with_name(
+                dest_path.name + f".tmp{os.getpid()}")
+            self.save(tmp_path)
+            os.replace(tmp_path, dest_path)
+            return
 
         with h5py.File(dataset_file, "a") as h5stream:
             # Ensure that the raw file directory is up-to-date

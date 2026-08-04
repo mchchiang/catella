@@ -399,6 +399,8 @@ class MethPrintAnalysis:
                         data_name : str = "test_smoothed",
                         raw_which : str | None = None,
                         sorted_name : str | None = None,
+                        store_link_mat : bool = True,
+                        link_mat_name : str | None = None,
                         metric : str = "euclidean",
                         method : str = "ward",
                         batch_size : int = 20000) -> dict[str, np.ndarray]:
@@ -432,6 +434,15 @@ class MethPrintAnalysis:
             The key used to store the sorted result. If None
             (default), `f"{data_name}_sorted"` is used, or
             `f"{raw_which}_sorted"` if `raw_which` is given.
+        store_link_mat : bool, default True
+            Whether to also persist each chromosome's linkage matrix
+            into `exp.analysis[chrom][link_mat_name]`. If False, the
+            linkage matrix is only returned, not stored.
+        link_mat_name : str, optional
+            The key used to store the linkage matrix if
+            `store_link_mat` is True. If None (default),
+            `f"{data_name}_linkage"` is used, or
+            `f"{raw_which}_linkage"` if `raw_which` is given.
         metric : str, default "euclidean"
             Distance metric, forwarded to `utils.compute_linkage`.
         method : str, default "ward"
@@ -444,8 +455,10 @@ class MethPrintAnalysis:
         -------
         dict of str to np.ndarray
             A mapping from chromosome name to that chromosome's
-            linkage matrix, for optional dendrogram plotting. Not
-            persisted into `exp.analysis`.
+            linkage matrix, for optional immediate use (e.g. passing
+            straight to `MethPlot.plot_methmap`'s `link_mat` argument).
+            Also persisted into `exp.analysis[chrom][link_mat_name]` if
+            `store_link_mat` is True.
 
         Raises
         ------
@@ -461,15 +474,13 @@ class MethPrintAnalysis:
             if raw_which is not None:
                 data = exp.to_dense(chrom, which=raw_which,
                                     as_h5array=True, batch_size=batch_size)
-                name = sorted_name if sorted_name is not None \
-                    else f"{raw_which}_sorted"
+                base_name = raw_which
             elif data_name not in ana and data_name == "test_smoothed":
                 # Default target not computed yet -- fall back to the
                 # raw test signal rather than requiring smooth() first.
                 data = exp.to_dense(chrom, which="test",
                                     as_h5array=True, batch_size=batch_size)
-                name = sorted_name if sorted_name is not None \
-                    else "test_sorted"
+                base_name = "test"
             else:
                 if data_name not in ana:
                     raise KeyError(
@@ -479,8 +490,9 @@ class MethPrintAnalysis:
                         "used there), or pass 'raw_which' to source "
                         "from the raw long-form data instead.")
                 data = ana[data_name]
-                name = sorted_name if sorted_name is not None \
-                    else f"{data_name}_sorted"
+                base_name = data_name
+            name = sorted_name if sorted_name is not None \
+                else f"{base_name}_sorted"
 
             order, link_mat = utils.compute_linkage(
                 data, metric=metric, method=method, batch_size=batch_size,
@@ -491,6 +503,10 @@ class MethPrintAnalysis:
             else:
                 sorted_data = data.iloc[order]
             exp.analysis[chrom][name] = sorted_data
+            if store_link_mat:
+                lname = link_mat_name if link_mat_name is not None \
+                    else f"{base_name}_linkage"
+                exp.analysis[chrom][lname] = pd.DataFrame(link_mat)
             link_mats[chrom] = link_mat
         return link_mats
 

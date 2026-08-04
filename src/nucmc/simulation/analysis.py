@@ -312,6 +312,8 @@ class SimAnalysis:
                         chroms : str | Iterable[str] | None = None,
                         data_name : str = "occup",
                         sorted_name : str | None = None,
+                        store_link_mat : bool = True,
+                        link_mat_name : str | None = None,
                         metric : str = "euclidean",
                         method : str = "ward",
                         batch_size : int = 20000) -> dict[str, np.ndarray]:
@@ -335,6 +337,14 @@ class SimAnalysis:
         sorted_name : str, optional
             The key used to store the sorted result. If None
             (default), `f"{data_name}_sorted"` is used.
+        store_link_mat : bool, default True
+            Whether to also persist the linkage matrix into
+            `dataset.analysis[chrom][link_mat_name]`. If False, the
+            linkage matrix is only returned, not stored.
+        link_mat_name : str, optional
+            The key used to store the linkage matrix if
+            `store_link_mat` is True. If None (default),
+            `f"{data_name}_linkage"` is used.
         metric : str, default "euclidean"
             Distance metric, forwarded to `utils.compute_linkage`.
         method : str, default "ward"
@@ -346,8 +356,10 @@ class SimAnalysis:
         -------
         dict of str to np.ndarray
             A mapping from chromosome name to that chromosome's
-            linkage matrix, for optional dendrogram plotting. Not
-            persisted into `dataset.analysis`.
+            linkage matrix, for optional immediate use (e.g. passing
+            straight to `SimPlot.plot_occup`'s `link_mat` argument).
+            Also persisted into `dataset.analysis[chrom][link_mat_name]`
+            if `store_link_mat` is True.
 
         Raises
         ------
@@ -371,6 +383,10 @@ class SimAnalysis:
             name = sorted_name if sorted_name is not None \
                 else f"{data_name}_sorted"
             dataset.analysis[chrom][name] = sorted_data
+            if store_link_mat:
+                lname = link_mat_name if link_mat_name is not None \
+                    else f"{data_name}_linkage"
+                dataset.analysis[chrom][lname] = pd.DataFrame(link_mat)
             link_mats[chrom] = link_mat
         return link_mats
 

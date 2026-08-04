@@ -373,12 +373,12 @@ class MethPrintAnalysis:
                     unmeth_arr, unmeth_strand if norm_by_strand else None)
                 meth_sample = normalized_sample(
                     meth_arr, meth_strand if norm_by_strand else None)
-                vmin = np.percentile(unmeth_sample, clip_low)
-                vmax = np.percentile(meth_sample, clip_high)
+                vmin = np.nanpercentile(unmeth_sample, clip_low)
+                vmax = np.nanpercentile(meth_sample, clip_high)
             else:
                 test_sample = normalized_sample(test_arr, None)
-                vmin = np.percentile(test_sample, clip_low)
-                vmax = np.percentile(test_sample, clip_high)
+                vmin = np.nanpercentile(test_sample, clip_low)
+                vmax = np.nanpercentile(test_sample, clip_high)
 
             # Use the difference between percentiles as the scaling factor
             denom = np.maximum(vmax-vmin, self._EPSILON)

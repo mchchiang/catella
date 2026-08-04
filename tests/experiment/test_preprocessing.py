@@ -244,6 +244,42 @@ class TestMethProb:
         np.testing.assert_allclose(prob_narrow[idx_narrow, 0],
                                    prob_wide[idx_wide, 0])
 
+    def test_percentile_ignores_nan_in_control_channel(self):
+        # unmeth mol 0 is missing pos 0, leaving it NaN after smoothing
+        # (fill_edge defaults to np.nan). That NaN must not poison the
+        # percentile-based vmin/vmax (and thus every probability).
+        cols = ["mol_index", "pos", "strand", "mod_qual", "mod_code"]
+        unmeth_df = pd.DataFrame([
+            (0, 1, "+", 0.05, 0), (0, 2, "+", 0.06, 0),
+            (1, 0, "+", 0.10, 0), (1, 1, "+", 0.11, 0),
+            (1, 2, "+", 0.12, 0),
+        ], columns=cols)
+        meth_df = pd.DataFrame([
+            (0, 0, "+", 0.90, 0), (0, 1, "+", 0.91, 0), (0, 2, "+", 0.92, 0),
+            (1, 0, "+", 0.95, 0), (1, 1, "+", 0.94, 0), (1, 2, "+", 0.93, 0),
+        ], columns=cols)
+        test_df = pd.DataFrame([
+            (0, 0, "+", 0.50, 0), (0, 1, "+", 0.50, 0), (0, 2, "+", 0.50, 0),
+        ], columns=cols)
+
+        unmeth_mol_id = np.array(["u0", "u1"], dtype=object)
+        meth_mol_id = np.array(["m0", "m1"], dtype=object)
+        test_mol_id = np.array(["t0"], dtype=object)
+
+        raw = MethPrintData._create(
+            chrom="chr1", nbp=3, test_mol_id=test_mol_id, test_data=test_df,
+            meth_mol_id=meth_mol_id, meth_data=meth_df,
+            unmeth_mol_id=unmeth_mol_id, unmeth_data=unmeth_df)
+        exp = MethPrintExperiment._create(_raw_data={"chr1": raw})
+
+        ana = MethPrintAnalysis()
+        ana.meth_prob(exp=exp, binsize=1, batch_size=100,
+                      percentile_sample_size=1000)
+        prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
+        # Positions 1 and 2 are fully covered by both control molecules
+        # and must not be NaN-poisoned by the gap at position 0.
+        assert not np.any(np.isnan(prob[:, 1:]))
+
     def test_norm_by_strand_rejects_unmapped_strand(self):
         exp = _make_experiment(nmol=4, nbp=6, with_controls=True,
                                unmapped_test_mol=0)

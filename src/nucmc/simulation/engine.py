@@ -4,7 +4,7 @@ from typing import Tuple, Dict, List, Self, Any
 from pathlib import Path
 from dataclasses import dataclass, replace
 from itertools import islice
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 import multiprocessing as mp
 from concurrent.futures import ProcessPoolExecutor, wait, FIRST_COMPLETED
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
@@ -210,8 +210,9 @@ class SimManager:
         else:
             raise TypeError("'meth_prob' must be a numpy array or a mapping.")
 
-        # Normalize molecule indices
-        if isinstance(mols, IndexType.__args__):
+        # Normalize molecule indices (unparameterized base types, since
+        # isinstance() rejects IndexType.__args__'s Sequence[int])
+        if isinstance(mols, (int, slice, Sequence)):
             # Apply the same set of indices across all chromosomes
             mols = {chrom:mols for chrom in chroms}
         elif isinstance(mols, Mapping):

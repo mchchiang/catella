@@ -89,3 +89,18 @@ class TestSortByLinkage:
 
         assert "occup_sorted" in dataset.analysis["chr1"]
         assert "occup_linkage" not in dataset.analysis["chr1"]
+
+    def test_fill_nan_avoids_crash_on_all_nan_row(self, tmp_path):
+        dataset = _make_dataset(tmp_path)
+        SimAnalysis().compute_occup(dataset=dataset)
+        occup = dataset.analysis["chr1"]["occup"].to_numpy()
+        occup[0, :] = np.nan
+        dataset.analysis["chr1"]["occup_nan"] = pd.DataFrame(occup)
+
+        with pytest.raises(ValueError):
+            nucmc.sort_by_linkage(dataset=dataset, data_name="occup_nan")
+
+        nucmc.sort_by_linkage(dataset=dataset, data_name="occup_nan",
+                              fill_nan="mean")
+        link_mat = dataset.analysis["chr1"]["occup_nan_linkage"].to_numpy()
+        assert np.isfinite(link_mat).all()

@@ -204,3 +204,24 @@ class TestSortByLinkage:
         order, _ = utils.compute_linkage(occup)
         assert isinstance(sorted_df, pd.DataFrame)
         np.testing.assert_allclose(sorted_df.to_numpy(), occup[order])
+
+    def test_fill_nan_avoids_crash_on_all_nan_row(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=5, nbp=8)
+        ana = SimAnalysis()
+        ana.compute_occup(dataset=dataset, batch_size=2)
+        occup = dataset.analysis["chr1"]["occup"].to_numpy()
+        occup[0, :] = np.nan
+        dataset.analysis["chr1"]["occup_nan"] = pd.DataFrame(occup)
+
+        with pytest.raises(ValueError):
+            ana.sort_by_linkage(dataset=dataset, data_name="occup_nan",
+                                batch_size=2)
+
+        link_mats = ana.sort_by_linkage(dataset=dataset,
+                                        data_name="occup_nan",
+                                        batch_size=2, fill_nan="mean")
+        assert np.isfinite(link_mats["chr1"]).all()
+        sorted_arr = dataset.analysis["chr1"]["occup_nan_sorted"].to_numpy()
+        orig_rows = sorted(map(tuple, np.nan_to_num(occup).tolist()))
+        got_rows = sorted(map(tuple, np.nan_to_num(sorted_arr).tolist()))
+        assert orig_rows == got_rows

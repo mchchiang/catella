@@ -252,6 +252,42 @@ class TestSortByLinkage:
         np.testing.assert_allclose(sorted_arr.to_numpy(), meth_prob[order])
         assert "meth_prob_linkage" not in reloaded.analysis["chr1"]
 
+    def test_fill_nan_avoids_crash_on_all_nan_row(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=6, nbp=10)
+        SimAnalysis().compute_occup(dataset=dataset)
+        occup = dataset.analysis["chr1"]["occup"].to_numpy()
+        occup[0, :] = np.nan
+        dataset.analysis["chr1"]["occup_nan"] = pd.DataFrame(occup)
+        dataset.save()
+
+        no_fill = runner.invoke(app, ["sort_by_linkage",
+                                      str(dataset._dataset_file),
+                                      "--kind", "dataset",
+                                      "--data-name", "occup_nan"])
+        assert no_fill.exit_code != 0
+
+        result = runner.invoke(app, ["sort_by_linkage",
+                                     str(dataset._dataset_file),
+                                     "--kind", "dataset",
+                                     "--data-name", "occup_nan",
+                                     "--fill-nan", "mean"])
+        assert result.exit_code == 0, result.output
+
+        reloaded = SimDataset.load(dataset._dataset_file)
+        link_mat = reloaded.analysis["chr1"]["occup_nan_linkage"].to_numpy()
+        assert np.isfinite(link_mat).all()
+
+    def test_fill_nan_invalid_value_rejected(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=4, nbp=10)
+        SimAnalysis().compute_occup(dataset=dataset)
+        dataset.save()
+
+        result = runner.invoke(app, ["sort_by_linkage",
+                                     str(dataset._dataset_file),
+                                     "--kind", "dataset",
+                                     "--fill-nan", "bogus"])
+        assert result.exit_code != 0
+
 
 class TestPlotOccup:
     # Plot content is not asserted (matches the repo's existing plotting

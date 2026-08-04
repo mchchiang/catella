@@ -31,12 +31,22 @@ def _load_source(source_file: Path, kind: "SourceKind"):
 # in an outer list, which double-wraps a parser that already returns a
 # list from a single occurrence.
 T = TypeVar("T")
-def csv_parser(target_type: Type[T]) -> Callable[[Optional[str]], Optional[list[T]]]:
+def csv_parser(
+        target_type: Type[T]) -> Callable[[Optional[str]],
+                                          Optional[list[T]]]:
     def parser(value: Optional[str]) -> Optional[list[T]]:
         if value is None: return None
         if not value: return []
         return [target_type(item.strip()) for item in value.split(",")]
     return parser
+
+def fill_nan_parser(value: Optional[str]):
+    if value is None: return None
+    if value == "mean": return value
+    try:
+        return float(value)
+    except ValueError:
+        raise typer.BadParameter("fill_nan must be 'mean' or a number")
 
 @app.command()
 def preprocess(
@@ -277,6 +287,11 @@ def sort_by_linkage(
     method: Annotated[str, typer.Option(help="Linkage method")] = "ward",
     batch_size: Annotated[
         int, typer.Option(help="Rows processed per batch")] = 20000,
+    fill_nan: Annotated[
+        Optional[str], typer.Option(callback=fill_nan_parser,
+                                    help="'mean' or a number; how to "
+                                    "handle nan values before "
+                                    "clustering")] = None,
     out_file: Annotated[
         Optional[Path], typer.Option(help="Output file (default: "
                                      "overwrite source_file)",
@@ -296,13 +311,15 @@ def sort_by_linkage(
                               raw_which=raw_which, sorted_name=sorted_name,
                               store_link_mat=store_link_mat,
                               link_mat_name=link_mat_name, metric=metric,
-                              method=method, batch_size=batch_size)
+                              method=method, batch_size=batch_size,
+                              fill_nan=fill_nan)
     else:
         nucmc.sort_by_linkage(dataset=obj, chroms=chroms,
                               data_name=data_name, sorted_name=sorted_name,
                               store_link_mat=store_link_mat,
                               link_mat_name=link_mat_name, metric=metric,
-                              method=method, batch_size=batch_size)
+                              method=method, batch_size=batch_size,
+                              fill_nan=fill_nan)
     if out_file is not None:
         obj.save(out_file, overwrite=overwrite)
     else:

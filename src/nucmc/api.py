@@ -451,7 +451,9 @@ def sort_by_linkage(*, dataset : SimDataset | None = None,
                     link_mat_name : str | None = None,
                     metric : str = "euclidean",
                     method : str = "ward",
-                    batch_size : int = 20000) -> dict[str, np.ndarray]:
+                    batch_size : int = 20000,
+                    fill_nan : str | float | None = None
+                    ) -> dict[str, np.ndarray]:
     """
     Sort molecules by hierarchical-clustering similarity.
 
@@ -492,6 +494,9 @@ def sort_by_linkage(*, dataset : SimDataset | None = None,
         Linkage method, forwarded to `utils.compute_linkage`.
     batch_size : int, default 20000
         Rows processed (and held in memory) per batch.
+    fill_nan : {"mean"}, float, or None, default None
+        How to handle `nan` values, forwarded to
+        `utils.compute_linkage`.
 
     Returns
     -------
@@ -508,7 +513,7 @@ def sort_by_linkage(*, dataset : SimDataset | None = None,
         raise ValueError("Exactly one of 'dataset' or 'exp' must be given.")
     kwargs = dict(sorted_name=sorted_name, store_link_mat=store_link_mat,
                  link_mat_name=link_mat_name, metric=metric, method=method,
-                 batch_size=batch_size)
+                 batch_size=batch_size, fill_nan=fill_nan)
     if data_name is not None:
         kwargs["data_name"] = data_name
     if dataset is not None:

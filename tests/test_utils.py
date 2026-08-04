@@ -140,6 +140,76 @@ def test_non_euclidean_metric_without_nan_still_works():
     np.testing.assert_allclose(link_mat, ref_link)
 
 
+def _filled(data, fill_nan):
+    if fill_nan == "mean":
+        colmeans = np.nanmean(data, axis=0)
+        colmeans = np.where(np.isnan(colmeans), 0.0, colmeans)
+        return np.where(np.isnan(data), colmeans, data)
+    return np.where(np.isnan(data), fill_nan, data)
+
+
+@pytest.mark.parametrize("as_h5array", [False, True])
+@pytest.mark.parametrize("fill_nan", ["mean", 0.0])
+def test_fill_nan_matches_reference(as_h5array, fill_nan):
+    data = np.random.default_rng(9).random((9, 5))
+    data[1, 3:] = np.nan
+    data[4, 0] = np.nan
+    data[6, :] = np.nan
+    data[6, 2] = 0.5
+
+    source = data
+    if as_h5array:
+        source = H5Array.create(data.shape)
+        source.write_batch(0, data.shape[0], data)
+
+    order, link_mat = utils.compute_linkage(source, batch_size=3,
+                                            fill_nan=fill_nan)
+    ref_order, ref_link = _reference_linkage(_filled(data, fill_nan))
+    np.testing.assert_array_equal(order, ref_order)
+    np.testing.assert_allclose(link_mat, ref_link)
+
+
+@pytest.mark.parametrize("as_h5array", [False, True])
+@pytest.mark.parametrize("fill_nan", ["mean", 0.0])
+def test_fill_nan_handles_zero_overlap_row(as_h5array, fill_nan):
+    data = np.array([
+        [1.0, 2.0, np.nan],
+        [np.nan, np.nan, np.nan],
+        [3.0, 4.0, 5.0],
+    ])
+
+    source = data
+    if as_h5array:
+        source = H5Array.create(data.shape)
+        source.write_batch(0, data.shape[0], data)
+
+    with pytest.raises(ValueError):
+        utils.compute_linkage(source, batch_size=1)
+
+    order, link_mat = utils.compute_linkage(source, batch_size=1,
+                                            fill_nan=fill_nan)
+    ref_order, ref_link = _reference_linkage(_filled(data, fill_nan))
+    np.testing.assert_array_equal(order, ref_order)
+    np.testing.assert_allclose(link_mat, ref_link)
+    assert np.isfinite(link_mat).all()
+
+
+def test_fill_nan_all_nan_column_falls_back_to_zero():
+    data = np.random.default_rng(10).random((6, 3))
+    data[:, 1] = np.nan
+
+    order, link_mat = utils.compute_linkage(data, fill_nan="mean")
+    ref_order, ref_link = _reference_linkage(_filled(data, "mean"))
+    np.testing.assert_array_equal(order, ref_order)
+    np.testing.assert_allclose(link_mat, ref_link)
+
+
+def test_invalid_fill_nan_value_raises():
+    data = np.random.default_rng(11).random((5, 3))
+    with pytest.raises(ValueError):
+        utils.compute_linkage(data, fill_nan="bogus")
+
+
 @pytest.mark.parametrize("how", ["mean", "sum", "min", "max", "stride"])
 def test_downsample_h5array_and_array_paths_agree(how):
     values = np.random.default_rng(9).random((23, 3))

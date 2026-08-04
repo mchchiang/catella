@@ -429,3 +429,18 @@ class TestSortByLinkage:
         order, _ = utils.compute_linkage(smoothed)
         assert isinstance(sorted_df, pd.DataFrame)
         np.testing.assert_allclose(sorted_df.to_numpy(), smoothed[order])
+
+    def test_fill_nan_avoids_crash_on_all_nan_row(self):
+        exp = _make_experiment(nmol=5, nbp=6)
+        ana = MethPrintAnalysis()
+        ana.smooth(binsize=2, exp=exp, batch_size=2, fill_edge="mean")
+        smoothed = exp.analysis["chr1"]["test_smoothed"].to_numpy()
+        smoothed[0, :] = np.nan
+        exp.analysis["chr1"]["test_nan"] = pd.DataFrame(smoothed)
+
+        with pytest.raises(ValueError):
+            ana.sort_by_linkage(exp=exp, data_name="test_nan", batch_size=2)
+
+        link_mats = ana.sort_by_linkage(exp=exp, data_name="test_nan",
+                                        batch_size=2, fill_nan="mean")
+        assert np.isfinite(link_mats["chr1"]).all()

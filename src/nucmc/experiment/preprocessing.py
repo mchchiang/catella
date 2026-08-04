@@ -78,7 +78,7 @@ class MethPrintAnalysis:
 
         self._binsize = binsize
         tmp_dir = exp.resolve_tmp_dir()
-
+        
         # Some helper functions
         def smooth_df(df, nbp, nmol):
             if not isinstance(fill_edge, str) and not np.isnan(fill_edge):
@@ -403,7 +403,9 @@ class MethPrintAnalysis:
                         link_mat_name : str | None = None,
                         metric : str = "euclidean",
                         method : str = "ward",
-                        batch_size : int = 20000) -> dict[str, np.ndarray]:
+                        batch_size : int = 20000,
+                        fill_nan : str | float | None = None
+                        ) -> dict[str, np.ndarray]:
         """
         Sort molecules by hierarchical-clustering similarity.
 
@@ -450,6 +452,9 @@ class MethPrintAnalysis:
         batch_size : int, default 20000
             Number of molecules processed (and held in memory) per
             batch.
+        fill_nan : {"mean"}, float, or None, default None
+            How to handle `nan` values, forwarded to
+            `utils.compute_linkage`.
 
         Returns
         -------
@@ -496,7 +501,7 @@ class MethPrintAnalysis:
 
             order, link_mat = utils.compute_linkage(
                 data, metric=metric, method=method, batch_size=batch_size,
-                dir=tmp_dir)
+                dir=tmp_dir, fill_nan=fill_nan)
             if isinstance(data, H5Array):
                 sorted_data = data.reorder_rows(order, dir=tmp_dir,
                                                 batch_size=batch_size)

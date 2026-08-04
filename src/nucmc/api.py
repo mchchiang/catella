@@ -16,6 +16,7 @@ from .simulation.engine import SimManager
 from .simulation.results import SimDataset
 from .simulation.analysis import SimAnalysis
 from .simulation.plot import SimPlot
+from . import utils
 from .utils import IndexType
 
 def preprocess(*, chromsize : str | Path,               
@@ -403,4 +404,118 @@ def plot_methmap(*, data : H5Array | pd.DataFrame | np.ndarray,
     methplot = MethPlot()
     methplot.plot_methmap(data, vmin=vmin, vmax=vmax, out_file=out_file,
                           link_mat=link_mat, show=show)
+
+
+def downsample(*, data : H5Array | pd.DataFrame | np.ndarray,
+               max_rows : int,
+               how : str = "mean",
+               batch_size : int = 20000) -> np.ndarray:
+    """
+    Collapse rows of a dense array to at most `max_rows`.
+
+    Public wrapper around `utils.downsample`, for reducing plot data
+    ahead of `plot_occup`/`plot_methmap`.
+
+    Parameters
+    ----------
+    data : H5Array, pd.DataFrame, or np.ndarray
+        2D data to collapse (rows=molecules, columns=bp position).
+    max_rows : int
+        Target number of rows.
+    how : {"mean", "sum", "min", "max", "stride"}, default "mean"
+        How to collapse groups of consecutive rows into one row.
+    batch_size : int, default 20000
+        Rows read per streamed chunk. Only used when `data` is an
+        `H5Array`.
+
+    Returns
+    -------
+    np.ndarray
+        Array of shape (min(nrow, max_rows), ncol).
+
+    Raises
+    ------
+    ValueError
+        If `how` is not a recognized option.
+    """
+    return utils.downsample(data, max_rows, how=how, batch_size=batch_size)
+
+
+def sort_by_linkage(*, dataset : SimDataset | None = None,
+                    exp : MethPrintExperiment | None = None,
+                    chroms : str | Iterable[str] | None = None,
+                    data_name : str | None = None,
+                    raw_which : str | None = None,
+                    sorted_name : str | None = None,
+                    store_link_mat : bool = True,
+                    link_mat_name : str | None = None,
+                    metric : str = "euclidean",
+                    method : str = "ward",
+                    batch_size : int = 20000) -> dict[str, np.ndarray]:
+    """
+    Sort molecules by hierarchical-clustering similarity.
+
+    Dispatches to `SimAnalysis.sort_by_linkage` (if `dataset` is given)
+    or `MethPrintAnalysis.sort_by_linkage` (if `exp` is given) -- exactly
+    one of the two must be provided.
+
+    Parameters
+    ----------
+    dataset : SimDataset, optional
+        Simulation dataset to sort. Mutually exclusive with `exp`.
+    exp : MethPrintExperiment, optional
+        Methylation experiment to sort. Mutually exclusive with
+        `dataset`.
+    chroms : str or iterable of str, optional
+        Chromosome(s) to process. Only used with `dataset`; `exp` is
+        always sorted across all of `exp.chroms`.
+    data_name : str, optional
+        Key of the analysis array to sort. If None, the underlying
+        method's own default is used ("occup" for `dataset`,
+        "test_smoothed" for `exp`).
+    raw_which : {"test", "meth", "unmeth"}, optional
+        Only used with `exp`. If given, sorts raw long-form data
+        instead of an `exp.analysis` entry.
+    sorted_name : str, optional
+        Key used to store the sorted result. Defaults to
+        `f"{data_name}_sorted"` (or `f"{raw_which}_sorted"`).
+    store_link_mat : bool, default True
+        Whether to also persist each chromosome's linkage matrix into
+        `.analysis[chrom][link_mat_name]`.
+    link_mat_name : str, optional
+        Key used to store the linkage matrix if `store_link_mat` is
+        True. Defaults to `f"{data_name}_linkage"` (or
+        `f"{raw_which}_linkage"`).
+    metric : str, default "euclidean"
+        Distance metric, forwarded to `utils.compute_linkage`.
+    method : str, default "ward"
+        Linkage method, forwarded to `utils.compute_linkage`.
+    batch_size : int, default 20000
+        Rows processed (and held in memory) per batch.
+
+    Returns
+    -------
+    dict of str to np.ndarray
+        A mapping from chromosome name to that chromosome's linkage
+        matrix.
+
+    Raises
+    ------
+    ValueError
+        If neither or both of `dataset`/`exp` are given.
+    """
+    if (dataset is None) == (exp is None):
+        raise ValueError("Exactly one of 'dataset' or 'exp' must be given.")
+    kwargs = dict(sorted_name=sorted_name, store_link_mat=store_link_mat,
+                 link_mat_name=link_mat_name, metric=metric, method=method,
+                 batch_size=batch_size)
+    if data_name is not None:
+        kwargs["data_name"] = data_name
+    if dataset is not None:
+        if chroms is not None:
+            kwargs["chroms"] = chroms
+        return SimAnalysis().sort_by_linkage(dataset=dataset, **kwargs)
+    if raw_which is not None:
+        kwargs["raw_which"] = raw_which
+    return MethPrintAnalysis().sort_by_linkage(exp=exp, **kwargs)
 

@@ -25,6 +25,7 @@ def preprocess(*, chromsize : str | Path,
                unmeth_file : str | Path | None = None,
                meth_file : str | Path | None = None,
                fasta_file : str | Path | None = None,
+               mtase : str | Iterable[str] | None = None,
                binsize : int = 147,
                wrap : bool = False,
                colidx : Iterable | None = None,
@@ -62,6 +63,11 @@ def preprocess(*, chromsize : str | Path,
     fasta_file : str or Path, optional
         Multi-FASTA file of per-chromosome reference sequences (record
         id matching `chromsize`); stored on `MethPrintData.refseq`.
+    mtase : str or iterable of str, optional
+        Methyltransferase(s) used to generate the test data: 'A'
+        (any-context adenine, e.g., EcoGII), 'CG' (CpG, e.g., M.SssI),
+        'GC' (GpC, e.g., M.CviPI). One label, a list of labels, or
+        None (default) if unspecified.
     binsize : int, default 147
         The genomic window size (in base pairs) used for data aggregation. The
         default value corresponds to the typical DNA footprint of a nucleosome.
@@ -124,7 +130,7 @@ def preprocess(*, chromsize : str | Path,
     # Load the raw data (generated from ModKit)
     exp_data = MethPrintExperiment.load_raw(
         chromsize=chromsize, test_file=test_file, unmeth_file=unmeth_file,
-        meth_file=meth_file, fasta_file=fasta_file, wrap=wrap,
+        meth_file=meth_file, fasta_file=fasta_file, mtase=mtase, wrap=wrap,
         colidx=colidx, max_nmol=max_nmol, seed=seed, chunk_size=chunk_size,
         tmp_dir=tmp_dir, max_cached_chroms=max_cached_chroms)
 

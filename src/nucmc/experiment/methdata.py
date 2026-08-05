@@ -43,6 +43,43 @@ _RAW_COLUMN_SPEC = {"mol_index": "numeric", "pos": "numeric",
 # an H5Array).
 _DENSE_WARN_ROWS = 5000
 
+# Recognized methyltransferase labels: 'A' (any-context adenine,
+# e.g., EcoGII), 'CG' (CpG, e.g., M.SssI), 'GC' (GpC, e.g., M.CviPI).
+_VALID_MTASE = {"A", "CG", "GC"}
+
+
+def _normalize_mtase(mtase):
+    """
+    Validate and normalize the `mtase` argument.
+
+    Parameters
+    ----------
+    mtase : str, sequence of str, or None
+        One or more methyltransferase labels.
+
+    Returns
+    -------
+    tuple of str or None
+        Deduplicated labels in the order given, or None if `mtase`
+        is None.
+
+    Raises
+    ------
+    ValueError
+        If a label is not one of `_VALID_MTASE`, or a label repeats.
+    """
+    if mtase is None:
+        return None
+    values = (mtase,) if isinstance(mtase, str) else tuple(mtase)
+    unknown = sorted(set(values) - _VALID_MTASE)
+    if unknown:
+        raise ValueError(
+            f"Unknown mtase value(s) {unknown}; must be one or more "
+            f"of {sorted(_VALID_MTASE)}.")
+    if len(set(values)) != len(values):
+        raise ValueError("Duplicate mtase values given.")
+    return values
+
 
 def _resolve_modkit_schema(data_file, sep, colidx):
     """
@@ -97,7 +134,7 @@ def _parse_fasta(fasta_file, wanted_chroms):
     Parameters
     ----------
     fasta_file : str or pathlib.Path
-        Path to a multi-FASTA file, one record per chromosome.
+        Multi-FASTA file, one record per chromosome.
     wanted_chroms : set of str
         Record ids to read. Records not in this set are not loaded
         into memory.
@@ -307,7 +344,7 @@ def _stream_rows_to_staging(data_file, header_names, name_for, sep,
 
 
 @utils.add_frozen_properties
-@dataclass(frozen=True, slots=True, init=False)
+@dataclass(frozen=True, slots=True, init=False, eq=False)
 class MethPrintData:
     """
     Container for MethPrint experimental data for a single chromosome.
@@ -495,6 +532,7 @@ class MethPrintExperiment:
     _finalizer : Any | None
     _tmp_dir : str | None
     _exp_file : str | None
+    _mtase : Tuple[str, ...] | None
 
     def __init__(self, **kwargs : Any):
         if not kwargs.pop("_internal", False):
@@ -523,6 +561,9 @@ class MethPrintExperiment:
         # File this experiment was loaded from, or last saved to (None
         # if never saved); used as save()'s default destination.
         self._exp_file = kwargs.get("_exp_file")
+
+        # Methyltransferase(s) used, or None; set at load_raw() time.
+        self._mtase = kwargs.get("_mtase")
 
     @staticmethod
     def _cleanup_tmp_dir(tmp_dir):
@@ -572,6 +613,7 @@ class MethPrintExperiment:
                  unmeth_file : str | Path | None = None,
                  meth_file : str | Path | None = None,
                  fasta_file : str | Path | None = None,
+                 mtase : str | List[str] | None = None,
                  chroms : List[str] | None = None,
                  wrap : bool = False,
                  colidx : List | None = None,
@@ -595,18 +637,23 @@ class MethPrintExperiment:
         Parameters
         ----------
         chromsize : str or pathlib.Path
-            Path to a tab-separated file containing chromosome names and
+            Tab-separated file containing chromosome names and
             their lengths (bp).
         test_file : str or pathlib.Path
-            Path to the raw experimental (test) data file.
+            Raw experimental (test) data file.
         unmeth_file : str or pathlib.Path, optional
-            Path to the unmethylated control data file.
+            Unmethylated control data file.
         meth_file : str or pathlib.Path, optional
-            Path to the fully methylated control data file.
+            Fully methylated control data file.
         fasta_file : str or pathlib.Path, optional
             Multi-FASTA file of per-chromosome reference sequences
             (record id matching `chromsize`); stored on
             `MethPrintData.refseq`.
+        mtase : str or list of str, optional
+            Methyltransferase(s) used to generate the test data: 'A'
+            (any-context adenine, e.g., EcoGII), 'CG' (CpG, e.g.,
+            M.SssI), 'GC' (GpC, e.g., M.CviPI). One label, a list of
+            labels, or None (default) if unspecified.
         chroms : list of str, optional
             Restrict processing to these chromosomes. If None
             (default), all chromosomes in `chromsize` are processed.
@@ -652,10 +699,12 @@ class MethPrintExperiment:
         ValueError
             If chromosome names are not unique, if control datasets
             contain chromosomes not found in the test dataset, if
-            `chroms` contains a chromosome not found in `chromsize`, or
+            `chroms` contains a chromosome not found in `chromsize`,
             if a sequence in `fasta_file` does not match its
-            chromosome's length in `chromsize`.
+            chromosome's length in `chromsize`, or if `mtase`
+            contains an unknown or duplicate label.
         """
+        mtase = _normalize_mtase(mtase)
 
         # Read chromosome sizes
         size_cols = ["chrom", "length"]
@@ -733,6 +782,8 @@ class MethPrintExperiment:
                 graw = h5stream.create_group("raw_data")
                 h5stream.create_group("analysis")
                 h5stream.create_group("global_analysis")
+                if mtase is not None:
+                    h5stream.attrs["mtase"] = ",".join(mtase)
 
                 files = [("test", test_file)]
                 if unmeth_file is not None:
@@ -847,6 +898,8 @@ class MethPrintExperiment:
                 graw = h5stream.create_group("raw_data")
                 for chrom, rdata in self._raw_data.items():
                     rdata._save(graw)
+                if self._mtase is not None:
+                    h5stream.attrs["mtase"] = ",".join(self._mtase)
 
             # Save any analysis data
             if "analysis" in h5stream: del h5stream["analysis"]
@@ -883,7 +936,7 @@ class MethPrintExperiment:
         Parameters
         ----------
         exp_file : str or pathlib.Path
-            Path to the HDF5 file containing the experiment.
+            HDF5 file containing the experiment.
         chroms : list of str, optional
             Restrict the loaded experiment to these chromosomes. If
             None (default), all chromosomes in the file are exposed.
@@ -916,8 +969,11 @@ class MethPrintExperiment:
                 selected = available_chroms
             raw_data = LazyRawDataMap(exp_file, selected,
                                       max_cached=max_cached_chroms)
+            mtase = tuple(h5stream.attrs["mtase"].split(",")) \
+                if "mtase" in h5stream.attrs else None
             obj = cls._create(_raw_data=raw_data,
-                              _exp_file=str(Path(exp_file).resolve()))
+                              _exp_file=str(Path(exp_file).resolve()),
+                              _mtase=mtase)
 
             # Load any analysis data
             gana = h5stream["analysis"]
@@ -956,6 +1012,18 @@ class MethPrintExperiment:
             A sorted tuple of chromosome names.
         """
         return tuple(self._raw_data.keys())
+
+    @property
+    def mtase(self) -> Tuple[str,...] | None:
+        """
+        Get the methyltransferase(s) used for this experiment.
+
+        Returns
+        -------
+        tuple of str or None
+            One or more of 'A', 'CG', 'GC', or None if unspecified.
+        """
+        return self._mtase
 
     @property
     def raw(self) -> Mapping[str,MethPrintData]:

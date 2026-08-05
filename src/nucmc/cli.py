@@ -70,6 +70,10 @@ def preprocess(
         Optional[Path], typer.Option(help="Reference FASTA file",
                                      exists=True, file_okay=True,
                                      dir_okay=False, readable=True)] = None,
+    mtase: Annotated[
+        Optional[str],
+        typer.Option(callback=csv_parser(str),
+                    help="Methyltransferase(s): A, CG, GC")] = None,
     binsize: Annotated[int, typer.Option(help="Window size (bp)")] = 147,
     wrap: Annotated[
         bool, typer.Option(help="Wrap relative to center")] = False,
@@ -109,7 +113,7 @@ def preprocess(
     return nucmc.preprocess(chromsize=chromsize, test_file=test_file,
                             out_file=out_file, unmeth_file=unmeth_file,
                             meth_file=meth_file, fasta_file=fasta_file,
-                            binsize=binsize, wrap=wrap,
+                            mtase=mtase, binsize=binsize, wrap=wrap,
                             colidx=colidx, max_nmol=max_nmol, seed=seed,
                             clip_low=clip_low, clip_high=clip_high,
                             norm_by_strand=norm_by_strand,

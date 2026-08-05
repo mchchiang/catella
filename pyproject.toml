@@ -28,6 +28,7 @@ dependencies = [
     "typer",
     "rich",
     "matplotlib",
+    "pyfaidx",
 ]
 
 [project.urls]

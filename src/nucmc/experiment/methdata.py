@@ -20,6 +20,7 @@ import pandas as pd
 import h5py
 import pyarrow as pa
 import pyarrow.csv as pyarrow_csv
+import pyfaidx
 
 # Column names as they appear in raw Modkit output, and their internal
 # canonical equivalents (positionally parallel).
@@ -87,6 +88,36 @@ def _resolve_modkit_schema(data_file, sep, colidx):
         header_names[idx] = canon
     name_for = {canon: canon for canon in _CANONICAL_NAMES}
     return header_names, name_for
+
+
+def _parse_fasta(fasta_file, wanted_chroms):
+    """
+    Read reference sequences for a set of chromosomes from a FASTA file.
+
+    Parameters
+    ----------
+    fasta_file : str or pathlib.Path
+        Path to a multi-FASTA file, one record per chromosome.
+    wanted_chroms : set of str
+        Record ids to read. Records not in this set are not loaded
+        into memory.
+
+    Returns
+    -------
+    dict of str to str
+        Chromosome id -> sequence, for every id in `wanted_chroms`
+        found in the file. Ids in `wanted_chroms` absent from the
+        file are simply not present in the returned dict.
+    """
+    sequences = {}
+    fasta = pyfaidx.Fasta(str(fasta_file), as_raw=True, build_index=True)
+    try:
+        for chrom in wanted_chroms:
+            if chrom in fasta:
+                sequences[chrom] = str(fasta[chrom][:])
+    finally:
+        fasta.close()
+    return sequences
 
 
 def _iter_csv_chunks(data_file, header_names, name_for, sep,
@@ -281,10 +312,11 @@ class MethPrintData:
     """
     Container for MethPrint experimental data for a single chromosome.
 
-    This class stores methylation signal data for test samples and optional 
-    control samples (unmethylated and fully methylated). Data are stored 
-    as Pandas DataFrames and retrieved via read-only properties that 
-    provide defensive copies.
+    This class stores methylation signal data for test samples and optional
+    control samples (unmethylated and fully methylated). Data are stored
+    as Pandas DataFrames and retrieved via read-only properties that
+    provide defensive copies. An optional reference nucleotide sequence
+    for the chromosome may also be stored, via `refseq`.
 
     .. note::
        This class is intended for internal use within a 
@@ -297,7 +329,11 @@ class MethPrintData:
     
     nbp : int
     """The total number of base pairs in the chromatin fiber."""
-    
+
+    _frozen_refseq : str | None = field(
+        metadata={"doc": "str: The reference nucleotide sequence for this "
+                  "chromosome, or None if not provided."})
+
     _frozen_test_mol_id : np.ndarray = field(
         metadata={"doc": "np.ndarray: Array of molecule identifiers for the "
                   "test samples."})
@@ -337,7 +373,10 @@ class MethPrintData:
         gchrom = group.create_group(self.chrom)
         gmeta = gchrom.create_group("metadata")
         gmeta.attrs["chrom"] = self.chrom
-        gmeta.attrs["nbp"] = self.nbp            
+        gmeta.attrs["nbp"] = self.nbp
+        if self._frozen_refseq is not None:
+            gmeta.create_dataset("refseq", data=self._frozen_refseq,
+                                 dtype=dt)
         gdata = gchrom.create_group("data")
         def save_data(name, mol_id, df, gdata):
             if mol_id is not None and df is not None:
@@ -358,6 +397,7 @@ class MethPrintData:
         gmeta = gchrom["metadata"]
         chrom = gmeta.attrs["chrom"]
         nbp = int(gmeta.attrs["nbp"])
+        refseq = gmeta["refseq"].asstr()[()] if "refseq" in gmeta else None
         def load_data(name, gdata):
             id_name = name+"_mol_id"
             data_name = name+"_data"
@@ -370,8 +410,9 @@ class MethPrintData:
         test_mol_id, test_data = load_data("test", gdata)        
         unmeth_mol_id, unmeth_data = load_data("unmeth", gdata)
         meth_mol_id, meth_data = load_data("meth", gdata)
-        return cls._create(chrom=chrom, nbp=nbp, test_mol_id=test_mol_id,
-                           test_data=test_data, unmeth_mol_id=unmeth_mol_id,
+        return cls._create(chrom=chrom, nbp=nbp, refseq=refseq,
+                           test_mol_id=test_mol_id, test_data=test_data,
+                           unmeth_mol_id=unmeth_mol_id,
                            unmeth_data=unmeth_data, meth_mol_id=meth_mol_id,
                            meth_data=meth_data)
     
@@ -530,6 +571,7 @@ class MethPrintExperiment:
                  test_file : str | Path,
                  unmeth_file : str | Path | None = None,
                  meth_file : str | Path | None = None,
+                 fasta_file : str | Path | None = None,
                  chroms : List[str] | None = None,
                  wrap : bool = False,
                  colidx : List | None = None,
@@ -561,6 +603,10 @@ class MethPrintExperiment:
             Path to the unmethylated control data file.
         meth_file : str or pathlib.Path, optional
             Path to the fully methylated control data file.
+        fasta_file : str or pathlib.Path, optional
+            Multi-FASTA file of per-chromosome reference sequences
+            (record id matching `chromsize`); stored on
+            `MethPrintData.refseq`.
         chroms : list of str, optional
             Restrict processing to these chromosomes. If None
             (default), all chromosomes in `chromsize` are processed.
@@ -605,8 +651,10 @@ class MethPrintExperiment:
         ------
         ValueError
             If chromosome names are not unique, if control datasets
-            contain chromosomes not found in the test dataset, or if
-            `chroms` contains a chromosome not found in `chromsize`.
+            contain chromosomes not found in the test dataset, if
+            `chroms` contains a chromosome not found in `chromsize`, or
+            if a sequence in `fasta_file` does not match its
+            chromosome's length in `chromsize`.
         """
 
         # Read chromosome sizes
@@ -647,6 +695,16 @@ class MethPrintExperiment:
                          if c in chroms}
             sizes = {c: v for c, v in sizes.items() if c in chroms}
 
+        refseq_by_chrom = {}
+        if fasta_file is not None:
+            refseq_by_chrom = _parse_fasta(fasta_file, set(full_sizes))
+            for chrom, seq in refseq_by_chrom.items():
+                if len(seq) != full_sizes[chrom]:
+                    raise ValueError(
+                        f"Reference sequence length for chromosome "
+                        f"{chrom!r} ({len(seq)}) does not match its "
+                        f"chromsize length ({full_sizes[chrom]}).")
+
         # Random generator for downsampling
         rng = None if max_nmol is None else np.random.default_rng(seed)
 
@@ -665,6 +723,9 @@ class MethPrintExperiment:
                 gmeta = gchrom.create_group("metadata")
                 gmeta.attrs["chrom"] = chrom
                 gmeta.attrs["nbp"] = int(nbp)
+                seq = refseq_by_chrom.get(chrom)
+                if seq is not None:
+                    gmeta.create_dataset("refseq", data=seq, dtype=dt)
             return gchrom.require_group("data")
 
         try:

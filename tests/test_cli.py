@@ -120,6 +120,23 @@ class TestPreprocess:
         got = MethPrintExperiment.load(cli_out)
         assert got.raw["chr1"].refseq == "A" * 30
 
+    def test_mtase_populates_experiment(self, tmp_path):
+        rows = _make_test_rows(nmol=5, nbp=30)
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 30})
+
+        cli_out = tmp_path / "cli_exp.h5"
+        result = runner.invoke(app, ["preprocess", str(chromsize),
+                                     str(test_file), str(cli_out),
+                                     "--binsize", "5",
+                                     "--mtase", "CG,GC"])
+        assert result.exit_code == 0, result.output
+
+        got = MethPrintExperiment.load(cli_out)
+        assert got.mtase == ("CG", "GC")
+
 
 class TestRun:
     def test_matches_direct_api_call_with_mols_subset(self, tmp_path):

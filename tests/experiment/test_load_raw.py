@@ -372,6 +372,84 @@ class TestRefseq:
         exp.close()
 
 
+class TestMtase:
+    def test_no_mtase_defaults_to_none(self, tmp_path):
+        rows = _make_rows("chr1", ["m0"], [1, 2])
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 10})
+
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file)
+        assert exp.mtase is None
+        exp.close()
+
+    def test_single_string_normalized_to_tuple(self, tmp_path):
+        rows = _make_rows("chr1", ["m0"], [1, 2])
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 10})
+
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file, mtase="CG")
+        assert exp.mtase == ("CG",)
+        exp.close()
+
+    def test_list_of_labels_preserved(self, tmp_path):
+        rows = _make_rows("chr1", ["m0"], [1, 2])
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 10})
+
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file, mtase=["CG", "GC"])
+        assert exp.mtase == ("CG", "GC")
+        exp.close()
+
+    @pytest.mark.parametrize("bad", ["X", "AT", "XX", "cg", "ga"])
+    def test_unknown_label_raises(self, tmp_path, bad):
+        rows = _make_rows("chr1", ["m0"], [1, 2])
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 10})
+
+        with pytest.raises(ValueError):
+            MethPrintExperiment.load_raw(
+                chromsize=chromsize, test_file=test_file, mtase=bad)
+
+    def test_duplicate_labels_raise(self, tmp_path):
+        rows = _make_rows("chr1", ["m0"], [1, 2])
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 10})
+
+        with pytest.raises(ValueError):
+            MethPrintExperiment.load_raw(
+                chromsize=chromsize, test_file=test_file,
+                mtase=["CG", "CG"])
+
+    def test_persists_through_save_load_roundtrip(self, tmp_path):
+        rows = _make_rows("chr1", ["m0"], [1, 2])
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 10})
+
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file, mtase=["A", "GC"])
+        exp_file = tmp_path / "exp.h5"
+        exp.save(exp_file)
+        exp.close()
+
+        exp2 = MethPrintExperiment.load(exp_file)
+        assert exp2.mtase == ("A", "GC")
+
+
 class TestLazyAndScratchLifecycle:
     def test_raw_data_loaded_lazily(self, tmp_path):
         rows = (_make_rows("chr1", ["m0"], [1, 2])

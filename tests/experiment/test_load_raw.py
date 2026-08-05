@@ -27,6 +27,12 @@ def _write_chromsize(path, sizes):
             f.write(f"{chrom}\t{length}\n")
 
 
+def _write_fasta(path, records):
+    with open(path, "w") as f:
+        for chrom, seq in records.items():
+            f.write(f">{chrom}\n{seq}\n")
+
+
 def _make_rows(chrom, mol_ids, positions, seed=0, strand="+"):
     rng = np.random.default_rng(seed)
     rows = []
@@ -246,6 +252,124 @@ class TestChromSelection:
             MethPrintExperiment.load_raw(
                 chromsize=chromsize, test_file=test_file,
                 chroms=["chrX"])
+
+
+class TestRefseq:
+    def test_refseq_loaded_into_raw_data(self, tmp_path):
+        rows = _make_rows("chr1", ["m0"], [1, 2])
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 10})
+        fasta_file = tmp_path / "ref.fa"
+        _write_fasta(fasta_file, {"chr1": "ACGTACGTAC"})
+
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file, fasta_file=fasta_file)
+        assert exp.raw["chr1"].refseq == "ACGTACGTAC"
+        exp.close()
+
+    def test_refseq_persists_through_save_load_roundtrip(self, tmp_path):
+        rows = _make_rows("chr1", ["m0"], [1, 2])
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 10})
+        fasta_file = tmp_path / "ref.fa"
+        _write_fasta(fasta_file, {"chr1": "ACGTACGTAC"})
+
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file, fasta_file=fasta_file)
+        exp_file = tmp_path / "exp.h5"
+        exp.save(exp_file)
+        exp.close()
+
+        exp2 = MethPrintExperiment.load(exp_file)
+        assert exp2.raw["chr1"].refseq == "ACGTACGTAC"
+
+    def test_length_mismatch_raises(self, tmp_path):
+        rows = _make_rows("chr1", ["m0"], [1, 2])
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 10})
+        fasta_file = tmp_path / "ref.fa"
+        _write_fasta(fasta_file, {"chr1": "ACGT"})
+
+        with pytest.raises(ValueError):
+            MethPrintExperiment.load_raw(
+                chromsize=chromsize, test_file=test_file,
+                fasta_file=fasta_file)
+
+    def test_chrom_missing_from_fasta_stays_none(self, tmp_path):
+        rows = (_make_rows("chr1", ["m0"], [1, 2])
+               + _make_rows("chr2", ["m0"], [1, 2]))
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 10, "chr2": 8})
+        fasta_file = tmp_path / "ref.fa"
+        _write_fasta(fasta_file, {"chr1": "ACGTACGTAC"})
+
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file, fasta_file=fasta_file)
+        assert exp.raw["chr1"].refseq == "ACGTACGTAC"
+        assert exp.raw["chr2"].refseq is None
+        exp.close()
+
+    def test_no_fasta_file_backward_compatible(self, tmp_path):
+        rows = _make_rows("chr1", ["m0"], [1, 2])
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 10})
+
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file)
+        assert exp.raw["chr1"].refseq is None
+        exp.close()
+
+    def test_wrap_validates_against_full_length(self, tmp_path):
+        rows = _make_rows("chr1", ["m0"], [1, 2])
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 20})
+
+        full_fasta = tmp_path / "full.fa"
+        _write_fasta(full_fasta, {"chr1": "A" * 20})
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file, wrap=True,
+            fasta_file=full_fasta)
+        assert exp.raw["chr1"].nbp == 10
+        assert exp.raw["chr1"].refseq == "A" * 20
+        exp.close()
+
+        halved_fasta = tmp_path / "halved.fa"
+        _write_fasta(halved_fasta, {"chr1": "A" * 10})
+        with pytest.raises(ValueError):
+            MethPrintExperiment.load_raw(
+                chromsize=chromsize, test_file=test_file, wrap=True,
+                fasta_file=halved_fasta)
+
+    def test_chroms_filter_ignores_excluded_fasta_records(self, tmp_path):
+        rows = (_make_rows("chr1", ["m0"], [1, 2])
+               + _make_rows("chr3", ["m0"], [1, 2]))
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 10, "chr2": 8, "chr3": 6})
+        fasta_file = tmp_path / "ref.fa"
+        # chr2 is excluded via chroms=, and deliberately wrong-length
+        _write_fasta(fasta_file, {"chr1": "ACGTACGTAC", "chr2": "AAA",
+                                  "chr3": "TTTTTT"})
+
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file, fasta_file=fasta_file,
+            chroms=["chr1", "chr3"])
+        assert exp.raw["chr1"].refseq == "ACGTACGTAC"
+        assert exp.raw["chr3"].refseq == "TTTTTT"
+        exp.close()
 
 
 class TestLazyAndScratchLifecycle:

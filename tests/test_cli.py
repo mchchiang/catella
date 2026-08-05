@@ -39,6 +39,12 @@ def _write_chromsize(path, sizes):
             f.write(f"{chrom}\t{length}\n")
 
 
+def _write_fasta(path, records):
+    with open(path, "w") as f:
+        for chrom, seq in records.items():
+            f.write(f">{chrom}\n{seq}\n")
+
+
 def _settings_dict(**overrides):
     defaults = dict(nucbp=5, llink=2, mu=-1.0, start_temp=1.0,
                     end_temp=0.1, cool_option="linear", nsweep=2,
@@ -94,6 +100,25 @@ class TestPreprocess:
         np.testing.assert_allclose(
             got.analysis["chr1"]["meth_prob"].to_numpy(),
             expected.analysis["chr1"]["meth_prob"].to_numpy())
+
+    def test_fasta_file_populates_refseq(self, tmp_path):
+        rows = _make_test_rows(nmol=5, nbp=30)
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 30})
+        fasta_file = tmp_path / "ref.fa"
+        _write_fasta(fasta_file, {"chr1": "A" * 30})
+
+        cli_out = tmp_path / "cli_exp.h5"
+        result = runner.invoke(app, ["preprocess", str(chromsize),
+                                     str(test_file), str(cli_out),
+                                     "--binsize", "5",
+                                     "--fasta-file", str(fasta_file)])
+        assert result.exit_code == 0, result.output
+
+        got = MethPrintExperiment.load(cli_out)
+        assert got.raw["chr1"].refseq == "A" * 30
 
 
 class TestRun:

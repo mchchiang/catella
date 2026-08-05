@@ -3,6 +3,7 @@
 import warnings
 from unittest.mock import patch
 
+import h5py
 import numpy as np
 import pandas as pd
 import pytest
@@ -12,7 +13,7 @@ from nucmc.experiment.methdata import (
 from nucmc.h5_array import H5Array
 
 
-def _make_raw(chrom, nmol, nbp, seed):
+def _make_raw(chrom, nmol, nbp, seed, refseq=None):
     rng = np.random.default_rng(seed)
     rows = []
     for m in range(nmol):
@@ -24,7 +25,8 @@ def _make_raw(chrom, nmol, nbp, seed):
                                      "mod_qual", "mod_code"])
     mol_id = np.array([f"mol{m}" for m in range(nmol)], dtype=object)
     return MethPrintData._create(
-        chrom=chrom, nbp=nbp, test_mol_id=mol_id, test_data=df,
+        chrom=chrom, nbp=nbp, refseq=refseq,
+        test_mol_id=mol_id, test_data=df,
         meth_mol_id=None, meth_data=None,
         unmeth_mol_id=None, unmeth_data=None)
 
@@ -109,6 +111,31 @@ class TestChromSelection:
         path = _make_multi_chrom_experiment_file(tmp_path, ["chr1", "chr2"])
         with pytest.raises(ValueError):
             MethPrintExperiment.load(path, chroms=["chrX"])
+
+
+class TestRefseq:
+    def test_refseq_roundtrips_through_save_load(self, tmp_path):
+        raw = {"chr1": _make_raw("chr1", nmol=2, nbp=6, seed=0,
+                                 refseq="ACGTAC")}
+        exp = MethPrintExperiment._create(_raw_data=raw)
+        path = tmp_path / "experiment.h5"
+        exp.save(path)
+
+        loaded = MethPrintExperiment.load(path)
+        assert loaded.raw["chr1"].refseq == "ACGTAC"
+
+    def test_refseq_none_roundtrips_to_none(self, tmp_path):
+        raw = {"chr1": _make_raw("chr1", nmol=2, nbp=6, seed=0)}
+        exp = MethPrintExperiment._create(_raw_data=raw)
+        path = tmp_path / "experiment.h5"
+        exp.save(path)
+
+        with h5py.File(path, "r") as h5stream:
+            gmeta = h5stream["raw_data"]["chr1"]["metadata"]
+            assert "refseq" not in gmeta
+
+        loaded = MethPrintExperiment.load(path)
+        assert loaded.raw["chr1"].refseq is None
 
 
 def _make_raw_exact(chrom, nbp, nmol, rows, which="test"):

@@ -306,6 +306,122 @@ class TestMethProb:
         np.testing.assert_allclose(lazy, direct)
 
 
+class TestMaskName:
+    def test_smooth_nans_masked_rows(self):
+        exp = _make_experiment(nmol=4, nbp=6, with_controls=False)
+        exp.analysis["chr1"]["test_dropout_mask"] = pd.DataFrame(
+            {"keep": [True, False, True, False]})
+        ana = MethPrintAnalysis()
+        ana.smooth(binsize=2, exp=exp, batch_size=100,
+                  mask_name="dropout_mask")
+        arr = exp.analysis["chr1"]["test_smoothed"].to_numpy()
+        assert np.isnan(arr[1]).all()
+        assert np.isnan(arr[3]).all()
+        assert not np.isnan(arr[0]).all()
+        assert not np.isnan(arr[2]).all()
+
+    def test_smooth_no_mask_name_unaffected(self):
+        exp = _make_experiment(nmol=4, nbp=6, with_controls=False)
+        exp.analysis["chr1"]["test_dropout_mask"] = pd.DataFrame(
+            {"keep": [True, False, True, False]})
+        ana = MethPrintAnalysis()
+        ana.smooth(binsize=2, exp=exp, batch_size=100)
+        arr = exp.analysis["chr1"]["test_smoothed"].to_numpy()
+        assert not np.isnan(arr[1]).all()
+
+    def test_smooth_missing_mask_raises(self):
+        exp = _make_experiment(nmol=4, nbp=6, with_controls=False)
+        ana = MethPrintAnalysis()
+        with pytest.raises(KeyError):
+            ana.smooth(binsize=2, exp=exp, batch_size=100,
+                      mask_name="nonexistent")
+
+    def test_meth_prob_masks_test_output(self):
+        exp = _make_experiment(nmol=4, nbp=6, with_controls=False)
+        exp.analysis["chr1"]["test_dropout_mask"] = pd.DataFrame(
+            {"keep": [True, False, True, False]})
+        ana = MethPrintAnalysis()
+        ana.meth_prob(exp=exp, binsize=2, batch_size=100,
+                      percentile_sample_size=1000,
+                      mask_name="dropout_mask")
+        prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
+        assert np.isnan(prob[1]).all()
+        assert np.isnan(prob[3]).all()
+
+    def test_meth_prob_masks_even_when_smooth_ran_unmasked_first(self):
+        # Regression test: meth_prob only triggers smooth() itself when
+        # no smoothed array exists yet. If smooth() already ran without
+        # a mask, meth_prob(mask_name=...) must still mask its output
+        # by applying the mask directly, not just by forwarding.
+        exp = _make_experiment(nmol=4, nbp=6, with_controls=False)
+        exp.analysis["chr1"]["test_dropout_mask"] = pd.DataFrame(
+            {"keep": [True, False, True, True]})
+        ana = MethPrintAnalysis()
+        ana.smooth(binsize=2, exp=exp, batch_size=100)  # no mask_name
+        smoothed_before = exp.analysis["chr1"]["test_smoothed"].to_numpy()
+        assert not np.isnan(smoothed_before[1]).all()
+
+        ana.meth_prob(exp=exp, binsize=2, batch_size=100,
+                      percentile_sample_size=1000,
+                      mask_name="dropout_mask")
+        prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
+        assert np.isnan(prob[1]).all()
+
+    def test_meth_prob_excludes_masked_controls_from_pooling(self):
+        cols = ["mol_index", "pos", "strand", "mod_qual", "mod_code"]
+        # meth control mol0 -> low values that would corrupt the
+        # control average/percentile if included; mol1 -> the "real"
+        # signal. mol0 is masked out.
+        meth_df = pd.DataFrame([
+            (0, 0, "+", 0.1, 0), (0, 1, "+", 0.1, 0),
+            (1, 0, "+", 0.9, 0), (1, 1, "+", 0.9, 0),
+        ], columns=cols)
+        unmeth_df = pd.DataFrame([
+            (0, 0, "+", 0.0, 0), (0, 1, "+", 0.0, 0),
+        ], columns=cols)
+        test_df = pd.DataFrame([
+            (0, 0, "+", 0.5, 0), (0, 1, "+", 0.5, 0),
+        ], columns=cols)
+        meth_mol_id = np.array(["m0", "m1"], dtype=object)
+        unmeth_mol_id = np.array(["u0"], dtype=object)
+        test_mol_id = np.array(["t0"], dtype=object)
+
+        raw_masked = MethPrintData._create(
+            chrom="chr1", nbp=2, test_mol_id=test_mol_id, test_data=test_df,
+            meth_mol_id=meth_mol_id, meth_data=meth_df,
+            unmeth_mol_id=unmeth_mol_id, unmeth_data=unmeth_df)
+        exp_masked = MethPrintExperiment._create(
+            _raw_data={"chr1": raw_masked})
+        exp_masked.analysis["chr1"]["test_dropout_mask"] = pd.DataFrame(
+            {"keep": [True]})
+        exp_masked.analysis["chr1"]["meth_dropout_mask"] = pd.DataFrame(
+            {"keep": [False, True]})
+        exp_masked.analysis["chr1"]["unmeth_dropout_mask"] = pd.DataFrame(
+            {"keep": [True]})
+
+        # Reference: meth control physically only has the kept molecule.
+        raw_ref = MethPrintData._create(
+            chrom="chr1", nbp=2, test_mol_id=test_mol_id, test_data=test_df,
+            meth_mol_id=np.array(["m1"], dtype=object),
+            meth_data=pd.DataFrame([
+                (0, 0, "+", 0.9, 0), (0, 1, "+", 0.9, 0),
+            ], columns=cols),
+            unmeth_mol_id=unmeth_mol_id, unmeth_data=unmeth_df)
+        exp_reference = MethPrintExperiment._create(
+            _raw_data={"chr1": raw_ref})
+
+        ana = MethPrintAnalysis()
+        ana.meth_prob(exp=exp_masked, binsize=1, batch_size=100,
+                      percentile_sample_size=1000,
+                      mask_name="dropout_mask")
+        ana.meth_prob(exp=exp_reference, binsize=1, batch_size=100,
+                      percentile_sample_size=1000)
+
+        prob_masked = exp_masked.analysis["chr1"]["meth_prob"].to_numpy()
+        prob_reference = exp_reference.analysis["chr1"]["meth_prob"].to_numpy()
+        np.testing.assert_allclose(prob_masked[0], prob_reference[0])
+
+
 class TestSaveLoadRoundTrip:
     def test_h5array_analysis_round_trips(self, tmp_path):
         exp = _make_experiment(nmol=5, nbp=8)

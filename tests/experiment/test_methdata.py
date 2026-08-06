@@ -289,3 +289,26 @@ class TestToDense:
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             exp.to_dense("chr1", as_h5array=True)
+
+    @pytest.mark.parametrize("as_h5array", [True, False])
+    def test_mask_name_nans_out_masked_rows(self, as_h5array):
+        exp = self._experiment()
+        # Molecules 1 and 3 dropped; 0 and 2 kept.
+        exp.analysis["chr1"]["test_dropout_mask"] = pd.DataFrame(
+            {"keep": [True, False, True, False]})
+        out = exp.to_dense("chr1", as_h5array=as_h5array,
+                          mask_name="dropout_mask")
+        arr = out.to_numpy()
+        assert np.isnan(arr[1]).all()
+        assert np.isnan(arr[3]).all()
+        expected = _manual_pivot(_TO_DENSE_ROWS, [0, 2], _TO_DENSE_NBP)
+        np.testing.assert_array_equal(arr[[0, 2]], expected)
+
+    def test_no_mask_name_unaffected(self):
+        exp = self._experiment()
+        exp.analysis["chr1"]["test_dropout_mask"] = pd.DataFrame(
+            {"keep": [True, False, True, False]})
+        out = exp.to_dense("chr1", as_h5array=False)
+        expected = _manual_pivot(_TO_DENSE_ROWS, range(_TO_DENSE_NMOL),
+                                 _TO_DENSE_NBP)
+        np.testing.assert_array_equal(out.to_numpy(), expected)

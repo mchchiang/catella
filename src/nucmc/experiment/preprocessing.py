@@ -9,13 +9,13 @@ from .. import utils
 import matplotlib.pyplot as plt
 
 
-def _lookup_mask(exp, chrom, channel, mask_name):
+def _lookup_mask(exp, chrom, source, mask_name):
     """Fetch a filter_dropout() 'keep' array, or raise KeyError."""
-    key = f"{channel}_{mask_name}"
+    key = f"{source}_{mask_name}"
     if key not in exp.analysis[chrom]:
         raise KeyError(
             f"'{key}' not found in exp.analysis['{chrom}']. Run "
-            "filter_dropout() for this channel first, matching "
+            "filter_dropout() for this source first, matching "
             "mask_name.")
     return exp.analysis[chrom][key]["keep"].to_numpy()
 
@@ -73,7 +73,7 @@ class MethPrintAnalysis:
             If given, molecules flagged as dropout by a prior
             `MethPrintExperiment.filter_dropout(mask_name=mask_name)`
             call are set to all-NaN in the smoothed output, per
-            channel. Looked up as `exp.analysis[chrom][f"{channel}_
+            source. Looked up as `exp.analysis[chrom][f"{source}_
             {mask_name}"]`.
 
         Raises
@@ -83,7 +83,7 @@ class MethPrintAnalysis:
             If `fill_edge` is a literal float outside the data range.
         KeyError
             If `mask_name` is given but no matching mask is found for
-            some channel/chromosome.
+            some source/chromosome.
 
         Notes
         -----
@@ -159,20 +159,20 @@ class MethPrintAnalysis:
         for chrom in exp.chroms:
             raw = exp.raw[chrom]
             nbp = raw.nbp
-            def chan_keep(ch):
-                return _lookup_mask(exp, chrom, ch, mask_name) \
+            def src_keep(src):
+                return _lookup_mask(exp, chrom, src, mask_name) \
                     if mask_name is not None else None
             exp.analysis[chrom][f"test_{name}"] = smooth_df(
                 raw.test_data, nbp, len(raw.test_mol_id),
-                chan_keep("test"))
+                src_keep("test"))
             if raw.meth_data is not None:
                 exp.analysis[chrom][f"meth_{name}"] = smooth_df(
                     raw.meth_data, nbp, len(raw.meth_mol_id),
-                    chan_keep("meth"))
+                    src_keep("meth"))
             if raw.unmeth_data is not None:
                 exp.analysis[chrom][f"unmeth_{name}"] = smooth_df(
                     raw.unmeth_data, nbp, len(raw.unmeth_mol_id),
-                    chan_keep("unmeth"))
+                    src_keep("unmeth"))
                 
             
     def meth_prob(self, *, exp : MethPrintExperiment,
@@ -219,14 +219,14 @@ class MethPrintAnalysis:
             Lower percentile bound for signal clipping. Values below this
             percentile are set to 0. If `exp` has meth/unmeth controls,
             this percentile is estimated from the normalized unmeth
-            control channel (making the bound condition-independent);
-            otherwise it is estimated from the test signal itself.
+            control source; otherwise it is estimated from the test
+            signal itself.
         clip_high : float, default 99.9
             Upper percentile bound for signal clipping. Values above this
             percentile are set to 1. If `exp` has meth/unmeth controls,
             this percentile is estimated from the normalized meth
-            control channel (making the bound condition-independent);
-            otherwise it is estimated from the test signal itself.
+            control source; otherwise it is estimated from the test
+            signal itself.
         norm_by_strand : bool, default False
             Whether to perform normalization separately based on strandedness.
         nan_method : {"mean", "interpolate"}, default "mean"
@@ -237,7 +237,7 @@ class MethPrintAnalysis:
             Number of molecules processed (and held in memory) per batch.
         percentile_sample_size : int, default 100000
             Approximate number of molecules used to estimate `clip_low`/
-            `clip_high` percentile bounds. If the relevant channel (the
+            `clip_high` percentile bounds. If the relevant source (the
             unmeth/meth controls when present, otherwise the test
             signal) has fewer molecules than this, all of them are used
             (exact bounds).
@@ -248,7 +248,7 @@ class MethPrintAnalysis:
             If given, molecules flagged as dropout by a prior
             `MethPrintExperiment.filter_dropout(mask_name=mask_name)`
             call are excluded (set to NaN) from the test signal and
-            from control-based normalization statistics, per channel.
+            from control-based normalization statistics, per source.
             Also passed through to `smooth` if smoothing is triggered
             lazily.
 
@@ -260,7 +260,7 @@ class MethPrintAnalysis:
             ('.') exist.
         KeyError
             If `mask_name` is given but no matching mask is found for
-            some channel/chromosome.
+            some source/chromosome.
 
         Notes
         -----
@@ -417,7 +417,7 @@ class MethPrintAnalysis:
                     chunks.append(batch[rows, :end_idx])
                 return np.concatenate(chunks, axis=0)
 
-            # Estimate vmin/vmax from the normalized control channels
+            # Estimate vmin/vmax from the normalized control sources
             # when available, so bounds depend only on the controls
             # (and are therefore comparable across test conditions
             # sharing the same controls) rather than on the test

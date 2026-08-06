@@ -1043,9 +1043,10 @@ class MethPrintExperiment:
         Parameters
         ----------
         exp_file : str or pathlib.Path, optional
-            The output file path. Raw data is only written if it does not
-            already exist in the file. If None, saves to the file this
-            experiment was loaded from or last saved to.
+            The output file path. Raw data is skipped only if this is
+            the file the experiment is already backed by. If None,
+            saves to the file this experiment was loaded from or last
+            saved to.
         overwrite : bool, default False
             If True, allow saving to the same file that backs an
             existing `H5Array` analysis entry, by writing to a temporary
@@ -1091,8 +1092,13 @@ class MethPrintExperiment:
             return
 
         with h5py.File(exp_file, "a") as h5stream:
-            # Save the raw data - write once if raw_data does not exist
-            if not "raw_data" in h5stream:
+            # Skip only if re-saving to the same file we're already
+            # backed by; other destinations always get a fresh copy.
+            same_file = (self._exp_file is not None and
+                        str(Path(self._exp_file).resolve()) == dest)
+            if not same_file or "raw_data" not in h5stream:
+                if "raw_data" in h5stream:
+                    del h5stream["raw_data"]
                 graw = h5stream.create_group("raw_data")
                 for chrom, rdata in self._raw_data.items():
                     rdata._save(graw)

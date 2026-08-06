@@ -512,6 +512,112 @@ class LazyRawDataMap(ABCMapping):
         return len(self._chroms)
 
 
+# Valid values for MethPrintExperiment.filter_dropout()'s
+# 'unmapped_strand' and 'method' arguments.
+_VALID_UNMAPPED_STRAND = {"union", "drop", "+", "-"}
+_VALID_FILTER_DROPOUT_METHOD = {"separate", "aggregate"}
+
+
+def _methylatable_positions(refseq, mtase_label, strand):
+    """
+    Boolean mask of positions in `refseq` methylatable by
+    `mtase_label`, for a molecule on the given `strand`.
+
+    Parameters
+    ----------
+    refseq : str
+        Reference nucleotide sequence.
+    mtase_label : {"A", "CG", "GC"}
+        Methyltransferase context.
+    strand : {"+", "-"}
+        Strand of the molecule. Callers resolve unmapped ('.')
+        strand separately (there is no single correct answer here).
+
+    Returns
+    -------
+    np.ndarray of bool
+        Length `len(refseq)`.
+    """
+    arr = np.frombuffer(refseq.upper().encode(), dtype="S1")
+    mask = np.zeros(len(arr), dtype=bool)
+    if mtase_label == "A":
+        base = b"A" if strand == "+" else b"T"
+        mask |= (arr == base)
+        return mask
+    b1, b2 = mtase_label[0].encode(), mtase_label[1].encode()
+    dinuc = (arr[:-1] == b1) & (arr[1:] == b2)
+    # + strand: the C sits at offset 0 of a 'CG' match, offset 1 of a
+    # 'GC' match (and the opposite offset on - strand).
+    c_at_start = (mtase_label == "CG") == (strand == "+")
+    if c_at_start:
+        mask[:-1] |= dinuc
+    else:
+        mask[1:] |= dinuc
+    return mask
+
+
+def _strand_of_mol(df, nmol):
+    """
+    One strand label per molecule, looked up by `mol_index`.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Raw long-format table with `mol_index`/`strand` columns.
+    nmol : int
+        Total molecule count; a `mol_index` absent from `df` (no rows
+        at all) defaults to '.'.
+
+    Returns
+    -------
+    np.ndarray of str
+        Length `nmol`, each one of '+', '-', '.'.
+    """
+    labels = np.full(nmol, ".", dtype="<U1")
+    first = df.drop_duplicates("mol_index")[["mol_index", "strand"]]
+    idx = first["mol_index"].to_numpy().astype(np.int64)
+    labels[idx] = first["strand"].to_numpy()
+    return labels
+
+
+def _apply_keep_mask(data, keep, batch_size=20000):
+    """
+    Set rows for `keep=False` molecules entirely to NaN.
+
+    Parameters
+    ----------
+    data : pd.DataFrame, np.ndarray, or H5Array
+        Dense data, one row per molecule.
+    keep : array-like of bool
+        Aligned with `data`'s rows.
+    batch_size : int, default 20000
+        Rows processed per batch when `data` is an `H5Array`
+        (rewritten on disk in place, batch by batch).
+
+    Returns
+    -------
+    pd.DataFrame, np.ndarray, or H5Array
+        `data` with masked-out rows set to NaN. `H5Array` is rewritten
+        on disk in place; `pd.DataFrame`/`np.ndarray` is copied (a
+        `to_numpy()` result may be a read-only view).
+    """
+    keep = np.asarray(keep, dtype=bool)
+    if isinstance(data, pd.DataFrame):
+        data = data.copy()
+        data.loc[~keep, :] = np.nan
+        return data
+    if isinstance(data, H5Array):
+        for start in range(0, data.shape[0], batch_size):
+            stop = min(start + batch_size, data.shape[0])
+            batch = data[start:stop, :]
+            batch[~keep[start:stop], :] = np.nan
+            data.write_batch(start, stop, batch)
+        return data
+    data = np.array(data, copy=True)
+    data[~keep, :] = np.nan
+    return data
+
+
 @dataclass(slots=True, init=False, weakref_slot=True)
 class MethPrintExperiment:
     """
@@ -1071,7 +1177,8 @@ class MethPrintExperiment:
         return self._global_analysis
 
     def to_dense(self, chrom, which="test", *, mols=None,
-                as_h5array=True, dtype=np.float64, batch_size=20000):
+                as_h5array=True, dtype=np.float64, batch_size=20000,
+                mask_name=None):
         """
         Convert a raw long-format methylation table to a dense
         representation.
@@ -1097,6 +1204,11 @@ class MethPrintExperiment:
         batch_size : int, default 20000
             Number of molecules processed (and held in memory) per
             batch. Only used when `as_h5array` is True.
+        mask_name : str, optional
+            If given, molecules flagged as dropout by a prior
+            `filter_dropout(mask_name=mask_name)` call for this
+            channel are returned as all-NaN rows. Looked up as
+            `analysis[chrom][f"{which}_{mask_name}"]`.
 
         Returns
         -------
@@ -1137,6 +1249,11 @@ class MethPrintExperiment:
         nbp = raw.nbp
         all_pos = pd.Index(range(nbp))
 
+        keep = None
+        if mask_name is not None:
+            keep = self._analysis[chrom][
+                f"{which}_{mask_name}"]["keep"].to_numpy()
+
         mol_ids = np.arange(len(mol_id)) if mols is None \
             else np.atleast_1d(mols)
         if mols is not None:
@@ -1152,7 +1269,10 @@ class MethPrintExperiment:
             piv = df.pivot(index="mol_index", columns="pos",
                            values="mod_qual").reindex(index=mol_ids,
                                                       columns=all_pos)
-            return piv.astype(dtype)
+            piv = piv.astype(dtype)
+            if keep is not None:
+                piv = _apply_keep_mask(piv, keep[mol_ids])
+            return piv
 
         df = df.sort_values("mol_index", kind="stable")
         mol_index = df["mol_index"].to_numpy()
@@ -1177,8 +1297,156 @@ class MethPrintExperiment:
                 index="mol_index", columns="pos",
                 values="mod_qual").reindex(index=chunk_ids,
                                            columns=all_pos)
-            out.write_batch(start, stop, piv.to_numpy())
+            arr = piv.to_numpy()
+            if keep is not None:
+                arr = _apply_keep_mask(arr, keep[chunk_ids])
+            out.write_batch(start, stop, arr)
         return out
+
+    def filter_dropout(self, *, which: str | None = "test",
+                       threshold: float = 0.2,
+                       unmapped_strand: str = "union",
+                       method: str = "separate",
+                       mask_name: str = "dropout_mask") -> None:
+        """
+        Flag molecules with poor coverage at methylatable positions.
+
+        Computes, per molecule, the fraction of methylatable positions
+        (per `mtase` label, on that molecule's own strand) with no
+        signal, and stores a keep/drop mask in `analysis`. Raw data is
+        never modified -- pass `mask_name` to `to_dense`/
+        `MethPrintAnalysis.smooth`/`.meth_prob` to apply it downstream.
+
+        Parameters
+        ----------
+        which : {"test", "meth", "unmeth"} or None, default "test"
+            Channel(s) to evaluate. None evaluates every channel
+            present for each chromosome.
+        threshold : float, default 0.2
+            Max allowed no-signal fraction (per label, or of the
+            pooled total under `method="aggregate"`) to be kept.
+        unmapped_strand : {"union", "drop", "+", "-"}, default "union"
+            How to evaluate unmapped ('.') strand molecules: union of
+            '+'/'-' position sets, always dropout, or treat as that
+            strand.
+        method : {"separate", "aggregate"}, default "separate"
+            How multiple `mtase` labels combine into `keep`.
+            "separate": must clear `threshold` per label. "aggregate":
+            site counts pooled across labels into one fraction first.
+            Irrelevant for a single label.
+        mask_name : str, default "dropout_mask"
+            Key for the mask in `analysis[chrom]`, as
+            `f"{channel}_{mask_name}"` -- a single-column DataFrame
+            with a boolean `keep` column, indexed by `mol_index`.
+
+        Raises
+        ------
+        ValueError
+            If `mtase` is unset, `threshold` is not in [0, 1],
+            `unmapped_strand`/`method` is invalid, a requested channel
+            is missing for some chromosome, or `refseq` is missing.
+        """
+        if self._mtase is None:
+            raise ValueError(
+                "This experiment has no 'mtase' set (specify it via "
+                "load_raw()); required to determine methylatable "
+                "positions.")
+        if not (0.0 <= threshold <= 1.0):
+            raise ValueError(
+                f"'threshold' must be in [0, 1], got {threshold}.")
+        if unmapped_strand not in _VALID_UNMAPPED_STRAND:
+            raise ValueError(
+                "'unmapped_strand' must be one of "
+                f"{sorted(_VALID_UNMAPPED_STRAND)}, got "
+                f"{unmapped_strand!r}.")
+        if method not in _VALID_FILTER_DROPOUT_METHOD:
+            raise ValueError(
+                "'method' must be one of "
+                f"{sorted(_VALID_FILTER_DROPOUT_METHOD)}, got "
+                f"{method!r}.")
+
+        for chrom in self.chroms:
+            raw = self.raw[chrom]
+            if raw.refseq is None:
+                raise ValueError(
+                    f"No refseq available for chrom '{chrom}'; "
+                    "required to determine methylatable positions.")
+            if which is not None:
+                channels = [which]
+            else:
+                channels = [ch for ch in ("test", "meth", "unmeth")
+                           if getattr(raw, f"{ch}_data") is not None]
+
+            for ch in channels:
+                df = getattr(raw, f"{ch}_data")
+                mol_id = getattr(raw, f"{ch}_mol_id")
+                if df is None or mol_id is None:
+                    raise ValueError(
+                        f"No '{ch}' data available for chrom '{chrom}'")
+                nmol = len(mol_id)
+                strand = _strand_of_mol(df, nmol)
+                pos = df["pos"].to_numpy().astype(np.int64)
+                mol_index = df["mol_index"].to_numpy().astype(np.int64)
+                row_strand = strand[mol_index]
+                is_plus = row_strand == "+"
+                is_minus = row_strand == "-"
+                is_dot = row_strand == "."
+
+                nlabels = len(self._mtase)
+                covered = np.empty((nlabels, nmol), dtype=np.int64)
+                n_total = np.empty((nlabels, nmol), dtype=np.int64)
+                for li, label in enumerate(self._mtase):
+                    plus_mask = _methylatable_positions(
+                        raw.refseq, label, "+")
+                    minus_mask = _methylatable_positions(
+                        raw.refseq, label, "-")
+                    union_mask = plus_mask | minus_mask
+
+                    in_plus = plus_mask[pos]
+                    in_minus = minus_mask[pos]
+                    row_covered = np.zeros(len(pos), dtype=bool)
+                    row_covered[is_plus] = in_plus[is_plus]
+                    row_covered[is_minus] = in_minus[is_minus]
+                    if unmapped_strand == "union":
+                        in_union = union_mask[pos]
+                        row_covered[is_dot] = in_union[is_dot]
+                    elif unmapped_strand == "+":
+                        row_covered[is_dot] = in_plus[is_dot]
+                    elif unmapped_strand == "-":
+                        row_covered[is_dot] = in_minus[is_dot]
+                    # "drop": row_covered[is_dot] stays False
+
+                    covered[li] = np.bincount(
+                        mol_index[row_covered], minlength=nmol)
+
+                    total = np.empty(nmol, dtype=np.int64)
+                    total[strand == "+"] = plus_mask.sum()
+                    total[strand == "-"] = minus_mask.sum()
+                    if unmapped_strand == "+":
+                        total[strand == "."] = plus_mask.sum()
+                    elif unmapped_strand == "-":
+                        total[strand == "."] = minus_mask.sum()
+                    else:
+                        total[strand == "."] = union_mask.sum()
+                    n_total[li] = total
+
+                dropout_frac = np.where(
+                    n_total > 0,
+                    1.0 - covered / np.maximum(n_total, 1), 0.0)
+
+                if method == "separate":
+                    keep = (dropout_frac <= threshold).all(axis=0)
+                else:
+                    covered_sum = covered.sum(axis=0)
+                    n_total_sum = n_total.sum(axis=0)
+                    combined_frac = np.where(
+                        n_total_sum > 0,
+                        1.0 - covered_sum / np.maximum(n_total_sum, 1),
+                        0.0)
+                    keep = combined_frac <= threshold
+
+                self._analysis[chrom][f"{ch}_{mask_name}"] = \
+                    pd.DataFrame({"keep": keep})
 
     def __repr__(self):
         # Get all public attributes by filtering out private attributes

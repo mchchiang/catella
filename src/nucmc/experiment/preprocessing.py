@@ -3,10 +3,22 @@
 import numpy as np
 import pandas as pd
 from typing import List
-from .methdata import MethPrintExperiment
+from .methdata import MethPrintExperiment, _apply_keep_mask
 from ..h5_array import H5Array
 from .. import utils
 import matplotlib.pyplot as plt
+
+
+def _lookup_mask(exp, chrom, channel, mask_name):
+    """Fetch a filter_dropout() 'keep' array, or raise KeyError."""
+    key = f"{channel}_{mask_name}"
+    if key not in exp.analysis[chrom]:
+        raise KeyError(
+            f"'{key}' not found in exp.analysis['{chrom}']. Run "
+            "filter_dropout() for this channel first, matching "
+            "mask_name.")
+    return exp.analysis[chrom][key]["keep"].to_numpy()
+
 
 class MethPrintAnalysis:
     """
@@ -27,7 +39,8 @@ class MethPrintAnalysis:
                name : str = "smoothed",
                nan_method : str = "mean",
                fill_edge : float | str = np.nan,
-               batch_size : int = 20000):
+               batch_size : int = 20000,
+               mask_name : str | None = None):
         """
         Smooth methylation signals across an experiment using a rolling
         average.
@@ -56,12 +69,21 @@ class MethPrintAnalysis:
             See `nucmc.mapping.CoordsTransform.fill_edge`.
         batch_size : int, default 20000
             Number of molecules processed (and held in memory) per batch.
+        mask_name : str, optional
+            If given, molecules flagged as dropout by a prior
+            `MethPrintExperiment.filter_dropout(mask_name=mask_name)`
+            call are set to all-NaN in the smoothed output, per
+            channel. Looked up as `exp.analysis[chrom][f"{channel}_
+            {mask_name}"]`.
 
         Raises
         ------
         ValueError
             If `nan_method` is not "mean" or "interpolate".
             If `fill_edge` is a literal float outside the data range.
+        KeyError
+            If `mask_name` is given but no matching mask is found for
+            some channel/chromosome.
 
         Notes
         -----
@@ -80,7 +102,7 @@ class MethPrintAnalysis:
         tmp_dir = exp.resolve_tmp_dir()
         
         # Some helper functions
-        def smooth_df(df, nbp, nmol):
+        def smooth_df(df, nbp, nmol, keep):
             if not isinstance(fill_edge, str) and not np.isnan(fill_edge):
                 vmin, vmax = df["mod_qual"].min(), df["mod_qual"].max()
                 if not (vmin <= fill_edge <= vmax):
@@ -128,20 +150,29 @@ class MethPrintAnalysis:
                 else:
                     res = res.fillna(fill_edge)
 
-                out.write_batch(start, stop, res.to_numpy().T)
+                out_batch = res.to_numpy().T
+                if keep is not None:
+                    out_batch = _apply_keep_mask(out_batch, keep[start:stop])
+                out.write_batch(start, stop, out_batch)
             return out
 
         for chrom in exp.chroms:
             raw = exp.raw[chrom]
             nbp = raw.nbp
+            def chan_keep(ch):
+                return _lookup_mask(exp, chrom, ch, mask_name) \
+                    if mask_name is not None else None
             exp.analysis[chrom][f"test_{name}"] = smooth_df(
-                raw.test_data, nbp, len(raw.test_mol_id))
+                raw.test_data, nbp, len(raw.test_mol_id),
+                chan_keep("test"))
             if raw.meth_data is not None:
                 exp.analysis[chrom][f"meth_{name}"] = smooth_df(
-                    raw.meth_data, nbp, len(raw.meth_mol_id))
+                    raw.meth_data, nbp, len(raw.meth_mol_id),
+                    chan_keep("meth"))
             if raw.unmeth_data is not None:
                 exp.analysis[chrom][f"unmeth_{name}"] = smooth_df(
-                    raw.unmeth_data, nbp, len(raw.unmeth_mol_id))
+                    raw.unmeth_data, nbp, len(raw.unmeth_mol_id),
+                    chan_keep("unmeth"))
                 
             
     def meth_prob(self, *, exp : MethPrintExperiment,
@@ -155,7 +186,8 @@ class MethPrintAnalysis:
                   fill_edge : float | str = np.nan,
                   batch_size : int = 20000,
                   percentile_sample_size : int = 100000,
-                  seed : int | None = None):
+                  seed : int | None = None,
+                  mask_name : str | None = None):
 
         """
         Convert the smoothed methylation signal into a methylation probability
@@ -212,6 +244,13 @@ class MethPrintAnalysis:
         seed : int, optional
             Seed for the random number generator used for percentile
             subsampling.
+        mask_name : str, optional
+            If given, molecules flagged as dropout by a prior
+            `MethPrintExperiment.filter_dropout(mask_name=mask_name)`
+            call are excluded (set to NaN) from the test signal and
+            from control-based normalization statistics, per channel.
+            Also passed through to `smooth` if smoothing is triggered
+            lazily.
 
         Raises
         ------
@@ -219,6 +258,9 @@ class MethPrintAnalysis:
             If `binsize` is not provided and no cached `binsize` exists.
             If `norm_by_strand` is True but molecules with unmapped strands
             ('.') exist.
+        KeyError
+            If `mask_name` is given but no matching mask is found for
+            some channel/chromosome.
 
         Notes
         -----
@@ -268,7 +310,7 @@ class MethPrintAnalysis:
                                  "already smoothed.")
             self.smooth(binsize=binsize, exp=exp, name=smoothed_name,
                        nan_method=nan_method, fill_edge=fill_edge,
-                       batch_size=batch_size)
+                       batch_size=batch_size, mask_name=mask_name)
 
         rng = np.random.default_rng(seed)
 
@@ -276,6 +318,10 @@ class MethPrintAnalysis:
             raw = exp.raw[chrom]
             ana = exp.analysis[chrom]
             test_arr = ana[f"test_{smoothed_name}"]
+            if mask_name is not None:
+                test_arr = _apply_keep_mask(
+                    test_arr, _lookup_mask(exp, chrom, "test", mask_name),
+                    batch_size)
             nmol, nbp = test_arr.shape
 
             has_controls = (raw.meth_data is not None and
@@ -288,6 +334,15 @@ class MethPrintAnalysis:
             if has_controls:
                 meth_arr = ana[f"meth_{smoothed_name}"]
                 unmeth_arr = ana[f"unmeth_{smoothed_name}"]
+                if mask_name is not None:
+                    meth_arr = _apply_keep_mask(
+                        meth_arr,
+                        _lookup_mask(exp, chrom, "meth", mask_name),
+                        batch_size)
+                    unmeth_arr = _apply_keep_mask(
+                        unmeth_arr,
+                        _lookup_mask(exp, chrom, "unmeth", mask_name),
+                        batch_size)
                 if norm_by_strand:
                     tp, tn, tu = strands(raw.test_data)
                     mp, mn, mu = strands(raw.meth_data)

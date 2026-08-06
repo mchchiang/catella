@@ -242,3 +242,36 @@ class TestWhichAndMaskName:
         assert "test_qc" in exp.analysis["chr1"]
         assert "test_dropout_mask" not in exp.analysis["chr1"]
         exp.close()
+
+
+class TestSaveLoadRoundTrip:
+    def test_mask_survives_save_and_load(self, tmp_path):
+        # Regression test: the mask's 'keep' column must round-trip
+        # through save()/load() with correct bool semantics. A bool
+        # column stored via h5_utils comes back as literal "True"/
+        # "False" text (not bool), and casting that text to bool makes
+        # every entry truthy -- silently turning the mask into a
+        # no-op. filter_dropout stores 'keep' as int specifically to
+        # avoid this.
+        rows = [
+            ("plus_at_A", 0, "chr1", "+", 0.5, "a"),
+            ("plus_at_T", 1, "chr1", "+", 0.5, "a"),
+        ]
+        exp = _load(tmp_path, "AT", rows, mtase="A")
+        exp.filter_dropout(which="test", threshold=0.2)
+        before = exp.analysis["chr1"]["test_dropout_mask"]["keep"].tolist()
+
+        exp_file = tmp_path / "exp.h5"
+        exp.save(exp_file)
+        exp.close()
+
+        exp2 = MethPrintExperiment.load(exp_file)
+        after = exp2.analysis["chr1"]["test_dropout_mask"]["keep"].tolist()
+        assert [bool(v) for v in after] == [bool(v) for v in before]
+        assert [bool(v) for v in after] == [True, False]
+
+        dense = exp2.to_dense("chr1", which="test", as_h5array=False,
+                             mask_name="dropout_mask")
+        assert not np.isnan(dense.loc[0]).all()
+        assert np.isnan(dense.loc[1]).all()
+        exp2.close()

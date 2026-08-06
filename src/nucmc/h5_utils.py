@@ -150,11 +150,13 @@ def load_df(name, group):
         g = group[name]
         orig_dtype = g.attrs.get("_column_index_dtype", "object")
         
-        # Load the numeric data
-        data = g["num_values"][:]
-        cols = [c.decode("utf-8") if isinstance(c, bytes) else c
-                for c in g["num_names"][:]]
-        df = pd.DataFrame(data, columns=cols)
+        # Load the numeric data, if any (absent for all-string frames)
+        df = pd.DataFrame()
+        if "num_values" in g:
+            data = g["num_values"][:]
+            cols = [c.decode("utf-8") if isinstance(c, bytes) else c
+                    for c in g["num_names"][:]]
+            df = pd.DataFrame(data, columns=cols)
         
         # Load the string data
         for k in g.keys():

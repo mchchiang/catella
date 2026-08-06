@@ -1303,7 +1303,7 @@ class MethPrintExperiment:
             out.write_batch(start, stop, arr)
         return out
 
-    def filter_dropout(self, *, which: str | None = "test",
+    def filter_dropout(self, *, which: str | None = None,
                        threshold: float = 0.2,
                        unmapped_strand: str = "union",
                        method: str = "separate",
@@ -1445,8 +1445,13 @@ class MethPrintExperiment:
                         0.0)
                     keep = combined_frac <= threshold
 
+                # Stored as int, not bool: bool isn't a numeric dtype
+                # to h5_utils' save/load, so it would round-trip
+                # through the string block as literal "True"/"False"
+                # text -- and casting that back to bool makes every
+                # non-empty string truthy, silently breaking the mask.
                 self._analysis[chrom][f"{ch}_{mask_name}"] = \
-                    pd.DataFrame({"keep": keep})
+                    pd.DataFrame({"keep": keep.astype(np.int8)})
 
     def __repr__(self):
         # Get all public attributes by filtering out private attributes

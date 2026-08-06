@@ -580,6 +580,98 @@ def _strand_of_mol(df, nmol):
     return labels
 
 
+def _resolve_sources(raw, which):
+    """
+    Source name(s) to evaluate for dropout, on one chromosome.
+
+    Parameters
+    ----------
+    raw : MethPrintData
+        Raw data block for one chromosome.
+    which : {"test", "meth", "unmeth"} or None
+        Single source, or None for every source present.
+
+    Returns
+    -------
+    list of str
+    """
+    if which is not None:
+        return [which]
+    return [src for src in ("test", "meth", "unmeth")
+            if getattr(raw, f"{src}_data") is not None]
+
+
+def _label_coverage(df, mol_id, refseq, labels, unmapped_strand):
+    """
+    Per-molecule covered/total methylatable-site counts, per label.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Raw long-format table with `mol_index`/`pos`/`strand` columns.
+    mol_id : array-like
+        This source's molecule identifiers (only its length is used).
+    refseq : str
+        Reference sequence for this chromosome.
+    labels : sequence of str
+        `mtase` labels to evaluate, each in {"A", "CG", "GC"}.
+    unmapped_strand : {"union", "drop", "+", "-"}
+        How to evaluate unmapped ('.') strand molecules.
+
+    Returns
+    -------
+    dict of str to (np.ndarray, np.ndarray)
+        Maps each label to `(covered, n_total)`, each length
+        `len(mol_id)`: `covered` counts rows measured at that label's
+        methylatable positions (on each molecule's own strand);
+        `n_total` is that label's methylatable-site count for the
+        molecule's strand.
+    """
+    nmol = len(mol_id)
+    strand = _strand_of_mol(df, nmol)
+    pos = df["pos"].to_numpy().astype(np.int64)
+    mol_index = df["mol_index"].to_numpy().astype(np.int64)
+    row_strand = strand[mol_index]
+    is_plus = row_strand == "+"
+    is_minus = row_strand == "-"
+    is_dot = row_strand == "."
+
+    result = {}
+    for label in labels:
+        plus_mask = _methylatable_positions(refseq, label, "+")
+        minus_mask = _methylatable_positions(refseq, label, "-")
+        union_mask = plus_mask | minus_mask
+
+        in_plus = plus_mask[pos]
+        in_minus = minus_mask[pos]
+        row_covered = np.zeros(len(pos), dtype=bool)
+        row_covered[is_plus] = in_plus[is_plus]
+        row_covered[is_minus] = in_minus[is_minus]
+        if unmapped_strand == "union":
+            in_union = union_mask[pos]
+            row_covered[is_dot] = in_union[is_dot]
+        elif unmapped_strand == "+":
+            row_covered[is_dot] = in_plus[is_dot]
+        elif unmapped_strand == "-":
+            row_covered[is_dot] = in_minus[is_dot]
+        # "drop": row_covered[is_dot] stays False
+
+        covered = np.bincount(mol_index[row_covered], minlength=nmol)
+
+        total = np.empty(nmol, dtype=np.int64)
+        total[strand == "+"] = plus_mask.sum()
+        total[strand == "-"] = minus_mask.sum()
+        if unmapped_strand == "+":
+            total[strand == "."] = plus_mask.sum()
+        elif unmapped_strand == "-":
+            total[strand == "."] = minus_mask.sum()
+        else:
+            total[strand == "."] = union_mask.sum()
+
+        result[label] = (covered, total)
+    return result
+
+
 def _apply_keep_mask(data, keep, batch_size=20000):
     """
     Set rows for `keep=False` molecules entirely to NaN.
@@ -1207,7 +1299,7 @@ class MethPrintExperiment:
         mask_name : str, optional
             If given, molecules flagged as dropout by a prior
             `filter_dropout(mask_name=mask_name)` call for this
-            channel are returned as all-NaN rows. Looked up as
+            source are returned as all-NaN rows. Looked up as
             `analysis[chrom][f"{which}_{mask_name}"]`.
 
         Returns
@@ -1303,7 +1395,43 @@ class MethPrintExperiment:
             out.write_batch(start, stop, arr)
         return out
 
+    def _resolve_mtase_subset(self, mtase):
+        """
+        Validate and resolve an `mtase` label subset.
+
+        Parameters
+        ----------
+        mtase : list of str or None
+            Subset of `self.mtase` to use. None resolves to all of
+            `self.mtase`.
+
+        Returns
+        -------
+        Tuple[str, ...]
+
+        Raises
+        ------
+        ValueError
+            If `self.mtase` is unset, or `mtase` contains a label not
+            in `self.mtase`.
+        """
+        if self._mtase is None:
+            raise ValueError(
+                "This experiment has no 'mtase' set (specify it via "
+                "load_raw()); required to determine methylatable "
+                "positions.")
+        if mtase is None:
+            return self._mtase
+        labels = _normalize_mtase(mtase)
+        unknown = set(labels) - set(self._mtase)
+        if unknown:
+            raise ValueError(
+                "'mtase' contains label(s) not in this experiment's "
+                f"mtase {list(self._mtase)}: {sorted(unknown)}.")
+        return labels
+
     def filter_dropout(self, *, which: str | None = None,
+                       mtase: list | None = None,
                        threshold: float = 0.2,
                        unmapped_strand: str = "union",
                        method: str = "separate",
@@ -1319,9 +1447,12 @@ class MethPrintExperiment:
 
         Parameters
         ----------
-        which : {"test", "meth", "unmeth"} or None, default "test"
-            Channel(s) to evaluate. None evaluates every channel
-            present for each chromosome.
+        which : {"test", "meth", "unmeth"} or None, default None
+            Source(s) to evaluate. None evaluates every source present
+            for each chromosome.
+        mtase : list of str, optional
+            Subset of `self.mtase` labels to evaluate. None uses all
+            of them.
         threshold : float, default 0.2
             Max allowed no-signal fraction (per label, or of the
             pooled total under `method="aggregate"`) to be kept.
@@ -1336,21 +1467,18 @@ class MethPrintExperiment:
             Irrelevant for a single label.
         mask_name : str, default "dropout_mask"
             Key for the mask in `analysis[chrom]`, as
-            `f"{channel}_{mask_name}"` -- a single-column DataFrame
+            `f"{source}_{mask_name}"` -- a single-column DataFrame
             with a boolean `keep` column, indexed by `mol_index`.
 
         Raises
         ------
         ValueError
-            If `mtase` is unset, `threshold` is not in [0, 1],
-            `unmapped_strand`/`method` is invalid, a requested channel
+            If `mtase` is unset on this experiment, `mtase` contains a
+            label not in `self.mtase`, `threshold` is not in [0, 1],
+            `unmapped_strand`/`method` is invalid, a requested source
             is missing for some chromosome, or `refseq` is missing.
         """
-        if self._mtase is None:
-            raise ValueError(
-                "This experiment has no 'mtase' set (specify it via "
-                "load_raw()); required to determine methylatable "
-                "positions.")
+        labels = self._resolve_mtase_subset(mtase)
         if not (0.0 <= threshold <= 1.0):
             raise ValueError(
                 f"'threshold' must be in [0, 1], got {threshold}.")
@@ -1371,64 +1499,19 @@ class MethPrintExperiment:
                 raise ValueError(
                     f"No refseq available for chrom '{chrom}'; "
                     "required to determine methylatable positions.")
-            if which is not None:
-                channels = [which]
-            else:
-                channels = [ch for ch in ("test", "meth", "unmeth")
-                           if getattr(raw, f"{ch}_data") is not None]
+            sources = _resolve_sources(raw, which)
 
-            for ch in channels:
-                df = getattr(raw, f"{ch}_data")
-                mol_id = getattr(raw, f"{ch}_mol_id")
+            for src in sources:
+                df = getattr(raw, f"{src}_data")
+                mol_id = getattr(raw, f"{src}_mol_id")
                 if df is None or mol_id is None:
                     raise ValueError(
-                        f"No '{ch}' data available for chrom '{chrom}'")
+                        f"No '{src}' data available for chrom '{chrom}'")
                 nmol = len(mol_id)
-                strand = _strand_of_mol(df, nmol)
-                pos = df["pos"].to_numpy().astype(np.int64)
-                mol_index = df["mol_index"].to_numpy().astype(np.int64)
-                row_strand = strand[mol_index]
-                is_plus = row_strand == "+"
-                is_minus = row_strand == "-"
-                is_dot = row_strand == "."
-
-                nlabels = len(self._mtase)
-                covered = np.empty((nlabels, nmol), dtype=np.int64)
-                n_total = np.empty((nlabels, nmol), dtype=np.int64)
-                for li, label in enumerate(self._mtase):
-                    plus_mask = _methylatable_positions(
-                        raw.refseq, label, "+")
-                    minus_mask = _methylatable_positions(
-                        raw.refseq, label, "-")
-                    union_mask = plus_mask | minus_mask
-
-                    in_plus = plus_mask[pos]
-                    in_minus = minus_mask[pos]
-                    row_covered = np.zeros(len(pos), dtype=bool)
-                    row_covered[is_plus] = in_plus[is_plus]
-                    row_covered[is_minus] = in_minus[is_minus]
-                    if unmapped_strand == "union":
-                        in_union = union_mask[pos]
-                        row_covered[is_dot] = in_union[is_dot]
-                    elif unmapped_strand == "+":
-                        row_covered[is_dot] = in_plus[is_dot]
-                    elif unmapped_strand == "-":
-                        row_covered[is_dot] = in_minus[is_dot]
-                    # "drop": row_covered[is_dot] stays False
-
-                    covered[li] = np.bincount(
-                        mol_index[row_covered], minlength=nmol)
-
-                    total = np.empty(nmol, dtype=np.int64)
-                    total[strand == "+"] = plus_mask.sum()
-                    total[strand == "-"] = minus_mask.sum()
-                    if unmapped_strand == "+":
-                        total[strand == "."] = plus_mask.sum()
-                    elif unmapped_strand == "-":
-                        total[strand == "."] = minus_mask.sum()
-                    else:
-                        total[strand == "."] = union_mask.sum()
-                    n_total[li] = total
+                cov = _label_coverage(
+                    df, mol_id, raw.refseq, labels, unmapped_strand)
+                covered = np.stack([cov[label][0] for label in labels])
+                n_total = np.stack([cov[label][1] for label in labels])
 
                 dropout_frac = np.where(
                     n_total > 0,
@@ -1450,8 +1533,112 @@ class MethPrintExperiment:
                 # through the string block as literal "True"/"False"
                 # text -- and casting that back to bool makes every
                 # non-empty string truthy, silently breaking the mask.
-                self._analysis[chrom][f"{ch}_{mask_name}"] = \
+                self._analysis[chrom][f"{src}_{mask_name}"] = \
                     pd.DataFrame({"keep": keep.astype(np.int8)})
+
+    def summarize_dropout(self, *, which: str | None = None,
+                          mtase: list | None = None,
+                          unmapped_strand: str = "union") -> pd.DataFrame:
+        """
+        Return a per-label dropout fraction summary (QC check).
+
+        Same coverage computation as `filter_dropout`, reporting the
+        per-molecule dropout fraction distribution instead of
+        filtering. Nothing is stored in `analysis`.
+
+        Parameters
+        ----------
+        which : {"test", "meth", "unmeth"} or None, default None
+            Source(s) to summarize. None summarizes every source
+            present for each chromosome.
+        mtase : list of str, optional
+            Subset of `self.mtase` labels to summarize. None uses all.
+        unmapped_strand : {"union", "drop", "+", "-"}, default "union"
+            How to evaluate unmapped ('.') strand molecules.
+
+        Returns
+        -------
+        pd.DataFrame
+            Columns `chrom`, `source`, `label`, `n_sites_plus`,
+            `n_sites_minus`, `p0`/`p25`/`p50`/`p75`/`p100` (dropout
+            fraction percentiles) -- one row per (chrom, source,
+            label), plus a `label="aggregate"` row per (chrom,
+            source) pooling all labels (as in
+            `filter_dropout(method="aggregate")`), if more than one
+            label is evaluated.
+
+        Raises
+        ------
+        ValueError
+            If `mtase` is unset, contains an unknown label,
+            `unmapped_strand` is invalid, a source is missing for
+            some chromosome, or `refseq` is missing.
+        """
+        labels = self._resolve_mtase_subset(mtase)
+        if unmapped_strand not in _VALID_UNMAPPED_STRAND:
+            raise ValueError(
+                "'unmapped_strand' must be one of "
+                f"{sorted(_VALID_UNMAPPED_STRAND)}, got "
+                f"{unmapped_strand!r}.")
+
+        percentiles = [0, 25, 50, 75, 100]
+        pct_cols = [f"p{p}" for p in percentiles]
+        rows = []
+        for chrom in self.chroms:
+            raw = self.raw[chrom]
+            if raw.refseq is None:
+                raise ValueError(
+                    f"No refseq available for chrom '{chrom}'; "
+                    "required to determine methylatable positions.")
+            sources = _resolve_sources(raw, which)
+
+            for src in sources:
+                df = getattr(raw, f"{src}_data")
+                mol_id = getattr(raw, f"{src}_mol_id")
+                if df is None or mol_id is None:
+                    raise ValueError(
+                        f"No '{src}' data available for chrom '{chrom}'")
+                cov = _label_coverage(
+                    df, mol_id, raw.refseq, labels, unmapped_strand)
+
+                covered_list, total_list = [], []
+                for label in labels:
+                    covered, total = cov[label]
+                    covered_list.append(covered)
+                    total_list.append(total)
+                    frac = np.where(
+                        total > 0, 1.0 - covered / np.maximum(total, 1),
+                        0.0)
+                    plus_n = int(_methylatable_positions(
+                        raw.refseq, label, "+").sum())
+                    minus_n = int(_methylatable_positions(
+                        raw.refseq, label, "-").sum())
+                    row = {"chrom": chrom, "source": src, "label": label,
+                           "n_sites_plus": plus_n,
+                           "n_sites_minus": minus_n}
+                    row.update(zip(pct_cols,
+                                   np.percentile(frac, percentiles)))
+                    rows.append(row)
+
+                if len(labels) > 1:
+                    covered_sum = np.sum(covered_list, axis=0)
+                    total_sum = np.sum(total_list, axis=0)
+                    frac = np.where(
+                        total_sum > 0,
+                        1.0 - covered_sum / np.maximum(total_sum, 1), 0.0)
+                    row = {"chrom": chrom, "source": src,
+                           "label": "aggregate",
+                           "n_sites_plus": sum(int(_methylatable_positions(
+                               raw.refseq, label, "+").sum())
+                               for label in labels),
+                           "n_sites_minus": sum(int(_methylatable_positions(
+                               raw.refseq, label, "-").sum())
+                               for label in labels)}
+                    row.update(zip(pct_cols,
+                                   np.percentile(frac, percentiles)))
+                    rows.append(row)
+
+        return pd.DataFrame(rows)
 
     def __repr__(self):
         # Get all public attributes by filtering out private attributes

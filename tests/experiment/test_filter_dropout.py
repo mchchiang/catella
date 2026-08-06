@@ -275,3 +275,106 @@ class TestSaveLoadRoundTrip:
         assert not np.isnan(dense.loc[0]).all()
         assert np.isnan(dense.loc[1]).all()
         exp2.close()
+
+
+class TestMtaseSubset:
+    # refseq "AGCG": A-site at idx0; CG match at (2,3), C at idx2.
+    # m0 covers only the A-site.
+    def test_unknown_label_raises(self, tmp_path):
+        exp = _load(tmp_path, "AGCG",
+                   [("m0", 0, "chr1", "+", 0.5, "a")], mtase=["A", "CG"])
+        with pytest.raises(ValueError):
+            exp.filter_dropout(mtase=["GC"])
+        exp.close()
+
+    def test_subset_narrows_evaluated_labels(self, tmp_path):
+        exp = _load(tmp_path, "AGCG",
+                   [("m0", 0, "chr1", "+", 0.5, "a")], mtase=["A", "CG"])
+        # Full mtase ["A", "CG"]: CG-site (idx2) uncovered -> fails.
+        exp.filter_dropout(threshold=0.0, mask_name="full")
+        assert exp.analysis["chr1"]["test_full"]["keep"].tolist() == [False]
+        # Subset to just ["A"]: only the covered A-site is checked.
+        exp.filter_dropout(mtase=["A"], threshold=0.0, mask_name="a_only")
+        assert exp.analysis["chr1"]["test_a_only"]["keep"].tolist() == [True]
+        exp.close()
+
+    def test_default_none_uses_full_mtase(self, tmp_path):
+        exp = _load(tmp_path, "AGCG",
+                   [("m0", 0, "chr1", "+", 0.5, "a")], mtase=["A", "CG"])
+        exp.filter_dropout(mtase=None, threshold=0.0, mask_name="explicit")
+        exp.filter_dropout(threshold=0.0, mask_name="implicit")
+        explicit = exp.analysis["chr1"]["test_explicit"]["keep"].tolist()
+        implicit = exp.analysis["chr1"]["test_implicit"]["keep"].tolist()
+        assert explicit == implicit == [False]
+        exp.close()
+
+
+class TestSummarizeDropout:
+    # refseq "AAAAAAAAAACG": 10 A-sites (idx0-9), 1 CG-site (idx10=C).
+    # m0 covers 9/10 A-sites (idx0-8) and 0/1 CG-site.
+    def _make(self, tmp_path):
+        rows = [("m0", i, "chr1", "+", 0.5, "a") for i in range(9)]
+        return _load(tmp_path, "AAAAAAAAAACG", rows, mtase=["A", "CG"])
+
+    def test_no_side_effects(self, tmp_path):
+        exp = self._make(tmp_path)
+        before = dict(exp.analysis["chr1"])
+        exp.summarize_dropout()
+        assert dict(exp.analysis["chr1"]) == before
+        exp.close()
+
+    def test_columns_and_labels(self, tmp_path):
+        exp = self._make(tmp_path)
+        summary = exp.summarize_dropout()
+        assert set(summary.columns) == {
+            "chrom", "source", "label", "n_sites_plus", "n_sites_minus",
+            "p0", "p25", "p50", "p75", "p100"}
+        assert set(summary["label"]) == {"A", "CG", "aggregate"}
+        exp.close()
+
+    def test_percentiles_and_site_counts(self, tmp_path):
+        exp = self._make(tmp_path)
+        summary = exp.summarize_dropout().set_index("label")
+
+        a_row = summary.loc["A"]
+        assert a_row["n_sites_plus"] == 10
+        assert a_row["n_sites_minus"] == 0
+        for col in ("p0", "p25", "p50", "p75", "p100"):
+            assert a_row[col] == pytest.approx(0.1)  # 1 - 9/10
+
+        cg_row = summary.loc["CG"]
+        assert cg_row["n_sites_plus"] == 1
+        assert cg_row["n_sites_minus"] == 1
+        for col in ("p0", "p25", "p50", "p75", "p100"):
+            assert cg_row[col] == pytest.approx(1.0)  # 0/1 covered
+
+        agg_row = summary.loc["aggregate"]
+        assert agg_row["n_sites_plus"] == 11
+        assert agg_row["n_sites_minus"] == 1
+        for col in ("p0", "p25", "p50", "p75", "p100"):
+            assert agg_row[col] == pytest.approx(1.0 - 9 / 11)
+        exp.close()
+
+    def test_mtase_subset_no_aggregate_row(self, tmp_path):
+        exp = self._make(tmp_path)
+        summary = exp.summarize_dropout(mtase=["A"])
+        assert set(summary["label"]) == {"A"}
+        exp.close()
+
+    def test_unknown_mtase_label_raises(self, tmp_path):
+        exp = self._make(tmp_path)
+        with pytest.raises(ValueError):
+            exp.summarize_dropout(mtase=["GC"])
+        exp.close()
+
+    def test_missing_source_raises(self, tmp_path):
+        exp = self._make(tmp_path)
+        with pytest.raises(ValueError):
+            exp.summarize_dropout(which="meth")
+        exp.close()
+
+    def test_bad_unmapped_strand_raises(self, tmp_path):
+        exp = self._make(tmp_path)
+        with pytest.raises(ValueError):
+            exp.summarize_dropout(unmapped_strand="bogus")
+        exp.close()

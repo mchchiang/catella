@@ -113,6 +113,37 @@ class TestChromSelection:
             MethPrintExperiment.load(path, chroms=["chrX"])
 
 
+class TestSaveToExistingFile:
+    def test_new_experiment_overwrites_stale_raw_data(self, tmp_path):
+        # Regression: save() used to skip writing raw data whenever
+        # the destination already had *a* raw_data group, even from
+        # an unrelated experiment.
+        old = MethPrintExperiment._create(
+            _raw_data={"chr1": _make_raw("chr1", nmol=2, nbp=6, seed=0)})
+        path = tmp_path / "experiment.h5"
+        old.save(path)
+
+        new = MethPrintExperiment._create(
+            _raw_data={"chr1": _make_raw("chr1", nmol=3, nbp=6, seed=1)})
+        assert new._exp_file is None
+        new.save(path)
+
+        loaded = MethPrintExperiment.load(path)
+        assert list(loaded.raw["chr1"].test_mol_id) == \
+            list(new._raw_data["chr1"].test_mol_id)
+
+    def test_resaving_same_file_skips_rewriting_raw_data(self, tmp_path):
+        exp = MethPrintExperiment._create(
+            _raw_data={"chr1": _make_raw("chr1", nmol=2, nbp=6, seed=0)})
+        path = tmp_path / "experiment.h5"
+        exp.save(path)
+
+        with patch.object(MethPrintData, "_save",
+                          wraps=MethPrintData._save) as spy:
+            exp.save(path)
+            assert spy.call_count == 0
+
+
 class TestRefseq:
     def test_refseq_roundtrips_through_save_load(self, tmp_path):
         raw = {"chr1": _make_raw("chr1", nmol=2, nbp=6, seed=0,

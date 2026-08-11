@@ -135,9 +135,9 @@ def preprocess(*, chromsize : str | Path,
     # Smooth and normalize the data - compute methylation probability
     ana = MethPrintAnalysis()
     ana.smooth(binsize=binsize, exp=exp_data, batch_size=batch_size)
-    ana.meth_prob(exp=exp_data, clip_low=clip_low, clip_high=clip_high,
-                  norm_by_strand=norm_by_strand, batch_size=batch_size,
-                  percentile_sample_size=percentile_sample_size)
+    ana.heuristic_prob(exp=exp_data, clip_low=clip_low, clip_high=clip_high,
+                       norm_by_strand=norm_by_strand, batch_size=batch_size,
+                       percentile_sample_size=percentile_sample_size)
     
     # Save the results
     if out_file is not None:

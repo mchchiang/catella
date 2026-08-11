@@ -175,7 +175,7 @@ class MethPrintAnalysis:
                     src_keep("unmeth"))
                 
             
-    def meth_prob(self, *, exp : MethPrintExperiment,
+    def heuristic_prob(self, *, exp : MethPrintExperiment,
                   binsize : int | None = None,
                   smoothed_name : str = "smoothed",
                   prob_name : str = "meth_prob",

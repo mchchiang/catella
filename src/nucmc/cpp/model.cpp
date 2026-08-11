@@ -81,7 +81,13 @@ void NucPosModel::reset() {
   std::fill(eseq.begin(), eseq.end(), 0.0);  
 }
 
-void NucPosModel::setSeqEnergy(string dataFile, double emax) {
+void NucPosModel::setEnergy(string dataFile, double emax) {
+  // '!(emax >= 0)' (rather than 'emax < 0') also rejects NaN, since any
+  // comparison with NaN is false; +infinity passes, disabling clipping.
+  if (!(emax >= 0)) {
+    throw std::runtime_error(
+      "emax must be non-negative (pass inf to disable clipping).");
+  }
   eseq = vector<double>(nbp, 0.0);
   ifstream reader;
   reader.open(dataFile);
@@ -91,34 +97,30 @@ void NucPosModel::setSeqEnergy(string dataFile, double emax) {
   string line;
   stringstream ss;
   int pos;
-  double pmin = exp(-emax);
-  double p;  
+  double e;
   while (getline(reader, line)) {
     if (line[0] == '#') continue; // Skip comments
     ss.clear();
     ss.str(line);
-    ss >> pos >> p;
+    ss >> pos >> e;
     if (pos >= 0 && pos < nbp) {
-      if (p < 0 || p > 1)
-	throw std::runtime_error("Probability must be in [0, 1].");
-      eseq[pos] = p < pmin ? emax : -log(p); // E_seq = -kT log(p_seq)
+      eseq[pos] = std::clamp(e, -emax, emax);
     }
   }
-  reader.close();  
+  reader.close();
 }
-    
-void NucPosModel::setSeqEnergy(const std::vector<double>& pseq, double emax) {
-  double pmin = exp(-emax);
-  double p;
-  if (static_cast<int>(pseq.size()) != nbp) {
-    throw std::runtime_error("Probability array size does not match "
+
+void NucPosModel::setEnergy(const std::vector<double>& eseq_in, double emax) {
+  if (!(emax >= 0)) {
+    throw std::runtime_error(
+      "emax must be non-negative (pass inf to disable clipping).");
+  }
+  if (static_cast<int>(eseq_in.size()) != nbp) {
+    throw std::runtime_error("Energy array size does not match "
 			     "the size of the simulated fiber.");
   }
   for (int i = 0; i < nbp; i++) {
-    p = pseq[i];
-    if (p < 0 || p > 1)
-      throw std::runtime_error("Probability must be in [0, 1].");
-    eseq[i] = p < pmin ? emax : -log(p); // E_seq = -kT log(p_seq)
+    eseq[i] = std::clamp(eseq_in[i], -emax, emax);
   }
 }
 

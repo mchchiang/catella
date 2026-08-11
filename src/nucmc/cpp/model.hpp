@@ -61,8 +61,8 @@ public:
   NucPosModel(int nucbp, int nbp, int llink, double mu, ulint seed);
   NucPosModel(const Params& params);
   ~NucPosModel();
-  void setSeqEnergy(std::string dataFile, double emax);
-  void setSeqEnergy(const std::vector<double>& pseq, double emax);
+  void setEnergy(std::string dataFile, double emax);
+  void setEnergy(const std::vector<double>& eseq, double emax);
   void update();
   void reset();
   void output(lint time);

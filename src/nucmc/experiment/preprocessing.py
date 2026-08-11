@@ -20,6 +20,437 @@ def _lookup_mask(exp, chrom, source, mask_name):
     return exp.analysis[chrom][key]["keep"].to_numpy()
 
 
+NONE, M6A, GCH, HCG, GCG = 0, 1, 2, 3, 4
+CONTEXT_NAMES = {NONE: "none", M6A: "M6A", GCH: "GCH", HCG: "HCG",
+                 GCG: "GCG"}
+
+
+def _reference_contexts(seq):
+    """
+    Classify every reference position into a footprinting context.
+
+    Strand logic:
+      m6A     : A on forward, or T on forward (= A on reverse)
+      fwd CpG : C with G at i+1        rev CpG : G with C at i-1
+      fwd GpC : C with G at i-1        rev GpC : G with C at i+1
+    A position matching both CpG and GpC rules is GCG.
+
+    Parameters
+    ----------
+    seq : str or bytes
+        The reference nucleotide sequence.
+
+    Returns
+    -------
+    np.ndarray
+        int8, length `len(seq)`, one of NONE/M6A/GCH/HCG/GCG per
+        position.
+    """
+    s = np.frombuffer(
+        seq.upper().encode() if isinstance(seq, str) else seq.upper(),
+        dtype="S1")
+    L = len(s)
+    ctx = np.zeros(L, dtype=np.int8)
+
+    prev = np.concatenate([[b"N"], s[:-1]])
+    nxt = np.concatenate([s[1:], [b"N"]])
+
+    ctx[(s == b"A") | (s == b"T")] = M6A
+
+    fwd_C = s == b"C"
+    rev_C = s == b"G"
+    is_cg = (fwd_C & (nxt == b"G")) | (rev_C & (prev == b"C"))
+    is_gc = (fwd_C & (prev == b"G")) | (rev_C & (nxt == b"C"))
+
+    ctx[is_gc & ~is_cg] = GCH
+    ctx[is_cg & ~is_gc] = HCG
+    ctx[is_cg & is_gc] = GCG
+    return ctx
+
+
+def _context_prior_rate(k, n_mol, ctx, alpha=10.0, eps=1e-4):
+    """
+    Per-position call rate, shrunk toward its context group's mean.
+
+    `alpha` is the pseudo-count strength borrowed from the context
+    mean: larger shrinks harder at low depth. Used on the meth control,
+    the unmeth control, or the test set, so it is not controls-specific.
+
+    Parameters
+    ----------
+    k : np.ndarray
+        float64, length L, per-position count of methylated calls,
+        summed across every molecule in the sample. Build this with
+        `_streamed_call_count` so the full sample never needs to be
+        held in memory at once.
+    n_mol : int
+        Molecule count in the sample.
+    ctx : np.ndarray
+        int8, length L, context code per position.
+    alpha : float, default 10.0
+        Pseudo-count strength. 0 disables shrinkage.
+    eps : float, default 1e-4
+        Clip bound keeping rates away from exactly 0 or 1.
+
+    Returns
+    -------
+    np.ndarray
+        float64, length L, in [eps, 1 - eps].
+    """
+    theta = np.full(len(ctx), np.nan)
+    for code in (M6A, GCH, HCG, GCG):
+        sel = ctx == code
+        if not sel.any() or n_mol == 0:
+            continue
+        p0 = k[sel].sum() / (n_mol * sel.sum())
+        theta[sel] = (k[sel] + alpha * p0) / (n_mol + alpha)
+    return np.clip(theta, eps, 1 - eps)
+
+
+def _streamed_call_count(exp, chrom, which, ctx, thresh, batch_size,
+                         mask_name):
+    """
+    Per-position methylated-call count and molecule count for one raw
+    source, streamed in batches so peak memory is O(batch_size x L)
+    rather than O(n_mol x L).
+
+    Parameters
+    ----------
+    exp : MethPrintExperiment
+        The experiment object containing raw data and analysis maps.
+    chrom : str
+        Chromosome identifier.
+    which : {"test", "meth", "unmeth"}
+        Which raw table to read, forwarded to `exp.to_dense`.
+    ctx : np.ndarray
+        int8, length L, context code per position.
+    thresh : float
+        `mod_qual` threshold above which a call counts as methylated.
+    batch_size : int
+        Number of molecules processed per batch.
+    mask_name : str or None
+        Forwarded to `exp.to_dense`.
+
+    Returns
+    -------
+    k : np.ndarray
+        float64, length L.
+    n_mol : int
+        Molecule count in the sample.
+    """
+    arr = exp.to_dense(chrom, which=which, as_h5array=True,
+                       batch_size=batch_size, mask_name=mask_name)
+    n_mol, L = arr.shape
+    ctx_ok = ctx != NONE
+    k = np.zeros(L, dtype=np.float64)
+    for start in range(0, n_mol, batch_size):
+        stop = min(start + batch_size, n_mol)
+        methylated = (arr[start:stop, :] >= thresh) & ctx_ok[None, :]
+        k += methylated.sum(axis=0)
+    return k, n_mol
+
+
+def _leak_interpolated_rate(theta_acc, fpr, rho_leak=0.15, eps=1e-4):
+    """
+    theta_prot interpolated between the caller FPR (perfect protection)
+    and full accessibility.
+
+    The unmethylated control measures only the caller's false-positive
+    rate, a lower bound on theta_prot: real nucleosomes breathe at the
+    entry and exit points, so true theta_prot sits above the FPR.
+    `rho_leak` in [0, 1] is the one global parameter capturing that
+    (0 means perfect protection).
+
+    Parameters
+    ----------
+    theta_acc : np.ndarray
+        float64, length L, accessible-state call rate.
+    fpr : np.ndarray
+        float64, length L, false-positive rate from the unmeth control.
+    rho_leak : float, default 0.15
+        Leak fraction toward `theta_acc`.
+    eps : float, default 1e-4
+        Clip bound keeping rates away from exactly 0 or 1.
+
+    Returns
+    -------
+    np.ndarray
+        float64, length L, in [eps, 1 - eps].
+    """
+    theta_prot = fpr + rho_leak * (theta_acc - fpr)
+    return np.clip(theta_prot, eps, 1 - eps)
+
+
+def _informative_mask(theta_acc, fpr, ctx, min_gap=0.05):
+    """Positions the assay can discriminate; elsewhere contributes zero."""
+    return ((ctx != NONE) & np.isfinite(theta_acc)
+            & ((theta_acc - fpr) > min_gap))
+
+
+def _calibrate_from_controls(meth_k, meth_n, unmeth_k, unmeth_n, ctx,
+                             alpha=10.0, rho_leak=0.15, min_gap=0.05):
+    """
+    Estimate theta_prot/theta_acc/informative from meth/unmeth controls.
+
+    Parameters
+    ----------
+    meth_k, meth_n : np.ndarray, int
+        From `_streamed_call_count` on the fully-methylated control.
+    unmeth_k, unmeth_n : np.ndarray, int
+        From `_streamed_call_count` on the unmethylated control.
+    ctx : np.ndarray
+        int8, length L, context code per position.
+    alpha : float, default 10.0
+        Forwarded to `_context_prior_rate`.
+    rho_leak : float, default 0.15
+        Forwarded to `_leak_interpolated_rate`.
+    min_gap : float, default 0.05
+        Forwarded to `_informative_mask`.
+
+    Returns
+    -------
+    tuple of np.ndarray
+        `(theta_prot, theta_acc, informative)`, each length L.
+    """
+    theta_acc = _context_prior_rate(meth_k, meth_n, ctx, alpha=alpha)
+    fpr = _context_prior_rate(unmeth_k, unmeth_n, ctx, alpha=alpha)
+    theta_prot = _leak_interpolated_rate(theta_acc, fpr, rho_leak=rho_leak)
+    informative = _informative_mask(theta_acc, fpr, ctx, min_gap=min_gap)
+    return theta_prot, theta_acc, informative
+
+
+def _streamed_window_count(exp, chrom, ctx, l_nuc, thresh, n_min,
+                           batch_size, mask_name):
+    """
+    Per-window, per-read methylated-call and trial counts for the test
+    sample, streamed in batches so peak memory is O(batch_size x L)
+    rather than O(n_mol x L).
+
+    Windows are non-overlapping. A window's trial count (its count of
+    context-eligible sites) never varies by read, since coverage is
+    assumed complete, so windows below `n_min` are dropped up front,
+    before any read data is touched.
+
+    Parameters
+    ----------
+    exp : MethPrintExperiment
+        The experiment object containing raw data and analysis maps.
+    chrom : str
+        Chromosome identifier.
+    ctx : np.ndarray
+        int8, length L, context code per position.
+    l_nuc : int
+        Nucleosome footprint size (bp), used as the window size.
+    thresh : float
+        `mod_qual` threshold above which a call counts as methylated.
+    n_min : int
+        Minimum context-eligible sites (summed over all contexts) a
+        window needs to be kept.
+    batch_size : int
+        Number of molecules processed per batch.
+    mask_name : str or None
+        Forwarded to `exp.to_dense`.
+
+    Returns
+    -------
+    K, N : np.ndarray
+        float64, (n_ctx, n_mol * n_kept_windows).
+    codes : list of int
+        Context codes present in `ctx`, in the same order as `K`/`N`'s
+        first axis.
+
+    Raises
+    ------
+    ValueError
+        If `ctx` has no assayable contexts, or too few windows have
+        `n_min` context-eligible sites.
+    """
+    arr = exp.to_dense(chrom, which="test", as_h5array=True,
+                       batch_size=batch_size, mask_name=mask_name)
+    n_mol, L = arr.shape
+    starts = np.arange(0, L - l_nuc + 1, l_nuc)
+    codes = [c for c in (M6A, GCH, HCG, GCG) if (ctx == c).any()]
+    if not codes:
+        raise ValueError("no assayable contexts in ctx")
+
+    n_win = {c: np.array([(ctx[s:s + l_nuc] == c).sum() for s in starts])
+             for c in codes}
+    total_win = sum(n_win[c] for c in codes)
+    keep = total_win >= n_min
+    if n_mol * keep.sum() < 10:
+        raise ValueError("too few windows with >= n_min context-eligible "
+                         "sites")
+    kept_starts = starts[keep]
+
+    ctx_ok = ctx != NONE
+    K_batches = {c: [] for c in codes}
+    for start in range(0, n_mol, batch_size):
+        stop = min(start + batch_size, n_mol)
+        methylated = (arr[start:stop, :] >= thresh) & ctx_ok[None, :]
+        for c in codes:
+            sel = ctx == c
+            k_c = np.stack(
+                [methylated[:, s:s + l_nuc][:, sel[s:s + l_nuc]]
+                .sum(axis=1) for s in kept_starts], axis=1)
+            K_batches[c].append(k_c)
+
+    K = np.array([np.concatenate(K_batches[c], axis=0).ravel()
+                 for c in codes]).astype(np.float64)
+    N = np.array([np.tile(n_win[c][keep], n_mol)
+                 for c in codes]).astype(np.float64)
+    return K, N, codes
+
+
+def _calibrate_from_data(K, N, ctx, codes, iters=200, eps=1e-3,
+                         init_prot=0.05, init_acc=0.60, tol=1e-8,
+                         min_gap=0.05):
+    """
+    Fit theta_prot/theta_acc per context with expectation-maximization,
+    from precomputed per-window call counts, when no meth/unmeth
+    controls are available.
+
+    Fits a two-component binomial mixture (a shared latent protection
+    state per window, pooled across reads), since without controls the
+    two rates must be estimated from the test sample alone.
+
+    Parameters
+    ----------
+    K, N : np.ndarray
+        float64, (n_ctx, n_obs), from `_streamed_window_count`.
+    ctx : np.ndarray
+        int8, length L, context code per position.
+    codes : list of int
+        Context codes present in `ctx`, in the same order as `K`/`N`'s
+        first axis.
+    iters : int, default 200
+        Maximum number of expectation-maximization iterations.
+    eps : float, default 1e-3
+        Clip bound keeping rates away from exactly 0 or 1.
+    init_prot : float, default 0.05
+        Initial guess for theta_prot.
+    init_acc : float, default 0.60
+        Initial guess for theta_acc.
+    tol : float, default 1e-8
+        Relative log-likelihood convergence tolerance.
+    min_gap : float, default 0.05
+        Forwarded to the informative-mask computation.
+
+    Returns
+    -------
+    tuple of np.ndarray
+        `(theta_prot, theta_acc, informative)`, each length L. Rates are
+        constant within a context, since position-specific efficiency is
+        not resolvable without controls.
+    """
+    from scipy.stats import binom
+
+    tp = np.full(len(codes), init_prot)
+    ta = np.full(len(codes), init_acc)
+    pi = 0.75
+    prev = -np.inf
+
+    for it in range(iters):
+        lp = np.log(pi) + sum(binom.logpmf(K[c], N[c], tp[c])
+                              for c in range(len(codes)))
+        la = np.log1p(-pi) + sum(binom.logpmf(K[c], N[c], ta[c])
+                                 for c in range(len(codes)))
+        m = np.maximum(lp, la)
+        ll = (m + np.log(np.exp(lp - m) + np.exp(la - m))).sum()
+        r = 1.0 / (1.0 + np.exp(la - lp))          # P(protected | window)
+
+        for c in range(len(codes)):
+            dp, da = (r * N[c]).sum(), ((1 - r) * N[c]).sum()
+            if dp > 0:
+                tp[c] = np.clip((r * K[c]).sum() / dp, eps, 1 - eps)
+            if da > 0:
+                ta[c] = np.clip(((1 - r) * K[c]).sum() / da, eps, 1 - eps)
+        pi = float(r.mean())
+
+        if abs(ll - prev) < tol * max(1.0, abs(ll)):
+            break
+        prev = ll
+
+    # Label switching: "protected" must be the low-methylation component.
+    if (np.average(tp, weights=N.sum(axis=1))
+            > np.average(ta, weights=N.sum(axis=1))):
+        tp, ta = ta, tp
+
+    theta_prot = np.full(len(ctx), np.nan)
+    theta_acc = np.full(len(ctx), np.nan)
+    for c, code in enumerate(codes):
+        sel = ctx == code
+        theta_prot[sel], theta_acc[sel] = tp[c], ta[c]
+
+    informative = ((ctx != NONE) & np.isfinite(theta_acc)
+                   & ((theta_acc - theta_prot) > min_gap))
+    return theta_prot, theta_acc, informative
+
+
+def _per_base_log_odds(methylated, theta_prot, theta_acc, informative):
+    """
+    Per-position, per-read log-odds of "protected" versus "accessible".
+
+    Parameters
+    ----------
+    methylated : np.ndarray
+        bool, (n_mol, L).
+    theta_prot : np.ndarray
+        float64, length L.
+    theta_acc : np.ndarray
+        float64, length L.
+    informative : np.ndarray
+        bool, length L.
+
+    Returns
+    -------
+    np.ndarray
+        float64, (n_mol, L), zero outside `informative` positions.
+
+    Notes
+    -----
+    `theta_prot`/`theta_acc` are nan outside assayable contexts; the log
+    ratios below are computed with warnings suppressed there, since
+    `informative` always zeroes those positions regardless.
+    """
+    with np.errstate(invalid="ignore"):
+        a = np.log(theta_prot / theta_acc)
+        b = np.log((1.0 - theta_prot) / (1.0 - theta_acc))
+    log_odds = np.where(methylated, a, b)
+    return np.where(informative, log_odds, 0.0)
+
+
+def _window_sum_log_odds(log_odds, l_nuc, fill_edge=0.0):
+    """
+    Left-aligned rolling sum of `log_odds` over a window of `l_nuc`
+    positions: position i summarizes `[i, i + l_nuc)`. The trailing
+    `l_nuc - 1` positions, which have no full window, are filled with
+    `fill_edge`.
+
+    Parameters
+    ----------
+    log_odds : np.ndarray
+        float64, (n_mol, L).
+    l_nuc : int
+        Window size.
+    fill_edge : float, default 0.0
+        Value used for the trailing positions.
+
+    Returns
+    -------
+    np.ndarray
+        float64, (n_mol, L).
+    """
+    n_mol, L = log_odds.shape
+    out = np.full((n_mol, L), fill_edge)
+    n_win = L - l_nuc + 1
+    if n_win <= 0:
+        return out
+    cum = np.concatenate(
+        [np.zeros((n_mol, 1)), np.cumsum(log_odds, axis=1)], axis=1)
+    out[:, :n_win] = cum[:, l_nuc:] - cum[:, :-l_nuc]
+    return out
+
+
 class MethPrintAnalysis:
     """
     Normalization and smoothing suite for MethPrintExperiment data.
@@ -448,6 +879,161 @@ class MethPrintAnalysis:
                 prob = np.clip((batch-vmin)/denom, 0.0, 1.0)
                 out.write_batch(start, stop, prob)
             ana[prob_name] = out
+
+    def model_prob(self, *, exp : MethPrintExperiment,
+                   prob_name : str = "meth_prob",
+                   thresh : float = 0.5,
+                   alpha : float = 10.0,
+                   rho_leak : float = 0.15,
+                   min_gap : float = 0.05,
+                   l_nuc : int = 147,
+                   n_min : int = 10,
+                   iters : int = 200,
+                   init_prot : float = 0.05,
+                   init_acc : float = 0.60,
+                   tol : float = 1e-8,
+                   fill_edge : float = np.nan,
+                   batch_size : int = 20000,
+                   mask_name : str | None = None):
+        """
+        Convert multi-channel methylation footprinting calls into a
+        methylation probability profile with values ranging between 0
+        and 1, using a calibrated Bayesian log-odds model.
+
+        Iterate through all chromosomes, classify each reference
+        position into a footprinting context (m6A/GpC/CpG/GCG) from
+        `exp.raw[chrom].refseq`, estimate position-specific call rates
+        under "protected" and "accessible" hypotheses -- from meth/
+        unmeth controls when available, or by expectation-maximization
+        on the test sample otherwise -- and convert each read's
+        per-position log-odds into a left-aligned, window-summed
+        probability. Molecules are processed in batches and streamed to
+        a disk-backed array so that peak memory scales with
+        `batch_size` rather than the total number of molecules,
+        including during rate calibration.
+
+        Parameters
+        ----------
+        exp : MethPrintExperiment
+            The experiment object containing raw data and analysis maps.
+        prob_name : str, default "meth_prob"
+            The key used to store the resulting probabilities in
+            `exp.analysis`.
+        thresh : float, default 0.5
+            `mod_qual` threshold above which a call counts as
+            methylated.
+        alpha : float, default 10.0
+            Pseudo-count strength for shrinking each position's call
+            rate toward its context group's mean; larger values shrink
+            harder at low depth.
+        rho_leak : float, default 0.15
+            Leak fraction in [0, 1] interpolating the protected-state
+            call rate between the unmethylated control's false-positive
+            rate (0, perfect protection) and the accessible-state rate.
+            Used only when meth/unmeth controls are available.
+        min_gap : float, default 0.05
+            Minimum required gap between the accessible and protected
+            call rates for a position to be treated as informative;
+            positions below this gap contribute no evidence.
+        l_nuc : int, default 147
+            Nucleosome footprint size (bp): the expectation-maximization
+            window size (no-controls path) and the output window-sum
+            size.
+        n_min : int, default 10
+            Minimum number of context-eligible sites a window must have
+            to be used in the no-controls expectation-maximization fit.
+            Used only when no meth/unmeth controls are available.
+        iters : int, default 200
+            Maximum number of expectation-maximization iterations for
+            the no-controls rate fit.
+        init_prot : float, default 0.05
+            Initial guess for the protected-state call rate in the
+            no-controls expectation-maximization fit.
+        init_acc : float, default 0.60
+            Initial guess for the accessible-state call rate in the
+            no-controls expectation-maximization fit.
+        tol : float, default 1e-8
+            Relative log-likelihood convergence tolerance for the
+            no-controls expectation-maximization fit.
+        fill_edge : float, default nan
+            Probability used to fill the trailing `l_nuc - 1` positions
+            of the result, which have no full window to summarize. The
+            nan default leaves those positions unfilled.
+        batch_size : int, default 20000
+            Number of molecules processed (and held in memory) per
+            batch.
+        mask_name : str, optional
+            If given, molecules flagged as dropout by a prior
+            `MethPrintExperiment.filter_dropout(mask_name=mask_name)`
+            call are excluded from rate calibration and from the
+            output, per source.
+
+        Raises
+        ------
+        ValueError
+            If a chromosome has no reference sequence (`refseq`), or if
+            the no-controls path cannot find enough windows with
+            `n_min` context-eligible sites.
+        KeyError
+            If `mask_name` is given but no matching mask is found for
+            some source/chromosome.
+
+        Notes
+        -----
+        Position `i` in the result summarizes the window
+        `[i, i + l_nuc)`.
+        """
+        from scipy.special import expit, logit
+
+        tmp_dir = exp.resolve_tmp_dir()
+        log_odds_fill = -logit(fill_edge)
+
+        for chrom in exp.chroms:
+            raw = exp.raw[chrom]
+            if raw.refseq is None:
+                raise ValueError(
+                    f"No reference sequence for chrom '{chrom}'; "
+                    "model_prob needs 'fasta_file' at load_raw.")
+            ctx = _reference_contexts(raw.refseq)
+            has_controls = (raw.meth_data is not None
+                            and raw.unmeth_data is not None)
+
+            if has_controls:
+                meth_k, meth_n = _streamed_call_count(
+                    exp, chrom, "meth", ctx, thresh, batch_size, mask_name)
+                unmeth_k, unmeth_n = _streamed_call_count(
+                    exp, chrom, "unmeth", ctx, thresh, batch_size,
+                    mask_name)
+                theta_prot, theta_acc, informative = \
+                    _calibrate_from_controls(
+                        meth_k, meth_n, unmeth_k, unmeth_n, ctx,
+                        alpha=alpha, rho_leak=rho_leak, min_gap=min_gap)
+            else:
+                K, N, codes = _streamed_window_count(
+                    exp, chrom, ctx, l_nuc, thresh, n_min, batch_size,
+                    mask_name)
+                theta_prot, theta_acc, informative = _calibrate_from_data(
+                    K, N, ctx, codes, iters=iters, init_prot=init_prot,
+                    init_acc=init_acc, tol=tol, min_gap=min_gap)
+
+            nmol = len(raw.test_mol_id)
+            out = H5Array.create((nmol, raw.nbp), dtype=np.float64,
+                                 dir=tmp_dir)
+            test_arr = exp.to_dense(chrom, which="test", as_h5array=True,
+                                    batch_size=batch_size,
+                                    mask_name=mask_name)
+            ctx_ok = ctx[None, :] != NONE
+            for start in range(0, nmol, batch_size):
+                stop = min(start + batch_size, nmol)
+                batch = test_arr[start:stop, :]
+                methylated = (batch >= thresh) & ctx_ok
+                log_odds = _per_base_log_odds(methylated, theta_prot,
+                                              theta_acc, informative)
+                log_odds_win = _window_sum_log_odds(
+                    log_odds, l_nuc, fill_edge=log_odds_fill)
+                prob = expit(-log_odds_win)
+                out.write_batch(start, stop, prob)
+            exp.analysis[chrom][prob_name] = out
 
     def sort_by_linkage(self, *,
                         exp : MethPrintExperiment,

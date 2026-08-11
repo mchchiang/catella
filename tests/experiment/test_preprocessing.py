@@ -182,11 +182,11 @@ class TestSmooth:
             ana.smooth(binsize=1, exp=exp, fill_edge=1.5, batch_size=100)
 
 
-class TestMethProb:
+class TestHeuristicProb:
     def test_output_in_unit_range(self):
         exp = _make_experiment(nmol=6, nbp=10)
         ana = MethPrintAnalysis()
-        ana.meth_prob(exp=exp, binsize=3, batch_size=100,
+        ana.heuristic_prob(exp=exp, binsize=3, batch_size=100,
                       percentile_sample_size=1000, fill_edge="mean")
         prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
         assert prob.shape == (6, 10)
@@ -197,10 +197,10 @@ class TestMethProb:
         exp_a = _make_experiment(nmol=8, nbp=10)
         exp_b = _make_experiment(nmol=8, nbp=10)
         ana = MethPrintAnalysis()
-        ana.meth_prob(exp=exp_a, binsize=3, batch_size=1000,
+        ana.heuristic_prob(exp=exp_a, binsize=3, batch_size=1000,
                       percentile_sample_size=1000,
                       norm_by_strand=norm_by_strand, seed=0)
-        ana.meth_prob(exp=exp_b, binsize=3, batch_size=2,
+        ana.heuristic_prob(exp=exp_b, binsize=3, batch_size=2,
                       percentile_sample_size=1000,
                       norm_by_strand=norm_by_strand, seed=0)
         a = exp_a.analysis["chr1"]["meth_prob"].to_numpy()
@@ -210,7 +210,7 @@ class TestMethProb:
     def test_no_controls_skips_normalization(self):
         exp = _make_experiment(nmol=4, nbp=6, with_controls=False)
         ana = MethPrintAnalysis()
-        ana.meth_prob(exp=exp, binsize=2, batch_size=100,
+        ana.heuristic_prob(exp=exp, binsize=2, batch_size=100,
                       percentile_sample_size=1000, fill_edge="mean")
         prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
         assert prob.shape == (4, 6)
@@ -231,9 +231,9 @@ class TestMethProb:
         exp_wide = _make_comparability_experiment(test_values=wide_values)
 
         ana = MethPrintAnalysis()
-        ana.meth_prob(exp=exp_narrow, binsize=1, batch_size=100,
+        ana.heuristic_prob(exp=exp_narrow, binsize=1, batch_size=100,
                       percentile_sample_size=1000)
-        ana.meth_prob(exp=exp_wide, binsize=1, batch_size=100,
+        ana.heuristic_prob(exp=exp_wide, binsize=1, batch_size=100,
                       percentile_sample_size=1000)
 
         prob_narrow = exp_narrow.analysis["chr1"]["meth_prob"].to_numpy()
@@ -273,7 +273,7 @@ class TestMethProb:
         exp = MethPrintExperiment._create(_raw_data={"chr1": raw})
 
         ana = MethPrintAnalysis()
-        ana.meth_prob(exp=exp, binsize=1, batch_size=100,
+        ana.heuristic_prob(exp=exp, binsize=1, batch_size=100,
                       percentile_sample_size=1000)
         prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
         # Positions 1 and 2 are fully covered by both control molecules
@@ -285,7 +285,7 @@ class TestMethProb:
                                unmapped_test_mol=0)
         ana = MethPrintAnalysis()
         with pytest.raises(ValueError):
-            ana.meth_prob(exp=exp, binsize=2, batch_size=100,
+            ana.heuristic_prob(exp=exp, binsize=2, batch_size=100,
                           norm_by_strand=True)
 
     def test_nan_method_forwarded_to_lazy_smooth(self):
@@ -295,7 +295,7 @@ class TestMethProb:
             positions=[1, 2, 5], values=[0.0, 0.4, 1.0], nbp=7)
         ana = MethPrintAnalysis()
 
-        ana.meth_prob(exp=exp_lazy, binsize=1, nan_method="interpolate",
+        ana.heuristic_prob(exp=exp_lazy, binsize=1, nan_method="interpolate",
                       fill_edge=0, batch_size=100,
                       percentile_sample_size=1000)
         ana.smooth(binsize=1, exp=exp_direct, nan_method="interpolate",
@@ -341,7 +341,7 @@ class TestMaskName:
         exp.analysis["chr1"]["test_dropout_mask"] = pd.DataFrame(
             {"keep": [True, False, True, False]})
         ana = MethPrintAnalysis()
-        ana.meth_prob(exp=exp, binsize=2, batch_size=100,
+        ana.heuristic_prob(exp=exp, binsize=2, batch_size=100,
                       percentile_sample_size=1000,
                       mask_name="dropout_mask")
         prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
@@ -361,7 +361,7 @@ class TestMaskName:
         smoothed_before = exp.analysis["chr1"]["test_smoothed"].to_numpy()
         assert not np.isnan(smoothed_before[1]).all()
 
-        ana.meth_prob(exp=exp, binsize=2, batch_size=100,
+        ana.heuristic_prob(exp=exp, binsize=2, batch_size=100,
                       percentile_sample_size=1000,
                       mask_name="dropout_mask")
         prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
@@ -411,10 +411,10 @@ class TestMaskName:
             _raw_data={"chr1": raw_ref})
 
         ana = MethPrintAnalysis()
-        ana.meth_prob(exp=exp_masked, binsize=1, batch_size=100,
+        ana.heuristic_prob(exp=exp_masked, binsize=1, batch_size=100,
                       percentile_sample_size=1000,
                       mask_name="dropout_mask")
-        ana.meth_prob(exp=exp_reference, binsize=1, batch_size=100,
+        ana.heuristic_prob(exp=exp_reference, binsize=1, batch_size=100,
                       percentile_sample_size=1000)
 
         prob_masked = exp_masked.analysis["chr1"]["meth_prob"].to_numpy()
@@ -427,7 +427,7 @@ class TestSaveLoadRoundTrip:
         exp = _make_experiment(nmol=5, nbp=8)
         ana = MethPrintAnalysis()
         ana.smooth(binsize=2, exp=exp, batch_size=2)
-        ana.meth_prob(exp=exp, binsize=2, batch_size=2,
+        ana.heuristic_prob(exp=exp, binsize=2, batch_size=2,
                       percentile_sample_size=1000)
 
         expected = exp.analysis["chr1"]["meth_prob"].to_numpy()
@@ -485,7 +485,7 @@ class TestSortByLinkage:
         exp = _make_experiment(nmol=5, nbp=8)
         ana = MethPrintAnalysis()
         ana.smooth(binsize=2, exp=exp, batch_size=2, fill_edge="mean")
-        ana.meth_prob(exp=exp, binsize=2, batch_size=2,
+        ana.heuristic_prob(exp=exp, binsize=2, batch_size=2,
                       percentile_sample_size=1000)
 
         ana.sort_by_linkage(exp=exp, data_name="meth_prob", batch_size=2)

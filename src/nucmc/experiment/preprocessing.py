@@ -140,13 +140,19 @@ def _streamed_call_count(exp, chrom, which, ctx, thresh, batch_size,
     """
     arr = exp.to_dense(chrom, which=which, as_h5array=True,
                        batch_size=batch_size, mask_name=mask_name)
-    n_mol, L = arr.shape
+    n_total, L = arr.shape
     ctx_ok = ctx != NONE
     k = np.zeros(L, dtype=np.float64)
-    for start in range(0, n_mol, batch_size):
-        stop = min(start + batch_size, n_mol)
-        methylated = (arr[start:stop, :] >= thresh) & ctx_ok[None, :]
+    n_mol = 0
+    for start in range(0, n_total, batch_size):
+        stop = min(start + batch_size, n_total)
+        batch = arr[start:stop, :]
+        # mask_name marks dropped molecules as all-nan rows (see
+        # _apply_keep_mask); exclude them so they don't inflate n_mol.
+        kept = ~np.isnan(batch).all(axis=1)
+        methylated = (batch[kept] >= thresh) & ctx_ok[None, :]
         k += methylated.sum(axis=0)
+        n_mol += int(kept.sum())
     return k, n_mol
 
 
@@ -267,7 +273,7 @@ def _streamed_window_count(exp, chrom, ctx, l_nuc, thresh, n_min,
     """
     arr = exp.to_dense(chrom, which="test", as_h5array=True,
                        batch_size=batch_size, mask_name=mask_name)
-    n_mol, L = arr.shape
+    n_total, L = arr.shape
     starts = np.arange(0, L - l_nuc + 1, l_nuc)
     codes = [c for c in (M6A, GCH, HCG, GCG) if (ctx == c).any()]
     if not codes:
@@ -277,22 +283,32 @@ def _streamed_window_count(exp, chrom, ctx, l_nuc, thresh, n_min,
              for c in codes}
     total_win = sum(n_win[c] for c in codes)
     keep = total_win >= n_min
-    if n_mol * keep.sum() < 10:
+    if not keep.any():
         raise ValueError("too few windows with >= n_min context-eligible "
                          "sites")
     kept_starts = starts[keep]
 
     ctx_ok = ctx != NONE
     K_batches = {c: [] for c in codes}
-    for start in range(0, n_mol, batch_size):
-        stop = min(start + batch_size, n_mol)
-        methylated = (arr[start:stop, :] >= thresh) & ctx_ok[None, :]
+    n_mol = 0
+    for start in range(0, n_total, batch_size):
+        stop = min(start + batch_size, n_total)
+        batch = arr[start:stop, :]
+        # mask_name marks dropped molecules as all-nan rows (see
+        # _apply_keep_mask); exclude them so they don't inflate n_mol.
+        batch = batch[~np.isnan(batch).all(axis=1)]
+        n_mol += batch.shape[0]
+        methylated = (batch >= thresh) & ctx_ok[None, :]
         for c in codes:
             sel = ctx == c
             k_c = np.stack(
                 [methylated[:, s:s + l_nuc][:, sel[s:s + l_nuc]]
                 .sum(axis=1) for s in kept_starts], axis=1)
             K_batches[c].append(k_c)
+
+    if n_mol * keep.sum() < 10:
+        raise ValueError("too few windows with >= n_min context-eligible "
+                         "sites")
 
     K = np.array([np.concatenate(K_batches[c], axis=0).ravel()
                  for c in codes]).astype(np.float64)
@@ -1026,12 +1042,16 @@ class MethPrintAnalysis:
             for start in range(0, nmol, batch_size):
                 stop = min(start + batch_size, nmol)
                 batch = test_arr[start:stop, :]
+                # mask_name marks dropped molecules as all-nan rows (see
+                # _apply_keep_mask); propagate that to the output too.
+                masked = np.isnan(batch).all(axis=1)
                 methylated = (batch >= thresh) & ctx_ok
                 log_odds = _per_base_log_odds(methylated, theta_prot,
                                               theta_acc, informative)
                 log_odds_win = _window_sum_log_odds(
                     log_odds, l_nuc, fill_edge=log_odds_fill)
                 prob = expit(-log_odds_win)
+                prob[masked, :] = np.nan
                 out.write_batch(start, stop, prob)
             exp.analysis[chrom][prob_name] = out
 

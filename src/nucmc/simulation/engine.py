@@ -11,6 +11,7 @@ from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
 from rich.progress import TimeRemainingColumn
 import numpy as np
 import pandas as pd
+from scipy.special import logit
 from .results import SimDataset
 from ..utils import IndexType
 from .. import utils
@@ -46,9 +47,9 @@ class SimRun:
     from the batch seed if per-run offsets are applied.
     """
     
-    seq_prob : bytes
+    seq_energy : bytes
     """Binary representation of the sequence-specific nucleosome binding
-    probability derived from the methylation data."""
+    energy derived from the methylation data."""
     
     out_type : Dump.OutputType
     """The format or scope of data to be recorded (e.g., Energy, Position,
@@ -292,8 +293,7 @@ class SimManager:
                                     settings.mu, 0)
                 eseq[chrom] = np.empty(meth_prob[chrom].shape)
                 for i in range(meth_prob[chrom].shape[0]):
-                    # pseq = 1 - pmeth
-                    model.setSeqEnergy(1.0-meth_prob[chrom][i], settings.emax)
+                    model.setEnergy(logit(meth_prob[chrom][i]), settings.emax)
                     eseq[chrom][i] = model.getSeqEnergy()
 
         # Adjust the chemical potential if needed
@@ -336,15 +336,15 @@ class SimManager:
                 molidxs = np.arange(nmol[chrom])[mols[chrom]]
                 for molidx in molidxs:
                     idx = int(molidx)
-                    # pseq = 1 - pmeth
-                    pseq = np.asarray(1.0-meth_prob[chrom][molidx,:],
-                                      dtype=np.float64).tobytes()
+                    eseq = np.asarray(
+                        logit(meth_prob[chrom][molidx,:]),
+                        dtype=np.float64).tobytes()
                     for run in range(nsim):
                         sim_file = dataset.sim_file(chrom, idx, run)
                         yield SimRun(chrom=chrom, mol=idx, run=run,
                                         settings=settings,
                                         seed=int(seed_table[chrom][idx, run]),
-                                        seq_prob=pseq, out_type=out_type,
+                                        seq_energy=eseq, out_type=out_type,
                                         out_file=sim_file)
         param_gen = params_generator(settings)
 
@@ -447,12 +447,13 @@ class SimManager:
 
         def rerun_param_generator():
             for chrom, mol, run in targets:
-                pseq = np.asarray(1.0 - meth_prob[chrom][mol,:],
-                                  dtype=np.float64).tobytes()
+                eseq = np.asarray(
+                    logit(meth_prob[chrom][mol,:]),
+                    dtype=np.float64).tobytes()
                 yield SimRun(chrom=chrom, mol=mol, run=run,
                             settings=settings,
                             seed=resolved_seeds[(chrom, mol, run)],
-                            seq_prob=pseq, out_type=resolved_out_type,
+                            seq_energy=eseq, out_type=resolved_out_type,
                             out_file=dataset.sim_file(chrom, mol, run))
 
         self._dispatch(dataset, rerun_param_generator(), len(targets),
@@ -553,12 +554,12 @@ class SimManager:
             sim_dir = Path(p.out_file).parents[0]
             sim_dir.mkdir(exist_ok=True, parents=True)
             # Initialize the methylation energy landscape
-            pseq_list = np.frombuffer(p.seq_prob, dtype=np.float64).tolist()
-            nbp = len(pseq_list)
+            eseq_list = np.frombuffer(p.seq_energy, dtype=np.float64).tolist()
+            nbp = len(eseq_list)
             # Create the cpp backend Monte Carlo simulation model
             model = NucPosModel(settings.nucbp, nbp, settings.llink,
                                 settings.mu, p.seed)
-            model.setSeqEnergy(pseq_list, settings.emax)
+            model.setEnergy(eseq_list, settings.emax)
             # For tracking all simulation data
             model.addTracker(
                 sim.createDump(settings.print_freq, str(p.out_file),

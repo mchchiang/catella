@@ -560,3 +560,149 @@ class TestSortByLinkage:
         link_mats = ana.sort_by_linkage(exp=exp, data_name="test_nan",
                                         batch_size=2, fill_nan="mean")
         assert np.isfinite(link_mats["chr1"]).all()
+
+
+def _make_footprint_experiment(*, nmol=20, meth_nmol=30, unmeth_nmol=30,
+                               with_controls=True, planted_edges=(30,),
+                               l_nuc=30, seed=0):
+    # Synthetic multi-channel footprinting experiment with a known
+    # planted "protected" region, for testing model_prob end to end.
+    from nucmc.experiment.preprocessing import (
+        _reference_contexts, NONE, M6A, GCH, HCG, GCG)
+
+    rng = np.random.default_rng(seed)
+    seq = "AATTGCGTTAAGCTTTAACGTTAAGCGCAATT" * 8
+    ctx = _reference_contexts(seq)
+    L = len(seq)
+    site = ctx != NONE
+
+    true_acc = np.zeros(L)
+    true_fpr = np.zeros(L)
+    rates = {M6A: (0.02, 0.60), GCH: (0.02, 0.75),
+            HCG: (0.03, 0.50), GCG: (0.03, 0.80)}
+    for code, (f, a) in rates.items():
+        sel = ctx == code
+        true_acc[sel] = np.clip(a + rng.normal(0, 0.10, sel.sum()),
+                                0.05, 0.95)
+        true_fpr[sel] = f
+    rho_leak = 0.15
+
+    occ = np.zeros(L, dtype=bool)
+    for e in planted_edges:
+        occ[e:e + l_nuc] = True
+    test_prob = np.where(occ, true_fpr + rho_leak * (true_acc - true_fpr),
+                         true_acc)
+
+    def make_df(n, prob):
+        rows = []
+        for m in range(n):
+            calls = rng.random(L) < prob
+            for pos in np.where(site)[0]:
+                rows.append((m, int(pos), "+", float(calls[pos]), 0))
+        return pd.DataFrame(rows, columns=["mol_index", "pos", "strand",
+                                           "mod_qual", "mod_code"])
+
+    test_df = make_df(nmol, test_prob)
+    test_mol_id = np.array([f"t{m}" for m in range(nmol)], dtype=object)
+
+    if with_controls:
+        meth_df = make_df(meth_nmol, true_acc)
+        unmeth_df = make_df(unmeth_nmol, true_fpr)
+        meth_mol_id = np.array([f"m{m}" for m in range(meth_nmol)],
+                               dtype=object)
+        unmeth_mol_id = np.array([f"u{m}" for m in range(unmeth_nmol)],
+                                 dtype=object)
+    else:
+        meth_df = unmeth_df = meth_mol_id = unmeth_mol_id = None
+
+    raw = MethPrintData._create(
+        chrom="chr1", nbp=L, refseq=seq, test_mol_id=test_mol_id,
+        test_data=test_df, meth_mol_id=meth_mol_id, meth_data=meth_df,
+        unmeth_mol_id=unmeth_mol_id, unmeth_data=unmeth_df)
+    return MethPrintExperiment._create(_raw_data={"chr1": raw})
+
+
+class TestModelProb:
+    def test_controls_path_favors_planted_region(self):
+        exp = _make_footprint_experiment(with_controls=True,
+                                         planted_edges=(30,), l_nuc=30)
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=exp, l_nuc=30, batch_size=7)
+        prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
+        assert prob.shape == (20, len(exp.raw["chr1"].refseq))
+        planted = np.nanmean(prob[:, 30])
+        background = np.nanmean(prob[:, 0])
+        assert planted < 0.1
+        assert background > 0.5
+
+    def test_no_controls_em_path_favors_planted_region(self):
+        exp = _make_footprint_experiment(with_controls=False, nmol=120,
+                                         planted_edges=(30, 120, 200),
+                                         l_nuc=30)
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=exp, l_nuc=30, n_min=3, batch_size=17)
+        prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
+        planted = np.nanmean(prob[:, 30])
+        background = np.nanmean(prob[:, 0])
+        assert planted < background
+
+    def test_mask_name_excludes_dropped_molecules(self):
+        exp = _make_footprint_experiment(with_controls=True, nmol=20,
+                                         meth_nmol=30, unmeth_nmol=30,
+                                         planted_edges=(30,), l_nuc=30)
+        keep_test = np.array([i not in (1, 3) for i in range(20)])
+        keep_ctrl = np.array([i not in (1, 3) for i in range(30)])
+        exp.analysis["chr1"]["test_drop"] = pd.DataFrame({"keep": keep_test})
+        exp.analysis["chr1"]["meth_drop"] = pd.DataFrame({"keep": keep_ctrl})
+        exp.analysis["chr1"]["unmeth_drop"] = pd.DataFrame(
+            {"keep": keep_ctrl})
+
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=exp, l_nuc=30, batch_size=7, mask_name="drop")
+        prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
+        assert np.isnan(prob[1]).all()
+        assert np.isnan(prob[3]).all()
+        assert not np.isnan(prob[0]).all()
+
+    def test_missing_mask_raises(self):
+        exp = _make_footprint_experiment(with_controls=True, nmol=10,
+                                         meth_nmol=10, unmeth_nmol=10,
+                                         l_nuc=30)
+        ana = MethPrintAnalysis()
+        with pytest.raises(KeyError):
+            ana.model_prob(exp=exp, l_nuc=30, mask_name="nonexistent")
+
+    def test_missing_refseq_raises(self):
+        exp = _make_experiment(nmol=6, nbp=10)
+        ana = MethPrintAnalysis()
+        with pytest.raises(ValueError):
+            ana.model_prob(exp=exp)
+
+    def test_fill_edge_default_is_nan_on_trailing_positions(self):
+        exp = _make_footprint_experiment(with_controls=True, nmol=10,
+                                         meth_nmol=10, unmeth_nmol=10,
+                                         l_nuc=30)
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=exp, l_nuc=30, batch_size=5)
+        prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
+        nbp = prob.shape[1]
+        assert np.isnan(prob[:, nbp - 30 + 1:]).all()
+        assert not np.isnan(prob[:, :nbp - 30 + 1]).any()
+
+    def test_fill_edge_custom_value(self):
+        exp = _make_footprint_experiment(with_controls=True, nmol=10,
+                                         meth_nmol=10, unmeth_nmol=10,
+                                         l_nuc=30)
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=exp, l_nuc=30, batch_size=5, fill_edge=0.25)
+        prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
+        nbp = prob.shape[1]
+        np.testing.assert_allclose(prob[:, nbp - 30 + 1:], 0.25)
+
+    def test_default_prob_name_matches_heuristic_prob(self):
+        exp = _make_footprint_experiment(with_controls=True, nmol=10,
+                                         meth_nmol=10, unmeth_nmol=10,
+                                         l_nuc=30)
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=exp, l_nuc=30, batch_size=5)
+        assert "meth_prob" in exp.analysis["chr1"]

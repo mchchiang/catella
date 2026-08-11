@@ -26,9 +26,10 @@ def _make_meth_prob(nmol=3, nbp=400, seed=0):
 
 
 def _make_sim_run(out_file, **overrides):
-    seq_prob = np.asarray(1.0 - _make_meth_prob(nmol=1)[0],
-                          dtype=np.float64).tobytes()
-    defaults = dict(chrom="chr1", mol=0, run=0, seed=1, seq_prob=seq_prob,
+    seq_energy = np.asarray(_make_meth_prob(nmol=1)[0],
+                            dtype=np.float64).tobytes()
+    defaults = dict(chrom="chr1", mol=0, run=0, seed=1,
+                    seq_energy=seq_energy,
                     out_type=Dump.OutputType.All, out_file=out_file,
                     settings=_make_settings())
     defaults.update(overrides)

@@ -564,7 +564,7 @@ class TestSortByLinkage:
 
 def _make_footprint_experiment(*, nmol=20, meth_nmol=30, unmeth_nmol=30,
                                with_controls=True, planted_edges=(30,),
-                               l_nuc=30, seed=0):
+                               l_nuc=30, seed=0, soft_q=False):
     # Synthetic multi-channel footprinting experiment with a known
     # planted "protected" region, for testing model_prob end to end.
     from nucmc.experiment.preprocessing import (
@@ -597,8 +597,13 @@ def _make_footprint_experiment(*, nmol=20, meth_nmol=30, unmeth_nmol=30,
         rows = []
         for m in range(n):
             calls = rng.random(L) < prob
+            if soft_q:
+                qual = np.where(calls, rng.uniform(0.6, 0.95, L),
+                                rng.uniform(0.05, 0.4, L))
+            else:
+                qual = calls.astype(float)
             for pos in np.where(site)[0]:
-                rows.append((m, int(pos), "+", float(calls[pos]), 0))
+                rows.append((m, int(pos), "+", float(qual[pos]), 0))
         return pd.DataFrame(rows, columns=["mol_index", "pos", "strand",
                                            "mod_qual", "mod_code"])
 
@@ -634,6 +639,19 @@ class TestModelProb:
         background = np.nanmean(prob[:, 0])
         assert planted < 0.1
         assert background > 0.5
+
+    def test_continuous_confidence_favors_planted_region(self):
+        # mod_qual values are graded confidence scores rather than hard
+        # 0/1 calls; exercises the continuous-q_x likelihood path.
+        exp = _make_footprint_experiment(with_controls=True,
+                                         planted_edges=(30,), l_nuc=30,
+                                         soft_q=True)
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=exp, l_nuc=30, batch_size=7)
+        prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
+        planted = np.nanmean(prob[:, 30])
+        background = np.nanmean(prob[:, 0])
+        assert planted < background
 
     def test_no_controls_em_path_favors_planted_region(self):
         exp = _make_footprint_experiment(with_controls=False, nmol=120,

@@ -68,11 +68,11 @@ def _reference_contexts(seq):
     return ctx
 
 
-def _context_prior_rate(k, n_mol, ctx, alpha=10.0, eps=1e-4):
+def _context_prior_rate(k, n_mol, ctx, nu=10.0, eps=1e-4):
     """
     Per-position call rate, shrunk toward its context group's mean.
 
-    `alpha` is the pseudo-count strength borrowed from the context
+    `nu` is the pseudo-count strength borrowed from the context
     mean: larger shrinks harder at low depth. Used on the meth control,
     the unmeth control, or the test set, so it is not controls-specific.
 
@@ -87,7 +87,7 @@ def _context_prior_rate(k, n_mol, ctx, alpha=10.0, eps=1e-4):
         Molecule count in the sample.
     ctx : np.ndarray
         int8, length L, context code per position.
-    alpha : float, default 10.0
+    nu : float, default 10.0
         Pseudo-count strength. 0 disables shrinkage.
     eps : float, default 1e-4
         Clip bound keeping rates away from exactly 0 or 1.
@@ -103,16 +103,15 @@ def _context_prior_rate(k, n_mol, ctx, alpha=10.0, eps=1e-4):
         if not sel.any() or n_mol == 0:
             continue
         p0 = k[sel].sum() / (n_mol * sel.sum())
-        theta[sel] = (k[sel] + alpha * p0) / (n_mol + alpha)
+        theta[sel] = (k[sel] + nu * p0) / (n_mol + nu)
     return np.clip(theta, eps, 1 - eps)
 
 
-def _streamed_call_count(exp, chrom, which, ctx, thresh, batch_size,
-                         mask_name):
+def _streamed_call_count(exp, chrom, which, ctx, batch_size, mask_name):
     """
-    Per-position methylated-call count and molecule count for one raw
-    source, streamed in batches so peak memory is O(batch_size x L)
-    rather than O(n_mol x L).
+    Per-position summed methylation-calling confidence and molecule
+    count for one raw source, streamed in batches so peak memory is
+    O(batch_size x L) rather than O(n_mol x L).
 
     Parameters
     ----------
@@ -124,8 +123,6 @@ def _streamed_call_count(exp, chrom, which, ctx, thresh, batch_size,
         Which raw table to read, forwarded to `exp.to_dense`.
     ctx : np.ndarray
         int8, length L, context code per position.
-    thresh : float
-        `mod_qual` threshold above which a call counts as methylated.
     batch_size : int
         Number of molecules processed per batch.
     mask_name : str or None
@@ -134,7 +131,9 @@ def _streamed_call_count(exp, chrom, which, ctx, thresh, batch_size,
     Returns
     -------
     k : np.ndarray
-        float64, length L.
+        float64, length L, per-position sum of `mod_qual` confidence
+        scores across every molecule in the sample (nan/no-call
+        positions excluded).
     n_mol : int
         Molecule count in the sample.
     """
@@ -150,8 +149,8 @@ def _streamed_call_count(exp, chrom, which, ctx, thresh, batch_size,
         # mask_name marks dropped molecules as all-nan rows (see
         # _apply_keep_mask); exclude them so they don't inflate n_mol.
         kept = ~np.isnan(batch).all(axis=1)
-        methylated = (batch[kept] >= thresh) & ctx_ok[None, :]
-        k += methylated.sum(axis=0)
+        q = np.where(ctx_ok[None, :], batch[kept], np.nan)
+        k += np.nansum(q, axis=0)
         n_mol += int(kept.sum())
     return k, n_mol
 
@@ -194,7 +193,7 @@ def _informative_mask(theta_acc, fpr, ctx, min_gap=0.05):
 
 
 def _calibrate_from_controls(meth_k, meth_n, unmeth_k, unmeth_n, ctx,
-                             alpha=10.0, rho_leak=0.15, min_gap=0.05):
+                             nu=10.0, rho_leak=0.1, min_gap=0.05):
     """
     Estimate theta_prot/theta_acc/informative from meth/unmeth controls.
 
@@ -206,9 +205,9 @@ def _calibrate_from_controls(meth_k, meth_n, unmeth_k, unmeth_n, ctx,
         From `_streamed_call_count` on the unmethylated control.
     ctx : np.ndarray
         int8, length L, context code per position.
-    alpha : float, default 10.0
+    nu : float, default 10.0
         Forwarded to `_context_prior_rate`.
-    rho_leak : float, default 0.15
+    rho_leak : float, default 0.1
         Forwarded to `_leak_interpolated_rate`.
     min_gap : float, default 0.05
         Forwarded to `_informative_mask`.
@@ -218,19 +217,19 @@ def _calibrate_from_controls(meth_k, meth_n, unmeth_k, unmeth_n, ctx,
     tuple of np.ndarray
         `(theta_prot, theta_acc, informative)`, each length L.
     """
-    theta_acc = _context_prior_rate(meth_k, meth_n, ctx, alpha=alpha)
-    fpr = _context_prior_rate(unmeth_k, unmeth_n, ctx, alpha=alpha)
+    theta_acc = _context_prior_rate(meth_k, meth_n, ctx, nu=nu)
+    fpr = _context_prior_rate(unmeth_k, unmeth_n, ctx, nu=nu)
     theta_prot = _leak_interpolated_rate(theta_acc, fpr, rho_leak=rho_leak)
     informative = _informative_mask(theta_acc, fpr, ctx, min_gap=min_gap)
     return theta_prot, theta_acc, informative
 
 
-def _streamed_window_count(exp, chrom, ctx, l_nuc, thresh, n_min,
-                           batch_size, mask_name):
+def _streamed_window_count(exp, chrom, ctx, l_nuc, n_min, batch_size,
+                           mask_name):
     """
-    Per-window, per-read methylated-call and trial counts for the test
-    sample, streamed in batches so peak memory is O(batch_size x L)
-    rather than O(n_mol x L).
+    Per-window, per-read summed methylation-calling confidence and
+    trial counts for the test sample, streamed in batches so peak
+    memory is O(batch_size x L) rather than O(n_mol x L).
 
     Windows are non-overlapping. A window's trial count (its count of
     context-eligible sites) never varies by read, since coverage is
@@ -247,8 +246,6 @@ def _streamed_window_count(exp, chrom, ctx, l_nuc, thresh, n_min,
         int8, length L, context code per position.
     l_nuc : int
         Nucleosome footprint size (bp), used as the window size.
-    thresh : float
-        `mod_qual` threshold above which a call counts as methylated.
     n_min : int
         Minimum context-eligible sites (summed over all contexts) a
         window needs to be kept.
@@ -260,7 +257,9 @@ def _streamed_window_count(exp, chrom, ctx, l_nuc, thresh, n_min,
     Returns
     -------
     K, N : np.ndarray
-        float64, (n_ctx, n_mol * n_kept_windows).
+        float64, (n_ctx, n_mol * n_kept_windows). `K` is the per-window,
+        per-read sum of `mod_qual` confidence scores (nan/no-call
+        positions excluded).
     codes : list of int
         Context codes present in `ctx`, in the same order as `K`/`N`'s
         first axis.
@@ -298,12 +297,12 @@ def _streamed_window_count(exp, chrom, ctx, l_nuc, thresh, n_min,
         # _apply_keep_mask); exclude them so they don't inflate n_mol.
         batch = batch[~np.isnan(batch).all(axis=1)]
         n_mol += batch.shape[0]
-        methylated = (batch >= thresh) & ctx_ok[None, :]
+        q = np.where(ctx_ok[None, :], batch, np.nan)
         for c in codes:
             sel = ctx == c
             k_c = np.stack(
-                [methylated[:, s:s + l_nuc][:, sel[s:s + l_nuc]]
-                .sum(axis=1) for s in kept_starts], axis=1)
+                [np.nansum(q[:, s:s + l_nuc][:, sel[s:s + l_nuc]], axis=1)
+                for s in kept_starts], axis=1)
             K_batches[c].append(k_c)
 
     if n_mol * keep.sum() < 10:
@@ -402,25 +401,41 @@ def _calibrate_from_data(K, N, ctx, codes, iters=200, eps=1e-3,
     return theta_prot, theta_acc, informative
 
 
-def _per_base_log_odds(methylated, theta_prot, theta_acc, informative):
+def _per_base_log_odds(q, theta_prot, theta_acc, informative, pi0=0.5,
+                       eta=1.0):
     """
     Per-position, per-read log-odds of "protected" versus "accessible".
 
+    Computes lambda_x = log[(L_x*theta_P + 1-theta_P) /
+    (L_x*theta_A + 1-theta_A)], with L_x = q/(1-q) * (1-pi0)/pi0, using
+    the numerically stable form obtained by multiplying through by
+    (1-q), which is well-defined at q = 0 or 1.
+
     Parameters
     ----------
-    methylated : np.ndarray
-        bool, (n_mol, L).
+    q : np.ndarray
+        float64, (n_mol, L), methylation-calling confidence score in
+        [0, 1] (`mod_qual`); nan where no call was emitted.
     theta_prot : np.ndarray
         float64, length L.
     theta_acc : np.ndarray
         float64, length L.
     informative : np.ndarray
         bool, length L.
+    pi0 : float, default 0.5
+        Prior probability that a site is methylated, used to convert `q`
+        into the likelihood ratio `L_x`. 0.5 is the uninformative choice
+        used when the base caller's training prior is unknown.
+    eta : float, default 1.0
+        Multiplicative correction for inflated log-likelihood ratios
+        from correlated nearby sites (e.g. palindromic CpG/GpC); 1.0
+        leaves the log-odds unscaled.
 
     Returns
     -------
     np.ndarray
-        float64, (n_mol, L), zero outside `informative` positions.
+        float64, (n_mol, L), zero outside `informative` positions and
+        wherever `q` is nan (no call emitted).
 
     Notes
     -----
@@ -428,10 +443,12 @@ def _per_base_log_odds(methylated, theta_prot, theta_acc, informative):
     ratios below are computed with warnings suppressed there, since
     `informative` always zeroes those positions regardless.
     """
+    w = (1.0 - pi0) / pi0
     with np.errstate(invalid="ignore"):
-        a = np.log(theta_prot / theta_acc)
-        b = np.log((1.0 - theta_prot) / (1.0 - theta_acc))
-    log_odds = np.where(methylated, a, b)
+        num = w * q * theta_prot + (1.0 - q) * (1.0 - theta_prot)
+        den = w * q * theta_acc + (1.0 - q) * (1.0 - theta_acc)
+        log_odds = eta * np.log(num / den)
+    log_odds = np.where(np.isnan(log_odds), 0.0, log_odds)
     return np.where(informative, log_odds, 0.0)
 
 
@@ -898,9 +915,10 @@ class MethPrintAnalysis:
 
     def model_prob(self, *, exp : MethPrintExperiment,
                    prob_name : str = "meth_prob",
-                   thresh : float = 0.5,
-                   alpha : float = 10.0,
-                   rho_leak : float = 0.15,
+                   pi0 : float = 0.5,
+                   eta : float = 1.0,
+                   nu : float = 10.0,
+                   rho_leak : float = 0.1,
                    min_gap : float = 0.05,
                    l_nuc : int = 147,
                    n_min : int = 10,
@@ -935,17 +953,23 @@ class MethPrintAnalysis:
         prob_name : str, default "meth_prob"
             The key used to store the resulting probabilities in
             `exp.analysis`.
-        thresh : float, default 0.5
-            `mod_qual` threshold above which a call counts as
-            methylated.
-        alpha : float, default 10.0
+        pi0 : float, default 0.5
+            Prior probability that an assayable site is methylated, used
+            to convert each site's `mod_qual` confidence score into a
+            likelihood ratio. 0.5 is the uninformative choice used when
+            the base caller's training prior is unknown.
+        eta : float, default 1.0
+            Multiplicative correction for inflated log-likelihood ratios
+            from correlated nearby sites (e.g. palindromic CpG/GpC
+            positions); 1.0 leaves the log-odds unscaled.
+        nu : float, default 10.0
             Pseudo-count strength for shrinking each position's call
             rate toward its context group's mean; larger values shrink
             harder at low depth.
-        rho_leak : float, default 0.15
+        rho_leak : float, default 0.1
             Leak fraction in [0, 1] interpolating the protected-state
             call rate between the unmethylated control's false-positive
-            rate (0, perfect protection) and the accessible-state rate.
+            rate (0 for perfect protection) and the accessible-state rate.
             Used only when meth/unmeth controls are available.
         min_gap : float, default 0.05
             Minimum required gap between the accessible and protected
@@ -1016,18 +1040,16 @@ class MethPrintAnalysis:
 
             if has_controls:
                 meth_k, meth_n = _streamed_call_count(
-                    exp, chrom, "meth", ctx, thresh, batch_size, mask_name)
+                    exp, chrom, "meth", ctx, batch_size, mask_name)
                 unmeth_k, unmeth_n = _streamed_call_count(
-                    exp, chrom, "unmeth", ctx, thresh, batch_size,
-                    mask_name)
+                    exp, chrom, "unmeth", ctx, batch_size, mask_name)
                 theta_prot, theta_acc, informative = \
                     _calibrate_from_controls(
                         meth_k, meth_n, unmeth_k, unmeth_n, ctx,
-                        alpha=alpha, rho_leak=rho_leak, min_gap=min_gap)
+                        nu=nu, rho_leak=rho_leak, min_gap=min_gap)
             else:
                 K, N, codes = _streamed_window_count(
-                    exp, chrom, ctx, l_nuc, thresh, n_min, batch_size,
-                    mask_name)
+                    exp, chrom, ctx, l_nuc, n_min, batch_size, mask_name)
                 theta_prot, theta_acc, informative = _calibrate_from_data(
                     K, N, ctx, codes, iters=iters, init_prot=init_prot,
                     init_acc=init_acc, tol=tol, min_gap=min_gap)
@@ -1045,9 +1067,9 @@ class MethPrintAnalysis:
                 # mask_name marks dropped molecules as all-nan rows (see
                 # _apply_keep_mask); propagate that to the output too.
                 masked = np.isnan(batch).all(axis=1)
-                methylated = (batch >= thresh) & ctx_ok
-                log_odds = _per_base_log_odds(methylated, theta_prot,
-                                              theta_acc, informative)
+                q = np.where(ctx_ok, batch, np.nan)
+                log_odds = _per_base_log_odds(q, theta_prot, theta_acc,
+                                              informative, pi0=pi0, eta=eta)
                 log_odds_win = _window_sum_log_odds(
                     log_odds, l_nuc, fill_edge=log_odds_fill)
                 prob = expit(-log_odds_win)
@@ -1175,4 +1197,3 @@ class MethPrintAnalysis:
                 exp.analysis[chrom][lname] = pd.DataFrame(link_mat)
             link_mats[chrom] = link_mat
         return link_mats
-

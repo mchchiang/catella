@@ -450,6 +450,48 @@ class TestMtase:
         assert exp2.mtase == ("A", "GC")
 
 
+class TestWrapAttribute:
+    def test_defaults_to_false(self, tmp_path):
+        rows = _make_rows("chr1", ["m0"], [1, 2])
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 10})
+
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file)
+        assert exp.wrap is False
+        exp.close()
+
+    def test_true_when_requested(self, tmp_path):
+        rows = _make_rows("chr1", ["m0"], [1, 2])
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 10})
+
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file, wrap=True)
+        assert exp.wrap is True
+        exp.close()
+
+    def test_persists_through_save_load_roundtrip(self, tmp_path):
+        rows = _make_rows("chr1", ["m0"], [1, 2])
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 10})
+
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file, wrap=True)
+        exp_file = tmp_path / "exp.h5"
+        exp.save(exp_file)
+        exp.close()
+
+        exp2 = MethPrintExperiment.load(exp_file)
+        assert exp2.wrap is True
+
+
 class TestLazyAndScratchLifecycle:
     def test_raw_data_loaded_lazily(self, tmp_path):
         rows = (_make_rows("chr1", ["m0"], [1, 2])

@@ -731,6 +731,7 @@ class MethPrintExperiment:
     _tmp_dir : str | None
     _exp_file : str | None
     _mtase : Tuple[str, ...] | None
+    _wrap : bool
 
     def __init__(self, **kwargs : Any):
         if not kwargs.pop("_internal", False):
@@ -762,6 +763,10 @@ class MethPrintExperiment:
 
         # Methyltransferase(s) used, or None; set at load_raw() time.
         self._mtase = kwargs.get("_mtase")
+
+        # Whether raw positions were folded around the fiber center;
+        # set at load_raw() time.
+        self._wrap = kwargs.get("_wrap", False)
 
     @staticmethod
     def _cleanup_tmp_dir(tmp_dir):
@@ -982,6 +987,7 @@ class MethPrintExperiment:
                 h5stream.create_group("global_analysis")
                 if mtase is not None:
                     h5stream.attrs["mtase"] = ",".join(mtase)
+                h5stream.attrs["wrap"] = bool(wrap)
 
                 files = [("test", test_file)]
                 if unmeth_file is not None:
@@ -1104,6 +1110,7 @@ class MethPrintExperiment:
                     rdata._save(graw)
                 if self._mtase is not None:
                     h5stream.attrs["mtase"] = ",".join(self._mtase)
+                h5stream.attrs["wrap"] = self._wrap
 
             # Save any analysis data
             if "analysis" in h5stream: del h5stream["analysis"]
@@ -1175,9 +1182,10 @@ class MethPrintExperiment:
                                       max_cached=max_cached_chroms)
             mtase = tuple(h5stream.attrs["mtase"].split(",")) \
                 if "mtase" in h5stream.attrs else None
+            wrap = bool(h5stream.attrs.get("wrap", False))
             obj = cls._create(_raw_data=raw_data,
                               _exp_file=str(Path(exp_file).resolve()),
-                              _mtase=mtase)
+                              _mtase=mtase, _wrap=wrap)
 
             # Load any analysis data
             gana = h5stream["analysis"]
@@ -1228,6 +1236,18 @@ class MethPrintExperiment:
             One or more of 'A', 'CG', 'GC', or None if unspecified.
         """
         return self._mtase
+
+    @property
+    def wrap(self) -> bool:
+        """
+        Get whether raw positions were folded around the fiber center.
+
+        Returns
+        -------
+        bool
+            True if `load_raw` was called with `wrap=True`.
+        """
+        return self._wrap
 
     @property
     def raw(self) -> Mapping[str,MethPrintData]:

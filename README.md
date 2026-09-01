@@ -7,7 +7,7 @@ A python/C++ package to simulate nucleosome positioning using Monte Carlo sampli
 The most convenient way to install the package is via Conda. First, clone the project to your local workstation: 
 
 ```bash
-git clone https://git.ecdf.ed.ac.uk/cchiang2/nucmc-project.git
+git clone https://github.com/mchchiang/catella.git
 ```
 
 Next, use Conda to create a new environment with the package installed via the provided environment (.yml) file:
@@ -16,19 +16,19 @@ Next, use Conda to create a new environment with the package installed via the p
 conda env create -f environment.yml
 ```
 
-For more information, please visit the page https://git-pages.ecdf.ed.ac.uk/cchiang2/nucmc-project/install.
+For more information, please visit the page https://mchchiang.github.io/catella/install.html.
 
 
 ## Quick Start
 
 A quick tutorial guide on how to use the higher-level API of the package can be found here:
 
-https://git-pages.ecdf.ed.ac.uk/cchiang2/nucmc-project/tutorials/tut01_quick_start/quick_start.html
+https://mchchiang.github.io/catella/tutorials/tut01_quick_start/quick_start.html
 
 
 ## Documentation
 
 The full documentation of the package can be accessed here:
 
-https://git-pages.ecdf.ed.ac.uk/cchiang2/nucmc-project/
+https://mchchiang.github.io/catella/
 

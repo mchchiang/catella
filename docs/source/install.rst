@@ -16,7 +16,7 @@ First, clone the project to your local machine:
 
 .. code-block:: bash
 
-   git clone https://git.ecdf.ed.ac.uk/cchiang2/nucmc.git
+   git clone https://github.com/mchchiang/catella.git
 
 Step 2: Create the Environment
 ------------------------------

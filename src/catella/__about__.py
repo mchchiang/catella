@@ -9,4 +9,4 @@ __maintainers__ = [
 ]
 __summary__ = "A Monte-Carlo simulator for predicting nucleosome positions" \
     "based on DNA methylation footprinting data"
-__url__ = "https://git.ecdf.ed.ac.uk/cchiang2/nucmc-project"
+__url__ = "https://github.com/mchchiang/catella"

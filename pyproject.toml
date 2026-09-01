@@ -32,7 +32,7 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://git.ecdf.ed.ac.uk/cchiang2/nucmc-project"
+Homepage = "https://github.com/mchchiang/catella"
 
 [project.scripts]
 catella = "catella.cli:app"

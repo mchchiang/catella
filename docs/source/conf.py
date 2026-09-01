@@ -15,8 +15,8 @@ sys.path.insert(0, str(ROOT / "src"))
 
 # -- Project information (read from installed package metadata) ---------------
 
-info = metadata("nucmc")
-project   = info.get("Name") or "nucmc"
+info = metadata("catella")
+project   = info.get("Name") or "catella"
 author    = info.get("Author") or "Michael Chiang"
 copyright = f"{datetime.now():%Y}, {author}"
 version   = info["Version"]
@@ -44,7 +44,7 @@ autodoc_mock_imports = [
     for dep in deps
     if dep.split(">")[0].split("=")[0].split("<")[0].strip() not in _no_mock
 ]
-autodoc_mock_imports.append("nucmc_cpp")
+autodoc_mock_imports.append("catella_cpp")
 
 # -- Member visibility (honour __all__) ----------------------------------------
 

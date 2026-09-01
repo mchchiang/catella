@@ -1,4 +1,4 @@
-Welcome to nucmc's documentation!
+Welcome to catella's documentation!
 =================================
 
 .. toctree::

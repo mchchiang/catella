@@ -1,4 +1,4 @@
-# nucmc - Nucleosome Monte Carlo simulations
+# catella - Nucleosome Monte Carlo simulations
 
 A python/C++ package to simulate nucleosome positioning using Monte Carlo sampling based on methylation footprinting data.
 

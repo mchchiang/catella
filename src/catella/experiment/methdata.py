@@ -280,7 +280,8 @@ def _scan_accepted_mols(data_file, header_names, name_for, sep,
 
 def _stream_rows_to_staging(data_file, header_names, name_for, sep,
                             chunk_size, block_size, full_sizes, wrap,
-                            mol_maps, appenders):
+                            mol_maps, appenders, refseq_by_chrom=None,
+                            mtase=None):
     """
     Stream full rows, transform them, and append to per-chromosome
     disk-backed appenders.
@@ -309,7 +310,29 @@ def _stream_rows_to_staging(data_file, header_names, name_for, sep,
         the chromosomes actually being processed.
     appenders : dict of str to h5_utils.AppendableDF
         One appender per chromosome in `mol_maps`, already created.
+    refseq_by_chrom : dict of str to str, optional
+        Chromosome name -> reference sequence, as returned by
+        `_parse_fasta`. Together with `mtase`, used to drop rows whose
+        `strand` is inconsistent with the reference base at their
+        (unfolded) `upos` -- e.g. a '+'-strand row at a position whose
+        reference base cannot carry a real target base for any given
+        `mtase` label on '+'. Chromosomes absent from this mapping (or
+        when it is None) are not filtered.
+    mtase : tuple of str, optional
+        Methyltransferase label(s) (as normalized by
+        `_normalize_mtase`) to validate rows against. If None, no
+        strand-consistency filtering is applied.
     """
+    valid_by_chrom = {}
+    if mtase is not None and refseq_by_chrom is not None:
+        for chrom, seq in refseq_by_chrom.items():
+            plus = np.zeros(len(seq), dtype=bool)
+            minus = np.zeros(len(seq), dtype=bool)
+            for label in mtase:
+                plus |= _methylatable_positions(seq, label, "+")
+                minus |= _methylatable_positions(seq, label, "-")
+            valid_by_chrom[chrom] = (plus, minus)
+
     needed = ["mol_id", "upos", "chrom", "strand", "mod_qual", "mod_code"]
     for batch_df in _iter_csv_chunks(
             data_file, header_names, name_for, sep, needed, chunk_size,
@@ -319,7 +342,19 @@ def _stream_rows_to_staging(data_file, header_names, name_for, sep,
             if mapping is None:
                 continue
             mol_index = group["mol_id"].map(mapping["index"])
-            keep = mol_index.notna()
+            keep = mol_index.notna().to_numpy()
+
+            masks = valid_by_chrom.get(chrom)
+            if masks is not None:
+                plus, minus = masks
+                upos_all = group["upos"].to_numpy()
+                strand_all = group["strand"].to_numpy()
+                # Unmapped strand ('.') can't be validated -- kept.
+                consistent = np.where(
+                    strand_all == "+", plus[upos_all],
+                    np.where(strand_all == "-", minus[upos_all], True))
+                keep = keep & consistent
+
             if not keep.any():
                 continue
             group = group.loc[keep]
@@ -1028,7 +1063,8 @@ class MethPrintExperiment:
 
                     _stream_rows_to_staging(
                         data_file, header_names, name_for, sep, chunk_size,
-                        block_size, full_sizes, wrap, mol_maps, appenders)
+                        block_size, full_sizes, wrap, mol_maps, appenders,
+                        refseq_by_chrom=refseq_by_chrom, mtase=mtase)
         except Exception:
             Path(tmp_file).unlink(missing_ok=True)
             raise

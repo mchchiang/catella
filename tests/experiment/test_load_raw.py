@@ -372,6 +372,92 @@ class TestRefseq:
         exp.close()
 
 
+class TestStrandConsistency:
+    def test_drops_row_inconsistent_with_mtase_and_strand(self, tmp_path):
+        # seq: A(0) T(1) C(2) G(3) A(4) T(5) C(6) G(7)
+        seq = "ATCGATCG"
+        rows = [("m0", 0, "chr1", "+", 0.9, "a"),   # valid: ref 'A' on '+'
+               ("m0", 1, "chr1", "+", 0.9, "a"),   # invalid: ref 'T' on '+'
+               ("m0", 1, "chr1", "-", 0.9, "a")]   # valid: ref 'T' on '-'
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": len(seq)})
+        fasta_file = tmp_path / "ref.fa"
+        _write_fasta(fasta_file, {"chr1": seq})
+
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file, fasta_file=fasta_file,
+            mtase="A")
+        assert sorted(exp.raw["chr1"].test_data["pos"].tolist()) == [0, 1]
+        exp.close()
+
+    def test_respects_dinucleotide_context(self, tmp_path):
+        seq = "ACAT"  # 'C' at index 1 not followed by 'G' -- not a CpG site
+        rows = [("m0", 1, "chr1", "+", 0.9, "a")]
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": len(seq)})
+        fasta_file = tmp_path / "ref.fa"
+        _write_fasta(fasta_file, {"chr1": seq})
+
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file, fasta_file=fasta_file,
+            mtase="CG")
+        assert len(exp.raw["chr1"].test_data) == 0
+        exp.close()
+
+    def test_unmapped_strand_rows_kept(self, tmp_path):
+        seq = "ATCG"
+        rows = [("m0", 2, "chr1", ".", 0.9, "a")]  # ref 'C', can't validate
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": len(seq)})
+        fasta_file = tmp_path / "ref.fa"
+        _write_fasta(fasta_file, {"chr1": seq})
+
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file, fasta_file=fasta_file,
+            mtase="A")
+        assert len(exp.raw["chr1"].test_data) == 1
+        exp.close()
+
+    def test_no_mtase_skips_filtering(self, tmp_path):
+        seq = "ATCG"
+        rows = [("m0", 1, "chr1", "+", 0.9, "a")]  # invalid for mtase 'A'
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": len(seq)})
+        fasta_file = tmp_path / "ref.fa"
+        _write_fasta(fasta_file, {"chr1": seq})
+
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file, fasta_file=fasta_file)
+        assert len(exp.raw["chr1"].test_data) == 1
+        exp.close()
+
+    def test_composes_with_wrap_using_unfolded_position(self, tmp_path):
+        seq = "ATCGATCG"
+        rows = [("m0", 5, "chr1", "-", 0.9, "a")]  # ref[5]='T', valid on '-'
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": len(seq)})
+        fasta_file = tmp_path / "ref.fa"
+        _write_fasta(fasta_file, {"chr1": seq})
+
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file, fasta_file=fasta_file,
+            mtase="A", wrap=True)
+        raw = exp.raw["chr1"]
+        assert len(raw.test_data) == 1
+        assert raw.test_data["pos"].iloc[0] == 2  # folded: 8-5-1=2
+        exp.close()
+
+
 class TestMtase:
     def test_no_mtase_defaults_to_none(self, tmp_path):
         rows = _make_rows("chr1", ["m0"], [1, 2])

@@ -1011,9 +1011,10 @@ class MethPrintAnalysis:
         Raises
         ------
         ValueError
-            If a chromosome has no reference sequence (`refseq`), or if
+            If a chromosome has no reference sequence (`refseq`), if
             the no-controls path cannot find enough windows with
-            `n_min` context-eligible sites.
+            `n_min` context-eligible sites, or if `exp.wrap` is True
+            and `refseq` is not reverse-complement symmetric.
         KeyError
             If `mask_name` is given but no matching mask is found for
             some source/chromosome.
@@ -1021,7 +1022,8 @@ class MethPrintAnalysis:
         Notes
         -----
         Position `i` in the result summarizes the window
-        `[i, i + l_nuc)`.
+        `[i, i + l_nuc)`. If `exp.wrap` is True, `refseq` (always
+        stored full-length) is folded to length `nbp` before use.
         """
         from scipy.special import expit, logit
 
@@ -1034,7 +1036,26 @@ class MethPrintAnalysis:
                 raise ValueError(
                     f"No reference sequence for chrom '{chrom}'; "
                     "model_prob needs 'fasta_file' at load_raw.")
-            ctx = _reference_contexts(raw.refseq)
+            full_ctx = _reference_contexts(raw.refseq)
+            if exp.wrap:
+                nbp = raw.nbp
+                length = len(raw.refseq)
+                lower = full_ctx[:nbp]
+                upper = full_ctx[length - nbp:][::-1]
+                mismatch = np.flatnonzero(lower != upper)
+                if mismatch.size:
+                    p = int(mismatch[0])
+                    raise ValueError(
+                        f"refseq for chrom '{chrom}' is not symmetric "
+                        f"under wrap at position {p} (context "
+                        f"{CONTEXT_NAMES[lower[p]]} vs mirror context "
+                        f"{CONTEXT_NAMES[upper[p]]} at position "
+                        f"{length - 1 - p}); model_prob requires a "
+                        "reverse-complement symmetric reference under "
+                        "wrap.")
+                ctx = lower
+            else:
+                ctx = full_ctx
             has_controls = (raw.meth_data is not None
                             and raw.unmeth_data is not None)
 

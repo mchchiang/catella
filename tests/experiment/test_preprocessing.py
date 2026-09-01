@@ -724,3 +724,61 @@ class TestModelProb:
         ana = MethPrintAnalysis()
         ana.model_prob(exp=exp, l_nuc=30, batch_size=5)
         assert "meth_prob" in exp.analysis["chr1"]
+
+
+def _revcomp(seq):
+    return seq.translate(str.maketrans("ACGT", "TGCA"))[::-1]
+
+
+class TestModelProbWrap:
+    def test_folds_ctx_and_runs(self):
+        # A reverse-complement palindrome: S + revcomp(S) is always
+        # symmetric around its center, matching what wrap requires.
+        half = "AATTGCGTTAAGCTTTAACGTTAAGCGCAATT"
+        seq = half + _revcomp(half)
+        nbp = len(half)
+        rng = np.random.default_rng(0)
+
+        from catella.experiment.preprocessing import (
+            _reference_contexts, NONE)
+        site = np.where(_reference_contexts(seq)[:nbp] != NONE)[0]
+
+        def make_df(n, prob):
+            rows = [(m, int(pos), "+",
+                    float(rng.uniform(0.6, 0.9) if rng.random() < prob
+                          else rng.uniform(0.05, 0.3)), 0)
+                   for m in range(n) for pos in site]
+            return pd.DataFrame(rows, columns=["mol_index", "pos", "strand",
+                                               "mod_qual", "mod_code"])
+
+        nmol = 8
+        test_mol_id = np.array([f"t{m}" for m in range(nmol)], dtype=object)
+        meth_mol_id = np.array([f"m{m}" for m in range(10)], dtype=object)
+        unmeth_mol_id = np.array([f"u{m}" for m in range(10)], dtype=object)
+        raw = MethPrintData._create(
+            chrom="chr1", nbp=nbp, refseq=seq, test_mol_id=test_mol_id,
+            test_data=make_df(nmol, 0.5), meth_mol_id=meth_mol_id,
+            meth_data=make_df(10, 0.8), unmeth_mol_id=unmeth_mol_id,
+            unmeth_data=make_df(10, 0.05))
+        exp = MethPrintExperiment._create(_raw_data={"chr1": raw},
+                                          _wrap=True)
+
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=exp, l_nuc=10, batch_size=4)
+        prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
+        assert prob.shape == (nmol, nbp)
+
+    def test_asymmetric_refseq_raises(self):
+        seq = "AATTGCGTTAAGCTTTAACGTTAAGCGCAATT" * 2
+        nbp = len(seq) // 2
+        raw = MethPrintData._create(
+            chrom="chr1", nbp=nbp, refseq=seq,
+            test_mol_id=np.array(["t0"], dtype=object),
+            test_data=pd.DataFrame({"mol_index": [0], "pos": [0],
+                                    "strand": ["+"], "mod_qual": [0.5],
+                                    "mod_code": [0]}))
+        exp = MethPrintExperiment._create(_raw_data={"chr1": raw},
+                                          _wrap=True)
+        ana = MethPrintAnalysis()
+        with pytest.raises(ValueError):
+            ana.model_prob(exp=exp, l_nuc=10)

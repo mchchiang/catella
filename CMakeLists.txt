@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(nucmc_cpp LANGUAGES CXX)
+project(catella_cpp LANGUAGES CXX)
 
 # Pick up conda-installed packages (HDF5, pybind11)
 if(DEFINED ENV{CONDA_PREFIX})
@@ -10,13 +10,13 @@ find_package(Python REQUIRED COMPONENTS Interpreter Development.Module)
 find_package(pybind11 CONFIG REQUIRED)
 find_package(HDF5 REQUIRED COMPONENTS C)
 
-file(GLOB CPP_SOURCES "src/nucmc/cpp/*.cpp")
+file(GLOB CPP_SOURCES "src/catella/cpp/*.cpp")
 
-python_add_library(nucmc_cpp MODULE ${CPP_SOURCES} WITH_SOABI)
-target_link_libraries(nucmc_cpp PRIVATE pybind11::headers HDF5::HDF5)
-target_include_directories(nucmc_cpp PRIVATE src/nucmc/cpp)
-target_compile_features(nucmc_cpp PRIVATE cxx_std_17)
-target_compile_options(nucmc_cpp PRIVATE -O3)
+python_add_library(catella_cpp MODULE ${CPP_SOURCES} WITH_SOABI)
+target_link_libraries(catella_cpp PRIVATE pybind11::headers HDF5::HDF5)
+target_include_directories(catella_cpp PRIVATE src/catella/cpp)
+target_compile_features(catella_cpp PRIVATE cxx_std_17)
+target_compile_options(catella_cpp PRIVATE -O3)
 
-# Install to wheel root alongside the nucmc package
-install(TARGETS nucmc_cpp DESTINATION .)
+# Install to wheel root alongside the catella package
+install(TARGETS catella_cpp DESTINATION .)

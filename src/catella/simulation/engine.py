@@ -16,8 +16,8 @@ from catella.simulation.results import SimDataset
 from catella.utils import IndexType
 from catella import utils
 from catella.simulation.config import SimSettings
-from nucmc_cpp import NucPosModel, Dump
-import nucmc_cpp as sim
+from catella_cpp import NucPosModel, Dump
+import catella_cpp as sim
 
 # Store parameters for a specific simulation run
 @dataclass(frozen=True, kw_only=True)

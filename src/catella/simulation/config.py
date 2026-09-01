@@ -1,7 +1,7 @@
 # config.py
 
 from dataclasses import dataclass
-from nucmc_cpp import NucPosModel
+from catella_cpp import NucPosModel
 from pathlib import Path
 from typing import Self
 

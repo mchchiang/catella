@@ -19,7 +19,7 @@ using std::shared_ptr;
 using std::string;
 using std::vector;
 
-PYBIND11_MODULE(nucmc_cpp, m) {
+PYBIND11_MODULE(catella_cpp, m) {
   py::class_<NucPosModel> modelcls(m, "NucPosModel");
   modelcls.def(py::init<int,int,int,double,ulint>(),
 	       py::arg("nucbp"), py::arg("nbp"), py::arg("llink"),

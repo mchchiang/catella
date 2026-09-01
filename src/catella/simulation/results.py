@@ -21,7 +21,7 @@ from catella.h5_array import H5Array
 from catella.simulation.config import SimSettings
 from catella import utils
 from catella import h5_utils
-from nucmc_cpp import Dump
+from catella_cpp import Dump
 
 # Limit the concurrent open files to stay under OS limits
 MAX_OPEN_FILES = Semaphore(500)

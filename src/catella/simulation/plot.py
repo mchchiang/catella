@@ -9,7 +9,7 @@ from pathlib import Path
 from matplotlib.colors import Normalize
 import numpy as np
 import scipy.cluster.hierarchy as sch
-from nucmc.mapping import CoordsTransform
+from catella.mapping import CoordsTransform
 
 @dataclass(slots=True, kw_only=True)
 class SimPlot:

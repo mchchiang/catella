@@ -23,12 +23,12 @@ def fresh_tmp_dir(base_dir=None):
     -------
     str
         Path to the newly created scratch directory, named
-        `nucmc_<timestamp>_<hex>`.
+        `catella_<timestamp>_<hex>`.
     """
     base = str(base_dir) if base_dir is not None else tempfile.gettempdir()
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     suffix = uuid.uuid4().hex[:8]
-    path = os.path.join(base, f"nucmc_{stamp}_{suffix}")
+    path = os.path.join(base, f"catella_{stamp}_{suffix}")
     os.makedirs(path)
     return path
 

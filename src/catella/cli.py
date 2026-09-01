@@ -1,13 +1,13 @@
 # cli.py
 
 import enum
-import nucmc
+import catella
 import typer
 import pandas as pd
 from pathlib import Path
 from typing import Annotated, Type, TypeVar, Callable, Optional
-from nucmc.experiment.methdata import MethPrintExperiment
-from nucmc.simulation.results import SimDataset
+from catella.experiment.methdata import MethPrintExperiment
+from catella.simulation.results import SimDataset
 
 app = typer.Typer(help="Nucleosome Positioning Monte Carlo Simulation Suite")
 
@@ -110,7 +110,7 @@ def preprocess(
     """
     Preprocess raw methylation data.
     """
-    return nucmc.preprocess(chromsize=chromsize, test_file=test_file,
+    return catella.preprocess(chromsize=chromsize, test_file=test_file,
                             out_file=out_file, unmeth_file=unmeth_file,
                             meth_file=meth_file, fasta_file=fasta_file,
                             mtase=mtase, binsize=binsize, wrap=wrap,
@@ -168,7 +168,7 @@ def run(
     exp_data = MethPrintExperiment.load(exp_file)
     meth_prob = {chrom: exp_data.analysis[chrom]["meth_prob"]
                  for chrom in exp_data.chroms}
-    return nucmc.run(
+    return catella.run(
         chroms=chroms,
         nsim=nsim,
         settings=settings,
@@ -212,7 +212,7 @@ def analyze(
     Compute post-simulation occupancy and nucleosome count statistics.
     """
     dataset = SimDataset.load(dataset_file)
-    nucmc.analyze(dataset=dataset, time=time, occup_name=occup_name,
+    catella.analyze(dataset=dataset, time=time, occup_name=occup_name,
                  mean_nnuc_name=mean_nnuc_name)
     if out_file is not None:
         dataset.save(out_file, overwrite=overwrite)
@@ -255,7 +255,7 @@ def downsample(
     """
     obj = _load_source(source_file, kind)
     data = obj.analysis[chrom][key]
-    result = nucmc.downsample(data=data, max_rows=max_rows, how=how,
+    result = catella.downsample(data=data, max_rows=max_rows, how=how,
                               batch_size=batch_size)
     name = out_key if out_key is not None else f"{key}_downsampled"
     obj.analysis[chrom][name] = pd.DataFrame(result)
@@ -316,14 +316,14 @@ def sort_by_linkage(
     """
     obj = _load_source(source_file, kind)
     if kind == SourceKind.experiment:
-        nucmc.sort_by_linkage(exp=obj, data_name=data_name,
+        catella.sort_by_linkage(exp=obj, data_name=data_name,
                               raw_which=raw_which, sorted_name=sorted_name,
                               store_link_mat=store_link_mat,
                               link_mat_name=link_mat_name, metric=metric,
                               method=method, batch_size=batch_size,
                               fill_nan=fill_nan)
     else:
-        nucmc.sort_by_linkage(dataset=obj, chroms=chroms,
+        catella.sort_by_linkage(dataset=obj, chroms=chroms,
                               data_name=data_name, sorted_name=sorted_name,
                               store_link_mat=store_link_mat,
                               link_mat_name=link_mat_name, metric=metric,
@@ -361,7 +361,7 @@ def plot_occup(
     dataset = SimDataset.load(dataset_file)
     link_mat = dataset.analysis[chrom][link_mat_name].to_numpy() \
         if link_mat_name is not None else None
-    nucmc.plot_occup(chrom=chrom, dataset=dataset, out_file=out_file,
+    catella.plot_occup(chrom=chrom, dataset=dataset, out_file=out_file,
                      occup_name=occup_name, plot_eseq=plot_eseq,
                      link_mat=link_mat, show=show)
 
@@ -386,7 +386,7 @@ def plot_nuc_pos(
     Plot nucleosome positions over time for one simulation run.
     """
     dataset = SimDataset.load(dataset_file)
-    nucmc.plot_nuc_pos(chrom=chrom, mol=mol, run=run, dataset=dataset,
+    catella.plot_nuc_pos(chrom=chrom, mol=mol, run=run, dataset=dataset,
                        out_file=out_file, plot_eseq=plot_eseq, show=show)
 
 
@@ -407,7 +407,7 @@ def plot_energy(
     Plot total system energy over time for one simulation run.
     """
     dataset = SimDataset.load(dataset_file)
-    nucmc.plot_energy(chrom=chrom, mol=mol, run=run, dataset=dataset,
+    catella.plot_energy(chrom=chrom, mol=mol, run=run, dataset=dataset,
                       out_file=out_file, show=show)
 
 
@@ -441,7 +441,7 @@ def plot_methmap(
     data = exp.analysis[chrom][key]
     link_mat = exp.analysis[chrom][link_mat_name].to_numpy() \
         if link_mat_name is not None else None
-    nucmc.plot_methmap(data=data, vmin=vmin, vmax=vmax, out_file=out_file,
+    catella.plot_methmap(data=data, vmin=vmin, vmax=vmax, out_file=out_file,
                        link_mat=link_mat, show=show)
 
 

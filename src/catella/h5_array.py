@@ -135,7 +135,7 @@ class H5Array:
             ignored.
         dir : str or pathlib.Path, optional
             Directory in which to create the scratch file when `path` is
-            None. If None, a fresh `nucmc_<timestamp>_<hex>` subfolder
+            None. If None, a fresh `catella_<timestamp>_<hex>` subfolder
             is created under the system default temporary directory and
             used instead.
         index : array-like, optional

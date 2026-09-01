@@ -104,7 +104,7 @@ def preprocess(*, chromsize : str | Path,
         bounds during probability calculation.
     tmp_dir : str or Path, optional
         Directory used for the scratch file backing the experiment's
-        raw data staging file. A fresh `nucmc_<timestamp>_<hex>`
+        raw data staging file. A fresh `catella_<timestamp>_<hex>`
         subfolder is created for it — under this directory if given,
         otherwise under the system default temporary directory — and
         reused for the scratch files backing the smoothing and

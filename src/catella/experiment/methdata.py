@@ -877,7 +877,7 @@ class MethPrintExperiment:
             Directory used for the scratch staging file backing the
             returned experiment's raw data (removed once the experiment
             is closed or garbage-collected; see `close`). A fresh
-            `nucmc_<timestamp>_<hex>` subfolder is created for it —
+            `catella_<timestamp>_<hex>` subfolder is created for it —
             under this directory if given, otherwise under the system
             default temporary directory — and cached on the returned
             experiment so that later `smooth`/`meth_prob` calls on it

@@ -530,7 +530,7 @@ class MethPrintAnalysis:
         fill_edge : float or "mean", default np.nan
             How to fill leading/trailing edge nan values, independent of
             `nan_method`. A literal float must lie within the data range.
-            See `nucmc.mapping.CoordsTransform.fill_edge`.
+            See `catella.mapping.CoordsTransform.fill_edge`.
         batch_size : int, default 20000
             Number of molecules processed (and held in memory) per batch.
         mask_name : str, optional

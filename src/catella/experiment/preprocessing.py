@@ -1,5 +1,6 @@
 # preprocessing.py
 
+import warnings
 import numpy as np
 import pandas as pd
 from typing import List
@@ -23,6 +24,10 @@ def _lookup_mask(exp, chrom, source, mask_name):
 NONE, M6A, GCH, HCG, GCG = 0, 1, 2, 3, 4
 CONTEXT_NAMES = {NONE: "none", M6A: "M6A", GCH: "GCH", HCG: "HCG",
                  GCG: "GCG"}
+
+# Warn (not raise) if more than this fraction of wrap-mirrored position
+# pairs disagree on context when folding ctx in model_prob.
+_WRAP_CTX_DISAGREE_WARN_FRAC = 0.02
 
 
 def _reference_contexts(seq):
@@ -1011,19 +1016,27 @@ class MethPrintAnalysis:
         Raises
         ------
         ValueError
-            If a chromosome has no reference sequence (`refseq`), if
+            If a chromosome has no reference sequence (`refseq`), or if
             the no-controls path cannot find enough windows with
-            `n_min` context-eligible sites, or if `exp.wrap` is True
-            and `refseq` is not reverse-complement symmetric.
+            `n_min` context-eligible sites.
         KeyError
             If `mask_name` is given but no matching mask is found for
             some source/chromosome.
+
+        Warns
+        -----
+        UserWarning
+            If `exp.wrap` is True and many wrap-mirrored position
+            pairs disagree on context (folded to no context there).
 
         Notes
         -----
         Position `i` in the result summarizes the window
         `[i, i + l_nuc)`. If `exp.wrap` is True, `refseq` (always
-        stored full-length) is folded to length `nbp` before use.
+        stored full-length) is folded to length `nbp` before use:
+        positions `i` and `length-1-i` must classify to the same
+        context to be kept; where they disagree, the folded position
+        is treated as having no context.
         """
         from scipy.special import expit, logit
 
@@ -1042,18 +1055,18 @@ class MethPrintAnalysis:
                 length = len(raw.refseq)
                 lower = full_ctx[:nbp]
                 upper = full_ctx[length - nbp:][::-1]
-                mismatch = np.flatnonzero(lower != upper)
-                if mismatch.size:
-                    p = int(mismatch[0])
-                    raise ValueError(
-                        f"refseq for chrom '{chrom}' is not symmetric "
-                        f"under wrap at position {p} (context "
-                        f"{CONTEXT_NAMES[lower[p]]} vs mirror context "
-                        f"{CONTEXT_NAMES[upper[p]]} at position "
-                        f"{length - 1 - p}); model_prob requires a "
-                        "reverse-complement symmetric reference under "
-                        "wrap.")
-                ctx = lower
+                agree = lower == upper
+                ctx = np.where(agree, lower, NONE).astype(lower.dtype)
+                frac_disagree = 1.0 - agree.mean()
+                if frac_disagree > _WRAP_CTX_DISAGREE_WARN_FRAC:
+                    warnings.warn(
+                        f"refseq for chrom '{chrom}' disagrees on "
+                        f"context at {(~agree).sum()}/{nbp} "
+                        f"({frac_disagree:.1%}) wrap-mirrored position "
+                        "pairs (folded to NONE there); this may "
+                        "indicate the wrong chromsize length or a "
+                        "non-symmetric reference, rather than a small "
+                        "loop/junction region.", stacklevel=2)
             else:
                 ctx = full_ctx
             has_controls = (raw.meth_data is not None

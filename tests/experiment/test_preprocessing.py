@@ -1,11 +1,14 @@
 # test_preprocessing.py
 
+import warnings
+
 import numpy as np
 import pandas as pd
 import pytest
 
 from catella.experiment.methdata import MethPrintData, MethPrintExperiment
-from catella.experiment.preprocessing import MethPrintAnalysis
+from catella.experiment.preprocessing import (
+    MethPrintAnalysis, _reference_contexts, NONE)
 from catella.h5_array import H5Array
 from catella import utils
 
@@ -768,17 +771,124 @@ class TestModelProbWrap:
         prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
         assert prob.shape == (nmol, nbp)
 
-    def test_asymmetric_refseq_raises(self):
-        seq = "AATTGCGTTAAGCTTTAACGTTAAGCGCAATT" * 2
-        nbp = len(seq) // 2
+    def test_no_warning_when_fully_symmetric(self, recwarn):
+        half = "AATTGCGTTAAGCTTTAACGTTAAGCGCAATT"
+        seq = half + _revcomp(half)
+        nbp = len(half)
+        rng = np.random.default_rng(2)
+        site = np.where(_reference_contexts(seq)[:nbp] != NONE)[0]
+
+        def make_df(n, prob):
+            rows = [(m, int(pos), "+",
+                    float(rng.uniform(0.6, 0.9) if rng.random() < prob
+                          else rng.uniform(0.05, 0.3)), 0)
+                   for m in range(n) for pos in site]
+            return pd.DataFrame(rows, columns=["mol_index", "pos", "strand",
+                                               "mod_qual", "mod_code"])
+
         raw = MethPrintData._create(
             chrom="chr1", nbp=nbp, refseq=seq,
-            test_mol_id=np.array(["t0"], dtype=object),
-            test_data=pd.DataFrame({"mol_index": [0], "pos": [0],
-                                    "strand": ["+"], "mod_qual": [0.5],
-                                    "mod_code": [0]}))
+            test_mol_id=np.array(["t0", "t1"], dtype=object),
+            test_data=make_df(2, 0.5),
+            meth_mol_id=np.array([f"m{i}" for i in range(6)], dtype=object),
+            meth_data=make_df(6, 0.8),
+            unmeth_mol_id=np.array([f"u{i}" for i in range(6)], dtype=object),
+            unmeth_data=make_df(6, 0.05))
         exp = MethPrintExperiment._create(_raw_data={"chr1": raw},
                                           _wrap=True)
         ana = MethPrintAnalysis()
-        with pytest.raises(ValueError):
+        ana.model_prob(exp=exp, l_nuc=10)
+        assert not any(issubclass(w.category, UserWarning) for w in recwarn)
+
+    def test_small_disagreement_ignored_in_output(self):
+        # A single mismatched base near the center, mirroring the real
+        # loop/junction region that motivated this behavior: it should
+        # fold to no context and have zero effect on the output.
+        half = "AATTGCGTTAAGCTTTAACGTTAAGCGCAATT"
+        nbp = len(half)
+        disagree_pos = 6
+        seq = list(half + _revcomp(half))
+        seq[disagree_pos] = "C"
+        seq = "".join(seq)
+
+        full_ctx = _reference_contexts(seq)
+        lower = full_ctx[:nbp]
+        upper = full_ctx[len(seq) - nbp:][::-1]
+        assert lower[disagree_pos] != upper[disagree_pos]
+
+        # Informative on at least one side pre-fold, so a call there
+        # would matter if not properly excluded after folding.
+        site = np.where((lower != NONE) | (upper != NONE))[0]
+        rng = np.random.default_rng(1)
+
+        def fixed_df(n, prob):
+            rows = [(m, int(pos), "+",
+                    float(rng.uniform(0.6, 0.9) if rng.random() < prob
+                          else rng.uniform(0.05, 0.3)), 0)
+                   for m in range(n) for pos in site]
+            return pd.DataFrame(rows, columns=["mol_index", "pos", "strand",
+                                               "mod_qual", "mod_code"])
+
+        meth_df = fixed_df(6, 0.8)
+        unmeth_df = fixed_df(6, 0.05)
+        meth_mol_id = np.array([f"m{i}" for i in range(6)], dtype=object)
+        unmeth_mol_id = np.array([f"u{i}" for i in range(6)], dtype=object)
+
+        def make_test_df(qual_at_disagree):
+            rows = [(0, int(pos), "+", 0.5, 0) for pos in site
+                    if pos != disagree_pos]
+            rows.append((0, disagree_pos, "+", qual_at_disagree, 0))
+            return pd.DataFrame(rows, columns=["mol_index", "pos", "strand",
+                                               "mod_qual", "mod_code"])
+
+        def make_exp(qual_at_disagree):
+            raw = MethPrintData._create(
+                chrom="chr1", nbp=nbp, refseq=seq,
+                test_mol_id=np.array(["t0"], dtype=object),
+                test_data=make_test_df(qual_at_disagree),
+                meth_mol_id=meth_mol_id, meth_data=meth_df,
+                unmeth_mol_id=unmeth_mol_id, unmeth_data=unmeth_df)
+            return MethPrintExperiment._create(_raw_data={"chr1": raw},
+                                               _wrap=True)
+
+        ana = MethPrintAnalysis()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            exp_low = make_exp(0.01)
+            ana.model_prob(exp=exp_low, l_nuc=10)
+            exp_high = make_exp(0.99)
+            ana.model_prob(exp=exp_high, l_nuc=10)
+        prob_low = exp_low.analysis["chr1"]["meth_prob"].to_numpy()
+        prob_high = exp_high.analysis["chr1"]["meth_prob"].to_numpy()
+        np.testing.assert_allclose(prob_low, prob_high)
+
+    def test_large_disagreement_warns(self):
+        # No reverse-complement relationship at all -- almost every
+        # wrap-mirrored pair disagrees on context.
+        half = "AATTGCGTTAAGCTTTAACGTTAAGCGCAATT"
+        seq = half + half
+        nbp = len(half)
+        rng = np.random.default_rng(3)
+        site = np.where(_reference_contexts(seq)[:nbp] != NONE)[0]
+
+        def make_df(n, prob):
+            rows = [(m, int(pos), "+",
+                    float(rng.uniform(0.6, 0.9) if rng.random() < prob
+                          else rng.uniform(0.05, 0.3)), 0)
+                   for m in range(n) for pos in site]
+            return pd.DataFrame(rows, columns=["mol_index", "pos", "strand",
+                                               "mod_qual", "mod_code"])
+
+        raw = MethPrintData._create(
+            chrom="chr1", nbp=nbp, refseq=seq,
+            test_mol_id=np.array(["t0", "t1"], dtype=object),
+            test_data=make_df(2, 0.5),
+            meth_mol_id=np.array([f"m{i}" for i in range(6)], dtype=object),
+            meth_data=make_df(6, 0.8),
+            unmeth_mol_id=np.array([f"u{i}" for i in range(6)], dtype=object),
+            unmeth_data=make_df(6, 0.05))
+        exp = MethPrintExperiment._create(_raw_data={"chr1": raw},
+                                          _wrap=True)
+        ana = MethPrintAnalysis()
+        with pytest.warns(UserWarning):
             ana.model_prob(exp=exp, l_nuc=10)

@@ -1,4 +1,4 @@
-name: nucmc
+name: catella
 channels:
   - conda-forge
   - defaults

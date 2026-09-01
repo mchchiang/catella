@@ -3,7 +3,7 @@ requires = ["scikit-build-core>=0.9", "pybind11"]
 build-backend = "scikit_build_core.build"
 
 [project]
-name = "nucmc"
+name = "catella"
 dynamic = ["version"]
 description = "A Monte-Carlo simulator for predicting nucleosome positions based on DNA methylation footprinting data"
 readme = "README.md"
@@ -35,7 +35,7 @@ dependencies = [
 Homepage = "https://git.ecdf.ed.ac.uk/cchiang2/nucmc-project"
 
 [project.scripts]
-nucmc = "nucmc.cli:app"
+catella = "catella.cli:app"
 
 [dependency-groups]
 dev = ["ruff"]
@@ -53,11 +53,11 @@ doc = [
 
 [tool.scikit-build]
 cmake.build-type = "Release"
-wheel.packages = ["src/nucmc"]
+wheel.packages = ["src/catella"]
 
 [tool.scikit-build.metadata.version]
 provider = "scikit_build_core.metadata.regex"
-input = "src/nucmc/__about__.py"
+input = "src/catella/__about__.py"
 regex = "__version__ = ['\"](?P<value>[^'\"]+)['\"]"
 
 [tool.hatch.envs.docs]
@@ -73,5 +73,5 @@ dependency-groups = ["dev", "test"]
 
 [tool.ruff]
 line-length = 80
-src = ["src/nucmc"]
+src = ["src/catella"]
 lint.pydocstyle.convention = "numpy"

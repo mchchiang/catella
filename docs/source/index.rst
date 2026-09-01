@@ -1,5 +1,5 @@
 Welcome to catella's documentation!
-=================================
+===================================
 
 .. toctree::
    :maxdepth: 2

@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Tutorial 0: Data Preparation &mdash; nucmc 0.1.0 documentation</title>
+  <title>Tutorial 0: Data Preparation &mdash; catella 0.1.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
       <link rel="stylesheet" type="text/css" href="../../_static/custom.css?v=57874f38" />
@@ -37,7 +37,7 @@
           
           
           <a href="../../index.html" class="icon icon-home">
-            nucmc
+            catella
           </a>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
@@ -72,7 +72,7 @@
 
     <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
           <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-          <a href="../../index.html">nucmc</a>
+          <a href="../../index.html">catella</a>
       </nav>
 
       <div class="wy-nav-content">
@@ -82,7 +82,7 @@
       <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
       <li class="breadcrumb-item active">Tutorial 0: Data Preparation</li>
       <li class="wy-breadcrumbs-aside">
-              <a href="https://gitlab.com/cchiang2/nucmc-project/blob/main/docs/source/tutorials/tut00_data_prep/data_prep.ipynb" class="fa fa-gitlab"> Edit on GitLab</a>
+              <a href="https://github.com/mchchiang/catella/blob/main/docs/source/tutorials/tut00_data_prep/data_prep.ipynb" class="fa fa-github"> Edit on GitHub</a>
       </li>
   </ul>
   <hr/>
@@ -92,7 +92,7 @@
              
   <section id="Tutorial-0:-Data-Preparation">
 <h1>Tutorial 0: Data Preparation<a class="headerlink" href="#Tutorial-0:-Data-Preparation" title="Link to this heading"></a></h1>
-<p>This tutorial explains how to prepare your data in a format that the <code class="docutils literal notranslate"><span class="pre">nucmc</span></code> package can handle. The aim here is to create a table of methylation probabilities for individual bases of each sequence from the <code class="docutils literal notranslate"><span class="pre">bam</span></code> file. <code class="docutils literal notranslate"><span class="pre">nucmc</span></code> uses this table to predict nucleosome positions. We will specifically discuss two main cases for preparing the data:</p>
+<p>This tutorial explains how to prepare your data in a format that the <code class="docutils literal notranslate"><span class="pre">catella</span></code> package can handle. The aim here is to create a table of methylation probabilities for individual bases of each sequence from the <code class="docutils literal notranslate"><span class="pre">bam</span></code> file. <code class="docutils literal notranslate"><span class="pre">catella</span></code> uses this table to predict nucleosome positions. We will specifically discuss two main cases for preparing the data:</p>
 <ul class="simple">
 <li><p>Artificial constructs - data generated from synthetic sequences (e.g., repeats of the 601 widom sequence), where all molecules from the same sequence have the same size</p></li>
 <li><p>Native fragments - data generated from in-vivo systems, where molecules of various lengths are extracted by restriction enzymes</p></li>
@@ -119,7 +119,7 @@
 </section>
 <section id="Generating-a-segment-size-file">
 <h2>Generating a segment size file<a class="headerlink" href="#Generating-a-segment-size-file" title="Link to this heading"></a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">nucmc</span></code> needs to know the name and size of each ‘chromosome’ or sequence construct. One way to generate a file containing these details is as follows:</p>
+<p><code class="docutils literal notranslate"><span class="pre">catella</span></code> needs to know the name and size of each ‘chromosome’ or sequence construct. One way to generate a file containing these details is as follows:</p>
 <div class="highlight-none notranslate"><div class="highlight"><pre><span></span>samtools faidx genome.fa
 cut -f1,2 genome.fa.fai &gt; segments.size
 </pre></div>
@@ -135,10 +135,10 @@ KLF4    5000
 </section>
 <section id="Processing-the-bam-file-after-alignment">
 <h2>Processing the bam file after alignment<a class="headerlink" href="#Processing-the-bam-file-after-alignment" title="Link to this heading"></a></h2>
-<p>Our goal here is to extract the methylation probabilities of individual bases from the bam file using the package <code class="docutils literal notranslate"><span class="pre">modkit</span></code>. Often this process involves binarizing the signal to discern whether a base is methylated or not, typically done using <code class="docutils literal notranslate"><span class="pre">modkit</span> <span class="pre">call-mods</span></code> and setting a filtering threshold on the probability. Instead, <code class="docutils literal notranslate"><span class="pre">nucmc</span></code> relies on the full probability profile across a molecule to predict nucleosome positions. Hence, one should not perform any filtering on the probability scores
-before passing the data to <code class="docutils literal notranslate"><span class="pre">nucmc</span></code>.</p>
+<p>Our goal here is to extract the methylation probabilities of individual bases from the bam file using the package <code class="docutils literal notranslate"><span class="pre">modkit</span></code>. Often this process involves binarizing the signal to discern whether a base is methylated or not, typically done using <code class="docutils literal notranslate"><span class="pre">modkit</span> <span class="pre">call-mods</span></code> and setting a filtering threshold on the probability. Instead, <code class="docutils literal notranslate"><span class="pre">catella</span></code> relies on the full probability profile across a molecule to predict nucleosome positions. Hence, one should not perform any filtering on the probability scores
+before passing the data to <code class="docutils literal notranslate"><span class="pre">catella</span></code>.</p>
 <div class="admonition note">
-<p><strong>Note:</strong> It is important that we preserve the full extent of methylation probability profile during data extraction to increase the sensitivity when predicting nucleosome positions with <code class="docutils literal notranslate"><span class="pre">nucmc</span></code>.</p>
+<p><strong>Note:</strong> It is important that we preserve the full extent of methylation probability profile during data extraction to increase the sensitivity when predicting nucleosome positions with <code class="docutils literal notranslate"><span class="pre">catella</span></code>.</p>
 </div>
 <section id="Artificial-constructs">
 <h3>Artificial constructs<a class="headerlink" href="#Artificial-constructs" title="Link to this heading"></a></h3>
@@ -150,13 +150,13 @@ awk &#39;$14 != &quot;h&quot;&#39; | bgzip &gt; output.tsv.gz
 </div>
 <p>Some points to note about this chain of commands:</p>
 <ul class="simple">
-<li><p>By default, this command outputs both the probabilities of 5-methylcytosine (5mC, or those with <code class="docutils literal notranslate"><span class="pre">m</span></code> in the <code class="docutils literal notranslate"><span class="pre">mod_code</span></code> column of the table) and 5-hydroxymethylcytosine (5hmC, or those with <code class="docutils literal notranslate"><span class="pre">h</span></code>), generating two entries for the same cytosine base. Since <code class="docutils literal notranslate"><span class="pre">nucmc</span></code> only allows one probability score per base, we must resolve this conflict. If we are certain that within the experiments only one form of methylation is done (e.g., 5mC or <code class="docutils literal notranslate"><span class="pre">m</span></code>), we can safely filter out the other form of
+<li><p>By default, this command outputs both the probabilities of 5-methylcytosine (5mC, or those with <code class="docutils literal notranslate"><span class="pre">m</span></code> in the <code class="docutils literal notranslate"><span class="pre">mod_code</span></code> column of the table) and 5-hydroxymethylcytosine (5hmC, or those with <code class="docutils literal notranslate"><span class="pre">h</span></code>), generating two entries for the same cytosine base. Since <code class="docutils literal notranslate"><span class="pre">catella</span></code> only allows one probability score per base, we must resolve this conflict. If we are certain that within the experiments only one form of methylation is done (e.g., 5mC or <code class="docutils literal notranslate"><span class="pre">m</span></code>), we can safely filter out the other form of
 methylation (e.g., 5hmC or <code class="docutils literal notranslate"><span class="pre">h</span></code>). The filtering <code class="docutils literal notranslate"><span class="pre">awk</span> <span class="pre">'$14</span> <span class="pre">!=</span> <span class="pre">&quot;h&quot;'</span></code> removes any <code class="docutils literal notranslate"><span class="pre">5hmC</span></code> probabilities.</p></li>
 <li><p>We explicitly specify the motifs where methylation can occur in the experiments (i.e., <code class="docutils literal notranslate"><span class="pre">--motif</span> <span class="pre">A</span> <span class="pre">0</span> <span class="pre">--motif</span> <span class="pre">CG</span> <span class="pre">0</span> <span class="pre">--motif</span> <span class="pre">GC</span> <span class="pre">1</span></code>) to help remove any background random methylation, particularly on cytosine.</p></li>
 <li><p>We use the option <code class="docutils literal notranslate"><span class="pre">--ignore-implicit</span></code> to output modified bases only and ignore canonical (unmodified) ones (those with <code class="docutils literal notranslate"><span class="pre">-</span></code> in the <code class="docutils literal notranslate"><span class="pre">mod_code</span></code> column). This reduces the overall file size of the resulting <code class="docutils literal notranslate"><span class="pre">tsv</span></code> file. In the same spirit, we use the option <code class="docutils literal notranslate"><span class="pre">--mapped</span></code> to only consider molecules that have been successfully aligned.</p></li>
-<li><p>We recommend using <code class="docutils literal notranslate"><span class="pre">bgzip</span></code> to compress the <code class="docutils literal notranslate"><span class="pre">tsv</span></code> file to reduce its file size. <code class="docutils literal notranslate"><span class="pre">nucmc</span></code> supports direct reading of <code class="docutils literal notranslate"><span class="pre">gzip</span></code> file.</p></li>
+<li><p>We recommend using <code class="docutils literal notranslate"><span class="pre">bgzip</span></code> to compress the <code class="docutils literal notranslate"><span class="pre">tsv</span></code> file to reduce its file size. <code class="docutils literal notranslate"><span class="pre">catella</span></code> supports direct reading of <code class="docutils literal notranslate"><span class="pre">gzip</span></code> file.</p></li>
 </ul>
-<p>The resulting <code class="docutils literal notranslate"><span class="pre">output.tsv.gz</span></code> file is now ready to be read by <code class="docutils literal notranslate"><span class="pre">nucmc</span></code>. The specific columns of this table read by <code class="docutils literal notranslate"><span class="pre">nucmc</span></code> are as follows:</p>
+<p>The resulting <code class="docutils literal notranslate"><span class="pre">output.tsv.gz</span></code> file is now ready to be read by <code class="docutils literal notranslate"><span class="pre">catella</span></code>. The specific columns of this table read by <code class="docutils literal notranslate"><span class="pre">catella</span></code> are as follows:</p>
 <table class="docutils align-default">
 <thead>
 <tr class="row-odd"><th class="head"><p>Column name</p></th>
@@ -186,10 +186,10 @@ methylation (e.g., 5hmC or <code class="docutils literal notranslate"><span clas
 </table>
 <p>The full description of the output table can be found here - <a class="reference external" href="https://nanoporetech.github.io/modkit/intro_extract.html">https://nanoporetech.github.io/modkit/intro_extract.html</a>.</p>
 <div class="admonition note">
-<p><strong>Note:</strong> Remember to keep the header line of the table containing the column names (i.e., do not use the <code class="docutils literal notranslate"><span class="pre">--no-header</span></code> option in <code class="docutils literal notranslate"><span class="pre">modkit</span> <span class="pre">extract</span> <span class="pre">full</span></code>). <code class="docutils literal notranslate"><span class="pre">nucmc</span></code> relies on the header to extract data from the relevant columns.</p>
+<p><strong>Note:</strong> Remember to keep the header line of the table containing the column names (i.e., do not use the <code class="docutils literal notranslate"><span class="pre">--no-header</span></code> option in <code class="docutils literal notranslate"><span class="pre">modkit</span> <span class="pre">extract</span> <span class="pre">full</span></code>). <code class="docutils literal notranslate"><span class="pre">catella</span></code> relies on the header to extract data from the relevant columns.</p>
 </div>
 <div class="admonition note">
-<p><strong>Note:</strong> <code class="docutils literal notranslate"><span class="pre">nucmc</span></code> ignores the probability values of canonical bases (i.e., those with <code class="docutils literal notranslate"><span class="pre">-</span></code> in the <code class="docutils literal notranslate"><span class="pre">mod_code</span></code> column). The methylation probability score at these bases is set to zero.</p>
+<p><strong>Note:</strong> <code class="docutils literal notranslate"><span class="pre">catella</span></code> ignores the probability values of canonical bases (i.e., those with <code class="docutils literal notranslate"><span class="pre">-</span></code> in the <code class="docutils literal notranslate"><span class="pre">mod_code</span></code> column). The methylation probability score at these bases is set to zero.</p>
 </div>
 <div class="admonition note">
 <p><strong>Note:</strong> Control samples - from our in-house methylation footprinting experiments, we find that the methylation readout based on Oxford Nanopore sequencing tend to be noisier than that from PacBio sequencing. As such, it is useful to also prepare control samples of DNA fibers that are either fully methylated or unmethylated. These can then be used to normalize the signal. See the section Simulation Model which discusses this more in detail.</p>
@@ -197,7 +197,7 @@ methylation (e.g., 5hmC or <code class="docutils literal notranslate"><span clas
 </section>
 <section id="Native-fragments">
 <h3>Native fragments<a class="headerlink" href="#Native-fragments" title="Link to this heading"></a></h3>
-<p>For single-molecule DNA fragments derived from in-vivo systems, they often come in a range of sizes (since they are cut by restriction enzymes) and cover different genomic loci. This is particularly the case for genome-wide methylation footprinting experiments. A typical use case of <code class="docutils literal notranslate"><span class="pre">nucmc</span></code> in this type of experiments is to predict the nucleosome positions for a selection of loci of interest, such as the promoter regions of some genes.</p>
+<p>For single-molecule DNA fragments derived from in-vivo systems, they often come in a range of sizes (since they are cut by restriction enzymes) and cover different genomic loci. This is particularly the case for genome-wide methylation footprinting experiments. A typical use case of <code class="docutils literal notranslate"><span class="pre">catella</span></code> in this type of experiments is to predict the nucleosome positions for a selection of loci of interest, such as the promoter regions of some genes.</p>
 <p>To this end, we need to standardize the molecule reads and output only the methylation probabilities covering the loci of interest. We first write a <code class="docutils literal notranslate"><span class="pre">bed</span></code> file specifying these loci</p>
 <div class="highlight-none notranslate"><div class="highlight"><pre><span></span>cat &lt;&lt; &#39;EOF&#39; &gt; genes.bed
 chr3    181709500   181714500   SOX2

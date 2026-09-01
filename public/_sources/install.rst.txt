@@ -16,14 +16,15 @@ First, clone the project to your local machine:
 
 .. code-block:: bash
 
-   git clone https://git.ecdf.ed.ac.uk/cchiang2/nucmc.git
+   git clone https://github.com/mchchiang/catella.git
 
 Step 2: Create the Environment
 ------------------------------
 
 Use the provided `environment.yml` file to create a dedicated Conda
 environment. This ensures all dependencies are correctly managed. The default
-name of the environment is `nucmc`, but you can change this within the file.
+name of the environment is `catella`, but you can change this within the
+file.
 file.
 
 .. code-block:: bash
@@ -37,7 +38,7 @@ Once the environment is created, activate it using:
 
 .. code-block:: bash
 
-   conda activate nucmc
+   conda activate catella
 
 Step 4: Verify Installation
 ---------------------------
@@ -46,5 +47,5 @@ Check that the program is working correctly by running the help command:
 
 .. code-block:: bash
 
-   nucmc --help		
+   catella --help
 

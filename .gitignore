@@ -11,6 +11,7 @@ __pycache__/
 .hatch/
 nucmc.egg-info/
 *.so
+/builds/
 
 # Distribution / packaging
 /dist/
@@ -23,3 +24,11 @@ nucmc.egg-info/
 # docs
 /docs/generated/
 /docs/_build/
+
+# claude
+.claude/
+CLAUDE.md
+
+# ipynb
+**/.ipynb_checkpoints/
+docs/source/tutorials/**/example

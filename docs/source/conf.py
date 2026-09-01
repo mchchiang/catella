@@ -87,7 +87,7 @@ def linkcode_resolve(domain, info):
         return None
     rel_path = os.path.relpath(filename, start=str(ROOT))
     branch = "main"
-    return f"{repository_url}/-/blob/{branch}/{rel_path}#L{lineno}"
+    return f"{repository_url}/blob/{branch}/{rel_path}#L{lineno}"
 
 # -- General configuration ----------------------------------------------------
 
@@ -143,10 +143,9 @@ html_theme       = "sphinx_rtd_theme"
 html_static_path = ["_static"]
 
 html_context = {
-    "display_github":  False,
-    "display_gitlab":  True,
-    "gitlab_user":     "cchiang2",
-    "gitlab_repo":     "nucmc-project",
-    "gitlab_version":  "main",
+    "display_github":  True,
+    "github_user":     "mchchiang",
+    "github_repo":     "catella",
+    "github_version":  "main",
     "conf_py_path":    "/docs/source/",
 }

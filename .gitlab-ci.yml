@@ -1,9 +1,0 @@
-pages:
-  stage: deploy
-  script:
-    - echo "Skipping build, deploying pre-built files ..."
-  artifacts:
-    paths:
-      - public
-  only:
-    - main

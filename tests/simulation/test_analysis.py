@@ -4,12 +4,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from nucmc.simulation.config import SimSettings
-from nucmc.simulation.engine import SimManager
-from nucmc.simulation.analysis import SimAnalysis
-from nucmc.simulation.results import SimDataset
-from nucmc.h5_array import H5Array
-from nucmc import utils
+from catella.simulation.config import SimSettings
+from catella.simulation.engine import SimManager
+from catella.simulation.analysis import SimAnalysis
+from catella.simulation.results import SimDataset
+from catella.h5_array import H5Array
+from catella import utils
 
 
 def _make_settings(**overrides):

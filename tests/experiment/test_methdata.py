@@ -8,9 +8,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from nucmc.experiment.methdata import (
+from catella.experiment.methdata import (
     LazyRawDataMap, MethPrintData, MethPrintExperiment)
-from nucmc.h5_array import H5Array
+from catella.h5_array import H5Array
 
 
 def _make_raw(chrom, nmol, nbp, seed, refseq=None):
@@ -299,14 +299,14 @@ class TestToDense:
         np.testing.assert_array_equal(out.to_numpy(), expected)
 
     def test_warns_when_dataframe_exceeds_threshold(self, monkeypatch):
-        import nucmc.experiment.methdata as methdata_mod
+        import catella.experiment.methdata as methdata_mod
         monkeypatch.setattr(methdata_mod, "_DENSE_WARN_ROWS", 2)
         exp = self._experiment()
         with pytest.warns(UserWarning):
             exp.to_dense("chr1", as_h5array=False)
 
     def test_no_warning_below_threshold(self, monkeypatch):
-        import nucmc.experiment.methdata as methdata_mod
+        import catella.experiment.methdata as methdata_mod
         monkeypatch.setattr(methdata_mod, "_DENSE_WARN_ROWS", 100)
         exp = self._experiment()
         with warnings.catch_warnings():
@@ -314,7 +314,7 @@ class TestToDense:
             exp.to_dense("chr1", as_h5array=False)
 
     def test_no_warning_for_h5array_regardless_of_size(self, monkeypatch):
-        import nucmc.experiment.methdata as methdata_mod
+        import catella.experiment.methdata as methdata_mod
         monkeypatch.setattr(methdata_mod, "_DENSE_WARN_ROWS", 1)
         exp = self._experiment()
         with warnings.catch_warnings():

@@ -4,10 +4,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from nucmc.experiment.methdata import MethPrintData, MethPrintExperiment
-from nucmc.experiment.preprocessing import MethPrintAnalysis
-from nucmc.h5_array import H5Array
-from nucmc import utils
+from catella.experiment.methdata import MethPrintData, MethPrintExperiment
+from catella.experiment.preprocessing import MethPrintAnalysis
+from catella.h5_array import H5Array
+from catella import utils
 
 
 def _make_mol_data(nmol, nbp, rng, unmapped_mol=None):
@@ -567,7 +567,7 @@ def _make_footprint_experiment(*, nmol=20, meth_nmol=30, unmeth_nmol=30,
                                l_nuc=30, seed=0, soft_q=False):
     # Synthetic multi-channel footprinting experiment with a known
     # planted "protected" region, for testing model_prob end to end.
-    from nucmc.experiment.preprocessing import (
+    from catella.experiment.preprocessing import (
         _reference_contexts, NONE, M6A, GCH, HCG, GCG)
 
     rng = np.random.default_rng(seed)

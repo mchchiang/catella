@@ -5,11 +5,11 @@ from pathlib import Path
 import h5py
 import numpy as np
 import pytest
-from nucmc_cpp import Dump
+from catella_cpp import Dump
 
-from nucmc.simulation.config import SimSettings
-from nucmc.simulation.engine import SimManager, SimRun
-from nucmc.simulation.results import SimDataset
+from catella.simulation.config import SimSettings
+from catella.simulation.engine import SimManager, SimRun
+from catella.simulation.results import SimDataset
 
 
 def _make_settings(**overrides):

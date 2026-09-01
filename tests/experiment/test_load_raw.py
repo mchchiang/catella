@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from nucmc.experiment.methdata import MethPrintData, MethPrintExperiment
+from catella.experiment.methdata import MethPrintData, MethPrintExperiment
 
 
 _HEADER = "read_id\tref_position\tchrom\tref_strand\tmod_qual\tmod_code\n"

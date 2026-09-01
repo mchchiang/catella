@@ -4,12 +4,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import nucmc
-from nucmc import utils
-from nucmc.experiment.methdata import MethPrintData, MethPrintExperiment
-from nucmc.simulation.analysis import SimAnalysis
-from nucmc.simulation.config import SimSettings
-from nucmc.simulation.engine import SimManager
+import catella
+from catella import utils
+from catella.experiment.methdata import MethPrintData, MethPrintExperiment
+from catella.simulation.analysis import SimAnalysis
+from catella.simulation.config import SimSettings
+from catella.simulation.engine import SimManager
 
 
 def _settings():
@@ -45,20 +45,20 @@ class TestDownsample:
     def test_matches_utils_downsample(self):
         data = np.random.default_rng(0).random((10, 4))
         expected = utils.downsample(data, 3, how="mean")
-        got = nucmc.downsample(data=data, max_rows=3, how="mean")
+        got = catella.downsample(data=data, max_rows=3, how="mean")
         np.testing.assert_allclose(got, expected)
 
 
 class TestSortByLinkage:
     def test_raises_if_neither_given(self):
         with pytest.raises(ValueError):
-            nucmc.sort_by_linkage()
+            catella.sort_by_linkage()
 
     def test_raises_if_both_given(self, tmp_path):
         dataset = _make_dataset(tmp_path)
         exp = _make_experiment()
         with pytest.raises(ValueError):
-            nucmc.sort_by_linkage(dataset=dataset, exp=exp)
+            catella.sort_by_linkage(dataset=dataset, exp=exp)
 
     def test_dataset_dispatch_sorts_and_stores_link_mat(self, tmp_path):
         dataset = _make_dataset(tmp_path)
@@ -66,7 +66,7 @@ class TestSortByLinkage:
         occup = dataset.analysis["chr1"]["occup"].to_numpy()
         order, ref_link = utils.compute_linkage(occup)
 
-        nucmc.sort_by_linkage(dataset=dataset)
+        catella.sort_by_linkage(dataset=dataset)
 
         sorted_arr = dataset.analysis["chr1"]["occup_sorted"].to_numpy()
         link_mat = dataset.analysis["chr1"]["occup_linkage"].to_numpy()
@@ -76,7 +76,7 @@ class TestSortByLinkage:
     def test_experiment_dispatch_with_raw_which(self):
         exp = _make_experiment()
 
-        nucmc.sort_by_linkage(exp=exp, raw_which="test")
+        catella.sort_by_linkage(exp=exp, raw_which="test")
 
         assert "test_sorted" in exp.analysis["chr1"]
         assert "test_linkage" in exp.analysis["chr1"]
@@ -85,7 +85,7 @@ class TestSortByLinkage:
         dataset = _make_dataset(tmp_path)
         SimAnalysis().compute_occup(dataset=dataset)
 
-        nucmc.sort_by_linkage(dataset=dataset, store_link_mat=False)
+        catella.sort_by_linkage(dataset=dataset, store_link_mat=False)
 
         assert "occup_sorted" in dataset.analysis["chr1"]
         assert "occup_linkage" not in dataset.analysis["chr1"]
@@ -98,9 +98,9 @@ class TestSortByLinkage:
         dataset.analysis["chr1"]["occup_nan"] = pd.DataFrame(occup)
 
         with pytest.raises(ValueError):
-            nucmc.sort_by_linkage(dataset=dataset, data_name="occup_nan")
+            catella.sort_by_linkage(dataset=dataset, data_name="occup_nan")
 
-        nucmc.sort_by_linkage(dataset=dataset, data_name="occup_nan",
+        catella.sort_by_linkage(dataset=dataset, data_name="occup_nan",
                               fill_nan="mean")
         link_mat = dataset.analysis["chr1"]["occup_nan_linkage"].to_numpy()
         assert np.isfinite(link_mat).all()

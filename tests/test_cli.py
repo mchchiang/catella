@@ -10,15 +10,15 @@ import pandas as pd
 import pytest
 from typer.testing import CliRunner
 
-import nucmc
-from nucmc import utils
-from nucmc.cli import app
-from nucmc.experiment.methdata import MethPrintExperiment
-from nucmc.experiment.preprocessing import MethPrintAnalysis
-from nucmc.simulation.analysis import SimAnalysis
-from nucmc.simulation.config import SimSettings
-from nucmc.simulation.engine import SimManager
-from nucmc.simulation.results import SimDataset
+import catella
+from catella import utils
+from catella.cli import app
+from catella.experiment.methdata import MethPrintExperiment
+from catella.experiment.preprocessing import MethPrintAnalysis
+from catella.simulation.analysis import SimAnalysis
+from catella.simulation.config import SimSettings
+from catella.simulation.engine import SimManager
+from catella.simulation.results import SimDataset
 
 runner = CliRunner()
 
@@ -90,7 +90,7 @@ class TestPreprocess:
                                      "--seed", "7"])
         assert result.exit_code == 0, result.output
 
-        expected = nucmc.preprocess(chromsize=chromsize, test_file=test_file,
+        expected = catella.preprocess(chromsize=chromsize, test_file=test_file,
                                     binsize=5, max_nmol=3, seed=7)
 
         got = MethPrintExperiment.load(cli_out)
@@ -146,7 +146,7 @@ class TestRun:
         chromsize = tmp_path / "sizes.tsv"
         _write_chromsize(chromsize, {"chr1": 30})
         exp_file = tmp_path / "exp.h5"
-        nucmc.preprocess(chromsize=chromsize, test_file=test_file,
+        catella.preprocess(chromsize=chromsize, test_file=test_file,
                          out_file=exp_file, binsize=5)
 
         settings_file = tmp_path / "settings.json"
@@ -169,7 +169,7 @@ class TestRun:
 
         exp_data = MethPrintExperiment.load(exp_file)
         meth_prob = exp_data.analysis["chr1"]["meth_prob"].to_numpy()
-        expected = nucmc.run(chroms="chr1", nsim=2,
+        expected = catella.run(chroms="chr1", nsim=2,
                              settings=SimSettings(**_settings_dict()),
                              meth_prob={"chr1": meth_prob},
                              out_dir=tmp_path / "direct_out",
@@ -196,7 +196,7 @@ class TestAnalyze:
                                      "--mean-nnuc-name", "my_nnuc"])
         assert result.exit_code == 0, result.output
 
-        nucmc.analyze(dataset=direct_dataset, occup_name="my_occup",
+        catella.analyze(dataset=direct_dataset, occup_name="my_occup",
                      mean_nnuc_name="my_nnuc")
 
         reloaded = SimDataset.load(cli_dataset._dataset_file)
@@ -234,7 +234,7 @@ class TestDownsample:
         chromsize = tmp_path / "sizes.tsv"
         _write_chromsize(chromsize, {"chr1": 20})
         exp_file = tmp_path / "exp.h5"
-        nucmc.preprocess(chromsize=chromsize, test_file=test_file,
+        catella.preprocess(chromsize=chromsize, test_file=test_file,
                          out_file=exp_file, binsize=5)
         exp = MethPrintExperiment.load(exp_file)
         expected = utils.downsample(
@@ -278,7 +278,7 @@ class TestSortByLinkage:
         chromsize = tmp_path / "sizes.tsv"
         _write_chromsize(chromsize, {"chr1": 20})
         exp_file = tmp_path / "exp.h5"
-        nucmc.preprocess(chromsize=chromsize, test_file=test_file,
+        catella.preprocess(chromsize=chromsize, test_file=test_file,
                          out_file=exp_file, binsize=5)
         exp = MethPrintExperiment.load(exp_file)
         meth_prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
@@ -385,7 +385,7 @@ class TestPlotMethmap:
         chromsize = tmp_path / "sizes.tsv"
         _write_chromsize(chromsize, {"chr1": 20})
         exp_file = tmp_path / "exp.h5"
-        nucmc.preprocess(chromsize=chromsize, test_file=test_file,
+        catella.preprocess(chromsize=chromsize, test_file=test_file,
                          out_file=exp_file, binsize=5)
         exp = MethPrintExperiment.load(exp_file)
         MethPrintAnalysis().sort_by_linkage(exp=exp, data_name="meth_prob")

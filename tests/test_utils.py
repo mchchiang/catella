@@ -10,8 +10,8 @@ import pytest
 from scipy.spatial.distance import pdist, squareform
 import scipy.cluster.hierarchy as sch
 
-from nucmc import utils
-from nucmc.h5_array import H5Array
+from catella import utils
+from catella.h5_array import H5Array
 
 
 def _reference_linkage(data, *, metric="euclidean", method="ward"):
@@ -68,7 +68,7 @@ def test_h5array_scratch_dir_is_cleaned_up():
     before = set(os.listdir(tempfile.gettempdir()))
     utils.compute_linkage(arr, batch_size=3)
     after = set(os.listdir(tempfile.gettempdir()))
-    leaked = [d for d in after - before if d.startswith("nucmc_")]
+    leaked = [d for d in after - before if d.startswith("catella_")]
     assert not leaked
 
 

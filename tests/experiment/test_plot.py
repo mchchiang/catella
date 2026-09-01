@@ -9,11 +9,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from nucmc.h5_array import H5Array
-from nucmc.experiment.plot import MethPlot
-from nucmc.experiment.methdata import MethPrintData, MethPrintExperiment
-from nucmc.experiment.preprocessing import MethPrintAnalysis
-from nucmc import utils
+from catella.h5_array import H5Array
+from catella.experiment.plot import MethPlot
+from catella.experiment.methdata import MethPrintData, MethPrintExperiment
+from catella.experiment.preprocessing import MethPrintAnalysis
+from catella import utils
 
 
 def _h5array(values):
@@ -114,7 +114,7 @@ def test_plot_methmap_end_to_end_with_sort_by_linkage(tmp_path):
 
 
 def test_plot_methmap_warns_above_plot_warn_rows(methplot, monkeypatch):
-    import nucmc.experiment.plot as plot_module
+    import catella.experiment.plot as plot_module
     monkeypatch.setattr(plot_module, "_PLOT_WARN_ROWS", 5)
     values = np.random.default_rng(6).random((8, 3))
 
@@ -124,7 +124,7 @@ def test_plot_methmap_warns_above_plot_warn_rows(methplot, monkeypatch):
 
 def test_plot_methmap_no_warning_below_plot_warn_rows(methplot,
                                                        monkeypatch):
-    import nucmc.experiment.plot as plot_module
+    import catella.experiment.plot as plot_module
     monkeypatch.setattr(plot_module, "_PLOT_WARN_ROWS", 100)
     values = np.random.default_rng(7).random((8, 3))
 

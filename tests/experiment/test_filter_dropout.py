@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from nucmc.experiment.methdata import MethPrintExperiment
+from catella.experiment.methdata import MethPrintExperiment
 
 
 def _write_tsv(path, rows):

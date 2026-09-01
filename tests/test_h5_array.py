@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from nucmc.h5_array import H5Array
+from catella.h5_array import H5Array
 
 
 def test_write_batch_and_read_back():

@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import h5py
-from . import h5_utils
+from catella import h5_utils
 
 _DATASET_NAME = "data"
 

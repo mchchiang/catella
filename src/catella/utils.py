@@ -8,8 +8,8 @@ import pandas as pd
 import numpy as np
 import scipy.cluster.hierarchy as sch
 from scipy.spatial.distance import pdist, cdist, squareform
-from . import h5_utils
-from .h5_array import H5Array, _DOWNSAMPLE_HOW
+from catella import h5_utils
+from catella.h5_array import H5Array, _DOWNSAMPLE_HOW
 
 IndexType = int | slice | Sequence[int]
 

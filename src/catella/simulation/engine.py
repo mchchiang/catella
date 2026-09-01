@@ -12,10 +12,10 @@ from rich.progress import TimeRemainingColumn
 import numpy as np
 import pandas as pd
 from scipy.special import logit
-from .results import SimDataset
-from ..utils import IndexType
-from .. import utils
-from .config import SimSettings
+from catella.simulation.results import SimDataset
+from catella.utils import IndexType
+from catella import utils
+from catella.simulation.config import SimSettings
 from nucmc_cpp import NucPosModel, Dump
 import nucmc_cpp as sim
 

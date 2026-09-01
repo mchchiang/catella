@@ -4,7 +4,7 @@ from collections.abc import MutableMapping, Mapping
 from typing import Dict, Any, Iterator
 from dataclasses import fields, is_dataclass
 import pandas as pd
-from .h5_array import H5Array
+from catella.h5_array import H5Array
 
 class DataFrameMap(MutableMapping):
     def __init__(self, data: Dict[str, Any] = None, **kwargs):

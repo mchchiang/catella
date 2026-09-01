@@ -16,11 +16,11 @@ from typing import Tuple, Self, Dict, Any, Callable, List
 from collections import Counter
 from collections.abc import Iterator, Iterable, Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed, Future
-from ..containers import DataFrameMap, FixedKeyMap, DataclassPublicProxy
-from ..h5_array import H5Array
-from .config import SimSettings
-from .. import utils
-from .. import h5_utils
+from catella.containers import DataFrameMap, FixedKeyMap, DataclassPublicProxy
+from catella.h5_array import H5Array
+from catella.simulation.config import SimSettings
+from catella import utils
+from catella import h5_utils
 from nucmc_cpp import Dump
 
 # Limit the concurrent open files to stay under OS limits

@@ -1,12 +1,12 @@
 # analysis.py
 
-from .results import SimDataset
+from catella.simulation.results import SimDataset
 from dataclasses import dataclass
 from collections.abc import Iterable
 import numpy as np
 import pandas as pd
-from .. import utils
-from ..h5_array import H5Array
+from catella import utils
+from catella.h5_array import H5Array
 
 @dataclass(slots=True)
 class NucFiberMap:

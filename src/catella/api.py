@@ -7,17 +7,17 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 import numpy as np
 import pandas as pd
-from .experiment.preprocessing import MethPrintAnalysis
-from .experiment.methdata import MethPrintExperiment
-from .experiment.plot import MethPlot
-from .h5_array import H5Array
-from .simulation.config import SimSettings
-from .simulation.engine import SimManager
-from .simulation.results import SimDataset
-from .simulation.analysis import SimAnalysis
-from .simulation.plot import SimPlot
-from . import utils
-from .utils import IndexType
+from catella.experiment.preprocessing import MethPrintAnalysis
+from catella.experiment.methdata import MethPrintExperiment
+from catella.experiment.plot import MethPlot
+from catella.h5_array import H5Array
+from catella.simulation.config import SimSettings
+from catella.simulation.engine import SimManager
+from catella.simulation.results import SimDataset
+from catella.simulation.analysis import SimAnalysis
+from catella.simulation.plot import SimPlot
+from catella import utils
+from catella.utils import IndexType
 
 def preprocess(*, chromsize : str | Path,               
                test_file : str | Path,

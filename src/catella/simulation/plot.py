@@ -3,8 +3,8 @@
 import matplotlib.pyplot as plt
 from functools import wraps
 from dataclasses import dataclass, field
-from .results import SimDataset
-from .analysis import NucFiberMap, SimAnalysis
+from catella.simulation.results import SimDataset
+from catella.simulation.analysis import NucFiberMap, SimAnalysis
 from pathlib import Path
 from matplotlib.colors import Normalize
 import numpy as np

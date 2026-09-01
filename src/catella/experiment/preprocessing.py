@@ -3,9 +3,9 @@
 import numpy as np
 import pandas as pd
 from typing import List
-from .methdata import MethPrintExperiment, _apply_keep_mask
-from ..h5_array import H5Array
-from .. import utils
+from catella.experiment.methdata import MethPrintExperiment, _apply_keep_mask
+from catella.h5_array import H5Array
+from catella import utils
 import matplotlib.pyplot as plt
 
 

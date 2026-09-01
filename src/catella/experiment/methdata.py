@@ -11,10 +11,10 @@ from dataclasses import dataclass, field, fields
 from pathlib import Path
 from types import MappingProxyType
 from typing import Tuple, List, Mapping, Dict, Self, Any
-from ..containers import DataFrameMap, FixedKeyMap
-from ..h5_array import H5Array
-from .. import utils
-from .. import h5_utils
+from catella.containers import DataFrameMap, FixedKeyMap
+from catella.h5_array import H5Array
+from catella import utils
+from catella import h5_utils
 import numpy as np
 import pandas as pd
 import h5py

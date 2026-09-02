@@ -139,6 +139,82 @@ class TestPreprocessEmpirical:
         assert got.mtase == ("CG", "GC")
 
 
+_MODEL_SEQ = "AATTGCGTTAAGCTTTAACGTTAAGCGCAATT" * 8
+
+
+class TestPreprocessModel:
+    def test_matches_direct_api_call(self, tmp_path):
+        rows = _make_test_rows(nmol=5, nbp=len(_MODEL_SEQ), step=1)
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": len(_MODEL_SEQ)})
+        fasta_file = tmp_path / "ref.fa"
+        _write_fasta(fasta_file, {"chr1": _MODEL_SEQ})
+
+        cli_out = tmp_path / "cli_exp.h5"
+        result = runner.invoke(app, ["preprocess_model", str(chromsize),
+                                     str(test_file), str(fasta_file),
+                                     str(cli_out), "--l-nuc", "30",
+                                     "--n-min", "3", "--max-nmol", "3",
+                                     "--seed", "7"])
+        assert result.exit_code == 0, result.output
+
+        expected = catella.preprocess_model(
+            chromsize=chromsize, test_file=test_file,
+            fasta_file=fasta_file, l_nuc=30, n_min=3, max_nmol=3, seed=7)
+
+        got = MethPrintExperiment.load(cli_out)
+        assert len(got.raw["chr1"].test_mol_id) == 3
+        assert (sorted(got.raw["chr1"].test_mol_id)
+               == sorted(expected.raw["chr1"].test_mol_id))
+        np.testing.assert_allclose(
+            got.analysis["chr1"]["meth_prob"].to_numpy(),
+            expected.analysis["chr1"]["meth_prob"].to_numpy())
+
+    def test_mtase_populates_experiment(self, tmp_path):
+        rows = _make_test_rows(nmol=5, nbp=len(_MODEL_SEQ), step=1)
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": len(_MODEL_SEQ)})
+        fasta_file = tmp_path / "ref.fa"
+        _write_fasta(fasta_file, {"chr1": _MODEL_SEQ})
+
+        cli_out = tmp_path / "cli_exp.h5"
+        result = runner.invoke(app, ["preprocess_model", str(chromsize),
+                                     str(test_file), str(fasta_file),
+                                     str(cli_out), "--l-nuc", "30",
+                                     "--n-min", "3", "--mtase", "CG,GC"])
+        assert result.exit_code == 0, result.output
+
+        got = MethPrintExperiment.load(cli_out)
+        assert got.mtase == ("CG", "GC")
+
+    def test_cli_requires_fasta_file(self, tmp_path):
+        rows = _make_test_rows(nmol=5, nbp=len(_MODEL_SEQ), step=1)
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": len(_MODEL_SEQ)})
+
+        cli_out = tmp_path / "cli_exp.h5"
+        result = runner.invoke(app, ["preprocess_model", str(chromsize),
+                                     str(test_file), str(cli_out)])
+        assert result.exit_code != 0
+
+    def test_api_requires_fasta_file(self, tmp_path):
+        rows = _make_test_rows(nmol=5, nbp=len(_MODEL_SEQ), step=1)
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": len(_MODEL_SEQ)})
+
+        with pytest.raises(TypeError):
+            catella.preprocess_model(chromsize=chromsize,
+                                     test_file=test_file)
+
+
 class TestRun:
     def test_matches_direct_api_call_with_mols_subset(self, tmp_path):
         rows = _make_test_rows(nmol=5, nbp=30)

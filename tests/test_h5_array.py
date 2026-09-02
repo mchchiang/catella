@@ -33,6 +33,14 @@ def test_scratch_file_cleanup_on_close():
     assert not path.exists()
 
 
+def test_scratch_dir_cleanup_on_close():
+    arr = H5Array.create((3, 3))
+    scratch_dir = Path(arr.path).parent
+    assert scratch_dir.exists()
+    arr.close()
+    assert not scratch_dir.exists()
+
+
 def test_permanent_path_survives_close(tmp_path):
     path = tmp_path / "permanent.h5"
     arr = H5Array.create((3, 3), path=path)

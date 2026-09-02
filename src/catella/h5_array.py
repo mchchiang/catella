@@ -1,6 +1,7 @@
 # h5_array.py
 
 import os
+import shutil
 import tempfile
 import weakref
 from pathlib import Path
@@ -97,22 +98,24 @@ class H5Array:
     permanent path.
     """
 
-    def __init__(self, path, file, dataset, owns_file):
+    def __init__(self, path, file, dataset, owns_file, owns_dir=False):
         self._path = path
         self._file = file
         self._dataset = dataset
         self._owns_file = owns_file
         self._finalizer = weakref.finalize(
-            self, H5Array._cleanup, file, path, owns_file)
+            self, H5Array._cleanup, file, path, owns_file, owns_dir)
 
     @staticmethod
-    def _cleanup(file, path, owns_file):
+    def _cleanup(file, path, owns_file, owns_dir):
         try:
             file.close()
         except Exception:
             pass
         if owns_file:
             Path(path).unlink(missing_ok=True)
+        if owns_dir:
+            shutil.rmtree(Path(path).parent, ignore_errors=True)
 
     @classmethod
     def create(cls, shape, *, dtype=np.float64, path=None, dir=None,
@@ -178,9 +181,11 @@ class H5Array:
             The newly created disk-backed array.
         """
         owns_file = path is None
+        owns_dir = False
         if path is None:
             if dir is None:
                 dir = h5_utils.fresh_tmp_dir()
+                owns_dir = True
             fd, path = tempfile.mkstemp(suffix=".h5", dir=dir)
             os.close(fd)
         else:
@@ -206,7 +211,7 @@ class H5Array:
         if columns is not None:
             H5Array._write_label(file, f"{_DATASET_NAME}__columns", columns)
         return cls(path=path, file=file, dataset=dataset,
-                   owns_file=owns_file)
+                   owns_file=owns_file, owns_dir=owns_dir)
 
     @staticmethod
     def _write_label(parent_group, key, values):

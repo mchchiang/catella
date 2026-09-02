@@ -61,12 +61,26 @@ def test_h5array_matches_reference_across_batch_sizes(batch_size):
 
 
 def test_h5array_scratch_dir_is_cleaned_up():
+    before = set(os.listdir(tempfile.gettempdir()))
+
     data = np.random.default_rng(2).random((10, 3))
     arr = H5Array.create(data.shape)
     arr.write_batch(0, data.shape[0], data)
+    utils.compute_linkage(arr, batch_size=3)
+    arr.close()
+
+    after = set(os.listdir(tempfile.gettempdir()))
+    leaked = [d for d in after - before if d.startswith("catella_")]
+    assert not leaked
+
+
+def test_h5array_scratch_dir_is_cleaned_up_on_raise():
+    data = np.random.default_rng(6).random((6, 3))
+    data[0, 0] = np.nan
 
     before = set(os.listdir(tempfile.gettempdir()))
-    utils.compute_linkage(arr, batch_size=3)
+    with pytest.raises(ValueError):
+        utils.compute_linkage(data, metric="cityblock", batch_size=2)
     after = set(os.listdir(tempfile.gettempdir()))
     leaked = [d for d in after - before if d.startswith("catella_")]
     assert not leaked

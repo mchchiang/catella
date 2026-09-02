@@ -272,44 +272,49 @@ def _streamed_pdist(h5arr, *, metric, batch_size, dir, fill_nan=None):
     if made_own_dir:
         dir = h5_utils.fresh_tmp_dir()
 
-    fill_values = None
-    if fill_nan == "mean":
-        fill_values = _h5_column_nanmean(h5arr, batch_size)
-    elif fill_nan is not None:
-        fill_values = fill_nan
+    dist = None
+    try:
+        fill_values = None
+        if fill_nan == "mean":
+            fill_values = _h5_column_nanmean(h5arr, batch_size)
+        elif fill_nan is not None:
+            fill_values = fill_nan
 
-    nrow = h5arr.shape[0]
-    dist = H5Array.create((nrow, nrow), dtype=np.float64, dir=dir)
-    for a0 in range(0, nrow, batch_size):
-        a1 = min(a0 + batch_size, nrow)
-        block_a = h5arr[a0:a1, :]
-        if fill_values is not None:
-            block_a = np.where(np.isnan(block_a), fill_values, block_a)
-            has_nan_a = False
-        else:
-            has_nan_a = np.isnan(block_a).any()
-        row_block = np.empty((a1 - a0, nrow), dtype=np.float64)
-        for b0 in range(0, nrow, batch_size):
-            b1 = min(b0 + batch_size, nrow)
-            if b0 == a0:
-                if a1 - a0 == 1:
-                    row_block[:, b0:b1] = 0.0
-                else:
-                    m = _resolve_metric(metric, has_nan_a)
-                    row_block[:, b0:b1] = squareform(pdist(block_a, metric=m))
+        nrow = h5arr.shape[0]
+        dist = H5Array.create((nrow, nrow), dtype=np.float64, dir=dir)
+        for a0 in range(0, nrow, batch_size):
+            a1 = min(a0 + batch_size, nrow)
+            block_a = h5arr[a0:a1, :]
+            if fill_values is not None:
+                block_a = np.where(np.isnan(block_a), fill_values, block_a)
+                has_nan_a = False
             else:
-                block_b = h5arr[b0:b1, :]
-                if fill_values is not None:
-                    block_b = np.where(np.isnan(block_b), fill_values,
-                                       block_b)
-                    has_nan_b = False
+                has_nan_a = np.isnan(block_a).any()
+            row_block = np.empty((a1 - a0, nrow), dtype=np.float64)
+            for b0 in range(0, nrow, batch_size):
+                b1 = min(b0 + batch_size, nrow)
+                if b0 == a0:
+                    if a1 - a0 == 1:
+                        row_block[:, b0:b1] = 0.0
+                    else:
+                        m = _resolve_metric(metric, has_nan_a)
+                        row_block[:, b0:b1] = squareform(
+                            pdist(block_a, metric=m))
                 else:
-                    has_nan_b = np.isnan(block_b).any()
-                m = _resolve_metric(metric, has_nan_a or has_nan_b)
-                row_block[:, b0:b1] = cdist(block_a, block_b, metric=m)
-        dist.write_batch(a0, a1, row_block)
-    dense = dist.to_numpy()
-    dist.close()
-    if made_own_dir:
-        shutil.rmtree(dir, ignore_errors=True)
-    return squareform(dense, checks=False)
+                    block_b = h5arr[b0:b1, :]
+                    if fill_values is not None:
+                        block_b = np.where(np.isnan(block_b), fill_values,
+                                           block_b)
+                        has_nan_b = False
+                    else:
+                        has_nan_b = np.isnan(block_b).any()
+                    m = _resolve_metric(metric, has_nan_a or has_nan_b)
+                    row_block[:, b0:b1] = cdist(block_a, block_b, metric=m)
+            dist.write_batch(a0, a1, row_block)
+        dense = dist.to_numpy()
+        return squareform(dense, checks=False)
+    finally:
+        if dist is not None:
+            dist.close()
+        if made_own_dir:
+            shutil.rmtree(dir, ignore_errors=True)

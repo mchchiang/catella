@@ -964,12 +964,13 @@ class SimDataset:
                                                    **agg_kwargs)
                 
         # Mark molecules with no simulation files on disk as missing
-        missing = [None] * self._nsim
-        for chrom in chroms:
-            mol_range = range(self._nmol[chrom]) if mols is None else mols
-            for mol in mol_range:
-                if results[chrom][mol] == missing:
-                    results[chrom][mol] = None
+        if agg_func is not None:
+            for chrom in chroms:
+                mol_range = range(self._nmol[chrom]) if mols is None \
+                    else mols
+                for mol in mol_range:
+                    if expected_counts[(chrom, mol)] == 0:
+                        results[chrom][mol] = None
 
         # Tidy up results and return a numpy array for each chromosome data
         if agg_func is None and obs != "position":

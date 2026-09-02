@@ -75,7 +75,7 @@ def _make_dataset(tmp_path, *, nmol=4, nbp=20, nsim=2, seed=1,
                        dataset_name=name, seed=seed)
 
 
-class TestPreprocess:
+class TestPreprocessEmpirical:
     def test_matches_direct_api_call(self, tmp_path):
         rows = _make_test_rows(nmol=5, nbp=30)
         test_file = tmp_path / "test.tsv"
@@ -84,14 +84,15 @@ class TestPreprocess:
         _write_chromsize(chromsize, {"chr1": 30})
 
         cli_out = tmp_path / "cli_exp.h5"
-        result = runner.invoke(app, ["preprocess", str(chromsize),
+        result = runner.invoke(app, ["preprocess_empirical", str(chromsize),
                                      str(test_file), str(cli_out),
                                      "--binsize", "5", "--max-nmol", "3",
                                      "--seed", "7"])
         assert result.exit_code == 0, result.output
 
-        expected = catella.preprocess(chromsize=chromsize, test_file=test_file,
-                                    binsize=5, max_nmol=3, seed=7)
+        expected = catella.preprocess_empirical(
+            chromsize=chromsize, test_file=test_file, binsize=5,
+            max_nmol=3, seed=7)
 
         got = MethPrintExperiment.load(cli_out)
         assert len(got.raw["chr1"].test_mol_id) == 3
@@ -111,7 +112,7 @@ class TestPreprocess:
         _write_fasta(fasta_file, {"chr1": "A" * 30})
 
         cli_out = tmp_path / "cli_exp.h5"
-        result = runner.invoke(app, ["preprocess", str(chromsize),
+        result = runner.invoke(app, ["preprocess_empirical", str(chromsize),
                                      str(test_file), str(cli_out),
                                      "--binsize", "5",
                                      "--fasta-file", str(fasta_file)])
@@ -128,7 +129,7 @@ class TestPreprocess:
         _write_chromsize(chromsize, {"chr1": 30})
 
         cli_out = tmp_path / "cli_exp.h5"
-        result = runner.invoke(app, ["preprocess", str(chromsize),
+        result = runner.invoke(app, ["preprocess_empirical", str(chromsize),
                                      str(test_file), str(cli_out),
                                      "--binsize", "5",
                                      "--mtase", "CG,GC"])
@@ -146,7 +147,7 @@ class TestRun:
         chromsize = tmp_path / "sizes.tsv"
         _write_chromsize(chromsize, {"chr1": 30})
         exp_file = tmp_path / "exp.h5"
-        catella.preprocess(chromsize=chromsize, test_file=test_file,
+        catella.preprocess_empirical(chromsize=chromsize, test_file=test_file,
                          out_file=exp_file, binsize=5)
 
         settings_file = tmp_path / "settings.json"
@@ -234,7 +235,7 @@ class TestDownsample:
         chromsize = tmp_path / "sizes.tsv"
         _write_chromsize(chromsize, {"chr1": 20})
         exp_file = tmp_path / "exp.h5"
-        catella.preprocess(chromsize=chromsize, test_file=test_file,
+        catella.preprocess_empirical(chromsize=chromsize, test_file=test_file,
                          out_file=exp_file, binsize=5)
         exp = MethPrintExperiment.load(exp_file)
         expected = utils.downsample(
@@ -278,7 +279,7 @@ class TestSortByLinkage:
         chromsize = tmp_path / "sizes.tsv"
         _write_chromsize(chromsize, {"chr1": 20})
         exp_file = tmp_path / "exp.h5"
-        catella.preprocess(chromsize=chromsize, test_file=test_file,
+        catella.preprocess_empirical(chromsize=chromsize, test_file=test_file,
                          out_file=exp_file, binsize=5)
         exp = MethPrintExperiment.load(exp_file)
         meth_prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
@@ -385,7 +386,7 @@ class TestPlotMethmap:
         chromsize = tmp_path / "sizes.tsv"
         _write_chromsize(chromsize, {"chr1": 20})
         exp_file = tmp_path / "exp.h5"
-        catella.preprocess(chromsize=chromsize, test_file=test_file,
+        catella.preprocess_empirical(chromsize=chromsize, test_file=test_file,
                          out_file=exp_file, binsize=5)
         exp = MethPrintExperiment.load(exp_file)
         MethPrintAnalysis().sort_by_linkage(exp=exp, data_name="meth_prob")

@@ -48,8 +48,8 @@ def fill_nan_parser(value: Optional[str]):
     except ValueError:
         raise typer.BadParameter("fill_nan must be 'mean' or a number")
 
-@app.command()
-def preprocess(
+@app.command(name="preprocess_empirical")
+def preprocess_empirical(
     chromsize: Annotated[Path, typer.Argument(help="Chromosome sizes file",
                                               exists=True, file_okay=True,
                                               dir_okay=False, readable=True)],
@@ -108,19 +108,18 @@ def preprocess(
         int, typer.Option(help="Max chromosomes' raw data kept in "
                           "memory")] = 1):
     """
-    Preprocess raw methylation data.
+    Preprocess raw methylation data using empirical (percentile/
+    control-based) normalization.
     """
-    return catella.preprocess(chromsize=chromsize, test_file=test_file,
-                            out_file=out_file, unmeth_file=unmeth_file,
-                            meth_file=meth_file, fasta_file=fasta_file,
-                            mtase=mtase, binsize=binsize, wrap=wrap,
-                            colidx=colidx, max_nmol=max_nmol, seed=seed,
-                            clip_low=clip_low, clip_high=clip_high,
-                            norm_by_strand=norm_by_strand,
-                            batch_size=batch_size,
-                            percentile_sample_size=percentile_sample_size,
-                            tmp_dir=tmp_dir, chunk_size=chunk_size,
-                            max_cached_chroms=max_cached_chroms)
+    return catella.preprocess_empirical(
+        chromsize=chromsize, test_file=test_file, out_file=out_file,
+        unmeth_file=unmeth_file, meth_file=meth_file, fasta_file=fasta_file,
+        mtase=mtase, binsize=binsize, wrap=wrap, colidx=colidx,
+        max_nmol=max_nmol, seed=seed, clip_low=clip_low,
+        clip_high=clip_high, norm_by_strand=norm_by_strand,
+        batch_size=batch_size,
+        percentile_sample_size=percentile_sample_size, tmp_dir=tmp_dir,
+        chunk_size=chunk_size, max_cached_chroms=max_cached_chroms)
 
 
 @app.command()

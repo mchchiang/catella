@@ -19,7 +19,7 @@ from catella.simulation.plot import SimPlot
 from catella import utils
 from catella.utils import IndexType
 
-def preprocess(*, chromsize : str | Path,               
+def preprocess_empirical(*, chromsize : str | Path,
                test_file : str | Path,
                out_file : str | Path | None = None,
                unmeth_file : str | Path | None = None,
@@ -42,9 +42,10 @@ def preprocess(*, chromsize : str | Path,
     """
     Preprocess raw methylation data to create a MethPrintExperiment.
 
-    Load raw ModKit data and perform normalization to convert the data into a
-    methylation probability score, and can persist the resulting experiment
-    object to disk.
+    Load raw ModKit data and perform empirical (percentile/control-
+    based) normalization to convert the data into a methylation
+    probability score, and can persist the resulting experiment object
+    to disk. See `preprocess_model` for a model-based alternative.
 
     Parameters
     ----------
@@ -135,7 +136,7 @@ def preprocess(*, chromsize : str | Path,
     # Smooth and normalize the data - compute methylation probability
     ana = MethPrintAnalysis()
     ana.smooth(binsize=binsize, exp=exp_data, batch_size=batch_size)
-    ana.heuristic_prob(exp=exp_data, clip_low=clip_low, clip_high=clip_high,
+    ana.empirical_prob(exp=exp_data, clip_low=clip_low, clip_high=clip_high,
                        norm_by_strand=norm_by_strand, batch_size=batch_size,
                        percentile_sample_size=percentile_sample_size)
     

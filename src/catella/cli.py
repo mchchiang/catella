@@ -122,6 +122,105 @@ def preprocess_empirical(
         chunk_size=chunk_size, max_cached_chroms=max_cached_chroms)
 
 
+@app.command(name="preprocess_model")
+def preprocess_model(
+    chromsize: Annotated[Path, typer.Argument(help="Chromosome sizes file",
+                                              exists=True, file_okay=True,
+                                              dir_okay=False, readable=True)],
+    test_file: Annotated[Path, typer.Argument(help="Primary methylation file",
+                                              exists=True, file_okay=True,
+                                              dir_okay=False, readable=True)],
+    fasta_file: Annotated[Path, typer.Argument(help="Reference FASTA file",
+                                               exists=True, file_okay=True,
+                                               dir_okay=False,
+                                               readable=True)],
+    out_file: Annotated[Path, typer.Argument(help="Path to save results",
+                                             file_okay=True, dir_okay=False)],
+    unmeth_file: Annotated[
+        Optional[Path], typer.Option(help="Unmethylated control file",
+                                     exists=True, file_okay=True,
+                                     dir_okay=False, readable=True)] = None,
+    meth_file: Annotated[
+        Optional[Path], typer.Option(help="Methylated control file",
+                                     exists=True, file_okay=True,
+                                     dir_okay=False, readable=True)] = None,
+    mtase: Annotated[
+        Optional[str],
+        typer.Option(callback=csv_parser(str),
+                    help="Methyltransferase(s): A, CG, GC")] = None,
+    wrap: Annotated[
+        bool, typer.Option(help="Wrap relative to center")] = False,
+    colidx: Annotated[
+        Optional[str],
+        typer.Option(callback=csv_parser(int), help="ModKit column indices")
+    ] = None,
+    max_nmol: Annotated[
+        Optional[int], typer.Option(help="Max molecules per chromosome")
+    ] = None,
+    seed: Annotated[
+        Optional[int], typer.Option(help="Seed for molecule sampling")
+    ] = None,
+    pi0: Annotated[
+        float, typer.Option(help="Prior probability a site is "
+                            "methylated")] = 0.5,
+    eta: Annotated[
+        float, typer.Option(help="Log-odds correction for correlated "
+                            "sites")] = 1.0,
+    nu: Annotated[
+        float, typer.Option(help="Pseudo-count shrinkage strength")] = 10.0,
+    rho_leak: Annotated[
+        float, typer.Option(help="Leak fraction toward accessible-state "
+                            "rate")] = 0.1,
+    min_gap: Annotated[
+        float, typer.Option(help="Min accessible/protected rate gap to "
+                            "be informative")] = 0.05,
+    l_nuc: Annotated[
+        int, typer.Option(help="Nucleosome footprint / window size "
+                          "(bp)")] = 147,
+    n_min: Annotated[
+        int, typer.Option(help="Min context-eligible sites per window "
+                          "(no-controls fit)")] = 10,
+    iters: Annotated[
+        int, typer.Option(help="Max EM iterations (no-controls "
+                          "fit)")] = 200,
+    init_prot: Annotated[
+        float, typer.Option(help="Initial protected-state rate "
+                            "(no-controls fit)")] = 0.05,
+    init_acc: Annotated[
+        float, typer.Option(help="Initial accessible-state rate "
+                            "(no-controls fit)")] = 0.95,
+    tol: Annotated[
+        float, typer.Option(help="EM log-likelihood convergence "
+                            "tolerance")] = 1e-8,
+    fill_edge: Annotated[
+        float, typer.Option(help="Probability for the unfilled "
+                            "trailing edge")] = float("nan"),
+    batch_size: Annotated[
+        int, typer.Option(help="Molecules processed per batch")] = 20000,
+    tmp_dir: Annotated[
+        Optional[Path], typer.Option(help="Scratch directory",
+                                     exists=True, file_okay=False,
+                                     dir_okay=True)] = None,
+    chunk_size: Annotated[
+        int, typer.Option(help="Rows read per streamed chunk")] = 1000000,
+    max_cached_chroms: Annotated[
+        int, typer.Option(help="Max chromosomes' raw data kept in "
+                          "memory")] = 1):
+    """
+    Preprocess raw methylation data using a calibrated Bayesian
+    log-odds model.
+    """
+    return catella.preprocess_model(
+        chromsize=chromsize, test_file=test_file, fasta_file=fasta_file,
+        out_file=out_file, unmeth_file=unmeth_file, meth_file=meth_file,
+        mtase=mtase, wrap=wrap, colidx=colidx, max_nmol=max_nmol,
+        seed=seed, pi0=pi0, eta=eta, nu=nu, rho_leak=rho_leak,
+        min_gap=min_gap, l_nuc=l_nuc, n_min=n_min, iters=iters,
+        init_prot=init_prot, init_acc=init_acc, tol=tol,
+        fill_edge=fill_edge, batch_size=batch_size, tmp_dir=tmp_dir,
+        chunk_size=chunk_size, max_cached_chroms=max_cached_chroms)
+
+
 @app.command()
 def run(
     chroms: Annotated[

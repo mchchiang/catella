@@ -883,7 +883,8 @@ class SimDataset:
             A dictionary keyed by chromosome name. If `agg_func` is None,
             values are :class:`numpy.ndarray` (or lists for 'position'). If
             `agg_func` is provided, values are the output of the aggregation
-            function.
+            function, except for molecules with no simulation files on
+            disk, which are `None`.
 
         Notes
         -----
@@ -962,6 +963,14 @@ class SimDataset:
                     results[chrom][mol] = agg_func(chrom, mol, raw_data,
                                                    **agg_kwargs)
                 
+        # Mark molecules with no simulation files on disk as missing
+        missing = [None] * self._nsim
+        for chrom in chroms:
+            mol_range = range(self._nmol[chrom]) if mols is None else mols
+            for mol in mol_range:
+                if results[chrom][mol] == missing:
+                    results[chrom][mol] = None
+
         # Tidy up results and return a numpy array for each chromosome data
         if agg_func is None and obs != "position":
             for chrom in chroms:

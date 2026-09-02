@@ -54,6 +54,36 @@ class TestOutTypeSeedPersistence:
         assert loaded.seed_table is None
 
 
+class TestExtractMissingMolecules:
+    def test_fully_missing_molecule_is_none_with_agg_func(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=3, nsim=2)
+        for run in range(dataset.nsim):
+            dataset.sim_file("chr1", 1, run).unlink()
+
+        def count_agg(chrom, mol, raw_data):
+            return sum(len(x) for x in raw_data)
+
+        time = dataset.raw["chr1", 0, 0].time[-1]
+        results = dataset.extract(time=time, obs="position",
+                                  agg_func=count_agg)
+
+        assert results["chr1"][1] is None
+        assert results["chr1"][0] is not None
+        assert results["chr1"][2] is not None
+
+    def test_no_missing_molecules_when_all_files_present(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=3, nsim=1)
+
+        def count_agg(chrom, mol, raw_data):
+            return sum(len(x) for x in raw_data)
+
+        time = dataset.raw["chr1", 0, 0].time[-1]
+        results = dataset.extract(time=time, obs="position",
+                                  agg_func=count_agg)
+
+        assert all(v is not None for v in results["chr1"])
+
+
 class TestFindIncompleteRuns:
     def test_missing_run_detected(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=2, nsim=1)

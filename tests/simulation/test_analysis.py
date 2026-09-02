@@ -60,6 +60,21 @@ class TestComputeOccup:
 
         assert f"occup_t_{time}" in dataset.analysis["chr1"]
 
+    def test_missing_molecule_filled_with_nan(self, tmp_path, capsys):
+        dataset = _make_dataset(tmp_path, nmol=5, nbp=16, nsim=2)
+        for run in range(dataset.nsim):
+            dataset.sim_file("chr1", 2, run).unlink()
+
+        ana = SimAnalysis()
+        ana.compute_occup(dataset=dataset, batch_size=2)
+
+        occup = dataset.analysis["chr1"]["occup"].to_numpy()
+        assert occup.shape == (5, 16)
+        assert np.isnan(occup[2]).all()
+        for mol in (0, 1, 3, 4):
+            assert not np.isnan(occup[mol]).any()
+        assert "chr1" in capsys.readouterr().out
+
 
 class TestComputeAccess:
     def test_output_is_h5array_and_complement_of_occup(self, tmp_path):
@@ -95,6 +110,20 @@ class TestComputeAccess:
 
         occup_after = dataset.analysis["chr1"]["occup"].to_numpy()
         assert np.allclose(occup_before, occup_after)
+
+    def test_missing_molecule_stays_nan(self, tmp_path, capsys):
+        dataset = _make_dataset(tmp_path, nmol=5, nbp=15, nsim=2)
+        for run in range(dataset.nsim):
+            dataset.sim_file("chr1", 3, run).unlink()
+
+        ana = SimAnalysis()
+        ana.compute_access(dataset=dataset, batch_size=2)
+
+        access = dataset.analysis["chr1"]["access"].to_numpy()
+        assert np.isnan(access[3]).all()
+        for mol in (0, 1, 2, 4):
+            assert not np.isnan(access[mol]).any()
+        assert "chr1" in capsys.readouterr().out
 
 
 class TestSaveLoadRoundTrip:

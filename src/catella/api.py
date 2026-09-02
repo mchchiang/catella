@@ -147,6 +147,176 @@ def preprocess_empirical(*, chromsize : str | Path,
     return exp_data
 
 
+def preprocess_model(*, chromsize : str | Path,
+               test_file : str | Path,
+               fasta_file : str | Path,
+               out_file : str | Path | None = None,
+               unmeth_file : str | Path | None = None,
+               meth_file : str | Path | None = None,
+               mtase : str | Iterable[str] | None = None,
+               wrap : bool = False,
+               colidx : Iterable | None = None,
+               max_nmol : int | None = None,
+               seed : int | None = None,
+               pi0 : float = 0.5,
+               eta : float = 1.0,
+               nu : float = 10.0,
+               rho_leak : float = 0.1,
+               min_gap : float = 0.05,
+               l_nuc : int = 147,
+               n_min : int = 10,
+               iters : int = 200,
+               init_prot : float = 0.05,
+               init_acc : float = 0.95,
+               tol : float = 1e-8,
+               fill_edge : float = np.nan,
+               batch_size : int = 20000,
+               tmp_dir : str | Path | None = None,
+               chunk_size : int = 1000000,
+               max_cached_chroms : int = 1) -> MethPrintExperiment:
+    """
+    Preprocess raw methylation data to create a MethPrintExperiment.
+
+    Load raw ModKit data and convert per-read calls into a methylation
+    probability score using a calibrated Bayesian log-odds model, and
+    can persist the resulting experiment object to disk. See
+    `preprocess_empirical` for a percentile/control-based alternative.
+
+    Parameters
+    ----------
+    chromsize : str or Path
+        Path to the chromosome sizes file or a string identifier for the
+        genome.
+    test_file : str or Path
+        Path to the primary experimental methylation data file.
+    fasta_file : str or Path
+        Multi-FASTA file of per-chromosome reference sequences (record
+        id matching `chromsize`); stored on `MethPrintData.refseq` and
+        required to classify positions into footprinting contexts.
+    out_file : str or Path, optional
+        Path where the processed `MethPrintExperiment` will be saved.
+        If None, the result is only returned in-memory.
+    unmeth_file : str or Path, optional
+        Path to the unmethylated control file.
+    meth_file : str or Path, optional
+        Path to the methylated control file.
+    mtase : str or iterable of str, optional
+        Methyltransferase(s) used to generate the test data: 'A'
+        (any-context adenine, e.g., EcoGII), 'CG' (CpG, e.g., M.SssI),
+        'GC' (GpC, e.g., M.CviPI). One label, a list of labels, or
+        None (default) if unspecified.
+    wrap : bool, default False
+        If True, calculates positions relative to the fiber center
+        (useful for circular or symmetrical fibers).
+    colidx : Iterable, optional
+        Specific column indices to use if the input file does not follow
+        the standard ModKit format.
+    max_nmol : int, optional
+        Maximum number of molecules to extract for each chromosome.
+    seed : int, optional
+        The seed for the random number generator selecting the molecules if
+        `max_nmol` is specified.
+    pi0 : float, default 0.5
+        Prior probability that an assayable site is methylated, used
+        to convert each site's `mod_qual` confidence score into a
+        likelihood ratio. 0.5 is the uninformative choice used when
+        the base caller's training prior is unknown.
+    eta : float, default 1.0
+        Multiplicative correction for inflated log-likelihood ratios
+        from correlated nearby sites (e.g. palindromic CpG/GpC
+        positions); 1.0 leaves the log-odds unscaled.
+    nu : float, default 10.0
+        Pseudo-count strength for shrinking each position's call
+        rate toward its context group's mean; larger values shrink
+        harder at low depth.
+    rho_leak : float, default 0.1
+        Leak fraction in [0, 1] interpolating the protected-state
+        call rate between the unmethylated control's false-positive
+        rate (0 for perfect protection) and the accessible-state rate.
+        Used only when meth/unmeth controls are available.
+    min_gap : float, default 0.05
+        Minimum required gap between the accessible and protected
+        call rates for a position to be treated as informative;
+        positions below this gap contribute no evidence.
+    l_nuc : int, default 147
+        Nucleosome footprint size (bp): the expectation-maximization
+        window size (no-controls path) and the output window-sum
+        size.
+    n_min : int, default 10
+        Minimum number of context-eligible sites a window must have
+        to be used in the no-controls expectation-maximization fit.
+        Used only when no meth/unmeth controls are available.
+    iters : int, default 200
+        Maximum number of expectation-maximization iterations for
+        the no-controls rate fit.
+    init_prot : float, default 0.05
+        Initial guess for the protected-state call rate in the
+        no-controls expectation-maximization fit.
+    init_acc : float, default 0.95
+        Initial guess for the accessible-state call rate in the
+        no-controls expectation-maximization fit.
+    tol : float, default 1e-8
+        Relative log-likelihood convergence tolerance for the
+        no-controls expectation-maximization fit.
+    fill_edge : float, default nan
+        Probability used to fill the trailing `l_nuc - 1` positions
+        of the result, which have no full window to summarize. The
+        nan default leaves those positions unfilled.
+    batch_size : int, default 20000
+        Number of molecules processed (and held in memory) per batch
+        during probability calculation.
+    tmp_dir : str or Path, optional
+        Directory used for the scratch file backing the experiment's
+        raw data staging file. A fresh `catella_<timestamp>_<hex>`
+        subfolder is created for it — under this directory if given,
+        otherwise under the system default temporary directory — and
+        reused for the scratch file backing the probability
+        calculation step that follows. The staging file is removed
+        once the returned experiment is closed or garbage-collected.
+    chunk_size : int, default 1000000
+        Approximate number of rows read (and held in memory) per
+        streamed chunk while ingesting raw data files.
+    max_cached_chroms : int, default 1
+        Maximum number of chromosomes' raw data kept in memory at once.
+
+    Returns
+    -------
+    MethPrintExperiment
+        An initialized experiment object containing the processed
+        methylation data. Normalization is done via a calibrated
+        Bayesian log-odds model to convert the signal into a
+        methylation probability score (accounting for the control
+        datasets if provided).
+
+    Raises
+    ------
+    ValueError
+        If a chromosome has no reference sequence, or if the
+        no-controls path cannot find enough windows with `n_min`
+        context-eligible sites. See `MethPrintAnalysis.model_prob`.
+    """
+
+    # Load the raw data (generated from ModKit)
+    exp_data = MethPrintExperiment.load_raw(
+        chromsize=chromsize, test_file=test_file, unmeth_file=unmeth_file,
+        meth_file=meth_file, fasta_file=fasta_file, mtase=mtase, wrap=wrap,
+        colidx=colidx, max_nmol=max_nmol, seed=seed, chunk_size=chunk_size,
+        tmp_dir=tmp_dir, max_cached_chroms=max_cached_chroms)
+
+    # Compute methylation probability via the calibrated log-odds model
+    ana = MethPrintAnalysis()
+    ana.model_prob(exp=exp_data, pi0=pi0, eta=eta, nu=nu, rho_leak=rho_leak,
+                   min_gap=min_gap, l_nuc=l_nuc, n_min=n_min, iters=iters,
+                   init_prot=init_prot, init_acc=init_acc, tol=tol,
+                   fill_edge=fill_edge, batch_size=batch_size)
+
+    # Save the results
+    if out_file is not None:
+        exp_data.save(out_file)
+
+    return exp_data
+
+
 def run(*, chroms : str | Iterable[str],
         nsim : int,
         settings : str | Path | SimSettings,

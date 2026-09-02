@@ -322,7 +322,7 @@ def _streamed_window_count(exp, chrom, ctx, l_nuc, n_min, batch_size,
 
 
 def _calibrate_from_data(K, N, ctx, codes, iters=200, eps=1e-3,
-                         init_prot=0.05, init_acc=0.60, tol=1e-8,
+                         init_prot=0.05, init_acc=0.95, tol=1e-8,
                          min_gap=0.05):
     """
     Fit theta_prot/theta_acc per context with expectation-maximization,
@@ -348,7 +348,7 @@ def _calibrate_from_data(K, N, ctx, codes, iters=200, eps=1e-3,
         Clip bound keeping rates away from exactly 0 or 1.
     init_prot : float, default 0.05
         Initial guess for theta_prot.
-    init_acc : float, default 0.60
+    init_acc : float, default 0.95
         Initial guess for theta_acc.
     tol : float, default 1e-8
         Relative log-likelihood convergence tolerance.
@@ -929,7 +929,7 @@ class MethPrintAnalysis:
                    n_min : int = 10,
                    iters : int = 200,
                    init_prot : float = 0.05,
-                   init_acc : float = 0.60,
+                   init_acc : float = 0.95,
                    tol : float = 1e-8,
                    fill_edge : float = np.nan,
                    batch_size : int = 20000,
@@ -994,7 +994,7 @@ class MethPrintAnalysis:
         init_prot : float, default 0.05
             Initial guess for the protected-state call rate in the
             no-controls expectation-maximization fit.
-        init_acc : float, default 0.60
+        init_acc : float, default 0.95
             Initial guess for the accessible-state call rate in the
             no-controls expectation-maximization fit.
         tol : float, default 1e-8

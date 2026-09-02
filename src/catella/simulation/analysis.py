@@ -227,7 +227,9 @@ class SimAnalysis:
 
         Accessibility (A) is defined as 1.0 minus Occupancy (O). This
         method automatically triggers occupancy computation if the
-        required data is not found in the dataset.
+        required data is not found in the dataset. Molecules with no
+        occupancy data (NaN, e.g. missing simulation files) remain
+        NaN in the result.
 
         Parameters
         ----------
@@ -272,9 +274,16 @@ class SimAnalysis:
             occup_arr = dataset.analysis[chrom][occup_name]
             nmol, nbp = occup_arr.shape
             out = H5Array.create((nmol, nbp), dtype=np.float64, dir=tmp_dir)
+            n_missing = 0
             for start in range(0, nmol, batch_size):
                 stop = min(start + batch_size, nmol)
-                out.write_batch(start, stop, 1.0 - occup_arr[start:stop, :])
+                occup_block = occup_arr[start:stop, :]
+                n_missing += np.isnan(occup_block).all(axis=1).sum()
+                out.write_batch(start, stop, 1.0 - occup_block)
+            if n_missing:
+                print(f"{n_missing} molecule(s) with no occupancy data "
+                      f"for chrom {chrom!r}; accessibility filled with "
+                      "NaN.")
             dataset.analysis[chrom][access_name] = out
 
     def compute_mean_nnuc(self, *,

@@ -156,7 +156,8 @@ class SimAnalysis:
         base pair is covered by a nucleosome. Molecules are processed in
         batches and streamed to a disk-backed array so that peak memory
         scales with `batch_size` rather than the total number of
-        molecules.
+        molecules. Molecules with no simulation files on disk are
+        filled with NaN rather than raising an error.
 
         Parameters
         ----------
@@ -192,14 +193,25 @@ class SimAnalysis:
             nmol = dataset.nmol[chrom]
             nbp = dataset.nbp[chrom]
             out = H5Array.create((nmol, nbp), dtype=np.float64, dir=tmp_dir)
+            n_missing = 0
             for start in range(0, nmol, batch_size):
                 stop = min(start + batch_size, nmol)
                 batch = dataset.extract(time=time, obs="position",
                                         chroms=[chrom],
                                         mols=range(start, stop),
                                         agg_func=occup_agg)
-                block = np.asarray(batch[chrom][start:stop])
+                rows = batch[chrom][start:stop]
+                block = np.full((stop - start, nbp), np.nan,
+                                dtype=np.float64)
+                for i, row in enumerate(rows):
+                    if row is not None:
+                        block[i] = row
+                    else:
+                        n_missing += 1
                 out.write_batch(start, stop, block)
+            if n_missing:
+                print(f"{n_missing} molecule(s) with no simulation data "
+                      f"for chrom {chrom!r}; occupancy filled with NaN.")
             dataset.analysis[chrom][name] = out
 
     def compute_access(self, *,

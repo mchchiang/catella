@@ -264,7 +264,7 @@ class SimPlot:
             med = np.median(eseq)
             sigma = np.median(np.abs(eseq-med)) * 1.4826 # MAD to SD
             nsig = 3 # Plot up to how many sigma
-            emin = max(-nsig*sigma+med,0)
+            emin = -nsig*sigma+med
             emax = min(med+nsig*sigma,dataset.settings["emax"])
             ax[1].set_ylim(emin,emax)            
             binsize = dataset.settings["nucbp"]            
@@ -414,7 +414,7 @@ class SimPlot:
                 med = np.nanmedian(eseq)
                 sigma = np.nanmedian(np.abs(eseq-med)) * 1.4826 # MAD to SD
             nsig = 3 # Plot up to how many sigma
-            emin = max(-nsig*sigma+med,0)
+            emin = -nsig*sigma+med
             emax = min(med+nsig*sigma,dataset.settings["emax"])
             seq_ax.set_ylim(emin,emax)            
             binsize = dataset.settings["nucbp"]            

@@ -3,6 +3,7 @@
 import matplotlib.pyplot as plt
 from functools import wraps
 from dataclasses import dataclass, field
+from collections.abc import Iterable
 from catella.simulation.results import SimDataset
 from catella.simulation.analysis import NucFiberMap, SimAnalysis
 from pathlib import Path
@@ -293,6 +294,7 @@ class SimPlot:
                    dataset : SimDataset,
                    time : int | None = None,
                    occup_name : str = "occup",
+                   mols : Iterable[int] | None = None,
                    xscale : int = 1000,
                    out_file : str | Path | None = None,
                    plot_eseq : bool = False,
@@ -316,6 +318,12 @@ class SimPlot:
         occup_name : str, default "occup"
             The key used to look up or store the occupancy analysis in the
             dataset.
+        mols : iterable of int, optional
+            Molecule indices to display, restricting the heatmap (and,
+            if `plot_eseq` is True, the sequence-energy average) to
+            this subset. If None (default), all molecules are shown.
+            The y-axis reflects positions within this subset (0..n),
+            not the original molecule indices.
         xscale : int, default 1000
             Spatial scaling factor (must be a power of 10) for the x-axis
             labels.
@@ -350,6 +358,8 @@ class SimPlot:
             ana.compute_occup(dataset=dataset, time=time, chroms=chrom,
                               name=occup_name)
         occup = dataset.analysis[chrom][occup_name]
+        if mols is not None:
+            occup = np.asarray(occup)[list(mols)]
         sort_data = link_mat is not None
         
         # Set up the figure
@@ -394,7 +404,10 @@ class SimPlot:
 
         # Plot the sequence energy if needed
         if plot_eseq:
-            eseq = np.mean(dataset.eseq[chrom], axis=0)
+            eseq_src = dataset.eseq[chrom]
+            if mols is not None:
+                eseq_src = np.asarray(eseq_src)[list(mols)]
+            eseq = np.mean(eseq_src, axis=0)
             med = np.median(eseq)
             sigma = np.median(np.abs(eseq-med)) * 1.4826 # MAD to SD
             nsig = 3 # Plot up to how many sigma

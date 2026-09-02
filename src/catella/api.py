@@ -246,6 +246,7 @@ def plot_occup(*, chrom : str,
                dataset : SimDataset,
                out_file : str | Path | None = None,
                occup_name : str = "occup",
+               mols : Iterable[int] | None = None,
                plot_eseq : bool = False,
                link_mat : np.ndarray | None = None,
                show : bool = True):
@@ -268,6 +269,10 @@ def plot_occup(*, chrom : str,
     occup_name : str, default "occup"
         The key or name of the occupancy data to retrieve from the dataset.
         This should match the name used during the `analyze` step.
+    mols : iterable of int, optional
+        Molecule indices to display, restricting the heatmap (and, if
+        `plot_eseq` is True, the sequence-energy average) to this
+        subset. If None (default), all molecules are shown.
     plot_eseq : bool, default False
         Whether to plot the underlying sequence-specific nucleosome binding
         energy, averaged across all molecules.
@@ -287,7 +292,7 @@ def plot_occup(*, chrom : str,
     """
     simplot = SimPlot()
     simplot.plot_occup(chrom=chrom, dataset=dataset, occup_name=occup_name,
-                       out_file=out_file, plot_eseq=plot_eseq,
+                       mols=mols, out_file=out_file, plot_eseq=plot_eseq,
                        link_mat=link_mat, show=show)
 
 def plot_nuc_pos(*, chrom : str,

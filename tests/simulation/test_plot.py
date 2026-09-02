@@ -70,3 +70,21 @@ class TestPlotOccupMolsSlicing:
 
         img = plt.gcf().axes[0].images[0].get_array()
         assert img.shape[0] == 2
+
+    def test_plot_eseq_handles_nan_from_missing_coverage(self, tmp_path):
+        # A genomic position with no coverage (NaN in meth_prob) propagates
+        # NaN into eseq at that position for every molecule; the y-limit
+        # calculation must tolerate that instead of crashing.
+        rng = np.random.default_rng(3)
+        meth_prob = rng.random((6, 20))
+        meth_prob[:, 5] = np.nan
+        manager = SimManager(nworker=1, verbose=False)
+        dataset = manager.run(chroms="chr1", nsim=2, settings=_make_settings(),
+                              meth_prob=meth_prob, out_dir=tmp_path / "dataset",
+                              seed=3)
+        ana = SimAnalysis()
+        ana.compute_occup(dataset=dataset, batch_size=2)
+        assert np.isnan(dataset.eseq["chr1"][:, 5]).all()
+
+        SimPlot().plot_occup(chrom="chr1", dataset=dataset, plot_eseq=True,
+                             show=False)

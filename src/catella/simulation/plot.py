@@ -1,5 +1,6 @@
 # plot.py
 
+import warnings
 import matplotlib.pyplot as plt
 from functools import wraps
 from dataclasses import dataclass, field
@@ -407,9 +408,11 @@ class SimPlot:
             eseq_src = dataset.eseq[chrom]
             if mols is not None:
                 eseq_src = np.asarray(eseq_src)[list(mols)]
-            eseq = np.mean(eseq_src, axis=0)
-            med = np.median(eseq)
-            sigma = np.median(np.abs(eseq-med)) * 1.4826 # MAD to SD
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=RuntimeWarning)
+                eseq = np.nanmean(eseq_src, axis=0)
+                med = np.nanmedian(eseq)
+                sigma = np.nanmedian(np.abs(eseq-med)) * 1.4826 # MAD to SD
             nsig = 3 # Plot up to how many sigma
             emin = max(-nsig*sigma+med,0)
             emax = min(med+nsig*sigma,dataset.settings["emax"])

@@ -1066,7 +1066,7 @@ class MethPrintExperiment:
                         block_size, full_sizes, wrap, mol_maps, appenders,
                         refseq_by_chrom=refseq_by_chrom, mtase=mtase)
         except Exception:
-            Path(tmp_file).unlink(missing_ok=True)
+            shutil.rmtree(tmp_dir, ignore_errors=True)
             raise
 
         exp = cls.load(tmp_file, max_cached_chroms=max_cached_chroms)

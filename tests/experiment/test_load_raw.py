@@ -613,3 +613,25 @@ class TestLazyAndScratchLifecycle:
         exp.close()
         assert not os.path.exists(tmp_dir)
 
+    def test_staging_dir_cleaned_up_when_load_raw_raises(self, tmp_path):
+        import os
+        import tempfile
+
+        test_rows = _make_rows("chr1", ["m0"], [1, 2])
+        unmeth_rows = _make_rows("chr2", ["m0"], [1, 2])
+        test_file = tmp_path / "test.tsv"
+        unmeth_file = tmp_path / "unmeth.tsv"
+        _write_tsv(test_file, test_rows)
+        _write_tsv(unmeth_file, unmeth_rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 100, "chr2": 100})
+
+        before = set(os.listdir(tempfile.gettempdir()))
+        with pytest.raises(ValueError):
+            MethPrintExperiment.load_raw(
+                chromsize=chromsize, test_file=test_file,
+                unmeth_file=unmeth_file)
+        after = set(os.listdir(tempfile.gettempdir()))
+        leaked = [d for d in after - before if d.startswith("catella_")]
+        assert not leaked
+

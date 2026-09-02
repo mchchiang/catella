@@ -160,7 +160,7 @@ def _streamed_call_count(exp, chrom, which, ctx, batch_size, mask_name):
     return k, n_mol
 
 
-def _leak_interpolated_rate(theta_acc, fpr, rho_leak=0.15, eps=1e-4):
+def _leak_interpolated_rate(theta_acc, fpr, rho_leak=0.1, eps=1e-4):
     """
     theta_prot interpolated between the caller FPR (perfect protection)
     and full accessibility.
@@ -177,7 +177,7 @@ def _leak_interpolated_rate(theta_acc, fpr, rho_leak=0.15, eps=1e-4):
         float64, length L, accessible-state call rate.
     fpr : np.ndarray
         float64, length L, false-positive rate from the unmeth control.
-    rho_leak : float, default 0.15
+    rho_leak : float, default 0.1
         Leak fraction toward `theta_acc`.
     eps : float, default 1e-4
         Clip bound keeping rates away from exactly 0 or 1.

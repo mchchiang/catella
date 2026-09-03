@@ -567,9 +567,13 @@ class TestSortByLinkage:
 
 def _make_footprint_experiment(*, nmol=20, meth_nmol=30, unmeth_nmol=30,
                                with_controls=True, planted_edges=(30,),
-                               l_nuc=30, seed=0, soft_q=False):
+                               l_nuc=30, seed=0, soft_q=False,
+                               corr_source=None, corr_channel=None,
+                               corr_lag=1, corr_strength=0.95):
     # Synthetic multi-channel footprinting experiment with a known
     # planted "protected" region, for testing model_prob end to end.
+    # corr_source/corr_channel inject deterministic lag-k correlation
+    # into one raw source's calls, for testing eta auto-estimation.
     from catella.experiment.preprocessing import (
         _reference_contexts, NONE, M6A, GCH, HCG, GCG)
 
@@ -596,10 +600,25 @@ def _make_footprint_experiment(*, nmol=20, meth_nmol=30, unmeth_nmol=30,
     test_prob = np.where(occ, true_fpr + rho_leak * (true_acc - true_fpr),
                          true_acc)
 
-    def make_df(n, prob):
+    def inject_corr(calls, channel, lag, strength):
+        # Force calls[x+lag] to copy calls[x] (with probability
+        # strength) for every x in the given channel that has a
+        # same-channel partner exactly lag bp away.
+        idx = np.where(ctx == channel)[0]
+        idx_set = set(idx.tolist())
+        for x in idx:
+            y = x + lag
+            if y in idx_set and rng.random() < strength:
+                calls[y] = calls[x]
+        return calls
+
+    def make_df(n, prob, source_name):
         rows = []
         for m in range(n):
             calls = rng.random(L) < prob
+            if source_name == corr_source and corr_channel is not None:
+                calls = inject_corr(calls, corr_channel, corr_lag,
+                                    corr_strength)
             if soft_q:
                 qual = np.where(calls, rng.uniform(0.6, 0.95, L),
                                 rng.uniform(0.05, 0.4, L))
@@ -610,12 +629,12 @@ def _make_footprint_experiment(*, nmol=20, meth_nmol=30, unmeth_nmol=30,
         return pd.DataFrame(rows, columns=["mol_index", "pos", "strand",
                                            "mod_qual", "mod_code"])
 
-    test_df = make_df(nmol, test_prob)
+    test_df = make_df(nmol, test_prob, "test")
     test_mol_id = np.array([f"t{m}" for m in range(nmol)], dtype=object)
 
     if with_controls:
-        meth_df = make_df(meth_nmol, true_acc)
-        unmeth_df = make_df(unmeth_nmol, true_fpr)
+        meth_df = make_df(meth_nmol, true_acc, "meth")
+        unmeth_df = make_df(unmeth_nmol, true_fpr, "unmeth")
         meth_mol_id = np.array([f"m{m}" for m in range(meth_nmol)],
                                dtype=object)
         unmeth_mol_id = np.array([f"u{m}" for m in range(unmeth_nmol)],
@@ -727,6 +746,82 @@ class TestModelProb:
         ana = MethPrintAnalysis()
         ana.model_prob(exp=exp, l_nuc=30, batch_size=5)
         assert "meth_prob" in exp.analysis["chr1"]
+
+
+class TestModelProbEta:
+    def test_default_populates_channel_eta_for_present_channels(self):
+        exp = _make_footprint_experiment(with_controls=True,
+                                         planted_edges=(30,), l_nuc=30)
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=exp, l_nuc=30, batch_size=7)
+        assert set(ana._eta) == {"M6A", "GCH", "HCG", "GCG"}
+        assert all(v > 0 for v in ana._eta.values())
+
+    def test_meth_control_correlation_lowers_that_channel_eta(self):
+        from catella.experiment.preprocessing import M6A
+        exp = _make_footprint_experiment(
+            with_controls=True, planted_edges=(30,), l_nuc=30,
+            corr_source="meth", corr_channel=M6A, corr_lag=1)
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=exp, l_nuc=30, batch_size=7)
+        assert ana._eta["M6A"] < 0.8
+        assert ana._eta["GCH"] > 0.8
+
+    def test_test_data_correlation_does_not_move_estimate_with_controls(
+            self):
+        from catella.experiment.preprocessing import M6A
+        exp = _make_footprint_experiment(
+            with_controls=True, planted_edges=(30,), l_nuc=30,
+            corr_source="test", corr_channel=M6A, corr_lag=1)
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=exp, l_nuc=30, batch_size=7)
+        assert ana._eta["M6A"] > 0.8
+
+    def test_no_controls_falls_back_to_test_data(self):
+        from catella.experiment.preprocessing import M6A
+        exp = _make_footprint_experiment(
+            with_controls=False, nmol=120, planted_edges=(30, 120, 200),
+            l_nuc=30, corr_source="test", corr_channel=M6A, corr_lag=1)
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=exp, l_nuc=30, n_min=3, batch_size=17)
+        assert ana._eta["M6A"] < 0.8
+
+    def test_float_override_applies_uniformly(self):
+        exp = _make_footprint_experiment(with_controls=True,
+                                         planted_edges=(30,), l_nuc=30)
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=exp, l_nuc=30, batch_size=7, eta=0.5)
+        assert ana._eta == {"M6A": 0.5, "GCH": 0.5, "HCG": 0.5, "GCG": 0.5}
+
+    def test_dict_override_partial_leaves_rest_auto(self):
+        exp = _make_footprint_experiment(with_controls=True,
+                                         planted_edges=(30,), l_nuc=30)
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=exp, l_nuc=30, batch_size=7, eta={"M6A": 0.5})
+        assert ana._eta["M6A"] == 0.5
+        assert ana._eta["GCH"] != 0.5
+
+    def test_unknown_channel_name_raises(self):
+        exp = _make_footprint_experiment(with_controls=True,
+                                         planted_edges=(30,), l_nuc=30)
+        ana = MethPrintAnalysis()
+        with pytest.raises(ValueError):
+            ana.model_prob(exp=exp, l_nuc=30, batch_size=7,
+                           eta={"bogus": 0.5})
+
+    def test_eta_max_lag_changes_estimate(self):
+        from catella.experiment.preprocessing import M6A
+        exp = _make_footprint_experiment(
+            with_controls=True, planted_edges=(30,), l_nuc=30,
+            corr_source="meth", corr_channel=M6A, corr_lag=5)
+        ana_short = MethPrintAnalysis()
+        ana_short.model_prob(exp=exp, l_nuc=30, batch_size=7,
+                             eta_max_lag=1)
+        ana_long = MethPrintAnalysis()
+        ana_long.model_prob(exp=exp, l_nuc=30, batch_size=7,
+                            eta_max_lag=10)
+        assert ana_short._eta["M6A"] != pytest.approx(
+            ana_long._eta["M6A"], rel=1e-6)
 
 
 def _revcomp(seq):

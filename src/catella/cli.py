@@ -1,6 +1,7 @@
 # cli.py
 
 import enum
+import json
 import catella
 import typer
 import pandas as pd
@@ -47,6 +48,19 @@ def fill_nan_parser(value: Optional[str]):
         return float(value)
     except ValueError:
         raise typer.BadParameter("fill_nan must be 'mean' or a number")
+
+def eta_parser(value: Optional[str]):
+    if value is None: return None
+    try:
+        return float(value)
+    except ValueError:
+        pass
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        raise typer.BadParameter(
+            "eta must be a number, or a JSON object of channel name "
+            "to number, e.g. '{\"M6A\": 0.9, \"HCG\": 0.7}'")
 
 @app.command(name="preprocess_empirical")
 def preprocess_empirical(
@@ -164,8 +178,16 @@ def preprocess_model(
         float, typer.Option(help="Prior probability a site is "
                             "methylated")] = 0.5,
     eta: Annotated[
-        float, typer.Option(help="Log-odds correction for correlated "
-                            "sites")] = 1.0,
+        Optional[str],
+        typer.Option(callback=eta_parser,
+                    help="Log-odds correction for correlated sites. "
+                    "A number applies to every channel; a JSON object "
+                    "pins only the named channels, e.g. "
+                    '\'{"M6A": 0.9, "HCG": 0.7}\'. Omit to '
+                    "auto-estimate every channel (default).")] = None,
+    eta_max_lag: Annotated[
+        int, typer.Option(help="Max lag (bp) for eta "
+                          "auto-estimation")] = 10,
     nu: Annotated[
         float, typer.Option(help="Pseudo-count shrinkage strength")] = 10.0,
     rho_leak: Annotated[
@@ -214,9 +236,9 @@ def preprocess_model(
         chromsize=chromsize, test_file=test_file, fasta_file=fasta_file,
         out_file=out_file, unmeth_file=unmeth_file, meth_file=meth_file,
         mtase=mtase, wrap=wrap, colidx=colidx, max_nmol=max_nmol,
-        seed=seed, pi0=pi0, eta=eta, nu=nu, rho_leak=rho_leak,
-        min_gap=min_gap, l_nuc=l_nuc, n_min=n_min, iters=iters,
-        init_prot=init_prot, init_acc=init_acc, tol=tol,
+        seed=seed, pi0=pi0, eta=eta, eta_max_lag=eta_max_lag, nu=nu,
+        rho_leak=rho_leak, min_gap=min_gap, l_nuc=l_nuc, n_min=n_min,
+        iters=iters, init_prot=init_prot, init_acc=init_acc, tol=tol,
         fill_edge=fill_edge, batch_size=batch_size, tmp_dir=tmp_dir,
         chunk_size=chunk_size, max_cached_chroms=max_cached_chroms)
 

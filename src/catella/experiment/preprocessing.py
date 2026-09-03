@@ -4,7 +4,8 @@ import warnings
 import numpy as np
 import pandas as pd
 from typing import List
-from catella.experiment.methdata import MethPrintExperiment, _apply_keep_mask
+from catella.experiment.methdata import (
+    MethPrintExperiment, _apply_keep_mask, _strand_of_mol)
 from catella.h5_array import H5Array
 from catella import utils
 import matplotlib.pyplot as plt
@@ -33,6 +34,9 @@ _CHANNEL_NAME_TO_CODE = {CONTEXT_NAMES[c]: c for c in _ETA_CHANNELS}
 # Warn (not raise) if more than this fraction of wrap-mirrored position
 # pairs disagree on context when folding ctx in model_prob.
 _WRAP_CTX_DISAGREE_WARN_FRAC = 0.02
+
+_UNMAPPED_STRAND_MSG = ("Cannot do normalization by strand with "
+                        "unmapped strands '.'.")
 
 
 def _reference_contexts(seq):
@@ -117,7 +121,8 @@ def _context_prior_rate(k, n_mol, ctx, nu=10.0, eps=1e-4):
     return np.clip(theta, eps, 1 - eps)
 
 
-def _streamed_call_count(exp, chrom, which, ctx, batch_size, mask_name):
+def _streamed_call_count(exp, chrom, which, ctx, batch_size, mask_name,
+                         row_masks=None):
     """
     Per-position summed methylation-calling confidence and molecule
     count for one raw source, streamed in batches so peak memory is
@@ -137,32 +142,57 @@ def _streamed_call_count(exp, chrom, which, ctx, batch_size, mask_name):
         Number of molecules processed per batch.
     mask_name : str or None
         Forwarded to `exp.to_dense`.
+    row_masks : dict of str to np.ndarray, optional
+        Named boolean row masks (e.g. strand labels), each length
+        `n_mol`, aligned to the source's `to_dense` row order. If
+        given, counts are accumulated separately per key from a
+        single streamed pass, and the return value is keyed
+        accordingly.
 
     Returns
     -------
     k : np.ndarray
         float64, length L, per-position sum of `mod_qual` confidence
         scores across every molecule in the sample (nan/no-call
-        positions excluded).
+        positions excluded). Only if `row_masks` is None.
     n_mol : int
-        Molecule count in the sample.
+        Molecule count in the sample. Only if `row_masks` is None.
+    counts : dict of str to (k, n_mol)
+        One `(k, n_mol)` pair per `row_masks` key. Only if
+        `row_masks` is given.
     """
     arr = exp.to_dense(chrom, which=which, as_h5array=True,
                        batch_size=batch_size, mask_name=mask_name)
     n_total, L = arr.shape
     ctx_ok = ctx != NONE
-    k = np.zeros(L, dtype=np.float64)
-    n_mol = 0
+
+    if row_masks is None:
+        k = np.zeros(L, dtype=np.float64)
+        n_mol = 0
+        for start in range(0, n_total, batch_size):
+            stop = min(start + batch_size, n_total)
+            batch = arr[start:stop, :]
+            # mask_name marks dropped molecules as all-nan rows (see
+            # _apply_keep_mask); exclude them so they don't inflate
+            # n_mol.
+            kept = ~np.isnan(batch).all(axis=1)
+            q = np.where(ctx_ok[None, :], batch[kept], np.nan)
+            k += np.nansum(q, axis=0)
+            n_mol += int(kept.sum())
+        return k, n_mol
+
+    acc = {key: {"k": np.zeros(L, dtype=np.float64), "n_mol": 0}
+          for key in row_masks}
     for start in range(0, n_total, batch_size):
         stop = min(start + batch_size, n_total)
         batch = arr[start:stop, :]
-        # mask_name marks dropped molecules as all-nan rows (see
-        # _apply_keep_mask); exclude them so they don't inflate n_mol.
         kept = ~np.isnan(batch).all(axis=1)
-        q = np.where(ctx_ok[None, :], batch[kept], np.nan)
-        k += np.nansum(q, axis=0)
-        n_mol += int(kept.sum())
-    return k, n_mol
+        for key, mask in row_masks.items():
+            sel = kept & mask[start:stop]
+            q = np.where(ctx_ok[None, :], batch[sel], np.nan)
+            acc[key]["k"] += np.nansum(q, axis=0)
+            acc[key]["n_mol"] += int(sel.sum())
+    return {key: (acc[key]["k"], acc[key]["n_mol"]) for key in row_masks}
 
 
 def _leak_interpolated_rate(theta_acc, fpr, rho_leak=0.1, eps=1e-4):
@@ -235,7 +265,7 @@ def _calibrate_from_controls(meth_k, meth_n, unmeth_k, unmeth_n, ctx,
 
 
 def _streamed_window_count(exp, chrom, ctx, l_nuc, n_min, batch_size,
-                           mask_name):
+                           mask_name, row_masks=None):
     """
     Per-window, per-read summed methylation-calling confidence and
     trial counts for the test sample, streamed in batches so peak
@@ -263,22 +293,33 @@ def _streamed_window_count(exp, chrom, ctx, l_nuc, n_min, batch_size,
         Number of molecules processed per batch.
     mask_name : str or None
         Forwarded to `exp.to_dense`.
+    row_masks : dict of str to np.ndarray, optional
+        Named boolean row masks (e.g. strand labels), each length
+        `n_mol`, aligned to the test source's `to_dense` row order.
+        If given, `K`/`N`/`codes` are accumulated separately per key
+        from a single streamed pass, and the return value is keyed
+        accordingly. Window geometry (`n_min`-eligibility) is shared
+        across keys, since it depends only on `ctx`.
 
     Returns
     -------
     K, N : np.ndarray
         float64, (n_ctx, n_mol * n_kept_windows). `K` is the per-window,
         per-read sum of `mod_qual` confidence scores (nan/no-call
-        positions excluded).
+        positions excluded). Only if `row_masks` is None.
     codes : list of int
         Context codes present in `ctx`, in the same order as `K`/`N`'s
-        first axis.
+        first axis. Only if `row_masks` is None.
+    counts : dict of str to (K, N, codes)
+        One `(K, N, codes)` triple per `row_masks` key. Only if
+        `row_masks` is given.
 
     Raises
     ------
     ValueError
         If `ctx` has no assayable contexts, or too few windows have
-        `n_min` context-eligible sites.
+        `n_min` context-eligible sites (per key, when `row_masks` is
+        given).
     """
     arr = exp.to_dense(chrom, which="test", as_h5array=True,
                        batch_size=batch_size, mask_name=mask_name)
@@ -298,32 +339,46 @@ def _streamed_window_count(exp, chrom, ctx, l_nuc, n_min, batch_size,
     kept_starts = starts[keep]
 
     ctx_ok = ctx != NONE
-    K_batches = {c: [] for c in codes}
-    n_mol = 0
+    keys = list(row_masks) if row_masks is not None else [None]
+    K_batches = {key: {c: [] for c in codes} for key in keys}
+    n_mol = {key: 0 for key in keys}
+
     for start in range(0, n_total, batch_size):
         stop = min(start + batch_size, n_total)
         batch = arr[start:stop, :]
         # mask_name marks dropped molecules as all-nan rows (see
         # _apply_keep_mask); exclude them so they don't inflate n_mol.
-        batch = batch[~np.isnan(batch).all(axis=1)]
-        n_mol += batch.shape[0]
-        q = np.where(ctx_ok[None, :], batch, np.nan)
-        for c in codes:
-            sel = ctx == c
-            k_c = np.stack(
-                [np.nansum(q[:, s:s + l_nuc][:, sel[s:s + l_nuc]], axis=1)
-                for s in kept_starts], axis=1)
-            K_batches[c].append(k_c)
+        kept_rows = ~np.isnan(batch).all(axis=1)
+        batch = batch[kept_rows]
+        q_full = np.where(ctx_ok[None, :], batch, np.nan)
+        for key in keys:
+            if key is None:
+                q = q_full
+            else:
+                strand_sel = row_masks[key][start:stop][kept_rows]
+                q = q_full[strand_sel]
+            n_mol[key] += q.shape[0]
+            for c in codes:
+                sel = ctx == c
+                k_c = np.stack(
+                    [np.nansum(q[:, s:s + l_nuc][:, sel[s:s + l_nuc]],
+                              axis=1) for s in kept_starts], axis=1)
+                K_batches[key][c].append(k_c)
 
-    if n_mol * keep.sum() < 10:
-        raise ValueError("too few windows with >= n_min context-eligible "
-                         "sites")
+    def _build(key):
+        if n_mol[key] * keep.sum() < 10:
+            suffix = "" if key is None else f" for strand {key!r}"
+            raise ValueError("too few windows with >= n_min "
+                             f"context-eligible sites{suffix}")
+        K = np.array([np.concatenate(K_batches[key][c], axis=0).ravel()
+                     for c in codes]).astype(np.float64)
+        N = np.array([np.tile(n_win[c][keep], n_mol[key])
+                     for c in codes]).astype(np.float64)
+        return K, N, codes
 
-    K = np.array([np.concatenate(K_batches[c], axis=0).ravel()
-                 for c in codes]).astype(np.float64)
-    N = np.array([np.tile(n_win[c][keep], n_mol)
-                 for c in codes]).astype(np.float64)
-    return K, N, codes
+    if row_masks is None:
+        return _build(None)
+    return {key: _build(key) for key in keys}
 
 
 def _calibrate_from_data(K, N, ctx, codes, iters=200, eps=1e-3,
@@ -649,7 +704,8 @@ def _finalize_channel_eta(stats, max_lag, min_n=None):
 
 def _accumulate_eta_source(exp, chrom, which, ctx, theta_prot, theta_acc,
                            informative, pi0, batch_size, mask_name, stats,
-                           max_lag, channels):
+                           max_lag, channels, norm_by_strand=False,
+                           strand_labels=None):
     """
     Stream one raw source and feed its raw (`eta=1`) per-read
     log-odds into `_accumulate_autocorr_stats`.
@@ -665,8 +721,10 @@ def _accumulate_eta_source(exp, chrom, which, ctx, theta_prot, theta_acc,
         available (isolates the crosstalk artifact from genuine,
         occupancy-driven correlation), otherwise the test data
         itself as a fallback.
-    ctx, theta_prot, theta_acc, informative : np.ndarray
-        From `_chrom_calibration`.
+    ctx, theta_prot, theta_acc, informative : np.ndarray or dict
+        From `_chrom_calibration`; plain arrays, or (if
+        `norm_by_strand`) `{"+": ..., "-": ...}` dicts of such
+        arrays.
     pi0 : float
         Forwarded to `_per_base_log_odds`.
     batch_size : int
@@ -674,11 +732,20 @@ def _accumulate_eta_source(exp, chrom, which, ctx, theta_prot, theta_acc,
     mask_name : str or None
         Forwarded to `exp.to_dense`.
     stats : dict
-        Per-channel accumulators, updated in place.
+        Per-channel accumulators, updated in place. Both strands'
+        contributions are folded into the same accumulator, so eta
+        stays pooled across strands even when calibration is split.
     max_lag : int
         Forwarded to `_accumulate_autocorr_stats`.
     channels : iterable of int
         Channel codes to accumulate.
+    norm_by_strand : bool, default False
+        Whether `theta_prot`/`theta_acc`/`informative` are per-strand
+        dicts requiring a per-strand log-odds computation.
+    strand_labels : np.ndarray, optional
+        Length `n_mol` strand label ('+'/'-') per molecule of
+        `which`'s source, aligned to `to_dense`'s row order. Required
+        if `norm_by_strand` is True.
     """
     arr = exp.to_dense(chrom, which=which, as_h5array=True,
                        batch_size=batch_size, mask_name=mask_name)
@@ -688,16 +755,29 @@ def _accumulate_eta_source(exp, chrom, which, ctx, theta_prot, theta_acc,
         stop = min(start + batch_size, n_total)
         batch = arr[start:stop, :]
         q = np.where(ctx_ok, batch, np.nan)
-        log_odds = _per_base_log_odds(q, theta_prot, theta_acc,
-                                      informative, pi0=pi0, eta=1.0)
-        called = informative[None, :] & ~np.isnan(q)
-        _accumulate_autocorr_stats(stats, log_odds, called, ctx, max_lag,
-                                   channels=channels)
+        if norm_by_strand:
+            labels = strand_labels[start:stop]
+            for s in ("+", "-"):
+                sel = labels == s
+                if not sel.any():
+                    continue
+                log_odds = _per_base_log_odds(
+                    q[sel], theta_prot[s], theta_acc[s], informative[s],
+                    pi0=pi0, eta=1.0)
+                called = informative[s][None, :] & ~np.isnan(q[sel])
+                _accumulate_autocorr_stats(stats, log_odds, called, ctx,
+                                           max_lag, channels=channels)
+        else:
+            log_odds = _per_base_log_odds(q, theta_prot, theta_acc,
+                                          informative, pi0=pi0, eta=1.0)
+            called = informative[None, :] & ~np.isnan(q)
+            _accumulate_autocorr_stats(stats, log_odds, called, ctx,
+                                       max_lag, channels=channels)
 
 
 def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, l_nuc, n_min,
                        iters, init_prot, init_acc, tol, batch_size,
-                       mask_name):
+                       mask_name, norm_by_strand=False):
     """
     Classify `chrom`'s reference into contexts and calibrate
     theta_prot/theta_acc/informative, from meth/unmeth controls when
@@ -716,24 +796,34 @@ def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, l_nuc, n_min,
         Number of molecules processed per batch.
     mask_name : str or None
         Forwarded to the streamed counting helpers.
+    norm_by_strand : bool, default False
+        Whether to calibrate separately per strand. If True, the
+        source(s) feeding calibration (meth/unmeth controls when
+        available, otherwise the test data) are split by strand
+        before counting, and `theta_prot`/`theta_acc`/`informative`
+        are returned as `{"+": ..., "-": ...}` dicts instead of plain
+        arrays.
 
     Returns
     -------
     ctx : np.ndarray
         int8, length L, context code per position.
-    theta_prot, theta_acc : np.ndarray
-        float64, length L.
-    informative : np.ndarray
-        bool, length L.
+    theta_prot, theta_acc : np.ndarray or dict of str to np.ndarray
+        float64, length L, or (if `norm_by_strand`) a `{"+": ...,
+        "-": ...}` dict of such arrays.
+    informative : np.ndarray or dict of str to np.ndarray
+        bool, length L, or (if `norm_by_strand`) a `{"+": ...,
+        "-": ...}` dict of such arrays.
     has_controls : bool
         Whether meth/unmeth controls were used.
 
     Raises
     ------
     ValueError
-        If `chrom` has no reference sequence, or if the no-controls
+        If `chrom` has no reference sequence, if the no-controls
         path cannot find enough windows with `n_min` context-eligible
-        sites.
+        sites, or if `norm_by_strand` is True but molecules with
+        unmapped strands ('.') exist.
 
     Warns
     -----
@@ -769,20 +859,62 @@ def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, l_nuc, n_min,
     has_controls = (raw.meth_data is not None
                     and raw.unmeth_data is not None)
 
+    if norm_by_strand:
+        if (raw.test_data["strand"] == ".").any():
+            raise ValueError(_UNMAPPED_STRAND_MSG)
+        if has_controls and ((raw.meth_data["strand"] == ".").any()
+                             or (raw.unmeth_data["strand"] == ".").any()):
+            raise ValueError(_UNMAPPED_STRAND_MSG)
+
     if has_controls:
-        meth_k, meth_n = _streamed_call_count(
-            exp, chrom, "meth", ctx, batch_size, mask_name)
-        unmeth_k, unmeth_n = _streamed_call_count(
-            exp, chrom, "unmeth", ctx, batch_size, mask_name)
-        theta_prot, theta_acc, informative = _calibrate_from_controls(
-            meth_k, meth_n, unmeth_k, unmeth_n, ctx,
-            nu=nu, rho_leak=rho_leak, min_gap=min_gap)
+        if norm_by_strand:
+            meth_strand = _strand_of_mol(raw.meth_data,
+                                         len(raw.meth_mol_id))
+            unmeth_strand = _strand_of_mol(raw.unmeth_data,
+                                           len(raw.unmeth_mol_id))
+            meth_counts = _streamed_call_count(
+                exp, chrom, "meth", ctx, batch_size, mask_name,
+                row_masks={"+": meth_strand == "+",
+                          "-": meth_strand == "-"})
+            unmeth_counts = _streamed_call_count(
+                exp, chrom, "unmeth", ctx, batch_size, mask_name,
+                row_masks={"+": unmeth_strand == "+",
+                          "-": unmeth_strand == "-"})
+            theta_prot, theta_acc, informative = {}, {}, {}
+            for s in ("+", "-"):
+                theta_prot[s], theta_acc[s], informative[s] = \
+                    _calibrate_from_controls(
+                        *meth_counts[s], *unmeth_counts[s], ctx,
+                        nu=nu, rho_leak=rho_leak, min_gap=min_gap)
+        else:
+            meth_k, meth_n = _streamed_call_count(
+                exp, chrom, "meth", ctx, batch_size, mask_name)
+            unmeth_k, unmeth_n = _streamed_call_count(
+                exp, chrom, "unmeth", ctx, batch_size, mask_name)
+            theta_prot, theta_acc, informative = _calibrate_from_controls(
+                meth_k, meth_n, unmeth_k, unmeth_n, ctx,
+                nu=nu, rho_leak=rho_leak, min_gap=min_gap)
     else:
-        K, N, codes = _streamed_window_count(
-            exp, chrom, ctx, l_nuc, n_min, batch_size, mask_name)
-        theta_prot, theta_acc, informative = _calibrate_from_data(
-            K, N, ctx, codes, iters=iters, init_prot=init_prot,
-            init_acc=init_acc, tol=tol, min_gap=min_gap)
+        if norm_by_strand:
+            test_strand = _strand_of_mol(raw.test_data,
+                                         len(raw.test_mol_id))
+            win_counts = _streamed_window_count(
+                exp, chrom, ctx, l_nuc, n_min, batch_size, mask_name,
+                row_masks={"+": test_strand == "+",
+                          "-": test_strand == "-"})
+            theta_prot, theta_acc, informative = {}, {}, {}
+            for s in ("+", "-"):
+                K, N, codes = win_counts[s]
+                theta_prot[s], theta_acc[s], informative[s] = \
+                    _calibrate_from_data(
+                        K, N, ctx, codes, iters=iters, init_prot=init_prot,
+                        init_acc=init_acc, tol=tol, min_gap=min_gap)
+        else:
+            K, N, codes = _streamed_window_count(
+                exp, chrom, ctx, l_nuc, n_min, batch_size, mask_name)
+            theta_prot, theta_acc, informative = _calibrate_from_data(
+                K, N, ctx, codes, iters=iters, init_prot=init_prot,
+                init_acc=init_acc, tol=tol, min_gap=min_gap)
     return ctx, theta_prot, theta_acc, informative, has_controls
 
 
@@ -1231,6 +1363,7 @@ class MethPrintAnalysis:
                    init_acc : float = 0.95,
                    tol : float = 1e-8,
                    fill_edge : float = np.nan,
+                   norm_by_strand : bool = False,
                    batch_size : int = 20000,
                    mask_name : str | None = None):
         """
@@ -1312,6 +1445,16 @@ class MethPrintAnalysis:
             Probability used to fill the trailing `l_nuc - 1` positions
             of the result, which have no full window to summarize. The
             nan default leaves those positions unfilled.
+        norm_by_strand : bool, default False
+            Whether to calibrate theta_prot/theta_acc separately per
+            strand before scoring. If True, the source(s) feeding
+            calibration (meth/unmeth controls when available,
+            otherwise the test data via expectation-maximization) are
+            split by strand, and each test read is scored against its
+            own strand's calibration. `eta` is still auto-estimated
+            pooled across strands, since the crosstalk it corrects for
+            is an assay-chemistry property rather than a strand-
+            specific one.
         batch_size : int, default 20000
             Number of molecules processed (and held in memory) per
             batch.
@@ -1326,8 +1469,9 @@ class MethPrintAnalysis:
         ValueError
             If a chromosome has no reference sequence (`refseq`), if
             the no-controls path cannot find enough windows with
-            `n_min` context-eligible sites, or if `eta` is a dict
-            with an unrecognized channel name.
+            `n_min` context-eligible sites, if `eta` is a dict with an
+            unrecognized channel name, or if `norm_by_strand` is True
+            but molecules with unmapped strands ('.') exist.
         KeyError
             If `mask_name` is given but no matching mask is found for
             some source/chromosome.
@@ -1360,7 +1504,8 @@ class MethPrintAnalysis:
                             l_nuc=l_nuc, n_min=n_min, iters=iters,
                             init_prot=init_prot, init_acc=init_acc,
                             tol=tol, batch_size=batch_size,
-                            mask_name=mask_name)
+                            mask_name=mask_name,
+                            norm_by_strand=norm_by_strand)
 
         calib_cache = {}
         if need_auto:
@@ -1373,10 +1518,17 @@ class MethPrintAnalysis:
                 # meth control isolates the crosstalk artifact from
                 # real, occupancy-driven correlation in the test data
                 source = "meth" if has_controls else "test"
+                strand_labels = None
+                if norm_by_strand:
+                    raw = exp.raw[chrom]
+                    src_df = getattr(raw, f"{source}_data")
+                    src_mol_id = getattr(raw, f"{source}_mol_id")
+                    strand_labels = _strand_of_mol(src_df, len(src_mol_id))
                 _accumulate_eta_source(
                     exp, chrom, source, ctx, theta_prot, theta_acc,
                     informative, pi0, batch_size, mask_name, stats,
-                    eta_max_lag, need_auto)
+                    eta_max_lag, need_auto, norm_by_strand=norm_by_strand,
+                    strand_labels=strand_labels)
             estimated = _finalize_channel_eta(stats, eta_max_lag)
             channel_eta.update({c: estimated[c] for c in need_auto})
 
@@ -1403,6 +1555,9 @@ class MethPrintAnalysis:
                                     batch_size=batch_size,
                                     mask_name=mask_name)
             ctx_ok = ctx[None, :] != NONE
+            test_strand = None
+            if norm_by_strand:
+                test_strand = _strand_of_mol(raw.test_data, nmol)
             for start in range(0, nmol, batch_size):
                 stop = min(start + batch_size, nmol)
                 batch = test_arr[start:stop, :]
@@ -1410,9 +1565,20 @@ class MethPrintAnalysis:
                 # _apply_keep_mask); propagate that to the output too.
                 masked = np.isnan(batch).all(axis=1)
                 q = np.where(ctx_ok, batch, np.nan)
-                log_odds = _per_base_log_odds(q, theta_prot, theta_acc,
-                                              informative, pi0=pi0,
-                                              eta=eta_by_pos)
+                if norm_by_strand:
+                    labels = test_strand[start:stop]
+                    pos, neg = labels == "+", labels == "-"
+                    log_odds = np.empty_like(q)
+                    log_odds[pos] = _per_base_log_odds(
+                        q[pos], theta_prot["+"], theta_acc["+"],
+                        informative["+"], pi0=pi0, eta=eta_by_pos)
+                    log_odds[neg] = _per_base_log_odds(
+                        q[neg], theta_prot["-"], theta_acc["-"],
+                        informative["-"], pi0=pi0, eta=eta_by_pos)
+                else:
+                    log_odds = _per_base_log_odds(q, theta_prot, theta_acc,
+                                                  informative, pi0=pi0,
+                                                  eta=eta_by_pos)
                 log_odds_win = _window_sum_log_odds(
                     log_odds, l_nuc, fill_edge=log_odds_fill)
                 prob = expit(-log_odds_win)

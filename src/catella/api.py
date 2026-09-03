@@ -181,6 +181,7 @@ def preprocess_model(*, chromsize : str | Path,
                init_acc : float = 0.95,
                tol : float = 1e-8,
                fill_edge : float = np.nan,
+               norm_by_strand : bool = False,
                batch_size : int = 20000,
                tmp_dir : str | Path | None = None,
                chunk_size : int = 1000000,
@@ -281,6 +282,15 @@ def preprocess_model(*, chromsize : str | Path,
         Probability used to fill the trailing `l_nuc - 1` positions
         of the result, which have no full window to summarize. The
         nan default leaves those positions unfilled.
+    norm_by_strand : bool, default False
+        Whether to calibrate theta_prot/theta_acc separately per
+        strand before scoring. If True, the source(s) feeding
+        calibration (meth/unmeth controls when available, otherwise
+        the test data via expectation-maximization) are split by
+        strand, and each test read is scored against its own strand's
+        calibration. `eta` is still auto-estimated pooled across
+        strands, since the crosstalk it corrects for is an
+        assay-chemistry property rather than a strand-specific one.
     batch_size : int, default 20000
         Number of molecules processed (and held in memory) per batch
         during probability calculation.
@@ -312,8 +322,10 @@ def preprocess_model(*, chromsize : str | Path,
     ValueError
         If a chromosome has no reference sequence, if the
         no-controls path cannot find enough windows with `n_min`
-        context-eligible sites, or if `eta` is a dict with an
-        unrecognized channel name. See `MethPrintAnalysis.model_prob`.
+        context-eligible sites, if `eta` is a dict with an
+        unrecognized channel name, or if `norm_by_strand` is True but
+        molecules with unmapped strands ('.') exist. See
+        `MethPrintAnalysis.model_prob`.
     """
 
     # Load the raw data (generated from ModKit)
@@ -329,7 +341,7 @@ def preprocess_model(*, chromsize : str | Path,
                    nu=nu, rho_leak=rho_leak, min_gap=min_gap, l_nuc=l_nuc,
                    n_min=n_min, iters=iters, init_prot=init_prot,
                    init_acc=init_acc, tol=tol, fill_edge=fill_edge,
-                   batch_size=batch_size)
+                   norm_by_strand=norm_by_strand, batch_size=batch_size)
 
     # Save the results
     if out_file is not None:

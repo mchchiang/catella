@@ -569,13 +569,20 @@ def _make_footprint_experiment(*, nmol=20, meth_nmol=30, unmeth_nmol=30,
                                with_controls=True, planted_edges=(30,),
                                l_nuc=30, seed=0, soft_q=False,
                                corr_source=None, corr_channel=None,
-                               corr_lag=1, corr_strength=0.95):
+                               corr_lag=1, corr_strength=0.95,
+                               strand_of=None, strand_call_bias=None,
+                               unmapped_test_mol=None):
     # Synthetic multi-channel footprinting experiment with a known
     # planted "protected" region, for testing model_prob end to end.
     # corr_source/corr_channel inject deterministic lag-k correlation
     # into one raw source's calls, for testing eta auto-estimation.
+    # strand_of/strand_call_bias plant a strand-correlated call-rate
+    # bias, for testing norm_by_strand.
     from catella.experiment.preprocessing import (
         _reference_contexts, NONE, M6A, GCH, HCG, GCG)
+
+    if strand_of is None:
+        strand_of = lambda m: "+"
 
     rng = np.random.default_rng(seed)
     seq = "AATTGCGTTAAGCTTTAACGTTAAGCGCAATT" * 8
@@ -615,7 +622,15 @@ def _make_footprint_experiment(*, nmol=20, meth_nmol=30, unmeth_nmol=30,
     def make_df(n, prob, source_name):
         rows = []
         for m in range(n):
-            calls = rng.random(L) < prob
+            strand = strand_of(m)
+            if (source_name == "test" and unmapped_test_mol is not None
+                    and m == unmapped_test_mol):
+                strand = "."
+            prob_eff = prob
+            if strand_call_bias is not None and strand in strand_call_bias:
+                prob_eff = np.clip(prob + strand_call_bias[strand],
+                                   0.0, 1.0)
+            calls = rng.random(L) < prob_eff
             if source_name == corr_source and corr_channel is not None:
                 calls = inject_corr(calls, corr_channel, corr_lag,
                                     corr_strength)
@@ -625,7 +640,7 @@ def _make_footprint_experiment(*, nmol=20, meth_nmol=30, unmeth_nmol=30,
             else:
                 qual = calls.astype(float)
             for pos in np.where(site)[0]:
-                rows.append((m, int(pos), "+", float(qual[pos]), 0))
+                rows.append((m, int(pos), strand, float(qual[pos]), 0))
         return pd.DataFrame(rows, columns=["mol_index", "pos", "strand",
                                            "mod_qual", "mod_code"])
 
@@ -987,3 +1002,86 @@ class TestModelProbWrap:
         ana = MethPrintAnalysis()
         with pytest.warns(UserWarning):
             ana.model_prob(exp=exp, l_nuc=10)
+
+
+class TestModelProbStrand:
+    _strand_of = staticmethod(lambda m: "+" if m % 2 == 0 else "-")
+
+    def test_rejects_unmapped_strand_with_controls(self):
+        exp = _make_footprint_experiment(with_controls=True, nmol=10,
+                                         meth_nmol=10, unmeth_nmol=10,
+                                         l_nuc=30, unmapped_test_mol=0)
+        ana = MethPrintAnalysis()
+        with pytest.raises(ValueError):
+            ana.model_prob(exp=exp, l_nuc=30, norm_by_strand=True)
+
+    def test_rejects_unmapped_strand_no_controls(self):
+        exp = _make_footprint_experiment(with_controls=False, nmol=10,
+                                         l_nuc=30, unmapped_test_mol=0)
+        ana = MethPrintAnalysis()
+        with pytest.raises(ValueError):
+            ana.model_prob(exp=exp, l_nuc=30, norm_by_strand=True)
+
+    @pytest.mark.parametrize("norm_by_strand", [False, True])
+    def test_batching_matches_single_batch(self, norm_by_strand):
+        exp_a = _make_footprint_experiment(with_controls=True, nmol=40,
+                                           l_nuc=30, strand_of=self._strand_of)
+        exp_b = _make_footprint_experiment(with_controls=True, nmol=40,
+                                           l_nuc=30, strand_of=self._strand_of)
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=exp_a, l_nuc=30, batch_size=1000,
+                       norm_by_strand=norm_by_strand)
+        ana.model_prob(exp=exp_b, l_nuc=30, batch_size=3,
+                       norm_by_strand=norm_by_strand)
+        a = exp_a.analysis["chr1"]["meth_prob"].to_numpy()
+        b = exp_b.analysis["chr1"]["meth_prob"].to_numpy()
+        np.testing.assert_allclose(a, b, equal_nan=True)
+
+    def test_pooled_calibration_is_biased_by_strand_but_split_recovers_it(
+            self):
+        bias = {"+": 0.0, "-": 0.35}
+        exp_pooled = _make_footprint_experiment(
+            with_controls=True, nmol=40, planted_edges=(30,), l_nuc=30,
+            strand_of=self._strand_of, strand_call_bias=bias)
+        exp_split = _make_footprint_experiment(
+            with_controls=True, nmol=40, planted_edges=(30,), l_nuc=30,
+            strand_of=self._strand_of, strand_call_bias=bias)
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=exp_pooled, l_nuc=30, batch_size=7,
+                       norm_by_strand=False)
+        ana.model_prob(exp=exp_split, l_nuc=30, batch_size=7,
+                       norm_by_strand=True)
+
+        neg = np.array([self._strand_of(m) for m in range(40)]) == "-"
+        prob_pooled = exp_pooled.analysis["chr1"]["meth_prob"].to_numpy()
+        prob_split = exp_split.analysis["chr1"]["meth_prob"].to_numpy()
+
+        planted_pooled = np.nanmean(prob_pooled[neg, 30])
+        planted_split = np.nanmean(prob_split[neg, 30])
+        assert planted_split < planted_pooled
+        assert planted_split < 0.1
+
+    def test_no_controls_path_norm_by_strand_favors_planted_region(self):
+        exp = _make_footprint_experiment(
+            with_controls=False, nmol=200, planted_edges=(30, 120, 200),
+            l_nuc=30, strand_of=self._strand_of)
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=exp, l_nuc=30, n_min=3, batch_size=17,
+                       norm_by_strand=True)
+        prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
+        planted = np.nanmean(prob[:, 30])
+        background = np.nanmean(prob[:, 0])
+        assert planted < background
+
+    def test_eta_pooled_regardless_of_norm_by_strand(self):
+        exp_a = _make_footprint_experiment(
+            with_controls=True, nmol=40, strand_of=self._strand_of, seed=1)
+        exp_b = _make_footprint_experiment(
+            with_controls=True, nmol=40, strand_of=self._strand_of, seed=1)
+        ana_a = MethPrintAnalysis()
+        ana_a.model_prob(exp=exp_a, l_nuc=30, norm_by_strand=False)
+        ana_b = MethPrintAnalysis()
+        ana_b.model_prob(exp=exp_b, l_nuc=30, norm_by_strand=True)
+        for channel in ("M6A", "GCH", "HCG", "GCG"):
+            assert ana_b._eta[channel] == pytest.approx(
+                ana_a._eta[channel], rel=0.1)

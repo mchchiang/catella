@@ -159,7 +159,8 @@ def preprocess_model(*, chromsize : str | Path,
                max_nmol : int | None = None,
                seed : int | None = None,
                pi0 : float = 0.5,
-               eta : float = 1.0,
+               eta : float | dict[str, float] | None = None,
+               eta_max_lag : int = 10,
                nu : float = 10.0,
                rho_leak : float = 0.1,
                min_gap : float = 0.05,
@@ -221,10 +222,18 @@ def preprocess_model(*, chromsize : str | Path,
         to convert each site's `mod_qual` confidence score into a
         likelihood ratio. 0.5 is the uninformative choice used when
         the base caller's training prior is unknown.
-    eta : float, default 1.0
-        Multiplicative correction for inflated log-likelihood ratios
-        from correlated nearby sites (e.g. palindromic CpG/GpC
-        positions); 1.0 leaves the log-odds unscaled.
+    eta : float, dict of str to float, or None, default None
+        Per-channel multiplicative correction for inflated log-
+        likelihood ratios from correlated nearby sites (e.g.
+        palindromic CpG/GpC positions). If None (default), each
+        channel's ("M6A"/"GCH"/"HCG"/"GCG") eta is auto-estimated
+        from lag-k autocorrelation in its log-odds -- from the
+        methylated control when available, or from the test data
+        otherwise. A float pins every channel to that value; a dict
+        pins only the named channels, leaving any not mentioned to
+        be auto-estimated.
+    eta_max_lag : int, default 10
+        Maximum lag (bp) summed over when auto-estimating eta.
     nu : float, default 10.0
         Pseudo-count strength for shrinking each position's call
         rate toward its context group's mean; larger values shrink
@@ -291,9 +300,10 @@ def preprocess_model(*, chromsize : str | Path,
     Raises
     ------
     ValueError
-        If a chromosome has no reference sequence, or if the
+        If a chromosome has no reference sequence, if the
         no-controls path cannot find enough windows with `n_min`
-        context-eligible sites. See `MethPrintAnalysis.model_prob`.
+        context-eligible sites, or if `eta` is a dict with an
+        unrecognized channel name. See `MethPrintAnalysis.model_prob`.
     """
 
     # Load the raw data (generated from ModKit)
@@ -305,10 +315,11 @@ def preprocess_model(*, chromsize : str | Path,
 
     # Compute methylation probability via the calibrated log-odds model
     ana = MethPrintAnalysis()
-    ana.model_prob(exp=exp_data, pi0=pi0, eta=eta, nu=nu, rho_leak=rho_leak,
-                   min_gap=min_gap, l_nuc=l_nuc, n_min=n_min, iters=iters,
-                   init_prot=init_prot, init_acc=init_acc, tol=tol,
-                   fill_edge=fill_edge, batch_size=batch_size)
+    ana.model_prob(exp=exp_data, pi0=pi0, eta=eta, eta_max_lag=eta_max_lag,
+                   nu=nu, rho_leak=rho_leak, min_gap=min_gap, l_nuc=l_nuc,
+                   n_min=n_min, iters=iters, init_prot=init_prot,
+                   init_acc=init_acc, tol=tol, fill_edge=fill_edge,
+                   batch_size=batch_size)
 
     # Save the results
     if out_file is not None:

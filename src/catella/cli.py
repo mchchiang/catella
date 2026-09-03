@@ -217,6 +217,8 @@ def preprocess_model(
     fill_edge: Annotated[
         float, typer.Option(help="Probability for the unfilled "
                             "trailing edge")] = float("nan"),
+    norm_by_strand: Annotated[
+        Optional[bool], typer.Option(help="Normalize by strand")] = False,
     batch_size: Annotated[
         int, typer.Option(help="Molecules processed per batch")] = 20000,
     tmp_dir: Annotated[
@@ -239,8 +241,9 @@ def preprocess_model(
         seed=seed, pi0=pi0, eta=eta, eta_max_lag=eta_max_lag, nu=nu,
         rho_leak=rho_leak, min_gap=min_gap, l_nuc=l_nuc, n_min=n_min,
         iters=iters, init_prot=init_prot, init_acc=init_acc, tol=tol,
-        fill_edge=fill_edge, batch_size=batch_size, tmp_dir=tmp_dir,
-        chunk_size=chunk_size, max_cached_chroms=max_cached_chroms)
+        fill_edge=fill_edge, norm_by_strand=norm_by_strand,
+        batch_size=batch_size, tmp_dir=tmp_dir, chunk_size=chunk_size,
+        max_cached_chroms=max_cached_chroms)
 
 
 @app.command()

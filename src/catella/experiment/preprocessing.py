@@ -25,6 +25,11 @@ NONE, M6A, GCH, HCG, GCG = 0, 1, 2, 3, 4
 CONTEXT_NAMES = {NONE: "none", M6A: "M6A", GCH: "GCH", HCG: "HCG",
                  GCG: "GCG"}
 
+# Channels eta is estimated/applied per, and the reverse of
+# CONTEXT_NAMES restricted to them, for parsing user eta overrides.
+_ETA_CHANNELS = (M6A, GCH, HCG, GCG)
+_CHANNEL_NAME_TO_CODE = {CONTEXT_NAMES[c]: c for c in _ETA_CHANNELS}
+
 # Warn (not raise) if more than this fraction of wrap-mirrored position
 # pairs disagree on context when folding ctx in model_prob.
 _WRAP_CTX_DISAGREE_WARN_FRAC = 0.02
@@ -431,10 +436,12 @@ def _per_base_log_odds(q, theta_prot, theta_acc, informative, pi0=0.5,
         Prior probability that a site is methylated, used to convert `q`
         into the likelihood ratio `L_x`. 0.5 is the uninformative choice
         used when the base caller's training prior is unknown.
-    eta : float, default 1.0
+    eta : float or np.ndarray, default 1.0
         Multiplicative correction for inflated log-likelihood ratios
         from correlated nearby sites (e.g. palindromic CpG/GpC); 1.0
-        leaves the log-odds unscaled.
+        leaves the log-odds unscaled. Either a scalar applied
+        everywhere, or length-L, broadcasting a per-position (e.g.
+        per-channel) correction.
 
     Returns
     -------
@@ -489,6 +496,296 @@ def _window_sum_log_odds(log_odds, l_nuc, fill_edge=0.0):
     return out
 
 
+def _resolve_eta_overrides(eta):
+    """
+    Validate and normalize a user-supplied `eta` into per-channel
+    overrides.
+
+    Parameters
+    ----------
+    eta : float, dict of str to float, or None
+        `None` requests auto-estimation for every channel; a float
+        pins every channel to that value; a dict pins only the named
+        channels (keys from `CONTEXT_NAMES`, e.g. "M6A"), leaving any
+        channel not mentioned to be auto-estimated.
+
+    Returns
+    -------
+    overrides : dict of int to float
+        Channel code -> pinned eta value, for every channel the
+        caller specified. Empty if `eta` is None.
+
+    Raises
+    ------
+    ValueError
+        If `eta` is a dict with an unrecognized channel name.
+    """
+    if eta is None:
+        return {}
+    if isinstance(eta, dict):
+        overrides = {}
+        for name, val in eta.items():
+            if name not in _CHANNEL_NAME_TO_CODE:
+                raise ValueError(
+                    f"Unrecognized eta channel {name!r}; expected one "
+                    f"of {sorted(_CHANNEL_NAME_TO_CODE)}.")
+            overrides[_CHANNEL_NAME_TO_CODE[name]] = float(val)
+        return overrides
+    return {c: float(eta) for c in _ETA_CHANNELS}
+
+
+def _init_autocorr_stats(max_lag):
+    """Zeroed per-channel accumulators for `_accumulate_autocorr_stats`."""
+    return {c: {"n": 0.0, "s1": 0.0, "s2": 0.0,
+               "npair": np.zeros(max_lag), "pprod": np.zeros(max_lag),
+               "psumA": np.zeros(max_lag), "psumB": np.zeros(max_lag)}
+           for c in _ETA_CHANNELS}
+
+
+def _accumulate_autocorr_stats(stats, log_odds, called, ctx, max_lag,
+                               channels=None):
+    """
+    Fold one batch's contribution into per-channel lag-k
+    autocorrelation sums, in place.
+
+    Accumulates raw (uncentered) sums rather than pre-centering by
+    the channel mean, since that mean is only known once every batch
+    (across every chromosome) has been seen; `_finalize_channel_eta`
+    does the centering afterward.
+
+    Parameters
+    ----------
+    stats : dict
+        Per-channel accumulators, as returned by
+        `_init_autocorr_stats`, updated in place.
+    log_odds : np.ndarray
+        float64, (n_mol, L), raw (`eta=1`) per-position log-odds from
+        `_per_base_log_odds`.
+    called : np.ndarray
+        bool, (n_mol, L). True where a site was both informative and
+        actually called (i.e. `informative[None, :] & ~np.isnan(q)`).
+    ctx : np.ndarray
+        int8, length L, context code per position.
+    max_lag : int
+        Maximum lag (bp) to accumulate pair sums for.
+    channels : iterable of int, optional
+        Channel codes to accumulate. Defaults to all of
+        `_ETA_CHANNELS`.
+    """
+    if channels is None:
+        channels = _ETA_CHANNELS
+    L = log_odds.shape[1]
+    for c in channels:
+        mask_c = called & (ctx == c)[None, :]
+        if not mask_c.any():
+            continue
+        lam = log_odds * mask_c
+        st = stats[c]
+        st["n"] += mask_c.sum()          # count of called sites
+        st["s1"] += lam.sum()            # sum(lambda_x)
+        st["s2"] += (lam * lam).sum()    # sum(lambda_x^2)
+        for k in range(1, min(max_lag, L - 1) + 1):
+            left, right = mask_c[:, :L - k], mask_c[:, k:]
+            pair = left & right          # both x and x+k called
+            if not pair.any():
+                continue
+            lo_left, lo_right = log_odds[:, :L - k], log_odds[:, k:]
+            i = k - 1
+            st["npair"][i] += pair.sum()  # count of pairs
+            # sum(lambda_x * lambda_x+k) over pairs
+            st["pprod"][i] += (lo_left * lo_right * pair).sum()
+            # sum(lambda_x) over pairs
+            st["psumA"][i] += (lo_left * pair).sum()
+            # sum(lambda_x+k) over pairs
+            st["psumB"][i] += (lo_right * pair).sum()
+
+
+def _finalize_channel_eta(stats, max_lag, min_n=None):
+    """
+    Convert accumulated autocorrelation sums into a per-channel eta,
+    the inverse of the variance-inflation factor from lag-k
+    autocorrelation in the channel's log-odds sequence.
+
+    Parameters
+    ----------
+    stats : dict
+        Per-channel accumulators from `_accumulate_autocorr_stats`.
+    max_lag : int
+        Maximum lag (bp) summed over.
+    min_n : int, optional
+        Minimum called-site count `n` a channel needs before it is
+        estimated; below this, `eta_c = 1.0` (no correction) since
+        there isn't enough data for a stable estimate. Defaults to
+        `max_lag`.
+
+    Returns
+    -------
+    dict of int to float
+        Channel code -> estimated eta, for every channel in `stats`.
+    """
+    if min_n is None:
+        min_n = max_lag
+    k = np.arange(1, max_lag + 1)
+    eta = {}
+    for c, st in stats.items():
+        n = st["n"]
+        if n <= min_n:
+            eta[c] = 1.0
+            continue
+        bar = st["s1"] / n                    # global channel mean
+        denom = st["s2"] - n * bar * bar       # sum((lambda_x - bar)^2)
+        if denom <= 0:
+            eta[c] = 1.0
+            continue
+        npair, pprod = st["npair"], st["pprod"]
+        # sum((lambda_x - bar)(lambda_x+k - bar)) over valid pairs
+        numerator = (pprod - bar * st["psumA"] - bar * st["psumB"]
+                    + npair * bar * bar)
+        rho = np.where(npair > 0, numerator / denom, 0.0)
+        v = 1.0 + 2.0 * np.sum((1.0 - k / n) * rho)
+        eta[c] = 1.0 / max(v, 1e-3)
+    return eta
+
+
+def _accumulate_eta_source(exp, chrom, which, ctx, theta_prot, theta_acc,
+                           informative, pi0, batch_size, mask_name, stats,
+                           max_lag, channels):
+    """
+    Stream one raw source and feed its raw (`eta=1`) per-read
+    log-odds into `_accumulate_autocorr_stats`.
+
+    Parameters
+    ----------
+    exp : MethPrintExperiment
+        The experiment object containing raw data and analysis maps.
+    chrom : str
+        Chromosome identifier.
+    which : {"test", "meth"}
+        Which raw table to read: the methylated control when
+        available (isolates the crosstalk artifact from genuine,
+        occupancy-driven correlation), otherwise the test data
+        itself as a fallback.
+    ctx, theta_prot, theta_acc, informative : np.ndarray
+        From `_chrom_calibration`.
+    pi0 : float
+        Forwarded to `_per_base_log_odds`.
+    batch_size : int
+        Number of molecules processed per batch.
+    mask_name : str or None
+        Forwarded to `exp.to_dense`.
+    stats : dict
+        Per-channel accumulators, updated in place.
+    max_lag : int
+        Forwarded to `_accumulate_autocorr_stats`.
+    channels : iterable of int
+        Channel codes to accumulate.
+    """
+    arr = exp.to_dense(chrom, which=which, as_h5array=True,
+                       batch_size=batch_size, mask_name=mask_name)
+    n_total, L = arr.shape
+    ctx_ok = ctx[None, :] != NONE
+    for start in range(0, n_total, batch_size):
+        stop = min(start + batch_size, n_total)
+        batch = arr[start:stop, :]
+        q = np.where(ctx_ok, batch, np.nan)
+        log_odds = _per_base_log_odds(q, theta_prot, theta_acc,
+                                      informative, pi0=pi0, eta=1.0)
+        called = informative[None, :] & ~np.isnan(q)
+        _accumulate_autocorr_stats(stats, log_odds, called, ctx, max_lag,
+                                   channels=channels)
+
+
+def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, l_nuc, n_min,
+                       iters, init_prot, init_acc, tol, batch_size,
+                       mask_name):
+    """
+    Classify `chrom`'s reference into contexts and calibrate
+    theta_prot/theta_acc/informative, from meth/unmeth controls when
+    available or by expectation-maximization on the test sample
+    otherwise.
+
+    Parameters
+    ----------
+    exp : MethPrintExperiment
+        The experiment object containing raw data and analysis maps.
+    chrom : str
+        Chromosome identifier.
+    nu, rho_leak, min_gap, l_nuc, n_min, iters, init_prot, init_acc,
+    tol : as in `model_prob`.
+    batch_size : int
+        Number of molecules processed per batch.
+    mask_name : str or None
+        Forwarded to the streamed counting helpers.
+
+    Returns
+    -------
+    ctx : np.ndarray
+        int8, length L, context code per position.
+    theta_prot, theta_acc : np.ndarray
+        float64, length L.
+    informative : np.ndarray
+        bool, length L.
+    has_controls : bool
+        Whether meth/unmeth controls were used.
+
+    Raises
+    ------
+    ValueError
+        If `chrom` has no reference sequence, or if the no-controls
+        path cannot find enough windows with `n_min` context-eligible
+        sites.
+
+    Warns
+    -----
+    UserWarning
+        If `exp.wrap` is True and many wrap-mirrored position pairs
+        disagree on context.
+    """
+    raw = exp.raw[chrom]
+    if raw.refseq is None:
+        raise ValueError(
+            f"No reference sequence for chrom '{chrom}'; "
+            "model_prob needs 'fasta_file' at load_raw.")
+    full_ctx = _reference_contexts(raw.refseq)
+    if exp.wrap:
+        nbp = raw.nbp
+        length = len(raw.refseq)
+        lower = full_ctx[:nbp]
+        upper = full_ctx[length - nbp:][::-1]
+        agree = lower == upper
+        ctx = np.where(agree, lower, NONE).astype(lower.dtype)
+        frac_disagree = 1.0 - agree.mean()
+        if frac_disagree > _WRAP_CTX_DISAGREE_WARN_FRAC:
+            warnings.warn(
+                f"refseq for chrom '{chrom}' disagrees on "
+                f"context at {(~agree).sum()}/{nbp} "
+                f"({frac_disagree:.1%}) wrap-mirrored position "
+                "pairs (folded to NONE there); this may "
+                "indicate the wrong chromsize length or a "
+                "non-symmetric reference, rather than a small "
+                "loop/junction region.", stacklevel=3)
+    else:
+        ctx = full_ctx
+    has_controls = (raw.meth_data is not None
+                    and raw.unmeth_data is not None)
+
+    if has_controls:
+        meth_k, meth_n = _streamed_call_count(
+            exp, chrom, "meth", ctx, batch_size, mask_name)
+        unmeth_k, unmeth_n = _streamed_call_count(
+            exp, chrom, "unmeth", ctx, batch_size, mask_name)
+        theta_prot, theta_acc, informative = _calibrate_from_controls(
+            meth_k, meth_n, unmeth_k, unmeth_n, ctx,
+            nu=nu, rho_leak=rho_leak, min_gap=min_gap)
+    else:
+        K, N, codes = _streamed_window_count(
+            exp, chrom, ctx, l_nuc, n_min, batch_size, mask_name)
+        theta_prot, theta_acc, informative = _calibrate_from_data(
+            K, N, ctx, codes, iters=iters, init_prot=init_prot,
+            init_acc=init_acc, tol=tol, min_gap=min_gap)
+    return ctx, theta_prot, theta_acc, informative, has_controls
+
+
 class MethPrintAnalysis:
     """
     Normalization and smoothing suite for MethPrintExperiment data.
@@ -502,6 +799,7 @@ class MethPrintAnalysis:
 
     def __init__(self):
         self._binsize = None # Cache the binsize used for smoothing
+        self._eta = None # Per-channel eta from model_prob
 
     def smooth(self, *, binsize : int,
                exp : MethPrintExperiment,
@@ -921,7 +1219,8 @@ class MethPrintAnalysis:
     def model_prob(self, *, exp : MethPrintExperiment,
                    prob_name : str = "meth_prob",
                    pi0 : float = 0.5,
-                   eta : float = 1.0,
+                   eta : float | dict[str, float] | None = None,
+                   eta_max_lag : int = 10,
                    nu : float = 10.0,
                    rho_leak : float = 0.1,
                    min_gap : float = 0.05,
@@ -963,10 +1262,19 @@ class MethPrintAnalysis:
             to convert each site's `mod_qual` confidence score into a
             likelihood ratio. 0.5 is the uninformative choice used when
             the base caller's training prior is unknown.
-        eta : float, default 1.0
-            Multiplicative correction for inflated log-likelihood ratios
-            from correlated nearby sites (e.g. palindromic CpG/GpC
-            positions); 1.0 leaves the log-odds unscaled.
+        eta : float, dict of str to float, or None, default None
+            Per-channel multiplicative correction for inflated log-
+            likelihood ratios from correlated nearby sites (e.g.
+            palindromic CpG/GpC positions). If None (default), each
+            channel's ("M6A"/"GCH"/"HCG"/"GCG") eta is auto-estimated
+            from lag-k autocorrelation in its log-odds -- from the
+            methylated control when available, or from the test data
+            otherwise. A float pins every channel to that value; a
+            dict pins only the named channels, leaving any not
+            mentioned to be auto-estimated. The value(s) actually
+            applied are stored in `self._eta` afterward.
+        eta_max_lag : int, default 10
+            Maximum lag (bp) summed over when auto-estimating eta.
         nu : float, default 10.0
             Pseudo-count strength for shrinking each position's call
             rate toward its context group's mean; larger values shrink
@@ -1010,15 +1318,16 @@ class MethPrintAnalysis:
         mask_name : str, optional
             If given, molecules flagged as dropout by a prior
             `MethPrintExperiment.filter_dropout(mask_name=mask_name)`
-            call are excluded from rate calibration and from the
-            output, per source.
+            call are excluded from rate calibration, eta estimation,
+            and the output, per source.
 
         Raises
         ------
         ValueError
-            If a chromosome has no reference sequence (`refseq`), or if
+            If a chromosome has no reference sequence (`refseq`), if
             the no-controls path cannot find enough windows with
-            `n_min` context-eligible sites.
+            `n_min` context-eligible sites, or if `eta` is a dict
+            with an unrecognized channel name.
         KeyError
             If `mask_name` is given but no matching mask is found for
             some source/chromosome.
@@ -1043,50 +1352,49 @@ class MethPrintAnalysis:
         tmp_dir = exp.resolve_tmp_dir()
         log_odds_fill = -logit(fill_edge)
 
+        overrides = _resolve_eta_overrides(eta)
+        need_auto = set(_ETA_CHANNELS) - set(overrides)
+        channel_eta = dict(overrides)
+
+        calib_kwargs = dict(nu=nu, rho_leak=rho_leak, min_gap=min_gap,
+                            l_nuc=l_nuc, n_min=n_min, iters=iters,
+                            init_prot=init_prot, init_acc=init_acc,
+                            tol=tol, batch_size=batch_size,
+                            mask_name=mask_name)
+
+        calib_cache = {}
+        if need_auto:
+            stats = _init_autocorr_stats(eta_max_lag)
+            for chrom in exp.chroms:
+                ctx, theta_prot, theta_acc, informative, has_controls = \
+                    _chrom_calibration(exp, chrom, **calib_kwargs)
+                calib_cache[chrom] = (ctx, theta_prot, theta_acc,
+                                      informative)
+                # meth control isolates the crosstalk artifact from
+                # real, occupancy-driven correlation in the test data
+                source = "meth" if has_controls else "test"
+                _accumulate_eta_source(
+                    exp, chrom, source, ctx, theta_prot, theta_acc,
+                    informative, pi0, batch_size, mask_name, stats,
+                    eta_max_lag, need_auto)
+            estimated = _finalize_channel_eta(stats, eta_max_lag)
+            channel_eta.update({c: estimated[c] for c in need_auto})
+
+        self._eta = {CONTEXT_NAMES[c]: channel_eta[c]
+                    for c in _ETA_CHANNELS}
+
         for chrom in exp.chroms:
             raw = exp.raw[chrom]
-            if raw.refseq is None:
-                raise ValueError(
-                    f"No reference sequence for chrom '{chrom}'; "
-                    "model_prob needs 'fasta_file' at load_raw.")
-            full_ctx = _reference_contexts(raw.refseq)
-            if exp.wrap:
-                nbp = raw.nbp
-                length = len(raw.refseq)
-                lower = full_ctx[:nbp]
-                upper = full_ctx[length - nbp:][::-1]
-                agree = lower == upper
-                ctx = np.where(agree, lower, NONE).astype(lower.dtype)
-                frac_disagree = 1.0 - agree.mean()
-                if frac_disagree > _WRAP_CTX_DISAGREE_WARN_FRAC:
-                    warnings.warn(
-                        f"refseq for chrom '{chrom}' disagrees on "
-                        f"context at {(~agree).sum()}/{nbp} "
-                        f"({frac_disagree:.1%}) wrap-mirrored position "
-                        "pairs (folded to NONE there); this may "
-                        "indicate the wrong chromsize length or a "
-                        "non-symmetric reference, rather than a small "
-                        "loop/junction region.", stacklevel=2)
+            if chrom in calib_cache:
+                ctx, theta_prot, theta_acc, informative = \
+                    calib_cache[chrom]
             else:
-                ctx = full_ctx
-            has_controls = (raw.meth_data is not None
-                            and raw.unmeth_data is not None)
+                ctx, theta_prot, theta_acc, informative, _ = \
+                    _chrom_calibration(exp, chrom, **calib_kwargs)
 
-            if has_controls:
-                meth_k, meth_n = _streamed_call_count(
-                    exp, chrom, "meth", ctx, batch_size, mask_name)
-                unmeth_k, unmeth_n = _streamed_call_count(
-                    exp, chrom, "unmeth", ctx, batch_size, mask_name)
-                theta_prot, theta_acc, informative = \
-                    _calibrate_from_controls(
-                        meth_k, meth_n, unmeth_k, unmeth_n, ctx,
-                        nu=nu, rho_leak=rho_leak, min_gap=min_gap)
-            else:
-                K, N, codes = _streamed_window_count(
-                    exp, chrom, ctx, l_nuc, n_min, batch_size, mask_name)
-                theta_prot, theta_acc, informative = _calibrate_from_data(
-                    K, N, ctx, codes, iters=iters, init_prot=init_prot,
-                    init_acc=init_acc, tol=tol, min_gap=min_gap)
+            eta_by_pos = np.ones(len(ctx))
+            for c in _ETA_CHANNELS:
+                eta_by_pos[ctx == c] = channel_eta[c]
 
             nmol = len(raw.test_mol_id)
             out = H5Array.create((nmol, raw.nbp), dtype=np.float64,
@@ -1103,7 +1411,8 @@ class MethPrintAnalysis:
                 masked = np.isnan(batch).all(axis=1)
                 q = np.where(ctx_ok, batch, np.nan)
                 log_odds = _per_base_log_odds(q, theta_prot, theta_acc,
-                                              informative, pi0=pi0, eta=eta)
+                                              informative, pi0=pi0,
+                                              eta=eta_by_pos)
                 log_odds_win = _window_sum_log_odds(
                     log_odds, l_nuc, fill_edge=log_odds_fill)
                 prob = expit(-log_odds_win)

@@ -19,6 +19,16 @@ from catella.simulation.plot import SimPlot
 from catella import utils
 from catella.utils import IndexType
 
+def _load_raw(*, chromsize, test_file, unmeth_file, meth_file,
+             fasta_file, mtase, wrap, colidx, max_nmol, seed,
+             chunk_size, tmp_dir, max_cached_chroms):
+    return MethPrintExperiment.load_raw(
+        chromsize=chromsize, test_file=test_file,
+        unmeth_file=unmeth_file, meth_file=meth_file,
+        fasta_file=fasta_file, mtase=mtase, wrap=wrap, colidx=colidx,
+        max_nmol=max_nmol, seed=seed, chunk_size=chunk_size,
+        tmp_dir=tmp_dir, max_cached_chroms=max_cached_chroms)
+
 def preprocess_empirical(*, chromsize : str | Path,
                test_file : str | Path,
                out_file : str | Path | None = None,
@@ -127,7 +137,7 @@ def preprocess_empirical(*, chromsize : str | Path,
     """
 
     # Load the raw data (generated from ModKit)
-    exp_data = MethPrintExperiment.load_raw(
+    exp_data = _load_raw(
         chromsize=chromsize, test_file=test_file, unmeth_file=unmeth_file,
         meth_file=meth_file, fasta_file=fasta_file, mtase=mtase, wrap=wrap,
         colidx=colidx, max_nmol=max_nmol, seed=seed, chunk_size=chunk_size,
@@ -307,7 +317,7 @@ def preprocess_model(*, chromsize : str | Path,
     """
 
     # Load the raw data (generated from ModKit)
-    exp_data = MethPrintExperiment.load_raw(
+    exp_data = _load_raw(
         chromsize=chromsize, test_file=test_file, unmeth_file=unmeth_file,
         meth_file=meth_file, fasta_file=fasta_file, mtase=mtase, wrap=wrap,
         colidx=colidx, max_nmol=max_nmol, seed=seed, chunk_size=chunk_size,

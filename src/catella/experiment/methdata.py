@@ -1524,8 +1524,38 @@ class MethPrintExperiment:
                 f"mtase {list(self._mtase)}: {sorted(unknown)}.")
         return labels
 
+    def _resolve_chroms_subset(self, chroms):
+        """
+        Validate and resolve a `chroms` subset.
+
+        Parameters
+        ----------
+        chroms : list of str or None
+            Subset of `self.chroms` to use. None resolves to all of
+            `self.chroms`.
+
+        Returns
+        -------
+        Tuple[str, ...]
+
+        Raises
+        ------
+        ValueError
+            If `chroms` contains a chromosome not in `self.chroms`.
+        """
+        if chroms is None:
+            return self.chroms
+        unknown = set(chroms) - set(self.chroms)
+        if unknown:
+            raise ValueError(
+                "'chroms' contains chromosome(s) not in this "
+                f"experiment's chroms {list(self.chroms)}: "
+                f"{sorted(unknown)}.")
+        return tuple(chroms)
+
     def filter_dropout(self, *, which: str | None = None,
                        mtase: list | None = None,
+                       chroms: list | None = None,
                        threshold: float = 0.2,
                        unmapped_strand: str = "union",
                        method: str = "separate",
@@ -1547,6 +1577,9 @@ class MethPrintExperiment:
         mtase : list of str, optional
             Subset of `self.mtase` labels to evaluate. None uses all
             of them.
+        chroms : list of str, optional
+            Subset of `self.chroms` to evaluate. None (default)
+            evaluates every chromosome.
         threshold : float, default 0.2
             Max allowed no-signal fraction (per label, or of the
             pooled total under `method="aggregate"`) to be kept.
@@ -1568,11 +1601,13 @@ class MethPrintExperiment:
         ------
         ValueError
             If `mtase` is unset on this experiment, `mtase` contains a
-            label not in `self.mtase`, `threshold` is not in [0, 1],
+            label not in `self.mtase`, `chroms` contains a chromosome
+            not in `self.chroms`, `threshold` is not in [0, 1],
             `unmapped_strand`/`method` is invalid, a requested source
             is missing for some chromosome, or `refseq` is missing.
         """
         labels = self._resolve_mtase_subset(mtase)
+        chroms = self._resolve_chroms_subset(chroms)
         if not (0.0 <= threshold <= 1.0):
             raise ValueError(
                 f"'threshold' must be in [0, 1], got {threshold}.")
@@ -1587,7 +1622,7 @@ class MethPrintExperiment:
                 f"{sorted(_VALID_FILTER_DROPOUT_METHOD)}, got "
                 f"{method!r}.")
 
-        for chrom in self.chroms:
+        for chrom in chroms:
             raw = self.raw[chrom]
             if raw.refseq is None:
                 raise ValueError(
@@ -1620,6 +1655,7 @@ class MethPrintExperiment:
 
     def summarize_dropout(self, *, which: str | None = None,
                           mtase: list | None = None,
+                          chroms: list | None = None,
                           unmapped_strand: str = "union") -> pd.DataFrame:
         """
         Return a per-label dropout fraction summary (QC check).
@@ -1635,6 +1671,9 @@ class MethPrintExperiment:
             present for each chromosome.
         mtase : list of str, optional
             Subset of `self.mtase` labels to summarize. None uses all.
+        chroms : list of str, optional
+            Subset of `self.chroms` to summarize. None (default)
+            summarizes every chromosome.
         unmapped_strand : {"union", "drop", "+", "-"}, default "union"
             How to evaluate unmapped ('.') strand molecules.
 
@@ -1652,11 +1691,13 @@ class MethPrintExperiment:
         Raises
         ------
         ValueError
-            If `mtase` is unset, contains an unknown label,
+            If `mtase` is unset, contains an unknown label, `chroms`
+            contains a chromosome not in `self.chroms`,
             `unmapped_strand` is invalid, a source is missing for
             some chromosome, or `refseq` is missing.
         """
         labels = self._resolve_mtase_subset(mtase)
+        chroms = self._resolve_chroms_subset(chroms)
         if unmapped_strand not in _VALID_UNMAPPED_STRAND:
             raise ValueError(
                 "'unmapped_strand' must be one of "
@@ -1666,7 +1707,7 @@ class MethPrintExperiment:
         percentiles = [0, 25, 50, 75, 100]
         pct_cols = [f"p{p}" for p in percentiles]
         rows = []
-        for chrom in self.chroms:
+        for chrom in chroms:
             raw = self.raw[chrom]
             if raw.refseq is None:
                 raise ValueError(
@@ -1713,6 +1754,7 @@ class MethPrintExperiment:
 
     def dropout_fractions(self, *, which: str | None = None,
                           mtase: list | None = None,
+                          chroms: list | None = None,
                           unmapped_strand: str = "union") -> dict:
         """
         Return each molecule's dropout fraction (QC check).
@@ -1725,6 +1767,12 @@ class MethPrintExperiment:
         mtase : list of str, optional
             Subset of `self.mtase` labels to evaluate. None uses
             all of them.
+        chroms : list of str, optional
+            Subset of `self.chroms` to evaluate. None (default)
+            evaluates every chromosome. Restricting this avoids the
+            cost (time and memory) of computing coverage for
+            chromosomes not needed by the caller, e.g. a single
+            chromosome about to be plotted.
         unmapped_strand : {"union", "drop", "+", "-"}, default
             "union"
             How to evaluate unmapped ('.') strand molecules.
@@ -1741,11 +1789,13 @@ class MethPrintExperiment:
         ------
         ValueError
             If `mtase` is unset on this experiment, `mtase` contains
-            a label not in `self.mtase`, `unmapped_strand` is
+            a label not in `self.mtase`, `chroms` contains a
+            chromosome not in `self.chroms`, `unmapped_strand` is
             invalid, a requested source is missing for some
             chromosome, or `refseq` is missing.
         """
         labels = self._resolve_mtase_subset(mtase)
+        chroms = self._resolve_chroms_subset(chroms)
         if unmapped_strand not in _VALID_UNMAPPED_STRAND:
             raise ValueError(
                 "'unmapped_strand' must be one of "
@@ -1753,7 +1803,7 @@ class MethPrintExperiment:
                 f"{unmapped_strand!r}.")
 
         result = {}
-        for chrom in self.chroms:
+        for chrom in chroms:
             raw = self.raw[chrom]
             if raw.refseq is None:
                 raise ValueError(

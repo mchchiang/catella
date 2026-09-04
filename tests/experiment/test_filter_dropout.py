@@ -309,6 +309,55 @@ class TestMtaseSubset:
         exp.close()
 
 
+class TestChromsSubset:
+    # chr1 refseq "AAAA" (4 A-sites, fully covered by m0); chr2 has no
+    # refseq at all, so touching it raises -- proves a restricted
+    # `chroms` never evaluates the excluded chromosome.
+    def _make(self, tmp_path):
+        rows = ([("m0", i, "chr1", "+", 0.5, "a") for i in range(4)]
+               + [("m0", 0, "chr2", "+", 0.5, "a")])
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 4, "chr2": 4})
+        fasta = tmp_path / "ref.fa"
+        _write_fasta(fasta, {"chr1": "AAAA"})
+        return MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file, fasta_file=fasta,
+            mtase="A")
+
+    def test_unknown_chrom_raises(self, tmp_path):
+        exp = self._make(tmp_path)
+        with pytest.raises(ValueError):
+            exp.filter_dropout(chroms=["bogus"])
+        exp.close()
+
+    def test_default_none_touches_every_chrom_and_raises(self, tmp_path):
+        exp = self._make(tmp_path)
+        with pytest.raises(ValueError):
+            exp.filter_dropout()
+        exp.close()
+
+    def test_filter_dropout_restricts_to_given_chroms(self, tmp_path):
+        exp = self._make(tmp_path)
+        exp.filter_dropout(chroms=["chr1"], threshold=0.0)
+        assert "test_dropout_mask" in exp.analysis["chr1"]
+        assert "test_dropout_mask" not in exp.analysis["chr2"]
+        exp.close()
+
+    def test_summarize_dropout_restricts_to_given_chroms(self, tmp_path):
+        exp = self._make(tmp_path)
+        summary = exp.summarize_dropout(chroms=["chr1"])
+        assert set(summary["chrom"]) == {"chr1"}
+        exp.close()
+
+    def test_dropout_fractions_restricts_to_given_chroms(self, tmp_path):
+        exp = self._make(tmp_path)
+        fractions = exp.dropout_fractions(chroms=["chr1"])
+        assert {key[0] for key in fractions} == {"chr1"}
+        exp.close()
+
+
 class TestSummarizeDropout:
     # refseq "AAAAAAAAAACG": 10 A-sites (idx0-9), 1 CG-site (idx10=C).
     # m0 covers 9/10 A-sites (idx0-8) and 0/1 CG-site.

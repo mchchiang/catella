@@ -135,6 +135,10 @@ def filter_dropout(
         Optional[str],
         typer.Option(callback=csv_parser(str),
                     help="Subset of mtase labels to evaluate")] = None,
+    chroms: Annotated[
+        Optional[str],
+        typer.Option(callback=csv_parser(str),
+                    help="Subset of chromosomes to evaluate")] = None,
     threshold: Annotated[
         float, typer.Option(help="Max allowed no-signal fraction")] = 0.2,
     unmapped_strand: Annotated[
@@ -159,7 +163,7 @@ def filter_dropout(
     """
     exp = MethPrintExperiment.load(source_file)
     catella.filter_dropout(exp=exp, which=which, mtase=mtase,
-                           threshold=threshold,
+                           chroms=chroms, threshold=threshold,
                            unmapped_strand=unmapped_strand, method=method,
                            mask_name=mask_name)
     if out_file is not None:
@@ -180,6 +184,10 @@ def summarize_dropout(
         Optional[str],
         typer.Option(callback=csv_parser(str),
                     help="Subset of mtase labels to summarize")] = None,
+    chroms: Annotated[
+        Optional[str],
+        typer.Option(callback=csv_parser(str),
+                    help="Subset of chromosomes to summarize")] = None,
     unmapped_strand: Annotated[
         str, typer.Option(help="union, drop, +, or -")] = "union",
     out_file: Annotated[
@@ -192,6 +200,7 @@ def summarize_dropout(
     """
     exp = MethPrintExperiment.load(source_file)
     df = catella.summarize_dropout(exp=exp, which=which, mtase=mtase,
+                                   chroms=chroms,
                                    unmapped_strand=unmapped_strand)
     typer.echo(df.to_string(index=False))
     if out_file is not None:

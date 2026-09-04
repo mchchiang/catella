@@ -210,6 +210,33 @@ class TestPlotDropoutFilter:
         assert result.exit_code == 0, result.output
         assert out_file.exists()
 
+    def test_skips_chromosomes_missing_refseq(self, tmp_path):
+        # chr2 has no refseq; plotting chr1 must not touch it (before
+        # the chroms= restriction, dropout_fractions() always looped
+        # over every chromosome and would raise here).
+        rows = ([("m0", i, "chr1", "+", 0.5, "a") for i in range(4)]
+               + [("m0", 0, "chr2", "+", 0.5, "a")])
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 4, "chr2": 4})
+        fasta_file = tmp_path / "ref.fa"
+        _write_fasta(fasta_file, {"chr1": "AAAA"})
+
+        raw_file = tmp_path / "raw_exp.h5"
+        load_result = runner.invoke(app, ["load_raw", str(chromsize),
+                                          str(test_file), str(raw_file),
+                                          "--fasta-file", str(fasta_file),
+                                          "--mtase", "A"])
+        assert load_result.exit_code == 0, load_result.output
+
+        out_file = tmp_path / "dropout.png"
+        result = runner.invoke(app, ["plot_dropout_filter", str(raw_file),
+                                     "chr1", "--out-file", str(out_file),
+                                     "--no-show"])
+        assert result.exit_code == 0, result.output
+        assert out_file.exists()
+
 
 class TestComputeEmpiricalProb:
     def test_matches_direct_api_call(self, tmp_path):

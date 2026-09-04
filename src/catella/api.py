@@ -330,6 +330,7 @@ def compute_model_prob(*, exp : MethPrintExperiment,
 def filter_dropout(*, exp : MethPrintExperiment,
            which : str | None = None,
            mtase : list | None = None,
+           chroms : list | None = None,
            threshold : float = 0.2,
            unmapped_strand : str = "union",
            method : str = "separate",
@@ -349,6 +350,9 @@ def filter_dropout(*, exp : MethPrintExperiment,
     mtase : list of str, optional
         Subset of `exp.mtase` labels to evaluate. None uses all of
         them.
+    chroms : list of str, optional
+        Subset of `exp.chroms` to evaluate. None (default) evaluates
+        every chromosome.
     threshold : float, default 0.2
         Max allowed no-signal fraction (per label, or of the pooled
         total under `method="aggregate"`) to be kept.
@@ -369,18 +373,20 @@ def filter_dropout(*, exp : MethPrintExperiment,
     ------
     ValueError
         If `mtase` is unset on `exp`, `mtase` contains a label not in
-        `exp.mtase`, `threshold` is not in [0, 1],
+        `exp.mtase`, `chroms` contains a chromosome not in
+        `exp.chroms`, `threshold` is not in [0, 1],
         `unmapped_strand`/`method` is invalid, a requested source is
         missing for some chromosome, or `refseq` is missing.
     """
-    exp.filter_dropout(which=which, mtase=mtase, threshold=threshold,
-                       unmapped_strand=unmapped_strand, method=method,
-                       mask_name=mask_name)
+    exp.filter_dropout(which=which, mtase=mtase, chroms=chroms,
+                       threshold=threshold, unmapped_strand=unmapped_strand,
+                       method=method, mask_name=mask_name)
 
 
 def summarize_dropout(*, exp : MethPrintExperiment,
               which : str | None = None,
               mtase : list | None = None,
+              chroms : list | None = None,
               unmapped_strand : str = "union") -> pd.DataFrame:
     """
     Return a per-label dropout fraction summary (QC check).
@@ -396,6 +402,9 @@ def summarize_dropout(*, exp : MethPrintExperiment,
         for each chromosome.
     mtase : list of str, optional
         Subset of `exp.mtase` labels to summarize. None uses all.
+    chroms : list of str, optional
+        Subset of `exp.chroms` to summarize. None (default)
+        summarizes every chromosome.
     unmapped_strand : {"union", "drop", "+", "-"}, default "union"
         How to evaluate unmapped ('.') strand molecules.
 
@@ -411,11 +420,12 @@ def summarize_dropout(*, exp : MethPrintExperiment,
     Raises
     ------
     ValueError
-        If `mtase` is unset, contains an unknown label,
-        `unmapped_strand` is invalid, a source is missing for some
-        chromosome, or `refseq` is missing.
+        If `mtase` is unset, contains an unknown label, `chroms`
+        contains a chromosome not in `exp.chroms`, `unmapped_strand`
+        is invalid, a source is missing for some chromosome, or
+        `refseq` is missing.
     """
-    return exp.summarize_dropout(which=which, mtase=mtase,
+    return exp.summarize_dropout(which=which, mtase=mtase, chroms=chroms,
                                  unmapped_strand=unmapped_strand)
 
 
@@ -430,10 +440,10 @@ def plot_dropout_filter(*, exp : MethPrintExperiment,
     """
     Plot percent of molecules filtered vs. dropout-rate threshold.
 
-    Computes `exp.dropout_fractions(...)` and plots the result via
-    `MethPlot.plot_dropout_filter`. For each matching group, at
-    threshold `t` the plotted value is `100 * mean(dropout_frac > t)`
-    over that group's molecules.
+    Computes `exp.dropout_fractions(...)`, restricted to `chrom`, and
+    plots the result via `MethPlot.plot_dropout_filter`. For each
+    matching group, at threshold `t` the plotted value is
+    `100 * mean(dropout_frac > t)` over that group's molecules.
 
     Parameters
     ----------
@@ -469,11 +479,11 @@ def plot_dropout_filter(*, exp : MethPrintExperiment,
         `MethPlot.plot_dropout_filter`).
     """
     fractions = exp.dropout_fractions(which=which, mtase=mtase,
+                                      chroms=[chrom],
                                       unmapped_strand=unmapped_strand)
     methplot = MethPlot()
     methplot.plot_dropout_filter(fractions, chrom, source=source,
                                  out_file=out_file, show=show)
-
 
 
 def run(*, chroms : str | Iterable[str],

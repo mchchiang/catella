@@ -41,6 +41,7 @@ def preprocess_empirical(*, chromsize : str | Path,
                colidx : Iterable | None = None,
                max_nmol : int | None = None,
                seed : int | None = None,
+               prob_name : str = "meth_prob",
                clip_low : float = 0.1,
                clip_high : float = 99.9,
                norm_by_strand : bool = False,
@@ -92,7 +93,10 @@ def preprocess_empirical(*, chromsize : str | Path,
         Maximum number of molecules to extract for each chromosome.
     seed : int, optional
         The seed for the random number generator selecting the molecules if
-        `max_nmol` is specified.        
+        `max_nmol` is specified.
+    prob_name : str, default "meth_prob"
+        The key used to store the resulting methylation probabilities
+        in `exp.analysis`.
     clip_low : float, default 0.1
         Lower percentile bound for signal clipping. Values below this
         percentile are set to 0. If `unmeth_file`/`meth_file` controls
@@ -146,8 +150,9 @@ def preprocess_empirical(*, chromsize : str | Path,
     # Smooth and normalize the data - compute methylation probability
     ana = MethPrintAnalysis()
     ana.smooth(binsize=binsize, exp=exp_data, batch_size=batch_size)
-    ana.empirical_prob(exp=exp_data, clip_low=clip_low, clip_high=clip_high,
-                       norm_by_strand=norm_by_strand, batch_size=batch_size,
+    ana.empirical_prob(exp=exp_data, prob_name=prob_name, clip_low=clip_low,
+                       clip_high=clip_high, norm_by_strand=norm_by_strand,
+                       batch_size=batch_size,
                        percentile_sample_size=percentile_sample_size)
     
     # Save the results

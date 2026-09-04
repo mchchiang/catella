@@ -1,10 +1,14 @@
 # test_results.py
 
+from pathlib import Path
+from unittest.mock import patch
+
 import h5py
 import numpy as np
 import pytest
 from catella_cpp import Dump
 
+from catella.h5_array import H5Array
 from catella.simulation.config import SimSettings
 from catella.simulation.engine import SimManager
 from catella.simulation.results import SimDataset
@@ -52,6 +56,26 @@ class TestOutTypeSeedPersistence:
         assert loaded.out_type is None
         assert loaded.seed is None
         assert loaded.seed_table is None
+
+
+class TestSaveOverwriteCleanup:
+    def test_tmp_file_removed_on_keyboard_interrupt(self, tmp_path):
+        dataset = SimDataset.create(
+            chroms=["chr1"], nmol={"chr1": 1}, nsim=1, nbp={"chr1": 50},
+            settings=_make_settings(), out_dir=tmp_path / "ds")
+        dataset.save()
+        path = Path(dataset._dataset_file)
+        # An analysis entry backed by the destination file itself
+        # forces save() onto its tmp-then-replace overwrite path.
+        dataset._global_analysis["dummy"] = H5Array.create((2, 2), path=path)
+
+        with patch("catella.simulation.results.os.replace",
+                   side_effect=KeyboardInterrupt):
+            with pytest.raises(KeyboardInterrupt):
+                dataset.save(path, overwrite=True)
+
+        leaked = list(path.parent.glob(f"{path.name}.tmp*"))
+        assert not leaked
 
 
 class TestExtractMissingMolecules:

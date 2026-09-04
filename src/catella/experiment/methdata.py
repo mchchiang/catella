@@ -1160,8 +1160,12 @@ class MethPrintExperiment:
                     "replace it in place.")
             tmp_path = dest_path.with_name(
                 dest_path.name + f".tmp{os.getpid()}")
-            self.save(tmp_path)
-            os.replace(tmp_path, dest_path)
+            try:
+                self.save(tmp_path)
+                os.replace(tmp_path, dest_path)
+            except BaseException:
+                tmp_path.unlink(missing_ok=True)
+                raise
             self._exp_file = dest
             return
 

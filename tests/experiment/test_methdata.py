@@ -143,6 +143,24 @@ class TestSaveToExistingFile:
             exp.save(path)
             assert spy.call_count == 0
 
+    def test_tmp_file_removed_on_keyboard_interrupt_during_overwrite(
+            self, tmp_path):
+        exp = MethPrintExperiment._create(
+            _raw_data={"chr1": _make_raw("chr1", nmol=2, nbp=6, seed=0)})
+        path = tmp_path / "experiment.h5"
+        exp.save(path)
+        # An analysis entry backed by the destination file itself
+        # forces save() onto its tmp-then-replace overwrite path.
+        exp._global_analysis["dummy"] = H5Array.create((2, 2), path=path)
+
+        with patch("catella.experiment.methdata.os.replace",
+                   side_effect=KeyboardInterrupt):
+            with pytest.raises(KeyboardInterrupt):
+                exp.save(path, overwrite=True)
+
+        leaked = list(tmp_path.glob(f"{path.name}.tmp*"))
+        assert not leaked
+
 
 class TestRefseq:
     def test_refseq_roundtrips_through_save_load(self, tmp_path):

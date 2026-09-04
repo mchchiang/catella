@@ -173,6 +173,7 @@ def preprocess_model(*, chromsize : str | Path,
                colidx : Iterable | None = None,
                max_nmol : int | None = None,
                seed : int | None = None,
+               prob_name : str = "meth_prob",
                pi0 : float = 0.5,
                eta : float | dict[str, float] | None = None,
                eta_max_lag : int = 10,
@@ -233,6 +234,9 @@ def preprocess_model(*, chromsize : str | Path,
     seed : int, optional
         The seed for the random number generator selecting the molecules if
         `max_nmol` is specified.
+    prob_name : str, default "meth_prob"
+        The key used to store the resulting methylation probabilities
+        in `exp.analysis`.
     pi0 : float, default 0.5
         Prior probability that an assayable site is methylated, used
         to convert each site's `mod_qual` confidence score into a
@@ -342,11 +346,12 @@ def preprocess_model(*, chromsize : str | Path,
 
     # Compute methylation probability via the calibrated log-odds model
     ana = MethPrintAnalysis()
-    ana.model_prob(exp=exp_data, pi0=pi0, eta=eta, eta_max_lag=eta_max_lag,
-                   nu=nu, rho_leak=rho_leak, min_gap=min_gap, l_nuc=l_nuc,
-                   n_min=n_min, iters=iters, init_prot=init_prot,
-                   init_acc=init_acc, tol=tol, fill_edge=fill_edge,
-                   norm_by_strand=norm_by_strand, batch_size=batch_size)
+    ana.model_prob(exp=exp_data, prob_name=prob_name, pi0=pi0, eta=eta,
+                   eta_max_lag=eta_max_lag, nu=nu, rho_leak=rho_leak,
+                   min_gap=min_gap, l_nuc=l_nuc, n_min=n_min, iters=iters,
+                   init_prot=init_prot, init_acc=init_acc, tol=tol,
+                   fill_edge=fill_edge, norm_by_strand=norm_by_strand,
+                   batch_size=batch_size)
 
     # Save the results
     if out_file is not None:

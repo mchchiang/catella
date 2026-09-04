@@ -929,10 +929,6 @@ class MethPrintAnalysis:
     
     _EPSILON = np.finfo(float).eps  # Smallest float to avoid DivByZero
 
-    def __init__(self):
-        self._binsize = None # Cache the binsize used for smoothing
-        self._eta = None # Per-channel eta from model_prob
-
     def smooth(self, *, binsize : int,
                exp : MethPrintExperiment,
                name : str = "smoothed",
@@ -997,7 +993,9 @@ class MethPrintAnalysis:
             raise ValueError("'nan_method' must be 'mean' or 'interpolate', "
                              f"got {nan_method!r}.")
 
-        self._binsize = binsize
+        exp.global_analysis[f"{name}_params"] = pd.DataFrame([{
+            "binsize": binsize, "nan_method": nan_method,
+            "fill_edge": fill_edge, "mask_name": mask_name or ""}])
         tmp_dir = exp.resolve_tmp_dir()
         
         # Some helper functions
@@ -1107,7 +1105,9 @@ class MethPrintAnalysis:
             The experiment object containing raw data and analysis maps.
         binsize : int, optional
             Window size in base pairs used for the rolling average smoothing.
-            If None, use the cached binsize a previous `smooth` call.
+            If None, looked up from `exp.global_analysis[f"{smoothed_
+            name}_params"]`, set by a previous `smooth` call under the
+            same `smoothed_name`.
         smoothed_name : str, default "smoothed"
             The dictionary key suffix for the smoothed signals in
             `exp.analysis`.
@@ -1201,7 +1201,9 @@ class MethPrintAnalysis:
 
         # Check for cached binsize or perform smoothing if data missing
         if binsize is None:
-            binsize = self._binsize
+            cached = exp.global_analysis.get(f"{smoothed_name}_params")
+            if cached is not None:
+                binsize = int(cached["binsize"].iloc[0])
 
         if f"test_{smoothed_name}" not in exp.analysis[exp.chroms[0]]:
             if binsize is None:
@@ -1405,7 +1407,9 @@ class MethPrintAnalysis:
             otherwise. A float pins every channel to that value; a
             dict pins only the named channels, leaving any not
             mentioned to be auto-estimated. The value(s) actually
-            applied are stored in `self._eta` afterward.
+            applied, along with every other parameter below, are
+            stored in `exp.global_analysis[f"{prob_name}_params"]`
+            afterward.
         eta_max_lag : int, default 10
             Maximum lag (bp) summed over when auto-estimating eta.
         nu : float, default 10.0
@@ -1532,8 +1536,15 @@ class MethPrintAnalysis:
             estimated = _finalize_channel_eta(stats, eta_max_lag)
             channel_eta.update({c: estimated[c] for c in need_auto})
 
-        self._eta = {CONTEXT_NAMES[c]: channel_eta[c]
-                    for c in _ETA_CHANNELS}
+        exp.global_analysis[f"{prob_name}_params"] = pd.DataFrame([{
+            "pi0": pi0, "eta_max_lag": eta_max_lag, "nu": nu,
+            "rho_leak": rho_leak, "min_gap": min_gap, "l_nuc": l_nuc,
+            "n_min": n_min, "iters": iters, "init_prot": init_prot,
+            "init_acc": init_acc, "tol": tol, "fill_edge": fill_edge,
+            "norm_by_strand": norm_by_strand,
+            "mask_name": mask_name or "",
+            **{f"eta_{CONTEXT_NAMES[c]}": channel_eta[c]
+              for c in _ETA_CHANNELS}}])
 
         for chrom in exp.chroms:
             raw = exp.raw[chrom]

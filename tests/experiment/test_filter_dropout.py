@@ -378,3 +378,47 @@ class TestSummarizeDropout:
         with pytest.raises(ValueError):
             exp.summarize_dropout(unmapped_strand="bogus")
         exp.close()
+
+
+class TestDropoutFractions:
+    # refseq "AAAAAAAAAACG": 10 A-sites (idx0-9), 1 CG-site (idx10=C).
+    # m0 covers 9/10 A-sites (idx0-8) and 0/1 CG-site; m1 covers none.
+    def _make(self, tmp_path):
+        rows = [("m0", i, "chr1", "+", 0.5, "a") for i in range(9)]
+        return _load(tmp_path, "AAAAAAAAAACG", rows, mtase=["A", "CG"])
+
+    def test_keys_and_values(self, tmp_path):
+        exp = self._make(tmp_path)
+        fracs = exp.dropout_fractions()
+        assert set(fracs) == {
+            ("chr1", "test", "A"), ("chr1", "test", "CG"),
+            ("chr1", "test", "aggregate")}
+        assert fracs[("chr1", "test", "A")] == pytest.approx([0.1])
+        assert fracs[("chr1", "test", "CG")] == pytest.approx([1.0])
+        assert fracs[("chr1", "test", "aggregate")] == \
+            pytest.approx([1.0 - 9 / 11])
+        exp.close()
+
+    def test_mtase_subset_no_aggregate_key(self, tmp_path):
+        exp = self._make(tmp_path)
+        fracs = exp.dropout_fractions(mtase=["A"])
+        assert set(fracs) == {("chr1", "test", "A")}
+        exp.close()
+
+    def test_unknown_mtase_label_raises(self, tmp_path):
+        exp = self._make(tmp_path)
+        with pytest.raises(ValueError):
+            exp.dropout_fractions(mtase=["GC"])
+        exp.close()
+
+    def test_missing_source_raises(self, tmp_path):
+        exp = self._make(tmp_path)
+        with pytest.raises(ValueError):
+            exp.dropout_fractions(which="meth")
+        exp.close()
+
+    def test_bad_unmapped_strand_raises(self, tmp_path):
+        exp = self._make(tmp_path)
+        with pytest.raises(ValueError):
+            exp.dropout_fractions(unmapped_strand="bogus")
+        exp.close()

@@ -1711,6 +1711,73 @@ class MethPrintExperiment:
 
         return pd.DataFrame(rows)
 
+    def dropout_fractions(self, *, which: str | None = None,
+                          mtase: list | None = None,
+                          unmapped_strand: str = "union") -> dict:
+        """
+        Return each molecule's dropout fraction (QC check).
+
+        Parameters
+        ----------
+        which : {"test", "meth", "unmeth"} or None, default None
+            Source(s) to evaluate. None evaluates every source
+            present for each chromosome.
+        mtase : list of str, optional
+            Subset of `self.mtase` labels to evaluate. None uses
+            all of them.
+        unmapped_strand : {"union", "drop", "+", "-"}, default
+            "union"
+            How to evaluate unmapped ('.') strand molecules.
+
+        Returns
+        -------
+        dict of (str, str, str) to np.ndarray
+            Maps `(chrom, source, label)` to that group's
+            per-molecule dropout fraction array. Includes a
+            `label="aggregate"` entry per (chrom, source) pooling
+            all labels, if more than one label is evaluated.
+
+        Raises
+        ------
+        ValueError
+            If `mtase` is unset on this experiment, `mtase` contains
+            a label not in `self.mtase`, `unmapped_strand` is
+            invalid, a requested source is missing for some
+            chromosome, or `refseq` is missing.
+        """
+        labels = self._resolve_mtase_subset(mtase)
+        if unmapped_strand not in _VALID_UNMAPPED_STRAND:
+            raise ValueError(
+                "'unmapped_strand' must be one of "
+                f"{sorted(_VALID_UNMAPPED_STRAND)}, got "
+                f"{unmapped_strand!r}.")
+
+        result = {}
+        for chrom in self.chroms:
+            raw = self.raw[chrom]
+            if raw.refseq is None:
+                raise ValueError(
+                    f"No refseq available for chrom '{chrom}'; "
+                    "required to determine methylatable positions.")
+            sources = _resolve_sources(raw, which)
+
+            for src in sources:
+                df = getattr(raw, f"{src}_data")
+                mol_id = getattr(raw, f"{src}_mol_id")
+                if df is None or mol_id is None:
+                    raise ValueError(
+                        f"No '{src}' data available for chrom '{chrom}'")
+                cov = _label_coverage(
+                    df, mol_id, raw.refseq, labels, unmapped_strand)
+                frac, pooled = _dropout_fracs(cov, labels)
+
+                for i, label in enumerate(labels):
+                    result[(chrom, src, label)] = frac[i]
+                if len(labels) > 1:
+                    result[(chrom, src, "aggregate")] = pooled
+
+        return result
+
     def __repr__(self):
         # Get all public attributes by filtering out private attributes
         # (those starting with '_')

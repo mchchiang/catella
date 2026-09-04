@@ -707,6 +707,38 @@ def _label_coverage(df, mol_id, refseq, labels, unmapped_strand):
     return result
 
 
+def _dropout_fracs(cov, labels):
+    """
+    Per-label and pooled dropout fractions from coverage counts.
+
+    Parameters
+    ----------
+    cov : dict of str to (np.ndarray, np.ndarray)
+        Output of `_label_coverage`.
+    labels : sequence of str
+        Labels to evaluate, in the order to stack `frac`.
+
+    Returns
+    -------
+    frac : np.ndarray, shape (len(labels), n_mol)
+        Per-label dropout fraction.
+    pooled : np.ndarray, shape (n_mol,)
+        Dropout fraction with site counts pooled across labels (as
+        in `filter_dropout(method="aggregate")`).
+    """
+    covered = np.stack([cov[label][0] for label in labels])
+    n_total = np.stack([cov[label][1] for label in labels])
+    frac = np.where(
+        n_total > 0, 1.0 - covered / np.maximum(n_total, 1), 0.0)
+
+    covered_sum = covered.sum(axis=0)
+    n_total_sum = n_total.sum(axis=0)
+    pooled = np.where(
+        n_total_sum > 0, 1.0 - covered_sum / np.maximum(n_total_sum, 1),
+        0.0)
+    return frac, pooled
+
+
 def _apply_keep_mask(data, keep, batch_size=20000):
     """
     Set rows for `keep=False` molecules entirely to NaN.
@@ -1569,25 +1601,13 @@ class MethPrintExperiment:
                 if df is None or mol_id is None:
                     raise ValueError(
                         f"No '{src}' data available for chrom '{chrom}'")
-                nmol = len(mol_id)
                 cov = _label_coverage(
                     df, mol_id, raw.refseq, labels, unmapped_strand)
-                covered = np.stack([cov[label][0] for label in labels])
-                n_total = np.stack([cov[label][1] for label in labels])
-
-                dropout_frac = np.where(
-                    n_total > 0,
-                    1.0 - covered / np.maximum(n_total, 1), 0.0)
+                dropout_frac, combined_frac = _dropout_fracs(cov, labels)
 
                 if method == "separate":
                     keep = (dropout_frac <= threshold).all(axis=0)
                 else:
-                    covered_sum = covered.sum(axis=0)
-                    n_total_sum = n_total.sum(axis=0)
-                    combined_frac = np.where(
-                        n_total_sum > 0,
-                        1.0 - covered_sum / np.maximum(n_total_sum, 1),
-                        0.0)
                     keep = combined_frac <= threshold
 
                 # Stored as int, not bool: bool isn't a numeric dtype
@@ -1662,15 +1682,9 @@ class MethPrintExperiment:
                         f"No '{src}' data available for chrom '{chrom}'")
                 cov = _label_coverage(
                     df, mol_id, raw.refseq, labels, unmapped_strand)
+                frac, pooled = _dropout_fracs(cov, labels)
 
-                covered_list, total_list = [], []
-                for label in labels:
-                    covered, total = cov[label]
-                    covered_list.append(covered)
-                    total_list.append(total)
-                    frac = np.where(
-                        total > 0, 1.0 - covered / np.maximum(total, 1),
-                        0.0)
+                for i, label in enumerate(labels):
                     plus_n = int(_methylatable_positions(
                         raw.refseq, label, "+").sum())
                     minus_n = int(_methylatable_positions(
@@ -1679,15 +1693,10 @@ class MethPrintExperiment:
                            "n_sites_plus": plus_n,
                            "n_sites_minus": minus_n}
                     row.update(zip(pct_cols,
-                                   np.percentile(frac, percentiles)))
+                                   np.percentile(frac[i], percentiles)))
                     rows.append(row)
 
                 if len(labels) > 1:
-                    covered_sum = np.sum(covered_list, axis=0)
-                    total_sum = np.sum(total_list, axis=0)
-                    frac = np.where(
-                        total_sum > 0,
-                        1.0 - covered_sum / np.maximum(total_sum, 1), 0.0)
                     row = {"chrom": chrom, "source": src,
                            "label": "aggregate",
                            "n_sites_plus": sum(int(_methylatable_positions(
@@ -1697,7 +1706,7 @@ class MethPrintExperiment:
                                raw.refseq, label, "-").sum())
                                for label in labels)}
                     row.update(zip(pct_cols,
-                                   np.percentile(frac, percentiles)))
+                                   np.percentile(pooled, percentiles)))
                     rows.append(row)
 
         return pd.DataFrame(rows)

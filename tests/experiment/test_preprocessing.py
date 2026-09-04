@@ -325,6 +325,100 @@ class TestEmpiricalProb:
                           percentile_sample_size=1000)
 
 
+class TestEmpiricalProbResmooth:
+    def test_fill_edge_only_patches_in_place_matching_full_resmooth(self):
+        exp = _make_experiment(nmol=6, nbp=10)
+        ana = MethPrintAnalysis()
+        ana.smooth(binsize=3, exp=exp, batch_size=100)
+        ana.empirical_prob(exp=exp, binsize=3, fill_edge=0.5,
+                      batch_size=100, percentile_sample_size=1000)
+        patched = exp.analysis["chr1"]["test_smoothed"].to_numpy()
+        assert not np.isnan(patched).any()
+        assert exp.global_analysis[
+            "smoothed_params"]["fill_edge"].iloc[0] == 0.5
+
+        exp_direct = _make_experiment(nmol=6, nbp=10)
+        ana_direct = MethPrintAnalysis()
+        ana_direct.smooth(binsize=3, exp=exp_direct, fill_edge=0.5,
+                          batch_size=100)
+        direct = exp_direct.analysis["chr1"]["test_smoothed"].to_numpy()
+        np.testing.assert_allclose(patched, direct)
+
+    def test_mismatched_binsize_raises(self):
+        exp = _make_experiment(nmol=6, nbp=10)
+        ana = MethPrintAnalysis()
+        ana.smooth(binsize=3, exp=exp, batch_size=100)
+        with pytest.raises(ValueError):
+            ana.empirical_prob(exp=exp, binsize=5, batch_size=100,
+                          percentile_sample_size=1000)
+
+    def test_mismatched_nan_method_raises(self):
+        # smooth() used the default "mean"; explicitly requesting the
+        # non-default "interpolate" here must be caught as a mismatch.
+        exp = _make_experiment(nmol=6, nbp=10)
+        ana = MethPrintAnalysis()
+        ana.smooth(binsize=3, exp=exp, batch_size=100)
+        with pytest.raises(ValueError):
+            ana.empirical_prob(exp=exp, binsize=3,
+                          nan_method="interpolate", batch_size=100,
+                          percentile_sample_size=1000)
+
+    def test_fill_edge_with_other_mismatch_raises_not_patches(self):
+        exp = _make_experiment(nmol=6, nbp=10)
+        ana = MethPrintAnalysis()
+        ana.smooth(binsize=3, exp=exp, batch_size=100)
+        with pytest.raises(ValueError):
+            ana.empirical_prob(exp=exp, binsize=5, fill_edge=0.5,
+                          batch_size=100, percentile_sample_size=1000)
+
+    def test_patch_does_not_fill_smooth_dropout_rows(self):
+        exp = _make_experiment(nmol=4, nbp=6, with_controls=False)
+        exp.analysis["chr1"]["test_dropout_mask"] = pd.DataFrame(
+            {"keep": [True, False, True, False]})
+        ana = MethPrintAnalysis()
+        ana.smooth(binsize=2, exp=exp, batch_size=100,
+                  mask_name="dropout_mask")
+        ana.empirical_prob(exp=exp, binsize=2, fill_edge=0.5,
+                      batch_size=100, percentile_sample_size=1000)
+        patched = exp.analysis["chr1"]["test_smoothed"].to_numpy()
+        assert np.isnan(patched[1]).all()
+        assert np.isnan(patched[3]).all()
+        assert not np.isnan(patched[0]).any()
+
+    def test_resmooth_recomputes_and_updates_params(self):
+        exp = _make_experiment(nmol=6, nbp=10)
+        ana = MethPrintAnalysis()
+        ana.smooth(binsize=3, exp=exp, batch_size=100)
+        ana.empirical_prob(exp=exp, binsize=5, resmooth=True,
+                      batch_size=100, percentile_sample_size=1000)
+        assert exp.global_analysis[
+            "smoothed_params"]["binsize"].iloc[0] == 5
+
+    def test_default_only_call_after_custom_smooth_does_not_raise(self):
+        exp = _make_experiment(nmol=6, nbp=10)
+        ana = MethPrintAnalysis()
+        ana.smooth(binsize=3, exp=exp, nan_method="interpolate",
+                  fill_edge=0.5, batch_size=100)
+        ana.empirical_prob(exp=exp, batch_size=100,
+                      percentile_sample_size=1000)
+        prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
+        assert prob.shape == (6, 10)
+
+    def test_mask_name_not_required_to_match_smooth(self):
+        # mask_name is reapplied fresh every call, independent of what
+        # smooth() itself used -- not a "stale smoothing" mismatch.
+        exp = _make_experiment(nmol=4, nbp=6, with_controls=False)
+        exp.analysis["chr1"]["test_dropout_mask"] = pd.DataFrame(
+            {"keep": [True, False, True, True]})
+        ana = MethPrintAnalysis()
+        ana.smooth(binsize=2, exp=exp, batch_size=100)  # no mask_name
+        ana.empirical_prob(exp=exp, binsize=2, batch_size=100,
+                      percentile_sample_size=1000,
+                      mask_name="dropout_mask")
+        prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
+        assert np.isnan(prob[1]).all()
+
+
 class TestMaskName:
     def test_smooth_nans_masked_rows(self):
         exp = _make_experiment(nmol=4, nbp=6, with_controls=False)

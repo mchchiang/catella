@@ -22,6 +22,34 @@ def _lookup_mask(exp, chrom, source, mask_name):
     return exp.analysis[chrom][key]["keep"].to_numpy()
 
 
+def _patch_fill_edge(arr, fill_edge, vmin, vmax, keep, batch_size):
+    """
+    Refill only the still-NaN edge positions of an H5Array last
+    smoothed with fill_edge=NaN, in place, streamed in batches. `keep`
+    (or None) excludes dropout rows from filling.
+    """
+    if not isinstance(fill_edge, str) and not np.isnan(fill_edge):
+        if not (vmin <= fill_edge <= vmax):
+            raise ValueError(
+                f"'fill_edge'={fill_edge} is outside the data range "
+                f"[{vmin}, {vmax}].")
+    nrow = arr.shape[0]
+    for start in range(0, nrow, batch_size):
+        stop = min(start + batch_size, nrow)
+        batch = arr[start:stop, :]
+        nanmask = np.isnan(batch)
+        if keep is not None:
+            nanmask &= keep[start:stop, None]
+        if not nanmask.any():
+            continue
+        if isinstance(fill_edge, str):  # "mean"
+            fill = np.nanmean(batch, axis=1)
+            batch = np.where(nanmask, fill[:, None], batch)
+        else:
+            batch = np.where(nanmask, fill_edge, batch)
+        arr.write_batch(start, stop, batch)
+
+
 NONE, M6A, GCH, HCG, GCG = 0, 1, 2, 3, 4
 CONTEXT_NAMES = {NONE: "none", M6A: "M6A", GCH: "GCH", HCG: "HCG",
                  GCG: "GCG"}
@@ -1079,6 +1107,7 @@ class MethPrintAnalysis:
                   clip_low : float = 0.1,
                   clip_high : float = 99.9,
                   norm_by_strand : bool = False,
+                  resmooth : bool = False,
                   nan_method : str = "mean",
                   fill_edge : float | str = np.nan,
                   batch_size : int = 20000,
@@ -1128,10 +1157,19 @@ class MethPrintAnalysis:
             signal itself.
         norm_by_strand : bool, default False
             Whether to perform normalization separately based on strandedness.
+        resmooth : bool, default False
+            If True, always re-run `smooth`, even if `test_{smoothed_
+            name}` already exists in `exp.analysis`.
         nan_method : {"mean", "interpolate"}, default "mean"
-            Passed through to `smooth` if smoothing is triggered lazily.
+            Passed through to `smooth` if smoothing is triggered
+            lazily, and must match the previous smoothing if
+            `test_{smoothed_name}` already exists (see `resmooth`).
         fill_edge : float or "mean", default np.nan
-            Passed through to `smooth` if smoothing is triggered lazily.
+            Passed through to `smooth` if smoothing is triggered
+            lazily. If `test_{smoothed_name}` already exists and only
+            `fill_edge` differs from the previous smoothing, the
+            existing edges are patched in place instead of requiring
+            `resmooth`.
         batch_size : int, default 20000
             Number of molecules processed (and held in memory) per batch.
         percentile_sample_size : int, default 100000
@@ -1147,7 +1185,9 @@ class MethPrintAnalysis:
             If given, molecules flagged as dropout by a prior
             `MethPrintExperiment.filter_dropout(mask_name=mask_name)`
             call are excluded (set to NaN) from the test signal and
-            from control-based normalization statistics, per source.
+            from control-based normalization statistics, per source --
+            applied fresh on every call, regardless of whether this
+            call's `mask_name` matches what `smooth` itself last used.
             Also passed through to `smooth` if smoothing is triggered
             lazily.
 
@@ -1155,6 +1195,10 @@ class MethPrintAnalysis:
         ------
         ValueError
             If `binsize` is not provided and no cached `binsize` exists.
+            If `test_{smoothed_name}` already exists and an
+            explicitly-given `binsize`/`nan_method` (or `fill_edge`
+            together with a mismatched `binsize`/`nan_method`) doesn't
+            match what was used to produce it.
             If `norm_by_strand` is True but molecules with unmapped strands
             ('.') exist.
         KeyError
@@ -1199,19 +1243,83 @@ class MethPrintAnalysis:
 
         tmp_dir = exp.resolve_tmp_dir()
 
-        # Check for cached binsize or perform smoothing if data missing
-        if binsize is None:
-            cached = exp.global_analysis.get(f"{smoothed_name}_params")
-            if cached is not None:
-                binsize = int(cached["binsize"].iloc[0])
+        # Check for cached binsize, or perform (or re-verify) smoothing
+        already_smoothed = (
+            f"test_{smoothed_name}" in exp.analysis[exp.chroms[0]])
+        cached_params = exp.global_analysis.get(f"{smoothed_name}_params")
 
-        if f"test_{smoothed_name}" not in exp.analysis[exp.chroms[0]]:
+        if resmooth or not already_smoothed:
+            if binsize is None and cached_params is not None:
+                binsize = int(cached_params["binsize"].iloc[0])
             if binsize is None:
                 raise ValueError("'binsize' must be specified if data are not "
                                  "already smoothed.")
             self.smooth(binsize=binsize, exp=exp, name=smoothed_name,
                        nan_method=nan_method, fill_edge=fill_edge,
                        batch_size=batch_size, mask_name=mask_name)
+        elif cached_params is not None:
+            row = cached_params.iloc[0]
+            mismatched = []
+            if binsize is not None and binsize != int(row["binsize"]):
+                mismatched.append("binsize")
+            if nan_method != "mean" and nan_method != row["nan_method"]:
+                mismatched.append("nan_method")
+            # mask_name is *not* compared here: unlike binsize/
+            # nan_method, it's reapplied fresh to the output on every
+            # call via _apply_keep_mask below, regardless of what (if
+            # any) mask_name smooth() itself used.
+
+            is_default_fill = (isinstance(fill_edge, float)
+                               and np.isnan(fill_edge))
+            old_fill_edge = row["fill_edge"]
+            old_is_nan = (isinstance(old_fill_edge, float)
+                         and np.isnan(old_fill_edge))
+            fill_edge_changed = (not is_default_fill
+                                 and fill_edge != old_fill_edge)
+
+            if fill_edge_changed and not mismatched and old_is_nan:
+                # Only fill_edge differs, and the stored edges are
+                # still NaN -- patch in place instead of a resmooth.
+                # Excludes rows dropped by whatever mask_name smooth()
+                # itself used (baked into storage as all-NaN rows),
+                # not this call's mask_name (applied fresh below).
+                orig_mask_name = row["mask_name"] or None
+                for chrom in exp.chroms:
+                    raw = exp.raw[chrom]
+                    ana_map = exp.analysis[chrom]
+                    for source, df in (("test", raw.test_data),
+                                       ("meth", raw.meth_data),
+                                       ("unmeth", raw.unmeth_data)):
+                        key = f"{source}_{smoothed_name}"
+                        if df is None or key not in ana_map:
+                            continue
+                        keep = _lookup_mask(
+                            exp, chrom, source, orig_mask_name) \
+                            if orig_mask_name is not None else None
+                        _patch_fill_edge(
+                            ana_map[key], fill_edge,
+                            df["mod_qual"].min(), df["mod_qual"].max(),
+                            keep, batch_size)
+                exp.global_analysis[f"{smoothed_name}_params"] = \
+                    pd.DataFrame([{
+                        "binsize": int(row["binsize"]),
+                        "nan_method": row["nan_method"],
+                        "fill_edge": fill_edge,
+                        "mask_name": row["mask_name"]}])
+            else:
+                if fill_edge_changed:
+                    mismatched.append("fill_edge")
+                if mismatched:
+                    raise ValueError(
+                        f"'{smoothed_name}' was already smoothed with "
+                        f"different {', '.join(mismatched)}; pass "
+                        "resmooth=True to recompute, or use a "
+                        "different 'smoothed_name'.")
+
+        # binsize may still be unset if smoothing was skipped and the
+        # caller didn't pass it; downstream code needs the real value.
+        if binsize is None and cached_params is not None:
+            binsize = int(cached_params["binsize"].iloc[0])
 
         rng = np.random.default_rng(seed)
 

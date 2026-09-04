@@ -209,6 +209,27 @@ class TestPreprocessModel:
         got = MethPrintExperiment.load(cli_out)
         assert got.mtase == ("CG", "GC")
 
+    def test_prob_name_renames_stored_probabilities(self, tmp_path):
+        rows = _make_test_rows(nmol=5, nbp=len(_MODEL_SEQ), step=1)
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": len(_MODEL_SEQ)})
+        fasta_file = tmp_path / "ref.fa"
+        _write_fasta(fasta_file, {"chr1": _MODEL_SEQ})
+
+        cli_out = tmp_path / "cli_exp.h5"
+        result = runner.invoke(app, ["preprocess_model", str(chromsize),
+                                     str(test_file), str(fasta_file),
+                                     str(cli_out), "--l-nuc", "30",
+                                     "--n-min", "3",
+                                     "--prob-name", "custom_prob"])
+        assert result.exit_code == 0, result.output
+
+        got = MethPrintExperiment.load(cli_out)
+        assert "custom_prob" in got.analysis["chr1"]
+        assert "meth_prob" not in got.analysis["chr1"]
+
     def test_cli_requires_fasta_file(self, tmp_path):
         rows = _make_test_rows(nmol=5, nbp=len(_MODEL_SEQ), step=1)
         test_file = tmp_path / "test.tsv"

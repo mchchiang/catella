@@ -101,6 +101,9 @@ def preprocess_empirical(
     seed: Annotated[
         Optional[int], typer.Option(help="Seed for molecule sampling")
     ] = None,
+    prob_name: Annotated[
+        str, typer.Option(help="Key for storing methylation "
+                          "probabilities")] = "meth_prob",
     clip_low: Annotated[
         Optional[float], typer.Option(help="Lower clip percentile")] = 0.1,
     clip_high: Annotated[
@@ -129,9 +132,9 @@ def preprocess_empirical(
         chromsize=chromsize, test_file=test_file, out_file=out_file,
         unmeth_file=unmeth_file, meth_file=meth_file, fasta_file=fasta_file,
         mtase=mtase, binsize=binsize, wrap=wrap, colidx=colidx,
-        max_nmol=max_nmol, seed=seed, clip_low=clip_low,
-        clip_high=clip_high, norm_by_strand=norm_by_strand,
-        batch_size=batch_size,
+        max_nmol=max_nmol, seed=seed, prob_name=prob_name,
+        clip_low=clip_low, clip_high=clip_high,
+        norm_by_strand=norm_by_strand, batch_size=batch_size,
         percentile_sample_size=percentile_sample_size, tmp_dir=tmp_dir,
         chunk_size=chunk_size, max_cached_chroms=max_cached_chroms)
 

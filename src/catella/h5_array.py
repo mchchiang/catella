@@ -190,28 +190,35 @@ class H5Array:
             os.close(fd)
         else:
             path = str(path)
-        file = h5py.File(path, "w")
 
-        dataset_kwargs = {}
-        nrow, ncol = shape
-        if compression is not None and nrow > 0 and ncol > 0:
-            dataset_kwargs["compression"] = compression
-            if compression_opts is not None:
-                dataset_kwargs["compression_opts"] = compression_opts
-            dataset_kwargs["shuffle"] = shuffle
-            dataset_kwargs["chunks"] = chunks if chunks is not None \
-                else _default_chunk_shape(shape, dtype)
-        elif chunks is not None:
-            dataset_kwargs["chunks"] = chunks
+        file = None
+        try:
+            file = h5py.File(path, "w")
 
-        dataset = file.create_dataset(_DATASET_NAME, shape=shape,
-                                      dtype=dtype, **dataset_kwargs)
-        if index is not None:
-            H5Array._write_label(file, f"{_DATASET_NAME}__index", index)
-        if columns is not None:
-            H5Array._write_label(file, f"{_DATASET_NAME}__columns", columns)
-        return cls(path=path, file=file, dataset=dataset,
-                   owns_file=owns_file, owns_dir=owns_dir)
+            dataset_kwargs = {}
+            nrow, ncol = shape
+            if compression is not None and nrow > 0 and ncol > 0:
+                dataset_kwargs["compression"] = compression
+                if compression_opts is not None:
+                    dataset_kwargs["compression_opts"] = compression_opts
+                dataset_kwargs["shuffle"] = shuffle
+                dataset_kwargs["chunks"] = chunks if chunks is not None \
+                    else _default_chunk_shape(shape, dtype)
+            elif chunks is not None:
+                dataset_kwargs["chunks"] = chunks
+
+            dataset = file.create_dataset(_DATASET_NAME, shape=shape,
+                                          dtype=dtype, **dataset_kwargs)
+            if index is not None:
+                H5Array._write_label(file, f"{_DATASET_NAME}__index", index)
+            if columns is not None:
+                H5Array._write_label(file, f"{_DATASET_NAME}__columns",
+                                     columns)
+            return cls(path=path, file=file, dataset=dataset,
+                       owns_file=owns_file, owns_dir=owns_dir)
+        except BaseException:
+            H5Array._cleanup(file, path, owns_file, owns_dir)
+            raise
 
     @staticmethod
     def _write_label(parent_group, key, values):

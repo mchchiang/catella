@@ -54,6 +54,20 @@ def test_permanent_path_survives_close(tmp_path):
     assert path.exists()
 
 
+def test_scratch_dir_removed_on_keyboard_interrupt():
+    import os
+    import tempfile
+    from unittest.mock import patch
+
+    before = set(os.listdir(tempfile.gettempdir()))
+    with patch("h5py.File.create_dataset", side_effect=KeyboardInterrupt):
+        with pytest.raises(KeyboardInterrupt):
+            H5Array.create((3, 3))
+    after = set(os.listdir(tempfile.gettempdir()))
+    leaked = [d for d in after - before if d.startswith("catella_")]
+    assert not leaked
+
+
 def test_save_to_and_load_from_round_trip(tmp_path):
     import h5py
 

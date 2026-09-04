@@ -635,3 +635,24 @@ class TestLazyAndScratchLifecycle:
         leaked = [d for d in after - before if d.startswith("catella_")]
         assert not leaked
 
+    def test_staging_dir_cleaned_up_on_keyboard_interrupt(self, tmp_path):
+        import os
+        import tempfile
+
+        test_rows = _make_rows("chr1", ["m0"], [1, 2])
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, test_rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 100})
+
+        before = set(os.listdir(tempfile.gettempdir()))
+        with patch(
+            "catella.experiment.methdata._stream_rows_to_staging",
+            side_effect=KeyboardInterrupt):
+            with pytest.raises(KeyboardInterrupt):
+                MethPrintExperiment.load_raw(
+                    chromsize=chromsize, test_file=test_file)
+        after = set(os.listdir(tempfile.gettempdir()))
+        leaked = [d for d in after - before if d.startswith("catella_")]
+        assert not leaked
+

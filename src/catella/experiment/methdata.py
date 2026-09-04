@@ -1097,7 +1097,7 @@ class MethPrintExperiment:
                         data_file, header_names, name_for, sep, chunk_size,
                         block_size, full_sizes, wrap, mol_maps, appenders,
                         refseq_by_chrom=refseq_by_chrom, mtase=mtase)
-        except Exception:
+        except BaseException:
             shutil.rmtree(tmp_dir, ignore_errors=True)
             raise
 

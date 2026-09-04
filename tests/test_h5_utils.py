@@ -1,5 +1,9 @@
 # test_h5_utils.py
 
+import os
+import shutil
+from unittest.mock import patch
+
 import h5py
 import numpy as np
 import pandas as pd
@@ -42,3 +46,17 @@ class TestSaveLoadDf:
         with h5py.File(path, "r") as f:
             loaded = h5_utils.load_df("df", f)
         assert loaded["keep"].tolist() == ["True", "False", "True"]
+
+
+class TestFreshTmpDir:
+    def test_registers_atexit_fallback_cleanup(self):
+        # Guards against a leaked dir if the caller is interrupted
+        # before registering its own cleanup (e.g. weakref.finalize).
+        with patch("catella.h5_utils.atexit.register") as mock_register:
+            path = h5_utils.fresh_tmp_dir()
+        try:
+            assert os.path.isdir(path)
+            mock_register.assert_called_once_with(
+                shutil.rmtree, path, ignore_errors=True)
+        finally:
+            shutil.rmtree(path, ignore_errors=True)

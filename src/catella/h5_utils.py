@@ -1,6 +1,8 @@
 # h5_utils.py
 
+import atexit
 import os
+import shutil
 import tempfile
 import uuid
 from datetime import datetime
@@ -12,6 +14,9 @@ import h5py
 def fresh_tmp_dir(base_dir=None):
     """
     Create a fresh scratch directory for temporary HDF5 files.
+
+    Registers an atexit fallback that removes the directory, in case
+    the caller is interrupted before setting up its own cleanup.
 
     Parameters
     ----------
@@ -30,6 +35,7 @@ def fresh_tmp_dir(base_dir=None):
     suffix = uuid.uuid4().hex[:8]
     path = os.path.join(base, f"catella_{stamp}_{suffix}")
     os.makedirs(path)
+    atexit.register(shutil.rmtree, path, ignore_errors=True)
     return path
 
 

@@ -138,6 +138,24 @@ class TestPreprocessEmpirical:
         got = MethPrintExperiment.load(cli_out)
         assert got.mtase == ("CG", "GC")
 
+    def test_prob_name_renames_stored_probabilities(self, tmp_path):
+        rows = _make_test_rows(nmol=5, nbp=30)
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 30})
+
+        cli_out = tmp_path / "cli_exp.h5"
+        result = runner.invoke(app, ["preprocess_empirical", str(chromsize),
+                                     str(test_file), str(cli_out),
+                                     "--binsize", "5",
+                                     "--prob-name", "custom_prob"])
+        assert result.exit_code == 0, result.output
+
+        got = MethPrintExperiment.load(cli_out)
+        assert "custom_prob" in got.analysis["chr1"]
+        assert "meth_prob" not in got.analysis["chr1"]
+
 
 _MODEL_SEQ = "AATTGCGTTAAGCTTTAACGTTAAGCGCAATT" * 8
 

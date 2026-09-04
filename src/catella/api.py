@@ -25,6 +25,7 @@ def load_raw(*, chromsize : str | Path,
              meth_file : str | Path | None = None,
              fasta_file : str | Path | None = None,
              mtase : str | Iterable[str] | None = None,
+             chroms : Iterable[str] | None = None,
              wrap : bool = False,
              colidx : Iterable | None = None,
              max_nmol : int | None = None,
@@ -60,6 +61,9 @@ def load_raw(*, chromsize : str | Path,
         (any-context adenine, e.g., EcoGII), 'CG' (CpG, e.g., M.SssI),
         'GC' (GpC, e.g., M.CviPI). One label, a list of labels, or
         None (default) if unspecified.
+    chroms : iterable of str, optional
+        Restrict processing to these chromosomes. If None (default),
+        all chromosomes in `chromsize` are processed.
     wrap : bool, default False
         If True, calculates positions relative to the fiber center
         (useful for circular or symmetrical fibers).
@@ -95,8 +99,8 @@ def load_raw(*, chromsize : str | Path,
     return MethPrintExperiment.load_raw(
         chromsize=chromsize, test_file=test_file,
         unmeth_file=unmeth_file, meth_file=meth_file,
-        fasta_file=fasta_file, mtase=mtase, wrap=wrap, colidx=colidx,
-        max_nmol=max_nmol, seed=seed, chunk_size=chunk_size,
+        fasta_file=fasta_file, mtase=mtase, chroms=chroms, wrap=wrap,
+        colidx=colidx, max_nmol=max_nmol, seed=seed, chunk_size=chunk_size,
         tmp_dir=tmp_dir, max_cached_chroms=max_cached_chroms)
 
 

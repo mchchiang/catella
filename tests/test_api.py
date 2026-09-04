@@ -165,6 +165,22 @@ class TestLoadRaw:
         assert exp.chroms == ("chr1",)
         assert sorted(exp.raw["chr1"].test_mol_id) == ["m0", "m1"]
 
+    def test_chroms_forwarded(self, tmp_path):
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, [("m0", 0, "chr1", "+", 0.5, "a"),
+                               ("m1", 0, "chr2", "+", 0.5, "a")])
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 5, "chr2": 5})
+
+        exp = catella.load_raw(chromsize=chromsize, test_file=test_file,
+                               chroms=["chr1"])
+
+        assert exp.chroms == ("chr1",)
+
+        with pytest.raises(ValueError):
+            catella.load_raw(chromsize=chromsize, test_file=test_file,
+                             chroms=["bogus"])
+
 
 class TestFilterDropout:
     def test_matches_direct_method_call(self):

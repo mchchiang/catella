@@ -130,6 +130,22 @@ class TestLoadRaw:
         assert (sorted(got.raw["chr1"].test_mol_id)
                == sorted(expected.raw["chr1"].test_mol_id))
 
+    def test_chroms_restricts_loaded_chromosomes(self, tmp_path):
+        rows = _make_test_rows(nmol=5, nbp=30)
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 30, "chr2": 30})
+
+        cli_out = tmp_path / "cli_exp.h5"
+        result = runner.invoke(app, ["load_raw", str(chromsize),
+                                     str(test_file), str(cli_out),
+                                     "--chroms", "chr1"])
+        assert result.exit_code == 0, result.output
+
+        got = MethPrintExperiment.load(cli_out)
+        assert got.chroms == ("chr1",)
+
 
 def _load_raw_a_mtase(tmp_path, *, nmol=5, nbp=30, step=1):
     rows = _make_test_rows(nmol=nmol, nbp=nbp, step=step)

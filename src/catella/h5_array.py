@@ -275,6 +275,11 @@ class H5Array:
         return self._dataset.dtype
 
     @property
+    def ndim(self) -> int:
+        """int: Number of dimensions. Always 2."""
+        return len(self.shape)
+
+    @property
     def index(self) -> pd.Index:
         """pd.Index: Row labels, or a RangeIndex if none were given."""
         ds = self._label_dataset("__index")

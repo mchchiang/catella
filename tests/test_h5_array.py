@@ -18,6 +18,11 @@ def test_write_batch_and_read_back():
     assert arr.dtype == np.float64
 
 
+def test_ndim_is_always_two():
+    arr = H5Array.create((5, 2))
+    assert arr.ndim == 2
+
+
 def test_getitem_slicing():
     arr = H5Array.create((6, 3))
     values = np.arange(18, dtype=np.float64).reshape(6, 3)

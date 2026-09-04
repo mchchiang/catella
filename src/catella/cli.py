@@ -177,6 +177,9 @@ def preprocess_model(
     seed: Annotated[
         Optional[int], typer.Option(help="Seed for molecule sampling")
     ] = None,
+    prob_name: Annotated[
+        str, typer.Option(help="Key for storing methylation "
+                          "probabilities")] = "meth_prob",
     pi0: Annotated[
         float, typer.Option(help="Prior probability a site is "
                             "methylated")] = 0.5,
@@ -241,7 +244,8 @@ def preprocess_model(
         chromsize=chromsize, test_file=test_file, fasta_file=fasta_file,
         out_file=out_file, unmeth_file=unmeth_file, meth_file=meth_file,
         mtase=mtase, wrap=wrap, colidx=colidx, max_nmol=max_nmol,
-        seed=seed, pi0=pi0, eta=eta, eta_max_lag=eta_max_lag, nu=nu,
+        seed=seed, prob_name=prob_name, pi0=pi0, eta=eta,
+        eta_max_lag=eta_max_lag, nu=nu,
         rho_leak=rho_leak, min_gap=min_gap, l_nuc=l_nuc, n_min=n_min,
         iters=iters, init_prot=init_prot, init_acc=init_acc, tol=tol,
         fill_edge=fill_edge, norm_by_strand=norm_by_strand,

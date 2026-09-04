@@ -140,3 +140,65 @@ class MethPlot:
             out_dir = out_file.parents[0]
             out_dir.mkdir(exist_ok=True, parents=True)
             fig.savefig(out_file)
+
+    @_apply_style
+    def plot_dropout_filter(self, dropout_fractions, chrom, *,
+                            source : str | None = None,
+                            out_file : str | Path | None = None,
+                            show : bool = True):
+        """
+        Plot percent of molecules filtered vs. dropout-rate
+        threshold.
+
+        For each matching group, at threshold `t` the plotted value
+        is `100 * mean(dropout_frac > t)` over that group's
+        molecules.
+
+        Parameters
+        ----------
+        dropout_fractions : dict of (str, str, str) to np.ndarray
+            Output of `MethPrintExperiment.dropout_fractions`.
+        chrom : str
+            Chromosome to plot.
+        source : {"test", "meth", "unmeth"}, optional
+            Restrict the plot to this source. None plots every
+            source present for `chrom`.
+        out_file : str or pathlib.Path, optional
+            Path to save the generated figure. Directories are
+            created if they do not exist.
+        show : bool, default True
+            Whether to display the plot using `plt.show()`.
+
+        Raises
+        ------
+        ValueError
+            If `chrom` (or `source`, when given) has no matching
+            entries in `dropout_fractions`.
+        """
+        keys = [key for key in dropout_fractions if key[0] == chrom
+               and (source is None or key[1] == source)]
+        if not keys:
+            raise ValueError(
+                f"No entries for chrom={chrom!r}, source={source!r} "
+                "in dropout_fractions.")
+
+        fig, ax = plt.subplots()
+        for src, label in sorted((k[1], k[2]) for k in keys):
+            frac = np.sort(dropout_fractions[(chrom, src, label)])
+            n = len(frac)
+            filtered_pct = 100 - 100 * np.arange(1, n + 1) / n
+            ax.step(frac, filtered_pct, where="post",
+                   label=f"{src}/{label}")
+
+        ax.set_xlabel("Dropout rate")
+        ax.set_ylabel("Molecules filtered [%]")
+        ax.legend()
+        fig.tight_layout()
+
+        if show: plt.show()
+
+        if out_file is not None:
+            out_file = Path(out_file)
+            out_dir = out_file.parents[0]
+            out_dir.mkdir(exist_ok=True, parents=True)
+            fig.savefig(out_file)

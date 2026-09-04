@@ -132,3 +132,92 @@ def test_plot_methmap_no_warning_below_plot_warn_rows(methplot,
         warnings.simplefilter("always")
         methplot.plot_methmap(values, show=False)
     assert not any(issubclass(w.category, UserWarning) for w in caught)
+
+
+def _write_tsv(path, rows):
+    with open(path, "w") as f:
+        f.write("read_id\tref_position\tchrom\tref_strand\tmod_qual\t"
+                "mod_code\n")
+        for r in rows:
+            f.write("\t".join(str(x) for x in r) + "\n")
+
+
+def _write_chromsize(path, sizes):
+    with open(path, "w") as f:
+        f.write("chrom\tlength\n")
+        for chrom, length in sizes.items():
+            f.write(f"{chrom}\t{length}\n")
+
+
+def _write_fasta(path, records):
+    with open(path, "w") as f:
+        for chrom, seq in records.items():
+            f.write(f">{chrom}\n{seq}\n")
+
+
+def _dropout_fractions_exp(tmp_path):
+    # refseq "AAAAAAAAAACG": 10 A-sites, 1 CG-site. Two molecules
+    # with different coverage, so groups have >1 value to sort.
+    chrom, refseq = "chr1", "AAAAAAAAAACG"
+    chromsize = tmp_path / "sizes.tsv"
+    _write_chromsize(chromsize, {chrom: len(refseq)})
+    fasta = tmp_path / "ref.fa"
+    _write_fasta(fasta, {chrom: refseq})
+    test_file = tmp_path / "test.tsv"
+    rows = ([("m0", i, chrom, "+", 0.5, "a") for i in range(9)] +
+           [("m1", i, chrom, "+", 0.5, "a") for i in range(5)])
+    _write_tsv(test_file, rows)
+    return MethPrintExperiment.load_raw(
+        chromsize=chromsize, test_file=test_file, fasta_file=fasta,
+        mtase=["A", "CG"])
+
+
+class TestPlotDropoutFilter:
+    def test_end_to_end_smoke(self, tmp_path):
+        exp = _dropout_fractions_exp(tmp_path)
+        fracs = exp.dropout_fractions()
+
+        out_file = tmp_path / "dropout_filter.png"
+        MethPlot().plot_dropout_filter(
+            fracs, "chr1", out_file=out_file, show=False)
+        assert out_file.exists()
+        exp.close()
+
+    def test_source_filter_narrows_lines(self, tmp_path):
+        exp = _dropout_fractions_exp(tmp_path)
+        fracs = exp.dropout_fractions()
+
+        out_file = tmp_path / "dropout_filter_source.png"
+        MethPlot().plot_dropout_filter(
+            fracs, "chr1", source="test", out_file=out_file, show=False)
+        assert out_file.exists()
+        exp.close()
+
+    def test_unknown_chrom_raises(self, tmp_path):
+        exp = _dropout_fractions_exp(tmp_path)
+        fracs = exp.dropout_fractions()
+
+        with pytest.raises(ValueError):
+            MethPlot().plot_dropout_filter(fracs, "bogus", show=False)
+        exp.close()
+
+    def test_unknown_source_raises(self, tmp_path):
+        exp = _dropout_fractions_exp(tmp_path)
+        fracs = exp.dropout_fractions()
+
+        with pytest.raises(ValueError):
+            MethPlot().plot_dropout_filter(
+                fracs, "chr1", source="meth", show=False)
+        exp.close()
+
+    def test_curve_is_monotonic_and_bounded(self, tmp_path):
+        exp = _dropout_fractions_exp(tmp_path)
+        fracs = exp.dropout_fractions()
+
+        frac = np.sort(fracs[("chr1", "test", "A")])
+        n = len(frac)
+        filtered_pct = 100 - 100 * np.arange(1, n + 1) / n
+        assert np.all(np.diff(filtered_pct) <= 0)
+        assert filtered_pct.min() >= 0
+        assert filtered_pct.max() <= 100
+        exp.close()

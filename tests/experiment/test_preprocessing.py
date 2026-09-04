@@ -659,6 +659,26 @@ class TestSortByLinkage:
         assert isinstance(sorted_df, pd.DataFrame)
         np.testing.assert_allclose(sorted_df.to_numpy(), smoothed[order])
 
+    def test_mask_name_excludes_dropped_molecules(self):
+        exp = _make_experiment(nmol=6, nbp=10)
+        keep = np.array([i not in (1, 3) for i in range(6)])
+        exp.analysis["chr1"]["meth_drop"] = pd.DataFrame({"keep": keep})
+        ana = MethPrintAnalysis()
+
+        ana.sort_by_linkage(exp=exp, raw_which="meth", mask_name="drop",
+                            batch_size=2, fill_nan="mean")
+        sorted_arr = exp.analysis["chr1"]["meth_sorted"].to_numpy()
+
+        nan_rows = np.isnan(sorted_arr).all(axis=1)
+        assert nan_rows.sum() == 2
+        assert (~nan_rows).sum() == 4
+
+    def test_mask_name_without_raw_which_raises(self):
+        exp = _make_experiment(nmol=6, nbp=10)
+        ana = MethPrintAnalysis()
+        with pytest.raises(ValueError):
+            ana.sort_by_linkage(exp=exp, mask_name="drop", batch_size=2)
+
     def test_fill_nan_avoids_crash_on_all_nan_row(self):
         exp = _make_experiment(nmol=5, nbp=6)
         ana = MethPrintAnalysis()

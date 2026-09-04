@@ -501,6 +501,11 @@ def sort_by_linkage(
     raw_which: Annotated[
         Optional[str], typer.Option(help="test, meth, or unmeth; "
                                     "'experiment' kind only")] = None,
+    mask_name: Annotated[
+        Optional[str], typer.Option(help="Dropout mask key from "
+                                    "filter_dropout to apply; requires "
+                                    "raw_which, 'experiment' kind "
+                                    "only")] = None,
     sorted_name: Annotated[
         Optional[str], typer.Option(help="Key to store the sorted "
                                     "result")] = None,
@@ -535,7 +540,8 @@ def sort_by_linkage(
     obj = _load_source(source_file, kind)
     if kind == SourceKind.experiment:
         catella.sort_by_linkage(exp=obj, data_name=data_name,
-                              raw_which=raw_which, sorted_name=sorted_name,
+                              raw_which=raw_which, mask_name=mask_name,
+                              sorted_name=sorted_name,
                               store_link_mat=store_link_mat,
                               link_mat_name=link_mat_name, metric=metric,
                               method=method, batch_size=batch_size,

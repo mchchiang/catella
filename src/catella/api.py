@@ -789,6 +789,7 @@ def sort_by_linkage(*, dataset : SimDataset | None = None,
                     chroms : str | Iterable[str] | None = None,
                     data_name : str | None = None,
                     raw_which : str | None = None,
+                    mask_name : str | None = None,
                     sorted_name : str | None = None,
                     store_link_mat : bool = True,
                     link_mat_name : str | None = None,
@@ -821,6 +822,10 @@ def sort_by_linkage(*, dataset : SimDataset | None = None,
     raw_which : {"test", "meth", "unmeth"}, optional
         Only used with `exp`. If given, sorts raw long-form data
         instead of an `exp.analysis` entry.
+    mask_name : str, optional
+        Only used with `exp` and `raw_which`. If given, molecules
+        flagged as dropout by a prior `filter_dropout(mask_name=
+        mask_name)` call are excluded before sorting.
     sorted_name : str, optional
         Key used to store the sorted result. Defaults to
         `f"{data_name}_sorted"` (or `f"{raw_which}_sorted"`).
@@ -850,7 +855,8 @@ def sort_by_linkage(*, dataset : SimDataset | None = None,
     Raises
     ------
     ValueError
-        If neither or both of `dataset`/`exp` are given.
+        If neither or both of `dataset`/`exp` are given, or if
+        `mask_name` is given with `dataset`.
     """
     if (dataset is None) == (exp is None):
         raise ValueError("Exactly one of 'dataset' or 'exp' must be given.")
@@ -860,10 +866,14 @@ def sort_by_linkage(*, dataset : SimDataset | None = None,
     if data_name is not None:
         kwargs["data_name"] = data_name
     if dataset is not None:
+        if mask_name is not None:
+            raise ValueError("'mask_name' is only used with 'exp'.")
         if chroms is not None:
             kwargs["chroms"] = chroms
         return SimAnalysis().sort_by_linkage(dataset=dataset, **kwargs)
     if raw_which is not None:
         kwargs["raw_which"] = raw_which
+    if mask_name is not None:
+        kwargs["mask_name"] = mask_name
     return MethPrintAnalysis().sort_by_linkage(exp=exp, **kwargs)
 

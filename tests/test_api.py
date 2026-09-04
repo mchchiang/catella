@@ -109,6 +109,24 @@ class TestSortByLinkage:
         assert "test_sorted" in exp.analysis["chr1"]
         assert "test_linkage" in exp.analysis["chr1"]
 
+    def test_experiment_dispatch_with_mask_name(self):
+        exp = _make_experiment()
+        keep = np.zeros(6, dtype=bool)
+        keep[0] = True
+        exp.analysis["chr1"]["test_drop"] = pd.DataFrame({"keep": keep})
+
+        catella.sort_by_linkage(exp=exp, raw_which="test", mask_name="drop",
+                              fill_nan="mean")
+
+        sorted_arr = exp.analysis["chr1"]["test_sorted"].to_numpy()
+        nan_rows = np.isnan(sorted_arr).all(axis=1)
+        assert nan_rows.sum() == 5
+
+    def test_mask_name_with_dataset_raises(self, tmp_path):
+        dataset = _make_dataset(tmp_path)
+        with pytest.raises(ValueError):
+            catella.sort_by_linkage(dataset=dataset, mask_name="drop")
+
     def test_store_link_mat_false_skips_persistence(self, tmp_path):
         dataset = _make_dataset(tmp_path)
         SimAnalysis().compute_occup(dataset=dataset)

@@ -1709,6 +1709,7 @@ class MethPrintAnalysis:
                         exp : MethPrintExperiment,
                         data_name : str = "test_smoothed",
                         raw_which : str | None = None,
+                        mask_name : str | None = None,
                         sorted_name : str | None = None,
                         store_link_mat : bool = True,
                         link_mat_name : str | None = None,
@@ -1743,6 +1744,12 @@ class MethPrintAnalysis:
             table instead of `exp.analysis`, via
             `exp.to_dense(chrom, which=raw_which)`. Takes priority
             over `data_name`.
+        mask_name : str, optional
+            Only used with `raw_which`. If given, forwarded to
+            `exp.to_dense(chrom, which=raw_which, mask_name=mask_name)`
+            so molecules flagged as dropout by a prior
+            `filter_dropout(mask_name=mask_name)` call are excluded
+            (returned as all-NaN rows) before sorting.
         sorted_name : str, optional
             The key used to store the sorted result. If None
             (default), `f"{data_name}_sorted"` is used, or
@@ -1778,18 +1785,24 @@ class MethPrintAnalysis:
 
         Raises
         ------
+        ValueError
+            If `mask_name` is given but `raw_which` is None.
         KeyError
             If `raw_which` is None, `data_name` is not `"test_smoothed"`
             (its default), and not found in `exp.analysis[chrom]` for
             some chromosome.
         """
+        if mask_name is not None and raw_which is None:
+            raise ValueError(
+                "'mask_name' requires 'raw_which' to be given.")
         tmp_dir = exp.resolve_tmp_dir()
         link_mats = {}
         for chrom in exp.chroms:
             ana = exp.analysis[chrom]
             if raw_which is not None:
                 data = exp.to_dense(chrom, which=raw_which,
-                                    as_h5array=True, batch_size=batch_size)
+                                    as_h5array=True, batch_size=batch_size,
+                                    mask_name=mask_name)
                 base_name = raw_which
             elif data_name not in ana and data_name == "test_smoothed":
                 # Default target not computed yet -- fall back to the

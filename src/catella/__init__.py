@@ -11,6 +11,8 @@ warnings.filterwarnings(
 
 from catella.api import *
 
-__all__ = ["preprocess_empirical", "preprocess_model", "run", "analyze",
-           "downsample", "sort_by_linkage", "plot_occup", "plot_nuc_pos",
-           "plot_energy", "plot_methmap"]
+__all__ = ["load_raw", "filter_dropout", "summarize_dropout",
+           "compute_empirical_prob", "compute_model_prob", "run",
+           "analyze", "downsample", "sort_by_linkage", "plot_occup",
+           "plot_nuc_pos", "plot_energy", "plot_methmap",
+           "plot_dropout_filter"]

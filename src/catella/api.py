@@ -19,44 +19,26 @@ from catella.simulation.plot import SimPlot
 from catella import utils
 from catella.utils import IndexType
 
-def _load_raw(*, chromsize, test_file, unmeth_file, meth_file,
-             fasta_file, mtase, wrap, colidx, max_nmol, seed,
-             chunk_size, tmp_dir, max_cached_chroms):
-    return MethPrintExperiment.load_raw(
-        chromsize=chromsize, test_file=test_file,
-        unmeth_file=unmeth_file, meth_file=meth_file,
-        fasta_file=fasta_file, mtase=mtase, wrap=wrap, colidx=colidx,
-        max_nmol=max_nmol, seed=seed, chunk_size=chunk_size,
-        tmp_dir=tmp_dir, max_cached_chroms=max_cached_chroms)
-
-def preprocess_empirical(*, chromsize : str | Path,
-               test_file : str | Path,
-               out_file : str | Path | None = None,
-               unmeth_file : str | Path | None = None,
-               meth_file : str | Path | None = None,
-               fasta_file : str | Path | None = None,
-               mtase : str | Iterable[str] | None = None,
-               binsize : int = 147,
-               wrap : bool = False,
-               colidx : Iterable | None = None,
-               max_nmol : int | None = None,
-               seed : int | None = None,
-               prob_name : str = "meth_prob",
-               clip_low : float = 0.1,
-               clip_high : float = 99.9,
-               norm_by_strand : bool = False,
-               batch_size : int = 20000,
-               percentile_sample_size : int = 100000,
-               tmp_dir : str | Path | None = None,
-               chunk_size : int = 1000000,
-               max_cached_chroms : int = 1) -> MethPrintExperiment:
+def load_raw(*, chromsize : str | Path,
+             test_file : str | Path,
+             unmeth_file : str | Path | None = None,
+             meth_file : str | Path | None = None,
+             fasta_file : str | Path | None = None,
+             mtase : str | Iterable[str] | None = None,
+             wrap : bool = False,
+             colidx : Iterable | None = None,
+             max_nmol : int | None = None,
+             seed : int | None = None,
+             chunk_size : int = 1000000,
+             tmp_dir : str | Path | None = None,
+             max_cached_chroms : int = 1) -> MethPrintExperiment:
     """
-    Preprocess raw methylation data to create a MethPrintExperiment.
+    Load raw methylation footprinting data into a MethPrintExperiment.
 
-    Load raw ModKit data and perform empirical (percentile/control-
-    based) normalization to convert the data into a methylation
-    probability score, and can persist the resulting experiment object
-    to disk. See `preprocess_model` for a model-based alternative.
+    First stage of catella's preprocessing pipeline: `load_raw` (raw
+    data ingestion) -> `filter_dropout` (optional QC) ->
+    `compute_empirical_prob`/`compute_model_prob` (probability
+    calculation). Thin wrapper around `MethPrintExperiment.load_raw`.
 
     Parameters
     ----------
@@ -65,9 +47,6 @@ def preprocess_empirical(*, chromsize : str | Path,
         genome.
     test_file : str or Path
         Path to the primary experimental methylation data file.
-    out_file : str or Path, optional
-        Path where the processed `MethPrintExperiment` will be saved. 
-        If None, the result is only returned in-memory.
     unmeth_file : str or Path, optional
         Path to the unmethylated control file.
     meth_file : str or Path, optional
@@ -75,149 +54,7 @@ def preprocess_empirical(*, chromsize : str | Path,
     fasta_file : str or Path, optional
         Multi-FASTA file of per-chromosome reference sequences (record
         id matching `chromsize`); stored on `MethPrintData.refseq`.
-    mtase : str or iterable of str, optional
-        Methyltransferase(s) used to generate the test data: 'A'
-        (any-context adenine, e.g., EcoGII), 'CG' (CpG, e.g., M.SssI),
-        'GC' (GpC, e.g., M.CviPI). One label, a list of labels, or
-        None (default) if unspecified.
-    binsize : int, default 147
-        The genomic window size (in base pairs) used for data aggregation. The
-        default value corresponds to the typical DNA footprint of a nucleosome.
-    wrap : bool, default False
-        If True, calculates positions relative to the fiber center
-        (useful for circular or symmetrical fibers).
-    colidx : Iterable, optional
-        Specific column indices to use if the input file does not follow    
-        the standard ModKit format.
-    max_nmol : int, optional
-        Maximum number of molecules to extract for each chromosome.
-    seed : int, optional
-        The seed for the random number generator selecting the molecules if
-        `max_nmol` is specified.
-    prob_name : str, default "meth_prob"
-        The key used to store the resulting methylation probabilities
-        in `exp.analysis`.
-    clip_low : float, default 0.1
-        Lower percentile bound for signal clipping. Values below this
-        percentile are set to 0. If `unmeth_file`/`meth_file` controls
-        are provided, this percentile is estimated from the normalized
-        unmeth control source; otherwise it is estimated from the
-        test signal itself.
-    clip_high : float, default 99.9
-        Upper percentile bound for signal clipping. Values above this
-        percentile are set to 1. If `unmeth_file`/`meth_file` controls
-        are provided, this percentile is estimated from the normalized
-        meth control source; otherwise it is estimated from the
-        test signal itself.
-    norm_by_strand : bool, default False
-        Whether to perform normalization separately based on strandedness.
-    batch_size : int, default 20000
-        Number of molecules processed (and held in memory) per batch
-        during smoothing and probability calculation.
-    percentile_sample_size : int, default 100000
-        Approximate number of molecules used to estimate percentile clip
-        bounds during probability calculation.
-    tmp_dir : str or Path, optional
-        Directory used for the scratch file backing the experiment's
-        raw data staging file. A fresh `catella_<timestamp>_<hex>`
-        subfolder is created for it — under this directory if given,
-        otherwise under the system default temporary directory — and
-        reused for the scratch files backing the smoothing and
-        probability calculation steps that follow. The staging file is
-        removed once the returned experiment is closed or
-        garbage-collected.
-    chunk_size : int, default 1000000
-        Approximate number of rows read (and held in memory) per
-        streamed chunk while ingesting raw data files.
-    max_cached_chroms : int, default 1
-        Maximum number of chromosomes' raw data kept in memory at once.
-
-    Returns
-    -------
-    MethPrintExperiment
-        An initialized experiment object containing the processed methylation
-        data. Normalization is done to convert the signal into a methylation
-        probability score (accounting for the control datasets if provided).
-    """
-
-    # Load the raw data (generated from ModKit)
-    exp_data = _load_raw(
-        chromsize=chromsize, test_file=test_file, unmeth_file=unmeth_file,
-        meth_file=meth_file, fasta_file=fasta_file, mtase=mtase, wrap=wrap,
-        colidx=colidx, max_nmol=max_nmol, seed=seed, chunk_size=chunk_size,
-        tmp_dir=tmp_dir, max_cached_chroms=max_cached_chroms)
-
-    # Smooth and normalize the data - compute methylation probability
-    ana = MethPrintAnalysis()
-    ana.smooth(binsize=binsize, exp=exp_data, batch_size=batch_size)
-    ana.empirical_prob(exp=exp_data, prob_name=prob_name, clip_low=clip_low,
-                       clip_high=clip_high, norm_by_strand=norm_by_strand,
-                       batch_size=batch_size,
-                       percentile_sample_size=percentile_sample_size)
-    
-    # Save the results
-    if out_file is not None:
-        exp_data.save(out_file)
-
-    return exp_data
-
-
-def preprocess_model(*, chromsize : str | Path,
-               test_file : str | Path,
-               fasta_file : str | Path,
-               out_file : str | Path | None = None,
-               unmeth_file : str | Path | None = None,
-               meth_file : str | Path | None = None,
-               mtase : str | Iterable[str] | None = None,
-               wrap : bool = False,
-               colidx : Iterable | None = None,
-               max_nmol : int | None = None,
-               seed : int | None = None,
-               prob_name : str = "meth_prob",
-               pi0 : float = 0.5,
-               eta : float | dict[str, float] | None = None,
-               eta_max_lag : int = 10,
-               nu : float = 10.0,
-               rho_leak : float = 0.1,
-               min_gap : float = 0.05,
-               l_nuc : int = 147,
-               n_min : int = 10,
-               iters : int = 200,
-               init_prot : float = 0.05,
-               init_acc : float = 0.95,
-               tol : float = 1e-8,
-               fill_edge : float = np.nan,
-               norm_by_strand : bool = False,
-               batch_size : int = 20000,
-               tmp_dir : str | Path | None = None,
-               chunk_size : int = 1000000,
-               max_cached_chroms : int = 1) -> MethPrintExperiment:
-    """
-    Preprocess raw methylation data to create a MethPrintExperiment.
-
-    Load raw ModKit data and convert per-read calls into a methylation
-    probability score using a calibrated Bayesian log-odds model, and
-    can persist the resulting experiment object to disk. See
-    `preprocess_empirical` for a percentile/control-based alternative.
-
-    Parameters
-    ----------
-    chromsize : str or Path
-        Path to the chromosome sizes file or a string identifier for the
-        genome.
-    test_file : str or Path
-        Path to the primary experimental methylation data file.
-    fasta_file : str or Path
-        Multi-FASTA file of per-chromosome reference sequences (record
-        id matching `chromsize`); stored on `MethPrintData.refseq` and
-        required to classify positions into footprinting contexts.
-    out_file : str or Path, optional
-        Path where the processed `MethPrintExperiment` will be saved.
-        If None, the result is only returned in-memory.
-    unmeth_file : str or Path, optional
-        Path to the unmethylated control file.
-    meth_file : str or Path, optional
-        Path to the methylated control file.
+        Required by `compute_model_prob` but not by `load_raw` itself.
     mtase : str or iterable of str, optional
         Methyltransferase(s) used to generate the test data: 'A'
         (any-context adenine, e.g., EcoGII), 'CG' (CpG, e.g., M.SssI),
@@ -234,6 +71,156 @@ def preprocess_model(*, chromsize : str | Path,
     seed : int, optional
         The seed for the random number generator selecting the molecules if
         `max_nmol` is specified.
+    chunk_size : int, default 1000000
+        Approximate number of rows read (and held in memory) per
+        streamed chunk while ingesting raw data files.
+    tmp_dir : str or Path, optional
+        Directory used for the scratch file backing the experiment's
+        raw data staging file. A fresh `catella_<timestamp>_<hex>`
+        subfolder is created for it -- under this directory if given,
+        otherwise under the system default temporary directory -- and
+        reused for the scratch files backing later smoothing/
+        probability calculation steps. The staging file is removed
+        once the returned experiment is closed or garbage-collected.
+    max_cached_chroms : int, default 1
+        Maximum number of chromosomes' raw data kept in memory at once.
+
+    Returns
+    -------
+    MethPrintExperiment
+        A newly created experiment containing the raw, unprocessed
+        data. Pass it to `filter_dropout` (optional QC) and then to
+        `compute_empirical_prob`/`compute_model_prob`.
+    """
+    return MethPrintExperiment.load_raw(
+        chromsize=chromsize, test_file=test_file,
+        unmeth_file=unmeth_file, meth_file=meth_file,
+        fasta_file=fasta_file, mtase=mtase, wrap=wrap, colidx=colidx,
+        max_nmol=max_nmol, seed=seed, chunk_size=chunk_size,
+        tmp_dir=tmp_dir, max_cached_chroms=max_cached_chroms)
+
+
+def compute_empirical_prob(*, exp : MethPrintExperiment,
+               out_file : str | Path | None = None,
+               binsize : int = 147,
+               prob_name : str = "meth_prob",
+               clip_low : float = 0.1,
+               clip_high : float = 99.9,
+               norm_by_strand : bool = False,
+               batch_size : int = 20000,
+               percentile_sample_size : int = 100000,
+               mask_name : str | None = None) -> MethPrintExperiment:
+    """
+    Compute methylation probabilities via empirical normalization.
+
+    Smooth `exp`'s raw signal and perform empirical (percentile/
+    control-based) normalization to convert it into a methylation
+    probability score, mutating `exp` in place and optionally
+    persisting it to disk. See `compute_model_prob` for a model-based
+    alternative. `exp` should already be loaded (`load_raw`) and, if
+    desired, QC'd (`filter_dropout`).
+
+    Parameters
+    ----------
+    exp : MethPrintExperiment
+        The experiment to process (as returned by `load_raw`).
+    out_file : str or Path, optional
+        Path where the processed `exp` will be saved. If None, the
+        result is only mutated in-memory.
+    binsize : int, default 147
+        The genomic window size (in base pairs) used for data aggregation. The
+        default value corresponds to the typical DNA footprint of a nucleosome.
+    prob_name : str, default "meth_prob"
+        The key used to store the resulting methylation probabilities
+        in `exp.analysis`.
+    clip_low : float, default 0.1
+        Lower percentile bound for signal clipping. Values below this
+        percentile are set to 0. If `exp` has meth/unmeth controls,
+        this percentile is estimated from the normalized unmeth
+        control source; otherwise it is estimated from the test
+        signal itself.
+    clip_high : float, default 99.9
+        Upper percentile bound for signal clipping. Values above this
+        percentile are set to 1. If `exp` has meth/unmeth controls,
+        this percentile is estimated from the normalized meth
+        control source; otherwise it is estimated from the test
+        signal itself.
+    norm_by_strand : bool, default False
+        Whether to perform normalization separately based on strandedness.
+    batch_size : int, default 20000
+        Number of molecules processed (and held in memory) per batch
+        during smoothing and probability calculation.
+    percentile_sample_size : int, default 100000
+        Approximate number of molecules used to estimate percentile clip
+        bounds during probability calculation.
+    mask_name : str, optional
+        If given, molecules flagged as dropout by a prior
+        `filter_dropout(mask_name=mask_name)` call are excluded from
+        both the smoothing step and the probability calculation, per
+        source: set to all-NaN in the smoothed signal, and excluded
+        (set to NaN) from the test signal and control-based
+        normalization statistics. Forwarded to both
+        `MethPrintAnalysis.smooth` and `MethPrintAnalysis.empirical_prob`.
+
+    Returns
+    -------
+    MethPrintExperiment
+        `exp`, mutated in place with the computed probabilities.
+    """
+
+    # Smooth and normalize the data - compute methylation probability
+    ana = MethPrintAnalysis()
+    ana.smooth(binsize=binsize, exp=exp, batch_size=batch_size,
+              mask_name=mask_name)
+    ana.empirical_prob(exp=exp, prob_name=prob_name, clip_low=clip_low,
+                       clip_high=clip_high, norm_by_strand=norm_by_strand,
+                       batch_size=batch_size,
+                       percentile_sample_size=percentile_sample_size,
+                       mask_name=mask_name)
+
+    # Save the results
+    if out_file is not None:
+        exp.save(out_file)
+
+    return exp
+
+
+def compute_model_prob(*, exp : MethPrintExperiment,
+               out_file : str | Path | None = None,
+               prob_name : str = "meth_prob",
+               pi0 : float = 0.5,
+               eta : float | dict[str, float] | None = None,
+               eta_max_lag : int = 10,
+               nu : float = 10.0,
+               rho_leak : float = 0.1,
+               min_gap : float = 0.05,
+               l_nuc : int = 147,
+               n_min : int = 10,
+               iters : int = 200,
+               init_prot : float = 0.05,
+               init_acc : float = 0.95,
+               tol : float = 1e-8,
+               fill_edge : float = np.nan,
+               norm_by_strand : bool = False,
+               batch_size : int = 20000,
+               mask_name : str | None = None) -> MethPrintExperiment:
+    """
+    Compute methylation probabilities via a calibrated log-odds model.
+
+    Convert `exp`'s per-read calls into a methylation probability
+    score using a calibrated Bayesian log-odds model, mutating `exp`
+    in place and optionally persisting it to disk. See
+    `compute_empirical_prob` for a percentile/control-based
+    alternative. `exp` should already be loaded (`load_raw`, with
+    `fasta_file` given) and, if desired, QC'd (`filter_dropout`).
+
+    Parameters
+    ----------
+    exp : MethPrintExperiment
+        The experiment to process (as returned by `load_raw`).
+    out_file : str or Path, optional
+        Path where the processed `exp` will be saved. If None, the
+        result is only mutated in-memory.
     prob_name : str, default "meth_prob"
         The key used to store the resulting methylation probabilities
         in `exp.analysis`.
@@ -301,30 +288,17 @@ def preprocess_model(*, chromsize : str | Path,
         strands, since the crosstalk it corrects for is an
         assay-chemistry property rather than a strand-specific one.
     batch_size : int, default 20000
-        Number of molecules processed (and held in memory) per batch
-        during probability calculation.
-    tmp_dir : str or Path, optional
-        Directory used for the scratch file backing the experiment's
-        raw data staging file. A fresh `catella_<timestamp>_<hex>`
-        subfolder is created for it — under this directory if given,
-        otherwise under the system default temporary directory — and
-        reused for the scratch file backing the probability
-        calculation step that follows. The staging file is removed
-        once the returned experiment is closed or garbage-collected.
-    chunk_size : int, default 1000000
-        Approximate number of rows read (and held in memory) per
-        streamed chunk while ingesting raw data files.
-    max_cached_chroms : int, default 1
-        Maximum number of chromosomes' raw data kept in memory at once.
+        Number of molecules processed (and held in memory) per
+        batch.
+    mask_name : str, optional
+        If given, molecules flagged as dropout by a prior
+        `filter_dropout(mask_name=mask_name)` call are excluded from
+        rate calibration, eta estimation, and the output, per source.
 
     Returns
     -------
     MethPrintExperiment
-        An initialized experiment object containing the processed
-        methylation data. Normalization is done via a calibrated
-        Bayesian log-odds model to convert the signal into a
-        methylation probability score (accounting for the control
-        datasets if provided).
+        `exp`, mutated in place with the computed probabilities.
 
     Raises
     ------
@@ -337,27 +311,169 @@ def preprocess_model(*, chromsize : str | Path,
         `MethPrintAnalysis.model_prob`.
     """
 
-    # Load the raw data (generated from ModKit)
-    exp_data = _load_raw(
-        chromsize=chromsize, test_file=test_file, unmeth_file=unmeth_file,
-        meth_file=meth_file, fasta_file=fasta_file, mtase=mtase, wrap=wrap,
-        colidx=colidx, max_nmol=max_nmol, seed=seed, chunk_size=chunk_size,
-        tmp_dir=tmp_dir, max_cached_chroms=max_cached_chroms)
-
     # Compute methylation probability via the calibrated log-odds model
     ana = MethPrintAnalysis()
-    ana.model_prob(exp=exp_data, prob_name=prob_name, pi0=pi0, eta=eta,
+    ana.model_prob(exp=exp, prob_name=prob_name, pi0=pi0, eta=eta,
                    eta_max_lag=eta_max_lag, nu=nu, rho_leak=rho_leak,
                    min_gap=min_gap, l_nuc=l_nuc, n_min=n_min, iters=iters,
                    init_prot=init_prot, init_acc=init_acc, tol=tol,
                    fill_edge=fill_edge, norm_by_strand=norm_by_strand,
-                   batch_size=batch_size)
+                   batch_size=batch_size, mask_name=mask_name)
 
     # Save the results
     if out_file is not None:
-        exp_data.save(out_file)
+        exp.save(out_file)
 
-    return exp_data
+    return exp
+
+
+def filter_dropout(*, exp : MethPrintExperiment,
+           which : str | None = None,
+           mtase : list | None = None,
+           threshold : float = 0.2,
+           unmapped_strand : str = "union",
+           method : str = "separate",
+           mask_name : str = "dropout_mask") -> None:
+    """
+    Flag molecules with poor coverage at methylatable positions.
+
+    Thin wrapper around `MethPrintExperiment.filter_dropout`.
+
+    Parameters
+    ----------
+    exp : MethPrintExperiment
+        The experiment to evaluate. Mutated in place.
+    which : {"test", "meth", "unmeth"} or None, default None
+        Source(s) to evaluate. None evaluates every source present
+        for each chromosome.
+    mtase : list of str, optional
+        Subset of `exp.mtase` labels to evaluate. None uses all of
+        them.
+    threshold : float, default 0.2
+        Max allowed no-signal fraction (per label, or of the pooled
+        total under `method="aggregate"`) to be kept.
+    unmapped_strand : {"union", "drop", "+", "-"}, default "union"
+        How to evaluate unmapped ('.') strand molecules: union of
+        '+'/'-' position sets, always dropout, or treat as that
+        strand.
+    method : {"separate", "aggregate"}, default "separate"
+        How multiple `mtase` labels combine into `keep`. "separate":
+        must clear `threshold` per label. "aggregate": site counts
+        pooled across labels into one fraction first. Irrelevant for
+        a single label.
+    mask_name : str, default "dropout_mask"
+        Key for the mask in `exp.analysis[chrom]`, as
+        `f"{source}_{mask_name}"`.
+
+    Raises
+    ------
+    ValueError
+        If `mtase` is unset on `exp`, `mtase` contains a label not in
+        `exp.mtase`, `threshold` is not in [0, 1],
+        `unmapped_strand`/`method` is invalid, a requested source is
+        missing for some chromosome, or `refseq` is missing.
+    """
+    exp.filter_dropout(which=which, mtase=mtase, threshold=threshold,
+                       unmapped_strand=unmapped_strand, method=method,
+                       mask_name=mask_name)
+
+
+def summarize_dropout(*, exp : MethPrintExperiment,
+              which : str | None = None,
+              mtase : list | None = None,
+              unmapped_strand : str = "union") -> pd.DataFrame:
+    """
+    Return a per-label dropout fraction summary (QC check).
+
+    Thin wrapper around `MethPrintExperiment.summarize_dropout`.
+
+    Parameters
+    ----------
+    exp : MethPrintExperiment
+        The experiment to summarize.
+    which : {"test", "meth", "unmeth"} or None, default None
+        Source(s) to summarize. None summarizes every source present
+        for each chromosome.
+    mtase : list of str, optional
+        Subset of `exp.mtase` labels to summarize. None uses all.
+    unmapped_strand : {"union", "drop", "+", "-"}, default "union"
+        How to evaluate unmapped ('.') strand molecules.
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns `chrom`, `source`, `label`, `n_sites_plus`,
+        `n_sites_minus`, `p0`/`p25`/`p50`/`p75`/`p100` (dropout
+        fraction percentiles) -- one row per (chrom, source, label),
+        plus a `label="aggregate"` row per (chrom, source) pooling
+        all labels, if more than one label is evaluated.
+
+    Raises
+    ------
+    ValueError
+        If `mtase` is unset, contains an unknown label,
+        `unmapped_strand` is invalid, a source is missing for some
+        chromosome, or `refseq` is missing.
+    """
+    return exp.summarize_dropout(which=which, mtase=mtase,
+                                 unmapped_strand=unmapped_strand)
+
+
+def plot_dropout_filter(*, exp : MethPrintExperiment,
+                chrom : str,
+                which : str | None = None,
+                mtase : list | None = None,
+                unmapped_strand : str = "union",
+                source : str | None = None,
+                out_file : str | Path | None = None,
+                show : bool = True):
+    """
+    Plot percent of molecules filtered vs. dropout-rate threshold.
+
+    Computes `exp.dropout_fractions(...)` and plots the result via
+    `MethPlot.plot_dropout_filter`. For each matching group, at
+    threshold `t` the plotted value is `100 * mean(dropout_frac > t)`
+    over that group's molecules.
+
+    Parameters
+    ----------
+    exp : MethPrintExperiment
+        The experiment to evaluate.
+    chrom : str
+        Chromosome to plot.
+    which : {"test", "meth", "unmeth"} or None, default None
+        Source(s) to evaluate. None evaluates every source present
+        for each chromosome.
+    mtase : list of str, optional
+        Subset of `exp.mtase` labels to evaluate. None uses all of
+        them.
+    unmapped_strand : {"union", "drop", "+", "-"}, default "union"
+        How to evaluate unmapped ('.') strand molecules.
+    source : {"test", "meth", "unmeth"}, optional
+        Restrict the plot to this source. None plots every source
+        present for `chrom`.
+    out_file : str or pathlib.Path, optional
+        Path to save the generated figure. Directories are created if
+        they do not exist.
+    show : bool, default True
+        Whether to display the plot using `plt.show()`.
+
+    Raises
+    ------
+    ValueError
+        If `mtase` is unset, contains an unknown label,
+        `unmapped_strand` is invalid, a source is missing for some
+        chromosome, or `refseq` is missing (from
+        `exp.dropout_fractions`); or if `chrom` (or `source`, when
+        given) has no matching entries in the result (from
+        `MethPlot.plot_dropout_filter`).
+    """
+    fractions = exp.dropout_fractions(which=which, mtase=mtase,
+                                      unmapped_strand=unmapped_strand)
+    methplot = MethPlot()
+    methplot.plot_dropout_filter(fractions, chrom, source=source,
+                                 out_file=out_file, show=show)
+
 
 
 def run(*, chroms : str | Iterable[str],

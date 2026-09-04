@@ -62,8 +62,8 @@ def eta_parser(value: Optional[str]):
             "eta must be a number, or a JSON object of channel name "
             "to number, e.g. '{\"M6A\": 0.9, \"HCG\": 0.7}'")
 
-@app.command(name="preprocess_empirical")
-def preprocess_empirical(
+@app.command(name="load_raw")
+def load_raw(
     chromsize: Annotated[Path, typer.Argument(help="Chromosome sizes file",
                                               exists=True, file_okay=True,
                                               dir_okay=False, readable=True)],
@@ -81,14 +81,14 @@ def preprocess_empirical(
                                      exists=True, file_okay=True,
                                      dir_okay=False, readable=True)] = None,
     fasta_file: Annotated[
-        Optional[Path], typer.Option(help="Reference FASTA file",
+        Optional[Path], typer.Option(help="Reference FASTA file "
+                                     "(required by compute_model_prob)",
                                      exists=True, file_okay=True,
                                      dir_okay=False, readable=True)] = None,
     mtase: Annotated[
         Optional[str],
         typer.Option(callback=csv_parser(str),
                     help="Methyltransferase(s): A, CG, GC")] = None,
-    binsize: Annotated[int, typer.Option(help="Window size (bp)")] = 147,
     wrap: Annotated[
         bool, typer.Option(help="Wrap relative to center")] = False,
     colidx: Annotated[
@@ -101,6 +101,144 @@ def preprocess_empirical(
     seed: Annotated[
         Optional[int], typer.Option(help="Seed for molecule sampling")
     ] = None,
+    tmp_dir: Annotated[
+        Optional[Path], typer.Option(help="Scratch directory",
+                                     exists=True, file_okay=False,
+                                     dir_okay=True)] = None,
+    chunk_size: Annotated[
+        int, typer.Option(help="Rows read per streamed chunk")] = 1000000,
+    max_cached_chroms: Annotated[
+        int, typer.Option(help="Max chromosomes' raw data kept in "
+                          "memory")] = 1):
+    """
+    Load raw methylation footprinting data into a MethPrintExperiment.
+    """
+    exp = catella.load_raw(
+        chromsize=chromsize, test_file=test_file, unmeth_file=unmeth_file,
+        meth_file=meth_file, fasta_file=fasta_file, mtase=mtase, wrap=wrap,
+        colidx=colidx, max_nmol=max_nmol, seed=seed, chunk_size=chunk_size,
+        tmp_dir=tmp_dir, max_cached_chroms=max_cached_chroms)
+    exp.save(out_file)
+
+
+@app.command(name="filter_dropout")
+def filter_dropout(
+    source_file: Annotated[
+        Path, typer.Argument(help="Experiment HDF5 file", exists=True,
+                             file_okay=True, dir_okay=False,
+                             readable=True)],
+    which: Annotated[
+        Optional[str], typer.Option(help="test, meth, or unmeth; "
+                                    "default evaluates every source")
+    ] = None,
+    mtase: Annotated[
+        Optional[str],
+        typer.Option(callback=csv_parser(str),
+                    help="Subset of mtase labels to evaluate")] = None,
+    threshold: Annotated[
+        float, typer.Option(help="Max allowed no-signal fraction")] = 0.2,
+    unmapped_strand: Annotated[
+        str, typer.Option(help="union, drop, +, or -")] = "union",
+    method: Annotated[
+        str, typer.Option(help="separate or aggregate")] = "separate",
+    mask_name: Annotated[
+        str, typer.Option(help="Key for the stored mask")
+    ] = "dropout_mask",
+    out_file: Annotated[
+        Optional[Path], typer.Option(help="Output file (default: "
+                                     "overwrite source_file)",
+                                     file_okay=True, dir_okay=False)
+    ] = None,
+    overwrite: Annotated[
+        bool, typer.Option(help="Allow overwriting out_file if it is "
+                           "already backed by H5Array analysis data. "
+                           "Ignored (always allowed) when out_file is "
+                           "not given")] = False):
+    """
+    Flag molecules with poor coverage at methylatable positions.
+    """
+    exp = MethPrintExperiment.load(source_file)
+    catella.filter_dropout(exp=exp, which=which, mtase=mtase,
+                           threshold=threshold,
+                           unmapped_strand=unmapped_strand, method=method,
+                           mask_name=mask_name)
+    if out_file is not None:
+        exp.save(out_file, overwrite=overwrite)
+    else:
+        exp.save(overwrite=True)
+
+
+@app.command(name="summarize_dropout")
+def summarize_dropout(
+    source_file: Annotated[
+        Path, typer.Argument(help="Experiment HDF5 file", exists=True,
+                             file_okay=True, dir_okay=False,
+                             readable=True)],
+    which: Annotated[Optional[str], typer.Option(help="test, meth, "
+                                                 "or unmeth")] = None,
+    mtase: Annotated[
+        Optional[str],
+        typer.Option(callback=csv_parser(str),
+                    help="Subset of mtase labels to summarize")] = None,
+    unmapped_strand: Annotated[
+        str, typer.Option(help="union, drop, +, or -")] = "union",
+    out_file: Annotated[
+        Optional[Path], typer.Option(help="Optional path to also save "
+                                     "the summary as CSV",
+                                     file_okay=True, dir_okay=False)
+    ] = None):
+    """
+    Print a per-label dropout fraction summary (QC check).
+    """
+    exp = MethPrintExperiment.load(source_file)
+    df = catella.summarize_dropout(exp=exp, which=which, mtase=mtase,
+                                   unmapped_strand=unmapped_strand)
+    typer.echo(df.to_string(index=False))
+    if out_file is not None:
+        df.to_csv(out_file, index=False)
+
+
+@app.command(name="plot_dropout_filter")
+def plot_dropout_filter(
+    source_file: Annotated[
+        Path, typer.Argument(help="Experiment HDF5 file", exists=True,
+                             file_okay=True, dir_okay=False,
+                             readable=True)],
+    chrom: Annotated[str, typer.Argument(help="Chromosome identifier")],
+    which: Annotated[Optional[str], typer.Option(help="test, meth, "
+                                                 "or unmeth")] = None,
+    mtase: Annotated[
+        Optional[str],
+        typer.Option(callback=csv_parser(str),
+                    help="Subset of mtase labels to evaluate")] = None,
+    unmapped_strand: Annotated[
+        str, typer.Option(help="union, drop, +, or -")] = "union",
+    source: Annotated[
+        Optional[str], typer.Option(help="Restrict the plot to this "
+                                    "source")] = None,
+    out_file: Annotated[
+        Optional[Path], typer.Option(help="Path to save the figure",
+                                     file_okay=True, dir_okay=False)] = None,
+    show: Annotated[bool, typer.Option(help="Display the figure")] = True):
+    """
+    Plot percent of molecules filtered vs. dropout-rate threshold.
+    """
+    exp = MethPrintExperiment.load(source_file)
+    catella.plot_dropout_filter(exp=exp, chrom=chrom, which=which,
+                                mtase=mtase,
+                                unmapped_strand=unmapped_strand,
+                                source=source, out_file=out_file, show=show)
+
+
+@app.command(name="compute_empirical_prob")
+def compute_empirical_prob(
+    source_file: Annotated[
+        Path, typer.Argument(help="Experiment HDF5 file", exists=True,
+                             file_okay=True, dir_okay=False,
+                             readable=True)],
+    out_file: Annotated[Path, typer.Argument(help="Path to save results",
+                                             file_okay=True, dir_okay=False)],
+    binsize: Annotated[int, typer.Option(help="Window size (bp)")] = 147,
     prob_name: Annotated[
         str, typer.Option(help="Key for storing methylation "
                           "probabilities")] = "meth_prob",
@@ -115,68 +253,28 @@ def preprocess_empirical(
     percentile_sample_size: Annotated[
         int, typer.Option(help="Sample size for percentile estimation")
     ] = 100000,
-    tmp_dir: Annotated[
-        Optional[Path], typer.Option(help="Scratch directory",
-                                     exists=True, file_okay=False,
-                                     dir_okay=True)] = None,
-    chunk_size: Annotated[
-        int, typer.Option(help="Rows read per streamed chunk")] = 1000000,
-    max_cached_chroms: Annotated[
-        int, typer.Option(help="Max chromosomes' raw data kept in "
-                          "memory")] = 1):
+    mask_name: Annotated[
+        Optional[str], typer.Option(help="Key of a prior filter_dropout "
+                                    "mask to apply")] = None):
     """
-    Preprocess raw methylation data using empirical (percentile/
-    control-based) normalization.
+    Compute methylation probabilities via empirical normalization.
     """
-    return catella.preprocess_empirical(
-        chromsize=chromsize, test_file=test_file, out_file=out_file,
-        unmeth_file=unmeth_file, meth_file=meth_file, fasta_file=fasta_file,
-        mtase=mtase, binsize=binsize, wrap=wrap, colidx=colidx,
-        max_nmol=max_nmol, seed=seed, prob_name=prob_name,
+    exp = MethPrintExperiment.load(source_file)
+    catella.compute_empirical_prob(
+        exp=exp, out_file=out_file, binsize=binsize, prob_name=prob_name,
         clip_low=clip_low, clip_high=clip_high,
         norm_by_strand=norm_by_strand, batch_size=batch_size,
-        percentile_sample_size=percentile_sample_size, tmp_dir=tmp_dir,
-        chunk_size=chunk_size, max_cached_chroms=max_cached_chroms)
+        percentile_sample_size=percentile_sample_size, mask_name=mask_name)
 
 
-@app.command(name="preprocess_model")
-def preprocess_model(
-    chromsize: Annotated[Path, typer.Argument(help="Chromosome sizes file",
-                                              exists=True, file_okay=True,
-                                              dir_okay=False, readable=True)],
-    test_file: Annotated[Path, typer.Argument(help="Primary methylation file",
-                                              exists=True, file_okay=True,
-                                              dir_okay=False, readable=True)],
-    fasta_file: Annotated[Path, typer.Argument(help="Reference FASTA file",
-                                               exists=True, file_okay=True,
-                                               dir_okay=False,
-                                               readable=True)],
+@app.command(name="compute_model_prob")
+def compute_model_prob(
+    source_file: Annotated[
+        Path, typer.Argument(help="Experiment HDF5 file", exists=True,
+                             file_okay=True, dir_okay=False,
+                             readable=True)],
     out_file: Annotated[Path, typer.Argument(help="Path to save results",
                                              file_okay=True, dir_okay=False)],
-    unmeth_file: Annotated[
-        Optional[Path], typer.Option(help="Unmethylated control file",
-                                     exists=True, file_okay=True,
-                                     dir_okay=False, readable=True)] = None,
-    meth_file: Annotated[
-        Optional[Path], typer.Option(help="Methylated control file",
-                                     exists=True, file_okay=True,
-                                     dir_okay=False, readable=True)] = None,
-    mtase: Annotated[
-        Optional[str],
-        typer.Option(callback=csv_parser(str),
-                    help="Methyltransferase(s): A, CG, GC")] = None,
-    wrap: Annotated[
-        bool, typer.Option(help="Wrap relative to center")] = False,
-    colidx: Annotated[
-        Optional[str],
-        typer.Option(callback=csv_parser(int), help="ModKit column indices")
-    ] = None,
-    max_nmol: Annotated[
-        Optional[int], typer.Option(help="Max molecules per chromosome")
-    ] = None,
-    seed: Annotated[
-        Optional[int], typer.Option(help="Seed for molecule sampling")
-    ] = None,
     prob_name: Annotated[
         str, typer.Option(help="Key for storing methylation "
                           "probabilities")] = "meth_prob",
@@ -227,30 +325,20 @@ def preprocess_model(
         Optional[bool], typer.Option(help="Normalize by strand")] = False,
     batch_size: Annotated[
         int, typer.Option(help="Molecules processed per batch")] = 20000,
-    tmp_dir: Annotated[
-        Optional[Path], typer.Option(help="Scratch directory",
-                                     exists=True, file_okay=False,
-                                     dir_okay=True)] = None,
-    chunk_size: Annotated[
-        int, typer.Option(help="Rows read per streamed chunk")] = 1000000,
-    max_cached_chroms: Annotated[
-        int, typer.Option(help="Max chromosomes' raw data kept in "
-                          "memory")] = 1):
+    mask_name: Annotated[
+        Optional[str], typer.Option(help="Key of a prior filter_dropout "
+                                    "mask to apply")] = None):
     """
-    Preprocess raw methylation data using a calibrated Bayesian
-    log-odds model.
+    Compute methylation probabilities via a calibrated log-odds model.
     """
-    return catella.preprocess_model(
-        chromsize=chromsize, test_file=test_file, fasta_file=fasta_file,
-        out_file=out_file, unmeth_file=unmeth_file, meth_file=meth_file,
-        mtase=mtase, wrap=wrap, colidx=colidx, max_nmol=max_nmol,
-        seed=seed, prob_name=prob_name, pi0=pi0, eta=eta,
-        eta_max_lag=eta_max_lag, nu=nu,
-        rho_leak=rho_leak, min_gap=min_gap, l_nuc=l_nuc, n_min=n_min,
-        iters=iters, init_prot=init_prot, init_acc=init_acc, tol=tol,
-        fill_edge=fill_edge, norm_by_strand=norm_by_strand,
-        batch_size=batch_size, tmp_dir=tmp_dir, chunk_size=chunk_size,
-        max_cached_chroms=max_cached_chroms)
+    exp = MethPrintExperiment.load(source_file)
+    catella.compute_model_prob(
+        exp=exp, out_file=out_file, prob_name=prob_name, pi0=pi0, eta=eta,
+        eta_max_lag=eta_max_lag, nu=nu, rho_leak=rho_leak, min_gap=min_gap,
+        l_nuc=l_nuc, n_min=n_min, iters=iters, init_prot=init_prot,
+        init_acc=init_acc, tol=tol, fill_edge=fill_edge,
+        norm_by_strand=norm_by_strand, batch_size=batch_size,
+        mask_name=mask_name)
 
 
 @app.command()

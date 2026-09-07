@@ -343,6 +343,42 @@ class TestComputeModelProb:
             got.analysis["chr1"]["meth_prob"].to_numpy(),
             expected.analysis["chr1"]["meth_prob"].to_numpy())
 
+    def test_store_rho_propagates(self, tmp_path):
+        rows = _make_test_rows(nmol=5, nbp=len(_MODEL_SEQ), step=1, seed=11)
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": len(_MODEL_SEQ)})
+        fasta_file = tmp_path / "ref.fa"
+        _write_fasta(fasta_file, {"chr1": _MODEL_SEQ})
+
+        raw_file = tmp_path / "raw_exp.h5"
+        load_result = runner.invoke(app, ["load_raw", str(chromsize),
+                                          str(test_file), str(raw_file),
+                                          "--fasta-file", str(fasta_file)])
+        assert load_result.exit_code == 0, load_result.output
+
+        cli_out = tmp_path / "cli_exp.h5"
+        result = runner.invoke(app, ["compute_model_prob", str(raw_file),
+                                     str(cli_out), "--l-nuc", "30",
+                                     "--n-min", "3", "--eta-max-lag", "4",
+                                     "--store-rho"])
+        assert result.exit_code == 0, result.output
+
+        expected = catella.load_raw(chromsize=chromsize, test_file=test_file,
+                                    fasta_file=fasta_file)
+        catella.compute_model_prob(exp=expected, l_nuc=30, n_min=3,
+                                   eta_max_lag=4, store_rho=True)
+
+        got = MethPrintExperiment.load(cli_out)
+        assert ("meth_prob_rho" in got.global_analysis) == (
+            "meth_prob_rho" in expected.global_analysis)
+        if "meth_prob_rho" in expected.global_analysis:
+            pd.testing.assert_frame_equal(
+                got.global_analysis["meth_prob_rho"],
+                expected.global_analysis["meth_prob_rho"],
+                check_dtype=False)
+
     def test_prob_name_renames_stored_probabilities(self, tmp_path):
         rows = _make_test_rows(nmol=5, nbp=len(_MODEL_SEQ), step=1)
         test_file = tmp_path / "test.tsv"

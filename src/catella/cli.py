@@ -306,6 +306,10 @@ def compute_model_prob(
     eta_max_lag: Annotated[
         int, typer.Option(help="Max lag (bp) for eta "
                           "auto-estimation")] = 10,
+    store_rho: Annotated[
+        Optional[bool], typer.Option(help="Store the lag-k "
+                                     "autocorrelation rho(k) used in "
+                                     "eta estimation")] = False,
     nu: Annotated[
         float, typer.Option(help="Pseudo-count shrinkage strength")] = 10.0,
     rho_leak: Annotated[
@@ -348,11 +352,11 @@ def compute_model_prob(
     exp = MethPrintExperiment.load(source_file)
     catella.compute_model_prob(
         exp=exp, out_file=out_file, prob_name=prob_name, pi0=pi0, eta=eta,
-        eta_max_lag=eta_max_lag, nu=nu, rho_leak=rho_leak, min_gap=min_gap,
-        l_nuc=l_nuc, n_min=n_min, iters=iters, init_prot=init_prot,
-        init_acc=init_acc, tol=tol, fill_edge=fill_edge,
-        norm_by_strand=norm_by_strand, batch_size=batch_size,
-        mask_name=mask_name)
+        eta_max_lag=eta_max_lag, store_rho=store_rho, nu=nu,
+        rho_leak=rho_leak, min_gap=min_gap, l_nuc=l_nuc, n_min=n_min,
+        iters=iters, init_prot=init_prot, init_acc=init_acc, tol=tol,
+        fill_edge=fill_edge, norm_by_strand=norm_by_strand,
+        batch_size=batch_size, mask_name=mask_name)
 
 
 @app.command()

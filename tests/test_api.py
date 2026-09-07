@@ -286,3 +286,33 @@ class TestComputeModelProb:
         exp = _make_experiment(nmol=6, nbp=10, seed=3)
         with pytest.raises(ValueError):
             catella.compute_model_prob(exp=exp, l_nuc=10)
+
+    def test_store_rho_propagates(self, tmp_path):
+        rng = np.random.default_rng(11)
+        rows = [(f"m{m}", p, "chr1", "+", float(rng.random()), "a")
+               for m in range(5) for p in range(len(_MODEL_SEQ))]
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": len(_MODEL_SEQ)})
+        fasta_file = tmp_path / "ref.fa"
+        _write_fasta(fasta_file, {"chr1": _MODEL_SEQ})
+
+        exp = catella.load_raw(chromsize=chromsize, test_file=test_file,
+                               fasta_file=fasta_file)
+        expected = catella.load_raw(chromsize=chromsize, test_file=test_file,
+                                    fasta_file=fasta_file)
+
+        catella.compute_model_prob(exp=exp, l_nuc=30, n_min=3,
+                                   eta_max_lag=4, store_rho=True)
+
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=expected, l_nuc=30, n_min=3, eta_max_lag=4,
+                       store_rho=True)
+
+        assert ("meth_prob_rho" in exp.global_analysis) == (
+            "meth_prob_rho" in expected.global_analysis)
+        if "meth_prob_rho" in exp.global_analysis:
+            pd.testing.assert_frame_equal(
+                exp.global_analysis["meth_prob_rho"],
+                expected.global_analysis["meth_prob_rho"])

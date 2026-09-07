@@ -195,6 +195,7 @@ def compute_model_prob(*, exp : MethPrintExperiment,
                pi0 : float = 0.5,
                eta : float | dict[str, float] | None = None,
                eta_max_lag : int = 10,
+               store_rho : bool = False,
                nu : float = 10.0,
                rho_leak : float = 0.1,
                min_gap : float = 0.05,
@@ -245,6 +246,12 @@ def compute_model_prob(*, exp : MethPrintExperiment,
         be auto-estimated.
     eta_max_lag : int, default 10
         Maximum lag (bp) summed over when auto-estimating eta.
+    store_rho : bool, default False
+        If True, store the lag-k autocorrelation `rho(k)` used in
+        each channel's eta estimation to
+        `exp.global_analysis[f"{prob_name}_rho"]`, one column per
+        channel that was actually auto-estimated (channels pinned
+        via `eta`, or with too little data to estimate, are omitted).
     nu : float, default 10.0
         Pseudo-count strength for shrinking each position's call
         rate toward its context group's mean; larger values shrink
@@ -318,11 +325,12 @@ def compute_model_prob(*, exp : MethPrintExperiment,
     # Compute methylation probability via the calibrated log-odds model
     ana = MethPrintAnalysis()
     ana.model_prob(exp=exp, prob_name=prob_name, pi0=pi0, eta=eta,
-                   eta_max_lag=eta_max_lag, nu=nu, rho_leak=rho_leak,
-                   min_gap=min_gap, l_nuc=l_nuc, n_min=n_min, iters=iters,
-                   init_prot=init_prot, init_acc=init_acc, tol=tol,
-                   fill_edge=fill_edge, norm_by_strand=norm_by_strand,
-                   batch_size=batch_size, mask_name=mask_name)
+                   eta_max_lag=eta_max_lag, store_rho=store_rho, nu=nu,
+                   rho_leak=rho_leak, min_gap=min_gap, l_nuc=l_nuc,
+                   n_min=n_min, iters=iters, init_prot=init_prot,
+                   init_acc=init_acc, tol=tol, fill_edge=fill_edge,
+                   norm_by_strand=norm_by_strand, batch_size=batch_size,
+                   mask_name=mask_name)
 
     # Save the results
     if out_file is not None:

@@ -981,6 +981,44 @@ class TestModelProbEta:
             _eta_from(exp_long)["M6A"], rel=1e-6)
 
 
+class TestModelProbStoreRho:
+    def test_default_does_not_store_rho(self):
+        exp = _make_footprint_experiment(with_controls=True,
+                                         planted_edges=(30,), l_nuc=30)
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=exp, l_nuc=30, batch_size=7)
+        assert "meth_prob_rho" not in exp.global_analysis
+
+    def test_stores_rho_for_auto_estimated_channels(self):
+        exp = _make_footprint_experiment(with_controls=True,
+                                         planted_edges=(30,), l_nuc=30)
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=exp, l_nuc=30, batch_size=7, eta_max_lag=5,
+                       store_rho=True)
+        rho = exp.global_analysis["meth_prob_rho"]
+        assert list(rho["lag"]) == [1, 2, 3, 4, 5]
+        assert {"rho_M6A", "rho_GCH", "rho_HCG", "rho_GCG"} <= set(
+            rho.columns)
+
+    def test_pinned_channel_excluded_from_rho(self):
+        exp = _make_footprint_experiment(with_controls=True,
+                                         planted_edges=(30,), l_nuc=30)
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=exp, l_nuc=30, batch_size=7,
+                       eta={"M6A": 0.5}, store_rho=True)
+        rho = exp.global_analysis["meth_prob_rho"]
+        assert "rho_M6A" not in rho.columns
+        assert "rho_GCH" in rho.columns
+
+    def test_all_channels_pinned_skips_rho_entry(self):
+        exp = _make_footprint_experiment(with_controls=True,
+                                         planted_edges=(30,), l_nuc=30)
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=exp, l_nuc=30, batch_size=7, eta=0.5,
+                       store_rho=True)
+        assert "meth_prob_rho" not in exp.global_analysis
+
+
 def _revcomp(seq):
     return seq.translate(str.maketrans("ACGT", "TGCA"))[::-1]
 

@@ -703,13 +703,19 @@ def _finalize_channel_eta(stats, max_lag, min_n=None):
 
     Returns
     -------
-    dict of int to float
+    eta : dict of int to float
         Channel code -> estimated eta, for every channel in `stats`.
+    rho : dict of int to np.ndarray
+        Channel code -> lag-k autocorrelation `rho(k)` (length
+        `max_lag`, for `k = 1..max_lag`), for every channel that had
+        enough data to be estimated (a subset of `eta`'s keys;
+        channels that fell back to `eta_c = 1.0` are omitted).
     """
     if min_n is None:
         min_n = max_lag
     k = np.arange(1, max_lag + 1)
     eta = {}
+    rho = {}
     for c, st in stats.items():
         n = st["n"]
         if n <= min_n:
@@ -724,10 +730,11 @@ def _finalize_channel_eta(stats, max_lag, min_n=None):
         # sum((lambda_x - bar)(lambda_x+k - bar)) over valid pairs
         numerator = (pprod - bar * st["psumA"] - bar * st["psumB"]
                     + npair * bar * bar)
-        rho = np.where(npair > 0, numerator / denom, 0.0)
-        v = 1.0 + 2.0 * np.sum((1.0 - k / n) * rho)
+        rho_c = np.where(npair > 0, numerator / denom, 0.0)
+        v = 1.0 + 2.0 * np.sum((1.0 - k / n) * rho_c)
         eta[c] = 1.0 / max(v, 1e-3)
-    return eta
+        rho[c] = rho_c
+    return eta, rho
 
 
 def _accumulate_eta_source(exp, chrom, which, ctx, theta_prot, theta_acc,
@@ -1463,6 +1470,7 @@ class MethPrintAnalysis:
                    pi0 : float = 0.5,
                    eta : float | dict[str, float] | None = None,
                    eta_max_lag : int = 10,
+                   store_rho : bool = False,
                    nu : float = 10.0,
                    rho_leak : float = 0.1,
                    min_gap : float = 0.05,
@@ -1520,6 +1528,13 @@ class MethPrintAnalysis:
             afterward.
         eta_max_lag : int, default 10
             Maximum lag (bp) summed over when auto-estimating eta.
+        store_rho : bool, default False
+            If True, store the lag-k autocorrelation `rho(k)` used in
+            each channel's eta estimation to
+            `exp.global_analysis[f"{prob_name}_rho"]`, one column per
+            channel that was actually auto-estimated (channels pinned
+            via `eta`, or with too little data to estimate, are
+            omitted).
         nu : float, default 10.0
             Pseudo-count strength for shrinking each position's call
             rate toward its context group's mean; larger values shrink
@@ -1641,8 +1656,15 @@ class MethPrintAnalysis:
                     informative, pi0, batch_size, mask_name, stats,
                     eta_max_lag, need_auto, norm_by_strand=norm_by_strand,
                     strand_labels=strand_labels)
-            estimated = _finalize_channel_eta(stats, eta_max_lag)
+            estimated, rho_by_channel = _finalize_channel_eta(
+                stats, eta_max_lag)
             channel_eta.update({c: estimated[c] for c in need_auto})
+
+            if store_rho and rho_by_channel:
+                exp.global_analysis[f"{prob_name}_rho"] = pd.DataFrame({
+                    "lag": np.arange(1, eta_max_lag + 1),
+                    **{f"rho_{CONTEXT_NAMES[c]}": rho_by_channel[c]
+                      for c in _ETA_CHANNELS if c in rho_by_channel}})
 
         exp.global_analysis[f"{prob_name}_params"] = pd.DataFrame([{
             "pi0": pi0, "eta_max_lag": eta_max_lag, "nu": nu,

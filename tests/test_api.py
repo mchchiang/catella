@@ -233,8 +233,7 @@ class TestComputeEmpiricalProb:
         catella.compute_empirical_prob(exp=exp, binsize=3)
 
         ana = MethPrintAnalysis()
-        ana.smooth(binsize=3, exp=expected)
-        ana.empirical_prob(exp=expected)
+        ana.empirical_prob(exp=expected, binsize=3)
 
         np.testing.assert_allclose(
             exp.analysis["chr1"]["meth_prob"].to_numpy(),
@@ -255,18 +254,15 @@ class TestComputeEmpiricalProb:
         assert np.isnan(prob[keep == 0]).all()
         assert not np.isnan(prob[keep == 1]).any()
 
-    def test_nan_method_fill_edge_seed_propagate(self):
+    def test_fill_edge_seed_propagate(self):
         exp = _make_experiment(nmol=6, nbp=10, seed=3)
         expected = _make_experiment(nmol=6, nbp=10, seed=3)
 
         catella.compute_empirical_prob(exp=exp, binsize=3,
-                                       nan_method="interpolate",
-                                       fill_edge="mean", seed=7)
+                                       fill_edge=0.5, seed=7)
 
         ana = MethPrintAnalysis()
-        ana.smooth(binsize=3, exp=expected, nan_method="interpolate",
-                  fill_edge="mean")
-        ana.empirical_prob(exp=expected, seed=7)
+        ana.empirical_prob(exp=expected, binsize=3, fill_edge=0.5, seed=7)
 
         np.testing.assert_allclose(
             exp.analysis["chr1"]["meth_prob"].to_numpy(),

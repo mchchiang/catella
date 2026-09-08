@@ -306,7 +306,7 @@ class TestComputeEmpiricalProb:
         assert "custom_prob" in got.analysis["chr1"]
         assert "meth_prob" not in got.analysis["chr1"]
 
-    def test_nan_method_fill_edge_seed_propagate(self, tmp_path):
+    def test_fill_edge_seed_propagate(self, tmp_path):
         rows = _make_test_rows(nmol=5, nbp=30)
         test_file = tmp_path / "test.tsv"
         _write_tsv(test_file, rows)
@@ -323,16 +323,14 @@ class TestComputeEmpiricalProb:
         result = runner.invoke(app, ["compute_empirical_prob",
                                      str(raw_file), str(cli_out),
                                      "--binsize", "5",
-                                     "--nan-method", "interpolate",
-                                     "--fill-edge", "mean",
+                                     "--fill-edge", "0.5",
                                      "--seed", "9"])
         assert result.exit_code == 0, result.output
 
         expected = catella.load_raw(chromsize=chromsize, test_file=test_file,
                                     max_nmol=3, seed=7)
         catella.compute_empirical_prob(exp=expected, binsize=5,
-                                       nan_method="interpolate",
-                                       fill_edge="mean", seed=9)
+                                       fill_edge=0.5, seed=9)
 
         got = MethPrintExperiment.load(cli_out)
         np.testing.assert_allclose(

@@ -43,11 +43,13 @@ test = ["pytest"]
 doc = [
     "numpy",
     "pandas>=3.0",
+    "typer",
     "jupyterlab",
     "ipywidgets",
     "nbsphinx",
     "sphinx",
     "sphinx-rtd-theme",
+    "sphinx-click",
     "myst-parser",
 ]
 

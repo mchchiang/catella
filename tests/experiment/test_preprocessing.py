@@ -669,6 +669,28 @@ class TestSortByLinkage:
                                         batch_size=2, fill_nan="mean")
         assert np.isfinite(link_mats["chr1"]).all()
 
+    def test_chroms_restricts_processing_to_selected_chromosomes(self):
+        rng = np.random.default_rng(1)
+        mol_id_1, data_1 = _make_mol_data(6, 10, rng)
+        mol_id_2, data_2 = _make_mol_data(6, 10, rng)
+        raw_1 = MethPrintData._create(
+            chrom="chr1", nbp=10, test_mol_id=mol_id_1, test_data=data_1,
+            meth_mol_id=None, meth_data=None, unmeth_mol_id=None,
+            unmeth_data=None)
+        raw_2 = MethPrintData._create(
+            chrom="chr2", nbp=10, test_mol_id=mol_id_2, test_data=data_2,
+            meth_mol_id=None, meth_data=None, unmeth_mol_id=None,
+            unmeth_data=None)
+        exp = MethPrintExperiment._create(
+            _raw_data={"chr1": raw_1, "chr2": raw_2})
+        ana = MethPrintAnalysis()
+
+        link_mats = ana.sort_by_linkage(exp=exp, chroms="chr1", batch_size=2)
+
+        assert "test_sorted" in exp.analysis["chr1"]
+        assert "test_sorted" not in exp.analysis["chr2"]
+        assert list(link_mats) == ["chr1"]
+
 
 def _make_footprint_experiment(*, nmol=20, meth_nmol=30, unmeth_nmol=30,
                                with_controls=True, planted_edges=(30,),

@@ -4,6 +4,7 @@ import warnings
 import numpy as np
 import pandas as pd
 from typing import List
+from collections.abc import Iterable
 from catella.experiment.methdata import (
     MethPrintExperiment, _apply_keep_mask, _strand_of_mol)
 from catella.h5_array import H5Array
@@ -1681,6 +1682,7 @@ class MethPrintAnalysis:
 
     def sort_by_linkage(self, *,
                         exp : MethPrintExperiment,
+                        chroms : str | Iterable[str] | None = None,
                         data_name : str = "test_smoothed",
                         raw_which : str | None = None,
                         mask_name : str | None = None,
@@ -1695,9 +1697,9 @@ class MethPrintAnalysis:
         """
         Sort molecules by hierarchical-clustering similarity.
 
-        Iterate through all chromosomes, reordering rows (molecules)
-        of a dense methylation signal so that similar molecules sit
-        next to each other, matching the leaf order of a
+        Iterate through the selected chromosomes, reordering rows
+        (molecules) of a dense methylation signal so that similar
+        molecules sit next to each other, matching the leaf order of a
         hierarchical-clustering dendrogram. By default, sorts the
         smoothed test signal if `smooth` has been run, or the raw
         test signal otherwise -- so this works whether or not `smooth`
@@ -1707,6 +1709,9 @@ class MethPrintAnalysis:
         ----------
         exp : MethPrintExperiment
             The experiment object containing raw data and analysis maps.
+        chroms : str or iterable of str, optional
+            The chromosome(s) to process. If None (default), all
+            chromosomes in `exp.chroms` are processed.
         data_name : str, default "test_smoothed"
             The key of the dense analysis array to sort, looked up in
             `exp.analysis[chrom]` (e.g. a `smooth` or `meth_prob`
@@ -1769,9 +1774,10 @@ class MethPrintAnalysis:
         if mask_name is not None and raw_which is None:
             raise ValueError(
                 "'mask_name' requires 'raw_which' to be given.")
+        chroms = utils.normalize_chroms(chroms, default_chroms=exp.chroms)
         tmp_dir = exp.resolve_tmp_dir()
         link_mats = {}
-        for chrom in exp.chroms:
+        for chrom in chroms:
             ana = exp.analysis[chrom]
             if raw_which is not None:
                 data = exp.to_dense(chrom, which=raw_which,

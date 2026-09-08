@@ -842,8 +842,8 @@ def sort_by_linkage(*, dataset : SimDataset | None = None,
         Methylation experiment to sort. Mutually exclusive with
         `dataset`.
     chroms : str or iterable of str, optional
-        Chromosome(s) to process. Only used with `dataset`; `exp` is
-        always sorted across all of `exp.chroms`.
+        Chromosome(s) to process. If None (default), all chromosomes
+        in `dataset.chroms` (or `exp.chroms`) are processed.
     data_name : str, optional
         Key of the analysis array to sort. If None, the underlying
         method's own default is used ("occup" for `dataset`,
@@ -894,11 +894,11 @@ def sort_by_linkage(*, dataset : SimDataset | None = None,
                  batch_size=batch_size, fill_nan=fill_nan)
     if data_name is not None:
         kwargs["data_name"] = data_name
+    if chroms is not None:
+        kwargs["chroms"] = chroms
     if dataset is not None:
         if mask_name is not None:
             raise ValueError("'mask_name' is only used with 'exp'.")
-        if chroms is not None:
-            kwargs["chroms"] = chroms
         return SimAnalysis().sort_by_linkage(dataset=dataset, **kwargs)
     if raw_which is not None:
         kwargs["raw_which"] = raw_which

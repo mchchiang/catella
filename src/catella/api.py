@@ -332,8 +332,8 @@ def compute_model_prob(*, exp : MethPrintExperiment,
     Notes
     -----
     Per-chromosome (and, if `norm_by_strand`, per-strand) calibration
-    diagnostics -- whether controls were used, fraction of positions
-    deemed informative, and (no-controls path only) actual EM
+    diagnostics -- whether controls were used, fraction of informative
+    positions per context, and (no-controls path only) actual EM
     iterations run, final log-likelihood, fitted mixing fraction, and
     fitted theta_prot/theta_acc per context -- are stored in
     `exp.global_analysis[f"{prob_name}_calib"]`. The full per-position

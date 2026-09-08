@@ -798,6 +798,28 @@ def _accumulate_eta_source(exp, chrom, which, ctx, theta_prot, theta_acc,
                                        max_lag, channels=channels)
 
 
+def _frac_informative_by_context(ctx, informative):
+    """
+    Fraction of `informative` positions within each context's own sites.
+
+    Parameters
+    ----------
+    ctx : np.ndarray
+        int8, length L, context code per position.
+    informative : np.ndarray
+        bool, length L.
+
+    Returns
+    -------
+    dict of str to float
+        `f"frac_informative_{CONTEXT_NAMES[c]}"` -> fraction, for every
+        context code present in `ctx` (a subset of `_ETA_CHANNELS`).
+    """
+    return {f"frac_informative_{CONTEXT_NAMES[c]}":
+           float(informative[ctx == c].mean())
+           for c in _ETA_CHANNELS if (ctx == c).any()}
+
+
 def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, l_nuc, n_min,
                        max_iters, init_prot, init_acc, tol, batch_size,
                        mask_name, norm_by_strand=False):
@@ -841,10 +863,11 @@ def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, l_nuc, n_min,
         Whether meth/unmeth controls were used.
     calib_info : dict or dict of str to dict
         Calibration diagnostics -- `{"has_controls": has_controls,
-        "frac_informative": informative.mean()}`, merged with the
-        `em_diag` dict from `_calibrate_from_data` when the no-controls
-        path was used (empty for the controls path). If
-        `norm_by_strand`, a `{"+": ..., "-": ...}` dict of such dicts.
+        **frac_informative_by_context}` (see
+        `_frac_informative_by_context`), merged with the `em_diag`
+        dict from `_calibrate_from_data` when the no-controls path was
+        used (empty for the controls path). If `norm_by_strand`, a
+        `{"+": ..., "-": ...}` dict of such dicts.
 
     Raises
     ------
@@ -916,8 +939,9 @@ def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, l_nuc, n_min,
                     _calibrate_from_controls(
                         *meth_counts[s], *unmeth_counts[s], ctx,
                         nu=nu, rho_leak=rho_leak, min_gap=min_gap)
-                calib_info[s] = {"has_controls": has_controls,
-                                 "frac_informative": informative[s].mean()}
+                calib_info[s] = {
+                    "has_controls": has_controls,
+                    **_frac_informative_by_context(ctx, informative[s])}
         else:
             meth_k, meth_n = _streamed_call_count(
                 exp, chrom, "meth", ctx, batch_size, mask_name)
@@ -926,8 +950,9 @@ def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, l_nuc, n_min,
             theta_prot, theta_acc, informative = _calibrate_from_controls(
                 meth_k, meth_n, unmeth_k, unmeth_n, ctx,
                 nu=nu, rho_leak=rho_leak, min_gap=min_gap)
-            calib_info = {"has_controls": has_controls,
-                         "frac_informative": informative.mean()}
+            calib_info = {
+                "has_controls": has_controls,
+                **_frac_informative_by_context(ctx, informative)}
     else:
         if norm_by_strand:
             test_strand = _strand_of_mol(raw.test_data,
@@ -945,9 +970,10 @@ def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, l_nuc, n_min,
                         K, N, ctx, codes, max_iters=max_iters,
                         init_prot=init_prot, init_acc=init_acc, tol=tol,
                         min_gap=min_gap)
-                calib_info[s] = {"has_controls": has_controls,
-                                 "frac_informative": informative[s].mean(),
-                                 **em_diag}
+                calib_info[s] = {
+                    "has_controls": has_controls,
+                    **_frac_informative_by_context(ctx, informative[s]),
+                    **em_diag}
         else:
             K, N, codes = _streamed_window_count(
                 exp, chrom, ctx, l_nuc, n_min, batch_size, mask_name)
@@ -956,8 +982,9 @@ def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, l_nuc, n_min,
                     K, N, ctx, codes, max_iters=max_iters,
                     init_prot=init_prot, init_acc=init_acc, tol=tol,
                     min_gap=min_gap)
-            calib_info = {"has_controls": has_controls,
-                         "frac_informative": informative.mean(), **em_diag}
+            calib_info = {
+                "has_controls": has_controls,
+                **_frac_informative_by_context(ctx, informative), **em_diag}
     return ctx, theta_prot, theta_acc, informative, has_controls, calib_info
 
 
@@ -1607,10 +1634,10 @@ class MethPrintAnalysis:
 
         Per-chromosome (and, if `norm_by_strand`, per-strand)
         calibration diagnostics -- whether controls were used,
-        fraction of positions deemed informative, and (no-controls
-        path only) actual EM iterations run, final log-likelihood,
-        fitted mixing fraction, and fitted theta_prot/theta_acc per
-        context -- are stored in
+        fraction of informative positions per context, and
+        (no-controls path only) actual EM iterations run, final
+        log-likelihood, fitted mixing fraction, and fitted
+        theta_prot/theta_acc per context -- are stored in
         `exp.global_analysis[f"{prob_name}_calib"]`. The full
         per-position theta_prot/theta_acc/informative actually used to
         score each chromosome are stored in
@@ -1637,8 +1664,9 @@ class MethPrintAnalysis:
             strata = info.items() if norm_by_strand else [(None, info)]
             rows = []
             for strand, sub in strata:
-                row = {"chrom": chrom, "has_controls": sub["has_controls"],
-                      "frac_informative": sub["frac_informative"]}
+                row = {"chrom": chrom, "has_controls": sub["has_controls"]}
+                row.update({k: v for k, v in sub.items()
+                           if k.startswith("frac_informative_")})
                 if strand is not None:
                     row["strand"] = strand
                 if "n_iter" in sub:

@@ -1292,7 +1292,11 @@ class TestModelProbCalib:
         row = calib.iloc[0]
         assert row["chrom"] == "chr1"
         assert row["has_controls"] == False
-        assert 0 < row["frac_informative"] <= 1
+        frac_cols = [c for c in calib.columns
+                    if c.startswith("frac_informative_")]
+        assert frac_cols
+        for c in frac_cols:
+            assert 0 <= row[c] <= 1
         assert 1 <= row["iters"] <= 200
         assert np.isfinite(row["log_likelihood"])
         assert 0 <= row["frac_protected"] <= 1
@@ -1308,7 +1312,11 @@ class TestModelProbCalib:
         calib = exp.global_analysis["meth_prob_calib"]
         row = calib.iloc[0]
         assert row["has_controls"] == True
-        assert 0 < row["frac_informative"] <= 1
+        frac_cols = [c for c in calib.columns
+                    if c.startswith("frac_informative_")]
+        assert frac_cols
+        for c in frac_cols:
+            assert 0 <= row[c] <= 1
         for col in ("iters", "log_likelihood", "frac_protected"):
             assert col not in calib.columns or pd.isna(row[col])
 

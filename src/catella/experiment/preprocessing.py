@@ -22,34 +22,6 @@ def _lookup_mask(exp, chrom, source, mask_name):
     return exp.analysis[chrom][key]["keep"].to_numpy()
 
 
-def _patch_fill_edge(arr, fill_edge, vmin, vmax, keep, batch_size):
-    """
-    Refill only the still-NaN edge positions of an H5Array last
-    smoothed with fill_edge=NaN, in place, streamed in batches. `keep`
-    (or None) excludes dropout rows from filling.
-    """
-    if not isinstance(fill_edge, str) and not np.isnan(fill_edge):
-        if not (vmin <= fill_edge <= vmax):
-            raise ValueError(
-                f"'fill_edge'={fill_edge} is outside the data range "
-                f"[{vmin}, {vmax}].")
-    nrow = arr.shape[0]
-    for start in range(0, nrow, batch_size):
-        stop = min(start + batch_size, nrow)
-        batch = arr[start:stop, :]
-        nanmask = np.isnan(batch)
-        if keep is not None:
-            nanmask &= keep[start:stop, None]
-        if not nanmask.any():
-            continue
-        if isinstance(fill_edge, str):  # "mean"
-            fill = np.nanmean(batch, axis=1)
-            batch = np.where(nanmask, fill[:, None], batch)
-        else:
-            batch = np.where(nanmask, fill_edge, batch)
-        arr.write_batch(start, stop, batch)
-
-
 NONE, M6A, GCH, HCG, GCG = 0, 1, 2, 3, 4
 CONTEXT_NAMES = {NONE: "none", M6A: "M6A", GCH: "GCH", HCG: "HCG",
                  GCG: "GCG"}
@@ -990,9 +962,10 @@ class MethPrintAnalysis:
         name : str, default "smoothed"
             The suffix used to store the resulting array in `exp.analysis`.
             Results are stored as 'test_{name}', 'meth_{name}', etc.
-        nan_method : {"mean", "interpolate"}, default "mean"
+        nan_method : {"mean", "interpolate", "none"}, default "mean"
             How to fill interior nan values (gaps with valid data on both
-            sides): molecule mean, or linear interpolation.
+            sides): molecule mean, linear interpolation, or "none" to
+            leave them unfilled.
         fill_edge : float or "mean", default np.nan
             How to fill leading/trailing edge nan values, independent of
             `nan_method`. A literal float must lie within the data range.
@@ -1009,7 +982,7 @@ class MethPrintAnalysis:
         Raises
         ------
         ValueError
-            If `nan_method` is not "mean" or "interpolate".
+            If `nan_method` is not "mean", "interpolate", or "none".
             If `fill_edge` is a literal float outside the data range.
         KeyError
             If `mask_name` is given but no matching mask is found for
@@ -1024,9 +997,9 @@ class MethPrintAnalysis:
         `meth_prob`).
         """
 
-        if nan_method not in ("mean", "interpolate"):
-            raise ValueError("'nan_method' must be 'mean' or 'interpolate', "
-                             f"got {nan_method!r}.")
+        if nan_method not in ("mean", "interpolate", "none"):
+            raise ValueError("'nan_method' must be 'mean', 'interpolate', "
+                             f"or 'none', got {nan_method!r}.")
 
         exp.global_analysis[f"{name}_params"] = pd.DataFrame([{
             "binsize": binsize, "nan_method": nan_method,
@@ -1067,12 +1040,16 @@ class MethPrintAnalysis:
                 # Interior nans (bounded by valid data on both sides) are
                 # filled per nan_method; interpolate() with
                 # limit_area="inside" only fills those, leaving edge nans
-                # untouched so they can be probed for below.
-                interior_interp = res.interpolate(method="linear",
-                                                   limit_area="inside")
-                if nan_method == "interpolate":
-                    res = interior_interp
+                # untouched so they can be probed for below. "none"
+                # leaves interior nans as-is too.
+                if nan_method == "none":
+                    pass
+                elif nan_method == "interpolate":
+                    res = res.interpolate(method="linear",
+                                          limit_area="inside")
                 else:
+                    interior_interp = res.interpolate(method="linear",
+                                                       limit_area="inside")
                     interior_mask = res.isna() & interior_interp.notna()
                     res = res.where(~interior_mask, res.fillna(res.mean()))
 
@@ -1115,8 +1092,7 @@ class MethPrintAnalysis:
                   clip_high : float = 99.9,
                   norm_by_strand : bool = False,
                   resmooth : bool = False,
-                  nan_method : str = "mean",
-                  fill_edge : float | str = np.nan,
+                  fill_edge : float = np.nan,
                   batch_size : int = 20000,
                   percentile_sample_size : int = 100000,
                   seed : int | None = None,
@@ -1166,17 +1142,15 @@ class MethPrintAnalysis:
             Whether to perform normalization separately based on strandedness.
         resmooth : bool, default False
             If True, always re-run `smooth`, even if `test_{smoothed_
-            name}` already exists in `exp.analysis`.
-        nan_method : {"mean", "interpolate"}, default "mean"
-            Passed through to `smooth` if smoothing is triggered
-            lazily, and must match the previous smoothing if
-            `test_{smoothed_name}` already exists (see `resmooth`).
-        fill_edge : float or "mean", default np.nan
-            Passed through to `smooth` if smoothing is triggered
-            lazily. If `test_{smoothed_name}` already exists and only
-            `fill_edge` differs from the previous smoothing, the
-            existing edges are patched in place instead of requiring
-            `resmooth`.
+            name}` already exists in `exp.analysis`. Smoothing always
+            runs with `nan_method="none"` here (see `fill_edge`).
+        fill_edge : float, default np.nan
+            Probability used to fill the trailing `binsize - 1`
+            positions, which have no full window -- mirrors
+            `model_prob`'s `fill_edge`. Interior gaps are always
+            filled with 0.5 (`logit(0.5) == 0`), the same neutral,
+            no-evidence value `model_prob` gives uninformative
+            positions.
         batch_size : int, default 20000
             Number of molecules processed (and held in memory) per batch.
         percentile_sample_size : int, default 100000
@@ -1203,9 +1177,8 @@ class MethPrintAnalysis:
         ValueError
             If `binsize` is not provided and no cached `binsize` exists.
             If `test_{smoothed_name}` already exists and an
-            explicitly-given `binsize`/`nan_method` (or `fill_edge`
-            together with a mismatched `binsize`/`nan_method`) doesn't
-            match what was used to produce it.
+            explicitly-given `binsize` does not match what was used to
+            produce it, or it was not smoothed with `nan_method="none"`.
             If `norm_by_strand` is True but molecules with unmapped strands
             ('.') exist.
         KeyError
@@ -1251,7 +1224,10 @@ class MethPrintAnalysis:
 
         tmp_dir = exp.resolve_tmp_dir()
 
-        # Check for cached binsize, or perform (or re-verify) smoothing
+        # Check for cached binsize, or perform (or re-verify) smoothing.
+        # Smoothing always runs with nan_method="none" here: this
+        # method's own fill_edge (applied to the final probabilities
+        # below) is the only missing-data handling in effect.
         already_smoothed = (
             f"test_{smoothed_name}" in exp.analysis[exp.chroms[0]])
         cached_params = exp.global_analysis.get(f"{smoothed_name}_params")
@@ -1263,66 +1239,25 @@ class MethPrintAnalysis:
                 raise ValueError("'binsize' must be specified if data are not "
                                  "already smoothed.")
             self.smooth(binsize=binsize, exp=exp, name=smoothed_name,
-                       nan_method=nan_method, fill_edge=fill_edge,
-                       batch_size=batch_size, mask_name=mask_name)
+                       nan_method="none", batch_size=batch_size,
+                       mask_name=mask_name)
         elif cached_params is not None:
             row = cached_params.iloc[0]
             mismatched = []
             if binsize is not None and binsize != int(row["binsize"]):
                 mismatched.append("binsize")
-            if nan_method != "mean" and nan_method != row["nan_method"]:
+            if row["nan_method"] != "none":
                 mismatched.append("nan_method")
             # mask_name is *not* compared here: unlike binsize/
             # nan_method, it's reapplied fresh to the output on every
             # call via _apply_keep_mask below, regardless of what (if
             # any) mask_name smooth() itself used.
-
-            is_default_fill = (isinstance(fill_edge, float)
-                               and np.isnan(fill_edge))
-            old_fill_edge = row["fill_edge"]
-            old_is_nan = (isinstance(old_fill_edge, float)
-                         and np.isnan(old_fill_edge))
-            fill_edge_changed = (not is_default_fill
-                                 and fill_edge != old_fill_edge)
-
-            if fill_edge_changed and not mismatched and old_is_nan:
-                # Only fill_edge differs, and the stored edges are
-                # still NaN -- patch in place instead of a resmooth.
-                # Excludes rows dropped by whatever mask_name smooth()
-                # itself used (baked into storage as all-NaN rows),
-                # not this call's mask_name (applied fresh below).
-                orig_mask_name = row["mask_name"] or None
-                for chrom in exp.chroms:
-                    raw = exp.raw[chrom]
-                    ana_map = exp.analysis[chrom]
-                    for source, df in (("test", raw.test_data),
-                                       ("meth", raw.meth_data),
-                                       ("unmeth", raw.unmeth_data)):
-                        key = f"{source}_{smoothed_name}"
-                        if df is None or key not in ana_map:
-                            continue
-                        keep = _lookup_mask(
-                            exp, chrom, source, orig_mask_name) \
-                            if orig_mask_name is not None else None
-                        _patch_fill_edge(
-                            ana_map[key], fill_edge,
-                            df["mod_qual"].min(), df["mod_qual"].max(),
-                            keep, batch_size)
-                exp.global_analysis[f"{smoothed_name}_params"] = \
-                    pd.DataFrame([{
-                        "binsize": int(row["binsize"]),
-                        "nan_method": row["nan_method"],
-                        "fill_edge": fill_edge,
-                        "mask_name": row["mask_name"]}])
-            else:
-                if fill_edge_changed:
-                    mismatched.append("fill_edge")
-                if mismatched:
-                    raise ValueError(
-                        f"'{smoothed_name}' was already smoothed with "
-                        f"different {', '.join(mismatched)}; pass "
-                        "resmooth=True to recompute, or use a "
-                        "different 'smoothed_name'.")
+            if mismatched:
+                raise ValueError(
+                    f"'{smoothed_name}' was already smoothed with "
+                    f"different {', '.join(mismatched)}; pass "
+                    "resmooth=True to recompute, or use a "
+                    "different 'smoothed_name'.")
 
         # binsize may still be unset if smoothing was skipped and the
         # caller didn't pass it; downstream code needs the real value.
@@ -1462,7 +1397,23 @@ class MethPrintAnalysis:
             for start in range(0, nmol, batch_size):
                 stop = min(start + batch_size, nmol)
                 batch = normalized_batch(start, stop)
+                # mask_name marks dropped molecules as all-nan rows
+                # (see _apply_keep_mask); keep them excluded from the
+                # output rather than neutral-filling them below.
+                masked = np.isnan(batch).all(axis=1)
                 prob = np.clip((batch-vmin)/denom, 0.0, 1.0)
+                # Interior gaps carry no evidence either way, so they
+                # are filled with 0.5 (logit(0.5) == 0), the same
+                # neutral value model_prob gives uninformative
+                # positions. The trailing binsize-1 columns have no
+                # full window at all and are filled with fill_edge
+                # instead, mirroring model_prob's own edge handling.
+                interior = prob[:, :end_idx]
+                prob[:, :end_idx] = np.where(np.isnan(interior), 0.5,
+                                             interior)
+                if end_idx is not None:
+                    prob[:, end_idx:] = fill_edge
+                prob[masked, :] = np.nan
                 out.write_batch(start, stop, prob)
             ana[prob_name] = out
 

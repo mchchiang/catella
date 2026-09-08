@@ -111,8 +111,7 @@ def compute_empirical_prob(*, exp : MethPrintExperiment,
                clip_low : float = 0.1,
                clip_high : float = 99.9,
                norm_by_strand : bool = False,
-               nan_method : str = "mean",
-               fill_edge : float | str = np.nan,
+               fill_edge : float = np.nan,
                batch_size : int = 20000,
                percentile_sample_size : int = 100000,
                seed : int | None = None,
@@ -154,14 +153,10 @@ def compute_empirical_prob(*, exp : MethPrintExperiment,
         signal itself.
     norm_by_strand : bool, default False
         Whether to perform normalization separately based on strandedness.
-    nan_method : {"mean", "interpolate"}, default "mean"
-        How to fill interior nan values (gaps with valid data on both
-        sides) during smoothing: molecule mean, or linear
-        interpolation.
-    fill_edge : float or "mean", default np.nan
-        How to fill leading/trailing edge nan values during
-        smoothing, independent of `nan_method`. A literal float must
-        lie within the data range.
+    fill_edge : float, default np.nan
+        Probability used to fill the trailing positions with no full
+        window to average. Interior gaps are always filled with 0.5,
+        the neutral, no-evidence probability.
     batch_size : int, default 20000
         Number of molecules processed (and held in memory) per batch
         during smoothing and probability calculation.
@@ -176,9 +171,8 @@ def compute_empirical_prob(*, exp : MethPrintExperiment,
         `filter_dropout(mask_name=mask_name)` call are excluded from
         both the smoothing step and the probability calculation, per
         source: set to all-NaN in the smoothed signal, and excluded
-        (set to NaN) from the test signal and control-based
-        normalization statistics. Forwarded to both
-        `MethPrintAnalysis.smooth` and `MethPrintAnalysis.empirical_prob`.
+        (set to NaN) from the test signal, control-based normalization
+        statistics, and the resulting probabilities.
 
     Returns
     -------
@@ -188,11 +182,9 @@ def compute_empirical_prob(*, exp : MethPrintExperiment,
 
     # Smooth and normalize the data - compute methylation probability
     ana = MethPrintAnalysis()
-    ana.smooth(binsize=binsize, exp=exp, nan_method=nan_method,
-              fill_edge=fill_edge, batch_size=batch_size,
-              mask_name=mask_name)
-    ana.empirical_prob(exp=exp, prob_name=prob_name, clip_low=clip_low,
-                       clip_high=clip_high, norm_by_strand=norm_by_strand,
+    ana.empirical_prob(exp=exp, binsize=binsize, prob_name=prob_name,
+                       clip_low=clip_low, clip_high=clip_high,
+                       norm_by_strand=norm_by_strand, fill_edge=fill_edge,
                        batch_size=batch_size,
                        percentile_sample_size=percentile_sample_size,
                        seed=seed, mask_name=mask_name)

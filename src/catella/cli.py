@@ -332,7 +332,7 @@ def compute_model_prob(
     n_min: Annotated[
         int, typer.Option(help="Min context-eligible sites per window "
                           "(no-controls fit)")] = 10,
-    iters: Annotated[
+    max_iters: Annotated[
         int, typer.Option(help="Max EM iterations (no-controls "
                           "fit)")] = 200,
     init_prot: Annotated[
@@ -362,8 +362,8 @@ def compute_model_prob(
         exp=exp, out_file=out_file, prob_name=prob_name, pi0=pi0, eta=eta,
         eta_max_lag=eta_max_lag, store_rho=store_rho, nu=nu,
         rho_leak=rho_leak, min_gap=min_gap, l_nuc=l_nuc, n_min=n_min,
-        iters=iters, init_prot=init_prot, init_acc=init_acc, tol=tol,
-        fill_edge=fill_edge, norm_by_strand=norm_by_strand,
+        max_iters=max_iters, init_prot=init_prot, init_acc=init_acc,
+        tol=tol, fill_edge=fill_edge, norm_by_strand=norm_by_strand,
         batch_size=batch_size, mask_name=mask_name)
 
 

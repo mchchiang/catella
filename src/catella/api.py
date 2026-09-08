@@ -208,7 +208,7 @@ def compute_model_prob(*, exp : MethPrintExperiment,
                min_gap : float = 0.05,
                l_nuc : int = 147,
                n_min : int = 10,
-               iters : int = 200,
+               max_iters : int = 200,
                init_prot : float = 0.05,
                init_acc : float = 0.95,
                tol : float = 1e-8,
@@ -250,7 +250,8 @@ def compute_model_prob(*, exp : MethPrintExperiment,
         methylated control when available, or from the test data
         otherwise. A float pins every channel to that value; a dict
         pins only the named channels, leaving any not mentioned to
-        be auto-estimated.
+        be auto-estimated. The value(s) actually applied are stored
+        in `exp.global_analysis[f"{prob_name}_eta"]` afterward.
     eta_max_lag : int, default 10
         Maximum lag (bp) summed over when auto-estimating eta.
     store_rho : bool, default False
@@ -280,7 +281,7 @@ def compute_model_prob(*, exp : MethPrintExperiment,
         Minimum number of context-eligible sites a window must have
         to be used in the no-controls expectation-maximization fit.
         Used only when no meth/unmeth controls are available.
-    iters : int, default 200
+    max_iters : int, default 200
         Maximum number of expectation-maximization iterations for
         the no-controls rate fit.
     init_prot : float, default 0.05
@@ -327,6 +328,17 @@ def compute_model_prob(*, exp : MethPrintExperiment,
         unrecognized channel name, or if `norm_by_strand` is True but
         molecules with unmapped strands ('.') exist. See
         `MethPrintAnalysis.model_prob`.
+
+    Notes
+    -----
+    Per-chromosome (and, if `norm_by_strand`, per-strand) calibration
+    diagnostics -- whether controls were used, fraction of positions
+    deemed informative, and (no-controls path only) actual EM
+    iterations run, final log-likelihood, fitted mixing fraction, and
+    fitted theta_prot/theta_acc per context -- are stored in
+    `exp.global_analysis[f"{prob_name}_calib"]`. The full per-position
+    theta_prot/theta_acc/informative actually used to score each
+    chromosome are stored in `exp.analysis[chrom][f"{prob_name}_theta"]`.
     """
 
     # Compute methylation probability via the calibrated log-odds model
@@ -334,7 +346,7 @@ def compute_model_prob(*, exp : MethPrintExperiment,
     ana.model_prob(exp=exp, prob_name=prob_name, pi0=pi0, eta=eta,
                    eta_max_lag=eta_max_lag, store_rho=store_rho, nu=nu,
                    rho_leak=rho_leak, min_gap=min_gap, l_nuc=l_nuc,
-                   n_min=n_min, iters=iters, init_prot=init_prot,
+                   n_min=n_min, max_iters=max_iters, init_prot=init_prot,
                    init_acc=init_acc, tol=tol, fill_edge=fill_edge,
                    norm_by_strand=norm_by_strand, batch_size=batch_size,
                    mask_name=mask_name)

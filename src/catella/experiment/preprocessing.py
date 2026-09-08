@@ -382,7 +382,7 @@ def _streamed_window_count(exp, chrom, ctx, l_nuc, n_min, batch_size,
     return {key: _build(key) for key in keys}
 
 
-def _calibrate_from_data(K, N, ctx, codes, iters=200, eps=1e-3,
+def _calibrate_from_data(K, N, ctx, codes, max_iters=200, eps=1e-3,
                          init_prot=0.05, init_acc=0.95, tol=1e-8,
                          min_gap=0.05):
     """
@@ -403,7 +403,7 @@ def _calibrate_from_data(K, N, ctx, codes, iters=200, eps=1e-3,
     codes : list of int
         Context codes present in `ctx`, in the same order as `K`/`N`'s
         first axis.
-    iters : int, default 200
+    max_iters : int, default 200
         Maximum number of expectation-maximization iterations.
     eps : float, default 1e-3
         Clip bound keeping rates away from exactly 0 or 1.
@@ -418,10 +418,20 @@ def _calibrate_from_data(K, N, ctx, codes, iters=200, eps=1e-3,
 
     Returns
     -------
-    tuple of np.ndarray
-        `(theta_prot, theta_acc, informative)`, each length L. Rates are
-        constant within a context, since position-specific efficiency is
-        not resolvable without controls.
+    theta_prot, theta_acc : np.ndarray
+        float64, length L. Rates are constant within a context, since
+        position-specific efficiency is not resolvable without
+        controls.
+    informative : np.ndarray
+        bool, length L.
+    em_diag : dict
+        Fit diagnostics: `n_iter` (int, actual iterations run, capped
+        at `max_iters`), `log_likelihood` (float, at the iteration
+        that triggered convergence or exhausted `max_iters`),
+        `frac_protected` (float, fitted mixing fraction of windows in
+        the protected state), `codes` (as passed in), and `theta_prot`/
+        `theta_acc` (float64, length `len(codes)`, the final per-context
+        rates before broadcasting to `theta_prot`/`theta_acc` above).
     """
     from scipy.stats import binom
 
@@ -429,8 +439,10 @@ def _calibrate_from_data(K, N, ctx, codes, iters=200, eps=1e-3,
     ta = np.full(len(codes), init_acc)
     pi = 0.75
     prev = -np.inf
+    n_iter = 0
 
-    for it in range(iters):
+    for it in range(max_iters):
+        n_iter = it + 1
         lp = np.log(pi) + sum(binom.logpmf(K[c], N[c], tp[c])
                               for c in range(len(codes)))
         la = np.log1p(-pi) + sum(binom.logpmf(K[c], N[c], ta[c])
@@ -464,7 +476,10 @@ def _calibrate_from_data(K, N, ctx, codes, iters=200, eps=1e-3,
 
     informative = ((ctx != NONE) & np.isfinite(theta_acc)
                    & ((theta_acc - theta_prot) > min_gap))
-    return theta_prot, theta_acc, informative
+    em_diag = {"n_iter": n_iter, "log_likelihood": ll,
+              "frac_protected": pi, "codes": codes, "theta_prot": tp,
+              "theta_acc": ta}
+    return theta_prot, theta_acc, informative, em_diag
 
 
 def _per_base_log_odds(q, theta_prot, theta_acc, informative, pi0=0.5,
@@ -784,7 +799,7 @@ def _accumulate_eta_source(exp, chrom, which, ctx, theta_prot, theta_acc,
 
 
 def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, l_nuc, n_min,
-                       iters, init_prot, init_acc, tol, batch_size,
+                       max_iters, init_prot, init_acc, tol, batch_size,
                        mask_name, norm_by_strand=False):
     """
     Classify `chrom`'s reference into contexts and calibrate
@@ -798,7 +813,7 @@ def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, l_nuc, n_min,
         The experiment object containing raw data and analysis maps.
     chrom : str
         Chromosome identifier.
-    nu, rho_leak, min_gap, l_nuc, n_min, iters, init_prot, init_acc,
+    nu, rho_leak, min_gap, l_nuc, n_min, max_iters, init_prot, init_acc,
     tol : as in `model_prob`.
     batch_size : int
         Number of molecules processed per batch.
@@ -824,6 +839,12 @@ def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, l_nuc, n_min,
         "-": ...}` dict of such arrays.
     has_controls : bool
         Whether meth/unmeth controls were used.
+    calib_info : dict or dict of str to dict
+        Calibration diagnostics -- `{"has_controls": has_controls,
+        "frac_informative": informative.mean()}`, merged with the
+        `em_diag` dict from `_calibrate_from_data` when the no-controls
+        path was used (empty for the controls path). If
+        `norm_by_strand`, a `{"+": ..., "-": ...}` dict of such dicts.
 
     Raises
     ------
@@ -889,11 +910,14 @@ def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, l_nuc, n_min,
                 row_masks={"+": unmeth_strand == "+",
                           "-": unmeth_strand == "-"})
             theta_prot, theta_acc, informative = {}, {}, {}
+            calib_info = {}
             for s in ("+", "-"):
                 theta_prot[s], theta_acc[s], informative[s] = \
                     _calibrate_from_controls(
                         *meth_counts[s], *unmeth_counts[s], ctx,
                         nu=nu, rho_leak=rho_leak, min_gap=min_gap)
+                calib_info[s] = {"has_controls": has_controls,
+                                 "frac_informative": informative[s].mean()}
         else:
             meth_k, meth_n = _streamed_call_count(
                 exp, chrom, "meth", ctx, batch_size, mask_name)
@@ -902,6 +926,8 @@ def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, l_nuc, n_min,
             theta_prot, theta_acc, informative = _calibrate_from_controls(
                 meth_k, meth_n, unmeth_k, unmeth_n, ctx,
                 nu=nu, rho_leak=rho_leak, min_gap=min_gap)
+            calib_info = {"has_controls": has_controls,
+                         "frac_informative": informative.mean()}
     else:
         if norm_by_strand:
             test_strand = _strand_of_mol(raw.test_data,
@@ -911,19 +937,28 @@ def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, l_nuc, n_min,
                 row_masks={"+": test_strand == "+",
                           "-": test_strand == "-"})
             theta_prot, theta_acc, informative = {}, {}, {}
+            calib_info = {}
             for s in ("+", "-"):
                 K, N, codes = win_counts[s]
-                theta_prot[s], theta_acc[s], informative[s] = \
+                theta_prot[s], theta_acc[s], informative[s], em_diag = \
                     _calibrate_from_data(
-                        K, N, ctx, codes, iters=iters, init_prot=init_prot,
-                        init_acc=init_acc, tol=tol, min_gap=min_gap)
+                        K, N, ctx, codes, max_iters=max_iters,
+                        init_prot=init_prot, init_acc=init_acc, tol=tol,
+                        min_gap=min_gap)
+                calib_info[s] = {"has_controls": has_controls,
+                                 "frac_informative": informative[s].mean(),
+                                 **em_diag}
         else:
             K, N, codes = _streamed_window_count(
                 exp, chrom, ctx, l_nuc, n_min, batch_size, mask_name)
-            theta_prot, theta_acc, informative = _calibrate_from_data(
-                K, N, ctx, codes, iters=iters, init_prot=init_prot,
-                init_acc=init_acc, tol=tol, min_gap=min_gap)
-    return ctx, theta_prot, theta_acc, informative, has_controls
+            theta_prot, theta_acc, informative, em_diag = \
+                _calibrate_from_data(
+                    K, N, ctx, codes, max_iters=max_iters,
+                    init_prot=init_prot, init_acc=init_acc, tol=tol,
+                    min_gap=min_gap)
+            calib_info = {"has_controls": has_controls,
+                         "frac_informative": informative.mean(), **em_diag}
+    return ctx, theta_prot, theta_acc, informative, has_controls, calib_info
 
 
 class MethPrintAnalysis:
@@ -1429,7 +1464,7 @@ class MethPrintAnalysis:
                    min_gap : float = 0.05,
                    l_nuc : int = 147,
                    n_min : int = 10,
-                   iters : int = 200,
+                   max_iters : int = 200,
                    init_prot : float = 0.05,
                    init_acc : float = 0.95,
                    tol : float = 1e-8,
@@ -1476,9 +1511,8 @@ class MethPrintAnalysis:
             otherwise. A float pins every channel to that value; a
             dict pins only the named channels, leaving any not
             mentioned to be auto-estimated. The value(s) actually
-            applied, along with every other parameter below, are
-            stored in `exp.global_analysis[f"{prob_name}_params"]`
-            afterward.
+            applied are stored in
+            `exp.global_analysis[f"{prob_name}_eta"]` afterward.
         eta_max_lag : int, default 10
             Maximum lag (bp) summed over when auto-estimating eta.
         store_rho : bool, default False
@@ -1509,7 +1543,7 @@ class MethPrintAnalysis:
             Minimum number of context-eligible sites a window must have
             to be used in the no-controls expectation-maximization fit.
             Used only when no meth/unmeth controls are available.
-        iters : int, default 200
+        max_iters : int, default 200
             Maximum number of expectation-maximization iterations for
             the no-controls rate fit.
         init_prot : float, default 0.05
@@ -1570,6 +1604,17 @@ class MethPrintAnalysis:
         positions `i` and `length-1-i` must classify to the same
         context to be kept; where they disagree, the folded position
         is treated as having no context.
+
+        Per-chromosome (and, if `norm_by_strand`, per-strand)
+        calibration diagnostics -- whether controls were used,
+        fraction of positions deemed informative, and (no-controls
+        path only) actual EM iterations run, final log-likelihood,
+        fitted mixing fraction, and fitted theta_prot/theta_acc per
+        context -- are stored in
+        `exp.global_analysis[f"{prob_name}_calib"]`. The full
+        per-position theta_prot/theta_acc/informative actually used to
+        score each chromosome are stored in
+        `exp.analysis[chrom][f"{prob_name}_theta"]`.
         """
         from scipy.special import expit, logit
 
@@ -1581,20 +1626,44 @@ class MethPrintAnalysis:
         channel_eta = dict(overrides)
 
         calib_kwargs = dict(nu=nu, rho_leak=rho_leak, min_gap=min_gap,
-                            l_nuc=l_nuc, n_min=n_min, iters=iters,
+                            l_nuc=l_nuc, n_min=n_min, max_iters=max_iters,
                             init_prot=init_prot, init_acc=init_acc,
                             tol=tol, batch_size=batch_size,
                             mask_name=mask_name,
                             norm_by_strand=norm_by_strand)
+        _strand_suffix = {"+": "pos", "-": "neg"}
+
+        def _calib_rows(chrom, info):
+            strata = info.items() if norm_by_strand else [(None, info)]
+            rows = []
+            for strand, sub in strata:
+                row = {"chrom": chrom, "has_controls": sub["has_controls"],
+                      "frac_informative": sub["frac_informative"]}
+                if strand is not None:
+                    row["strand"] = strand
+                if "n_iter" in sub:
+                    row["iters"] = sub["n_iter"]
+                    row["log_likelihood"] = sub["log_likelihood"]
+                    row["frac_protected"] = sub["frac_protected"]
+                    row.update({f"theta_prot_{CONTEXT_NAMES[c]}": v
+                               for c, v in zip(sub["codes"],
+                                              sub["theta_prot"])})
+                    row.update({f"theta_acc_{CONTEXT_NAMES[c]}": v
+                               for c, v in zip(sub["codes"],
+                                              sub["theta_acc"])})
+                rows.append(row)
+            return rows
 
         calib_cache = {}
+        calib_records = []
         if need_auto:
             stats = _init_autocorr_stats(eta_max_lag)
             for chrom in exp.chroms:
-                ctx, theta_prot, theta_acc, informative, has_controls = \
-                    _chrom_calibration(exp, chrom, **calib_kwargs)
+                (ctx, theta_prot, theta_acc, informative, has_controls,
+                 calib_info) = _chrom_calibration(exp, chrom, **calib_kwargs)
                 calib_cache[chrom] = (ctx, theta_prot, theta_acc,
                                       informative)
+                calib_records.extend(_calib_rows(chrom, calib_info))
                 # meth control isolates the crosstalk artifact from
                 # real, occupancy-driven correlation in the test data
                 source = "meth" if has_controls else "test"
@@ -1619,15 +1688,17 @@ class MethPrintAnalysis:
                     **{f"rho_{CONTEXT_NAMES[c]}": rho_by_channel[c]
                       for c in _ETA_CHANNELS if c in rho_by_channel}})
 
+        exp.global_analysis[f"{prob_name}_eta"] = pd.DataFrame([{
+            f"eta_{CONTEXT_NAMES[c]}": channel_eta[c]
+            for c in _ETA_CHANNELS}])
+
         exp.global_analysis[f"{prob_name}_params"] = pd.DataFrame([{
             "pi0": pi0, "eta_max_lag": eta_max_lag, "nu": nu,
             "rho_leak": rho_leak, "min_gap": min_gap, "l_nuc": l_nuc,
-            "n_min": n_min, "iters": iters, "init_prot": init_prot,
+            "n_min": n_min, "max_iters": max_iters, "init_prot": init_prot,
             "init_acc": init_acc, "tol": tol, "fill_edge": fill_edge,
             "norm_by_strand": norm_by_strand,
-            "mask_name": mask_name or "",
-            **{f"eta_{CONTEXT_NAMES[c]}": channel_eta[c]
-              for c in _ETA_CHANNELS}}])
+            "mask_name": mask_name or ""}])
 
         for chrom in exp.chroms:
             raw = exp.raw[chrom]
@@ -1635,8 +1706,23 @@ class MethPrintAnalysis:
                 ctx, theta_prot, theta_acc, informative = \
                     calib_cache[chrom]
             else:
-                ctx, theta_prot, theta_acc, informative, _ = \
-                    _chrom_calibration(exp, chrom, **calib_kwargs)
+                (ctx, theta_prot, theta_acc, informative, _,
+                 calib_info) = _chrom_calibration(exp, chrom, **calib_kwargs)
+                calib_records.extend(_calib_rows(chrom, calib_info))
+
+            if norm_by_strand:
+                theta_cols = {}
+                for s in ("+", "-"):
+                    suffix = _strand_suffix[s]
+                    theta_cols[f"theta_prot_{suffix}"] = theta_prot[s]
+                    theta_cols[f"theta_acc_{suffix}"] = theta_acc[s]
+                    theta_cols[f"informative_{suffix}"] = informative[s]
+                theta_df = pd.DataFrame(theta_cols)
+            else:
+                theta_df = pd.DataFrame({"theta_prot": theta_prot,
+                                         "theta_acc": theta_acc,
+                                         "informative": informative})
+            exp.analysis[chrom][f"{prob_name}_theta"] = theta_df
 
             eta_by_pos = np.ones(len(ctx))
             for c in _ETA_CHANNELS:
@@ -1679,6 +1765,9 @@ class MethPrintAnalysis:
                 prob[masked, :] = np.nan
                 out.write_batch(start, stop, prob)
             exp.analysis[chrom][prob_name] = out
+
+        exp.global_analysis[f"{prob_name}_calib"] = pd.DataFrame(
+            calib_records)
 
     def sort_by_linkage(self, *,
                         exp : MethPrintExperiment,

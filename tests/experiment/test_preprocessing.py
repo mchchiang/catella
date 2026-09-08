@@ -891,7 +891,7 @@ class TestModelProb:
 
 
 def _eta_from(exp, prob_name="meth_prob"):
-    row = exp.global_analysis[f"{prob_name}_params"].iloc[0]
+    row = exp.global_analysis[f"{prob_name}_eta"].iloc[0]
     return {ch: row[f"eta_{ch}"] for ch in ("M6A", "GCH", "HCG", "GCG")}
 
 
@@ -1263,3 +1263,125 @@ class TestModelProbStrand:
         for channel in ("M6A", "GCH", "HCG", "GCG"):
             assert eta_b[channel] == pytest.approx(
                 eta_a[channel], rel=0.1)
+
+
+class TestModelProbEtaTable:
+    def test_eta_table_always_created_and_separate_from_params(self):
+        exp = _make_footprint_experiment(with_controls=True,
+                                         planted_edges=(30,), l_nuc=30)
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=exp, l_nuc=30, batch_size=7)
+        assert "meth_prob_eta" in exp.global_analysis
+        eta_row = exp.global_analysis["meth_prob_eta"].iloc[0]
+        for ch in ("M6A", "GCH", "HCG", "GCG"):
+            assert f"eta_{ch}" in eta_row
+        params = exp.global_analysis["meth_prob_params"]
+        assert not any(c.startswith("eta_") and c != "eta_max_lag"
+                      for c in params.columns)
+
+
+class TestModelProbCalib:
+    def test_no_controls_path_populates_calib_table(self):
+        exp = _make_footprint_experiment(with_controls=False, nmol=120,
+                                         planted_edges=(30, 120, 200),
+                                         l_nuc=30)
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=exp, l_nuc=30, n_min=3, batch_size=17)
+        calib = exp.global_analysis["meth_prob_calib"]
+        assert len(calib) == 1
+        row = calib.iloc[0]
+        assert row["chrom"] == "chr1"
+        assert row["has_controls"] == False
+        assert 0 < row["frac_informative"] <= 1
+        assert 1 <= row["iters"] <= 200
+        assert np.isfinite(row["log_likelihood"])
+        assert 0 <= row["frac_protected"] <= 1
+        for ch in ("M6A", "GCH", "HCG", "GCG"):
+            assert f"theta_prot_{ch}" in calib.columns
+            assert f"theta_acc_{ch}" in calib.columns
+
+    def test_controls_path_row_has_no_em_diagnostics(self):
+        exp = _make_footprint_experiment(with_controls=True,
+                                         planted_edges=(30,), l_nuc=30)
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=exp, l_nuc=30, batch_size=7)
+        calib = exp.global_analysis["meth_prob_calib"]
+        row = calib.iloc[0]
+        assert row["has_controls"] == True
+        assert 0 < row["frac_informative"] <= 1
+        for col in ("iters", "log_likelihood", "frac_protected"):
+            assert col not in calib.columns or pd.isna(row[col])
+
+    def test_max_iters_caps_actual_iterations(self):
+        exp = _make_footprint_experiment(with_controls=False, nmol=120,
+                                         planted_edges=(30, 120, 200),
+                                         l_nuc=30)
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=exp, l_nuc=30, n_min=3, batch_size=17,
+                       max_iters=1)
+        calib = exp.global_analysis["meth_prob_calib"]
+        assert calib.iloc[0]["iters"] <= 1
+
+    def test_norm_by_strand_gives_two_rows_per_chrom(self):
+        strand_of = lambda m: "+" if m % 2 == 0 else "-"
+        exp = _make_footprint_experiment(
+            with_controls=False, nmol=200, planted_edges=(30, 120, 200),
+            l_nuc=30, strand_of=strand_of)
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=exp, l_nuc=30, n_min=3, batch_size=17,
+                       norm_by_strand=True)
+        calib = exp.global_analysis["meth_prob_calib"]
+        assert len(calib) == 2
+        assert set(calib["strand"]) == {"+", "-"}
+        for _, row in calib.iterrows():
+            assert 1 <= row["iters"] <= 200
+
+    def test_params_table_has_max_iters_not_iters(self):
+        exp = _make_footprint_experiment(with_controls=True,
+                                         planted_edges=(30,), l_nuc=30)
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=exp, l_nuc=30, batch_size=7, max_iters=50)
+        params = exp.global_analysis["meth_prob_params"]
+        assert params.iloc[0]["max_iters"] == 50
+        assert "iters" not in params.columns
+
+
+class TestModelProbTheta:
+    def test_theta_table_present_for_no_controls_path(self):
+        exp = _make_footprint_experiment(with_controls=False, nmol=120,
+                                         planted_edges=(30, 120, 200),
+                                         l_nuc=30)
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=exp, l_nuc=30, n_min=3, batch_size=17)
+        theta = exp.analysis["chr1"]["meth_prob_theta"]
+        nbp = len(exp.raw["chr1"].refseq)
+        assert len(theta) == nbp
+        assert set(theta.columns) == {"theta_prot", "theta_acc",
+                                      "informative"}
+
+    def test_theta_table_present_for_controls_path(self):
+        exp = _make_footprint_experiment(with_controls=True,
+                                         planted_edges=(30,), l_nuc=30)
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=exp, l_nuc=30, batch_size=7)
+        theta = exp.analysis["chr1"]["meth_prob_theta"]
+        nbp = len(exp.raw["chr1"].refseq)
+        assert len(theta) == nbp
+        assert set(theta.columns) == {"theta_prot", "theta_acc",
+                                      "informative"}
+        informative = theta["informative"].to_numpy()
+        assert informative.any()
+        assert (theta["theta_acc"][informative]
+               > theta["theta_prot"][informative]).all()
+
+    def test_norm_by_strand_gives_suffixed_columns(self):
+        strand_of = lambda m: "+" if m % 2 == 0 else "-"
+        exp = _make_footprint_experiment(
+            with_controls=True, nmol=40, planted_edges=(30,), l_nuc=30,
+            strand_of=strand_of)
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=exp, l_nuc=30, batch_size=7, norm_by_strand=True)
+        theta = exp.analysis["chr1"]["meth_prob_theta"]
+        expected = {"theta_prot_pos", "theta_acc_pos", "informative_pos",
+                   "theta_prot_neg", "theta_acc_neg", "informative_neg"}
+        assert set(theta.columns) == expected

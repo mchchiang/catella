@@ -262,11 +262,23 @@ def compute_empirical_prob(
         Optional[float], typer.Option(help="Upper clip percentile")] = 99.9,
     norm_by_strand: Annotated[
         Optional[bool], typer.Option(help="Normalize by strand")] = False,
+    nan_method: Annotated[
+        str, typer.Option(help="'mean' or 'interpolate'; how to fill "
+                          "interior nan values during smoothing")
+    ] = "mean",
+    fill_edge: Annotated[
+        Optional[str], typer.Option(callback=fill_nan_parser,
+                                    help="'mean' or a number; how to "
+                                    "fill edge nan values during "
+                                    "smoothing")] = None,
     batch_size: Annotated[
         int, typer.Option(help="Molecules processed per batch")] = 20000,
     percentile_sample_size: Annotated[
         int, typer.Option(help="Sample size for percentile estimation")
     ] = 100000,
+    seed: Annotated[
+        Optional[int], typer.Option(help="Seed for percentile "
+                                    "subsampling")] = None,
     mask_name: Annotated[
         Optional[str], typer.Option(help="Key of a prior filter_dropout "
                                     "mask to apply")] = None):
@@ -277,8 +289,11 @@ def compute_empirical_prob(
     catella.compute_empirical_prob(
         exp=exp, out_file=out_file, binsize=binsize, prob_name=prob_name,
         clip_low=clip_low, clip_high=clip_high,
-        norm_by_strand=norm_by_strand, batch_size=batch_size,
-        percentile_sample_size=percentile_sample_size, mask_name=mask_name)
+        norm_by_strand=norm_by_strand, nan_method=nan_method,
+        fill_edge=(float("nan") if fill_edge is None else fill_edge),
+        batch_size=batch_size,
+        percentile_sample_size=percentile_sample_size, seed=seed,
+        mask_name=mask_name)
 
 
 @app.command(name="compute_model_prob")

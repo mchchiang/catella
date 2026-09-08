@@ -622,6 +622,53 @@ class TestSortByLinkage:
         np.testing.assert_allclose(sorted_arr.to_numpy(), meth_prob[order])
         assert "meth_prob_linkage" not in reloaded.analysis["chr1"]
 
+    def test_dataset_chroms_restricts_processing(self, tmp_path):
+        rng = np.random.default_rng(3)
+        nmol, nbp = 4, 20
+        meth_prob = {chrom: rng.random((nmol, nbp))
+                    for chrom in ("chr1", "chr2")}
+        manager = SimManager(nworker=1, verbose=False)
+        dataset = manager.run(chroms=["chr1", "chr2"], nsim=2,
+                              settings=SimSettings(**_settings_dict()),
+                              meth_prob=meth_prob,
+                              out_dir=tmp_path / "sim_out",
+                              dataset_name="results", seed=3)
+        SimAnalysis().compute_occup(dataset=dataset)
+        dataset.save()
+
+        result = runner.invoke(app, ["sort_by_linkage",
+                                     str(dataset._dataset_file),
+                                     "--kind", "dataset",
+                                     "--chroms", "chr1"])
+        assert result.exit_code == 0, result.output
+
+        reloaded = SimDataset.load(dataset._dataset_file)
+        assert "occup_sorted" in reloaded.analysis["chr1"]
+        assert "occup_sorted" not in reloaded.analysis["chr2"]
+
+    def test_experiment_chroms_restricts_processing(self, tmp_path):
+        rng = np.random.default_rng(2)
+        rows = [(f"m{m}", pos, chrom, "+", round(float(rng.random()), 3),
+                 "a")
+               for chrom in ("chr1", "chr2")
+               for m in range(6) for pos in range(0, 20, 5)]
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 20, "chr2": 20})
+        exp_file = tmp_path / "exp.h5"
+        exp = catella.load_raw(chromsize=chromsize, test_file=test_file)
+        catella.compute_empirical_prob(exp=exp, out_file=exp_file, binsize=5)
+
+        result = runner.invoke(app, [
+            "sort_by_linkage", str(exp_file), "--kind", "experiment",
+            "--data-name", "meth_prob", "--chroms", "chr1"])
+        assert result.exit_code == 0, result.output
+
+        reloaded = MethPrintExperiment.load(exp_file)
+        assert "meth_prob_sorted" in reloaded.analysis["chr1"]
+        assert "meth_prob_sorted" not in reloaded.analysis["chr2"]
+
     def test_fill_nan_avoids_crash_on_all_nan_row(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=6, nbp=10)
         SimAnalysis().compute_occup(dataset=dataset)

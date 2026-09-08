@@ -519,9 +519,9 @@ def sort_by_linkage(
         SourceKind, typer.Option(help="Whether source_file holds a "
                                  "MethPrintExperiment or a SimDataset")],
     chroms: Annotated[
-        Optional[list[str]], typer.Option(parser=csv_parser(str),
-                                          help="Chromosome(s); 'dataset' "
-                                          "kind only")] = None,
+        Optional[str], typer.Option(callback=csv_parser(str),
+                                    help="Chromosome(s) to "
+                                    "process")] = None,
     data_name: Annotated[
         Optional[str], typer.Option(help="Analysis key to sort")] = None,
     raw_which: Annotated[
@@ -565,7 +565,8 @@ def sort_by_linkage(
     """
     obj = _load_source(source_file, kind)
     if kind == SourceKind.experiment:
-        catella.sort_by_linkage(exp=obj, data_name=data_name,
+        catella.sort_by_linkage(exp=obj, chroms=chroms,
+                              data_name=data_name,
                               raw_which=raw_which, mask_name=mask_name,
                               sorted_name=sorted_name,
                               store_link_mat=store_link_mat,

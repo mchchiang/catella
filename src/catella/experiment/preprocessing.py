@@ -1232,7 +1232,8 @@ class MethPrintAnalysis:
             # One strand label per molecule, looked up by mol_index
             labels = np.full(nmol, ".", dtype="<U1")
             first = df.drop_duplicates("mol_index")[["mol_index", "strand"]]
-            labels[first["mol_index"].to_numpy()] = first["strand"].to_numpy()
+            idx = first["mol_index"].to_numpy().astype(np.int64)
+            labels[idx] = first["strand"].to_numpy()
             return labels
 
         def streamed_nanmean(arr, row_mask=None):

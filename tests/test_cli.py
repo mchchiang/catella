@@ -215,12 +215,12 @@ class TestSummarizeDropout:
         pd.testing.assert_frame_equal(got, expected, check_dtype=False)
 
 
-class TestPlotDropoutFilter:
+class TestPlotDropoutEcdf:
     def test_writes_figure_file(self, tmp_path):
         raw_file, *_ = _load_raw_a_mtase(tmp_path)
 
         out_file = tmp_path / "dropout.png"
-        result = runner.invoke(app, ["plot_dropout_filter", str(raw_file),
+        result = runner.invoke(app, ["plot_dropout_ecdf", str(raw_file),
                                      "chr1", "--out-file", str(out_file),
                                      "--no-show"])
         assert result.exit_code == 0, result.output
@@ -247,7 +247,7 @@ class TestPlotDropoutFilter:
         assert load_result.exit_code == 0, load_result.output
 
         out_file = tmp_path / "dropout.png"
-        result = runner.invoke(app, ["plot_dropout_filter", str(raw_file),
+        result = runner.invoke(app, ["plot_dropout_ecdf", str(raw_file),
                                      "chr1", "--out-file", str(out_file),
                                      "--no-show"])
         assert result.exit_code == 0, result.output

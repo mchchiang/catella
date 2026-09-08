@@ -448,7 +448,7 @@ def summarize_dropout(*, exp : MethPrintExperiment,
                                  unmapped_strand=unmapped_strand)
 
 
-def plot_dropout_filter(*, exp : MethPrintExperiment,
+def plot_dropout_ecdf(*, exp : MethPrintExperiment,
                 chrom : str,
                 which : str | None = None,
                 mtase : list | None = None,
@@ -457,12 +457,12 @@ def plot_dropout_filter(*, exp : MethPrintExperiment,
                 out_file : str | Path | None = None,
                 show : bool = True):
     """
-    Plot percent of molecules filtered vs. dropout-rate threshold.
+    Plot the empirical CDF of dropout rate per group.
 
     Computes `exp.dropout_fractions(...)`, restricted to `chrom`, and
-    plots the result via `MethPlot.plot_dropout_filter`. For each
+    plots the result via `MethPlot.plot_dropout_ecdf`. For each
     matching group, at threshold `t` the plotted value is
-    `100 * mean(dropout_frac > t)` over that group's molecules.
+    `100 * mean(dropout_frac <= t)` over that group's molecules.
 
     Parameters
     ----------
@@ -495,14 +495,14 @@ def plot_dropout_filter(*, exp : MethPrintExperiment,
         chromosome, or `refseq` is missing (from
         `exp.dropout_fractions`); or if `chrom` (or `source`, when
         given) has no matching entries in the result (from
-        `MethPlot.plot_dropout_filter`).
+        `MethPlot.plot_dropout_ecdf`).
     """
     fractions = exp.dropout_fractions(which=which, mtase=mtase,
                                       chroms=[chrom],
                                       unmapped_strand=unmapped_strand)
     methplot = MethPlot()
-    methplot.plot_dropout_filter(fractions, chrom, source=source,
-                                 out_file=out_file, show=show)
+    methplot.plot_dropout_ecdf(fractions, chrom, source=source,
+                               out_file=out_file, show=show)
 
 
 def run(*, chroms : str | Iterable[str],

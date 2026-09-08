@@ -212,8 +212,8 @@ def summarize_dropout(
         df.to_csv(out_file, index=False)
 
 
-@app.command(name="plot_dropout_filter")
-def plot_dropout_filter(
+@app.command(name="plot_dropout_ecdf")
+def plot_dropout_ecdf(
     source_file: Annotated[
         Path, typer.Argument(help="Experiment HDF5 file", exists=True,
                              file_okay=True, dir_okay=False,
@@ -235,13 +235,13 @@ def plot_dropout_filter(
                                      file_okay=True, dir_okay=False)] = None,
     show: Annotated[bool, typer.Option(help="Display the figure")] = True):
     """
-    Plot percent of molecules filtered vs. dropout-rate threshold.
+    Plot the empirical CDF of dropout rate per group.
     """
     exp = MethPrintExperiment.load(source_file)
-    catella.plot_dropout_filter(exp=exp, chrom=chrom, which=which,
-                                mtase=mtase,
-                                unmapped_strand=unmapped_strand,
-                                source=source, out_file=out_file, show=show)
+    catella.plot_dropout_ecdf(exp=exp, chrom=chrom, which=which,
+                              mtase=mtase,
+                              unmapped_strand=unmapped_strand,
+                              source=source, out_file=out_file, show=show)
 
 
 @app.command(name="compute_empirical_prob")

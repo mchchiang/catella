@@ -142,16 +142,15 @@ class MethPlot:
             fig.savefig(out_file)
 
     @_apply_style
-    def plot_dropout_filter(self, dropout_fractions, chrom, *,
-                            source : str | None = None,
-                            out_file : str | Path | None = None,
-                            show : bool = True):
+    def plot_dropout_ecdf(self, dropout_fractions, chrom, *,
+                          source : str | None = None,
+                          out_file : str | Path | None = None,
+                          show : bool = True):
         """
-        Plot percent of molecules filtered vs. dropout-rate
-        threshold.
+        Plot the empirical CDF of dropout rate per group.
 
         For each matching group, at threshold `t` the plotted value
-        is `100 * mean(dropout_frac > t)` over that group's
+        is `100 * mean(dropout_frac <= t)` over that group's
         molecules.
 
         Parameters
@@ -186,13 +185,14 @@ class MethPlot:
         for src, label in sorted((k[1], k[2]) for k in keys):
             frac = np.sort(dropout_fractions[(chrom, src, label)])
             n = len(frac)
-            filtered_pct = 100 - 100 * np.arange(1, n + 1) / n
-            ax.step(frac, filtered_pct, where="post",
+            ecdf_pct = 100 * np.arange(1, n + 1) / n
+            ax.step(frac, ecdf_pct, where="post",
                    label=f"{src}/{label}")
 
         ax.set_xlabel("Dropout rate")
-        ax.set_ylabel("Molecules filtered [%]")
-        ax.legend()
+        ax.set_ylabel("ECDF [%]")
+        ax.legend(loc="center left", bbox_to_anchor=(1, 0.5),
+                 frameon=False)
         fig.tight_layout()
 
         if show: plt.show()
@@ -201,4 +201,4 @@ class MethPlot:
             out_file = Path(out_file)
             out_dir = out_file.parents[0]
             out_dir.mkdir(exist_ok=True, parents=True)
-            fig.savefig(out_file)
+            fig.savefig(out_file, bbox_inches="tight")

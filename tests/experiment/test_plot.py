@@ -172,13 +172,13 @@ def _dropout_fractions_exp(tmp_path):
         mtase=["A", "CG"])
 
 
-class TestPlotDropoutFilter:
+class TestPlotDropoutEcdf:
     def test_end_to_end_smoke(self, tmp_path):
         exp = _dropout_fractions_exp(tmp_path)
         fracs = exp.dropout_fractions()
 
-        out_file = tmp_path / "dropout_filter.png"
-        MethPlot().plot_dropout_filter(
+        out_file = tmp_path / "dropout_ecdf.png"
+        MethPlot().plot_dropout_ecdf(
             fracs, "chr1", out_file=out_file, show=False)
         assert out_file.exists()
         exp.close()
@@ -187,8 +187,8 @@ class TestPlotDropoutFilter:
         exp = _dropout_fractions_exp(tmp_path)
         fracs = exp.dropout_fractions()
 
-        out_file = tmp_path / "dropout_filter_source.png"
-        MethPlot().plot_dropout_filter(
+        out_file = tmp_path / "dropout_ecdf_source.png"
+        MethPlot().plot_dropout_ecdf(
             fracs, "chr1", source="test", out_file=out_file, show=False)
         assert out_file.exists()
         exp.close()
@@ -198,7 +198,7 @@ class TestPlotDropoutFilter:
         fracs = exp.dropout_fractions()
 
         with pytest.raises(ValueError):
-            MethPlot().plot_dropout_filter(fracs, "bogus", show=False)
+            MethPlot().plot_dropout_ecdf(fracs, "bogus", show=False)
         exp.close()
 
     def test_unknown_source_raises(self, tmp_path):
@@ -206,7 +206,7 @@ class TestPlotDropoutFilter:
         fracs = exp.dropout_fractions()
 
         with pytest.raises(ValueError):
-            MethPlot().plot_dropout_filter(
+            MethPlot().plot_dropout_ecdf(
                 fracs, "chr1", source="meth", show=False)
         exp.close()
 
@@ -216,8 +216,8 @@ class TestPlotDropoutFilter:
 
         frac = np.sort(fracs[("chr1", "test", "A")])
         n = len(frac)
-        filtered_pct = 100 - 100 * np.arange(1, n + 1) / n
-        assert np.all(np.diff(filtered_pct) <= 0)
-        assert filtered_pct.min() >= 0
-        assert filtered_pct.max() <= 100
+        ecdf_pct = 100 * np.arange(1, n + 1) / n
+        assert np.all(np.diff(ecdf_pct) >= 0)
+        assert ecdf_pct.min() >= 0
+        assert ecdf_pct.max() <= 100
         exp.close()

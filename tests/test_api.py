@@ -255,6 +255,24 @@ class TestComputeEmpiricalProb:
         assert np.isnan(prob[keep == 0]).all()
         assert not np.isnan(prob[keep == 1]).any()
 
+    def test_nan_method_fill_edge_seed_propagate(self):
+        exp = _make_experiment(nmol=6, nbp=10, seed=3)
+        expected = _make_experiment(nmol=6, nbp=10, seed=3)
+
+        catella.compute_empirical_prob(exp=exp, binsize=3,
+                                       nan_method="interpolate",
+                                       fill_edge="mean", seed=7)
+
+        ana = MethPrintAnalysis()
+        ana.smooth(binsize=3, exp=expected, nan_method="interpolate",
+                  fill_edge="mean")
+        ana.empirical_prob(exp=expected, seed=7)
+
+        np.testing.assert_allclose(
+            exp.analysis["chr1"]["meth_prob"].to_numpy(),
+            expected.analysis["chr1"]["meth_prob"].to_numpy(),
+            equal_nan=True)
+
 
 class TestComputeModelProb:
     def test_matches_direct_api_call(self, tmp_path):

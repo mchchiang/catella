@@ -111,8 +111,11 @@ def compute_empirical_prob(*, exp : MethPrintExperiment,
                clip_low : float = 0.1,
                clip_high : float = 99.9,
                norm_by_strand : bool = False,
+               nan_method : str = "mean",
+               fill_edge : float | str = np.nan,
                batch_size : int = 20000,
                percentile_sample_size : int = 100000,
+               seed : int | None = None,
                mask_name : str | None = None) -> MethPrintExperiment:
     """
     Compute methylation probabilities via empirical normalization.
@@ -151,12 +154,23 @@ def compute_empirical_prob(*, exp : MethPrintExperiment,
         signal itself.
     norm_by_strand : bool, default False
         Whether to perform normalization separately based on strandedness.
+    nan_method : {"mean", "interpolate"}, default "mean"
+        How to fill interior nan values (gaps with valid data on both
+        sides) during smoothing: molecule mean, or linear
+        interpolation.
+    fill_edge : float or "mean", default np.nan
+        How to fill leading/trailing edge nan values during
+        smoothing, independent of `nan_method`. A literal float must
+        lie within the data range.
     batch_size : int, default 20000
         Number of molecules processed (and held in memory) per batch
         during smoothing and probability calculation.
     percentile_sample_size : int, default 100000
         Approximate number of molecules used to estimate percentile clip
         bounds during probability calculation.
+    seed : int, optional
+        Seed for the random number generator used for percentile
+        subsampling.
     mask_name : str, optional
         If given, molecules flagged as dropout by a prior
         `filter_dropout(mask_name=mask_name)` call are excluded from
@@ -174,13 +188,14 @@ def compute_empirical_prob(*, exp : MethPrintExperiment,
 
     # Smooth and normalize the data - compute methylation probability
     ana = MethPrintAnalysis()
-    ana.smooth(binsize=binsize, exp=exp, batch_size=batch_size,
+    ana.smooth(binsize=binsize, exp=exp, nan_method=nan_method,
+              fill_edge=fill_edge, batch_size=batch_size,
               mask_name=mask_name)
     ana.empirical_prob(exp=exp, prob_name=prob_name, clip_low=clip_low,
                        clip_high=clip_high, norm_by_strand=norm_by_strand,
                        batch_size=batch_size,
                        percentile_sample_size=percentile_sample_size,
-                       mask_name=mask_name)
+                       seed=seed, mask_name=mask_name)
 
     # Save the results
     if out_file is not None:

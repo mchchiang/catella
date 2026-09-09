@@ -91,7 +91,7 @@ class SimPlot:
                     run : int,
                     tstart : int | None = None,
                     tend : int | None = None,
-                    tscale : int = 1000000,
+                    tscale : int = 1000,
                     out_file : str | Path | None = None,
                     show : bool = True):
         """
@@ -113,7 +113,7 @@ class SimPlot:
             simulation.
         tend : int, optional
             Ending time step. If None, defaults to the end of the simulation.
-        tscale : int, default 1000000
+        tscale : int, default 1000
             Time scaling factor (must be a power of 10) for the y-axis labels.
         out_file : str or Path, optional
             Path to save the generated figure. Directories are created if
@@ -169,7 +169,7 @@ class SimPlot:
                      run : int,
                      tstart : int | None = None,
                      tend : int | None = None,
-                     tscale : int = 1000000,
+                     tscale : int = 1000,
                      xscale : int = 1000,
                      cmap : str | None = None,
                      out_file : str | Path | None = None,
@@ -194,7 +194,7 @@ class SimPlot:
             simulation.
         tend : int, optional
             Ending time step. If None, defaults to the end of the simulation.
-        tscale : int, default 1000000
+        tscale : int, default 1000
             Time scaling factor (must be a power of 10) for the y-axis labels.
         xscale : int, default 1000
             Spatial scaling factor (must be a power of 10) for the x-axis

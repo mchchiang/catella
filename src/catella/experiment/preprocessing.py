@@ -109,7 +109,7 @@ def _reference_contexts(seq):
     return ctx
 
 
-def _context_prior_rate(k, n_mol, ctx, nu=10.0, eps=1e-4):
+def _context_prior_rate(k, n_mol, ctx, nu=10.0, eps=1e-4, channels=None):
     """
     Per-position call rate, shrunk toward its context group's mean.
 
@@ -132,14 +132,19 @@ def _context_prior_rate(k, n_mol, ctx, nu=10.0, eps=1e-4):
         Pseudo-count strength. 0 disables shrinkage.
     eps : float, default 1e-4
         Clip bound keeping rates away from exactly 0 or 1.
+    channels : iterable of int, optional
+        Context channels to compute a rate for; positions in any other
+        channel are left nan. Defaults to all of `_ETA_CHANNELS`.
 
     Returns
     -------
     np.ndarray
-        float64, length L, in [eps, 1 - eps].
+        float64, length L, in [eps, 1 - eps], nan outside `channels`.
     """
+    if channels is None:
+        channels = _ETA_CHANNELS
     theta = np.full(len(ctx), np.nan)
-    for code in (M6A, GCH, HCG, GCG):
+    for code in channels:
         sel = ctx == code
         if not sel.any() or n_mol == 0:
             continue
@@ -260,7 +265,8 @@ def _informative_mask(theta_acc, fpr, ctx, min_gap=0.05):
 
 
 def _calibrate_from_controls(meth_k, meth_n, unmeth_k, unmeth_n, ctx,
-                             nu=10.0, rho_leak=0.1, min_gap=0.05):
+                             nu=10.0, rho_leak=0.1, min_gap=0.05,
+                             channels=None):
     """
     Estimate theta_prot/theta_acc/informative from meth/unmeth controls.
 
@@ -278,21 +284,27 @@ def _calibrate_from_controls(meth_k, meth_n, unmeth_k, unmeth_n, ctx,
         Forwarded to `_leak_interpolated_rate`.
     min_gap : float, default 0.05
         Forwarded to `_informative_mask`.
+    channels : iterable of int, optional
+        Forwarded to `_context_prior_rate`. Defaults to all of
+        `_ETA_CHANNELS`; positions outside `channels` come back
+        uninformative, since their theta_acc is left nan.
 
     Returns
     -------
     tuple of np.ndarray
         `(theta_prot, theta_acc, informative)`, each length L.
     """
-    theta_acc = _context_prior_rate(meth_k, meth_n, ctx, nu=nu)
-    fpr = _context_prior_rate(unmeth_k, unmeth_n, ctx, nu=nu)
+    theta_acc = _context_prior_rate(meth_k, meth_n, ctx, nu=nu,
+                                    channels=channels)
+    fpr = _context_prior_rate(unmeth_k, unmeth_n, ctx, nu=nu,
+                              channels=channels)
     theta_prot = _leak_interpolated_rate(theta_acc, fpr, rho_leak=rho_leak)
     informative = _informative_mask(theta_acc, fpr, ctx, min_gap=min_gap)
     return theta_prot, theta_acc, informative
 
 
 def _streamed_window_count(exp, chrom, ctx, l_nuc, n_min, batch_size,
-                           mask_name, row_masks=None):
+                           mask_name, row_masks=None, channels=None):
     """
     Per-window, per-read summed methylation-calling confidence and
     trial counts for the test sample, streamed in batches so peak
@@ -327,6 +339,9 @@ def _streamed_window_count(exp, chrom, ctx, l_nuc, n_min, batch_size,
         from a single streamed pass, and the return value is keyed
         accordingly. Window geometry (`n_min`-eligibility) is shared
         across keys, since it depends only on `ctx`.
+    channels : iterable of int, optional
+        Context channels eligible to be counted. Defaults to all of
+        `_ETA_CHANNELS`.
 
     Returns
     -------
@@ -335,8 +350,8 @@ def _streamed_window_count(exp, chrom, ctx, l_nuc, n_min, batch_size,
         per-read sum of `mod_qual` confidence scores (nan/no-call
         positions excluded). Only if `row_masks` is None.
     codes : list of int
-        Context codes present in `ctx`, in the same order as `K`/`N`'s
-        first axis. Only if `row_masks` is None.
+        Channels from `channels` present in `ctx`, in the same order
+        as `K`/`N`'s first axis. Only if `row_masks` is None.
     counts : dict of str to (K, N, codes)
         One `(K, N, codes)` triple per `row_masks` key. Only if
         `row_masks` is given.
@@ -344,15 +359,17 @@ def _streamed_window_count(exp, chrom, ctx, l_nuc, n_min, batch_size,
     Raises
     ------
     ValueError
-        If `ctx` has no assayable contexts, or too few windows have
-        `n_min` context-eligible sites (per key, when `row_masks` is
-        given).
+        If `ctx` has no assayable contexts within `channels`, or too
+        few windows have `n_min` context-eligible sites (per key, when
+        `row_masks` is given).
     """
+    if channels is None:
+        channels = _ETA_CHANNELS
     arr = exp.to_dense(chrom, which="test", as_h5array=True,
                        batch_size=batch_size, mask_name=mask_name)
     n_total, L = arr.shape
     starts = np.arange(0, L - l_nuc + 1, l_nuc)
-    codes = [c for c in (M6A, GCH, HCG, GCG) if (ctx == c).any()]
+    codes = [c for c in channels if (ctx == c).any()]
     if not codes:
         raise ValueError("no assayable contexts in ctx")
 
@@ -824,7 +841,7 @@ def _accumulate_eta_source(exp, chrom, which, ctx, theta_prot, theta_acc,
                                        max_lag, channels=channels)
 
 
-def _frac_informative_by_context(ctx, informative):
+def _frac_informative_by_context(ctx, informative, channels=None):
     """
     Fraction of `informative` positions within each context's own sites.
 
@@ -834,21 +851,25 @@ def _frac_informative_by_context(ctx, informative):
         int8, length L, context code per position.
     informative : np.ndarray
         bool, length L.
+    channels : iterable of int, optional
+        Context channels to report. Defaults to all of `_ETA_CHANNELS`.
 
     Returns
     -------
     dict of str to float
         `f"frac_informative_{CONTEXT_NAMES[c]}"` -> fraction, for every
-        context code present in `ctx` (a subset of `_ETA_CHANNELS`).
+        channel in `channels` present in `ctx`.
     """
+    if channels is None:
+        channels = _ETA_CHANNELS
     return {f"frac_informative_{CONTEXT_NAMES[c]}":
            float(informative[ctx == c].mean())
-           for c in _ETA_CHANNELS if (ctx == c).any()}
+           for c in channels if (ctx == c).any()}
 
 
 def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, l_nuc, n_min,
                        max_iters, init_prot, init_acc, tol, batch_size,
-                       mask_name, norm_by_strand=False):
+                       mask_name, norm_by_strand=False, channels=None):
     """
     Classify `chrom`'s reference into contexts and calibrate
     theta_prot/theta_acc/informative, from meth/unmeth controls when
@@ -874,6 +895,9 @@ def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, l_nuc, n_min,
         before counting, and `theta_prot`/`theta_acc`/`informative`
         are returned as `{"+": ..., "-": ...}` dicts instead of plain
         arrays.
+    channels : iterable of int, optional
+        Context channels actually assayed, from `_active_channels`.
+        Defaults to all of `_ETA_CHANNELS`.
 
     Returns
     -------
@@ -909,6 +933,8 @@ def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, l_nuc, n_min,
         If `exp.wrap` is True and many wrap-mirrored position pairs
         disagree on context.
     """
+    if channels is None:
+        channels = _ETA_CHANNELS
     raw = exp.raw[chrom]
     if raw.refseq is None:
         raise ValueError(
@@ -964,10 +990,12 @@ def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, l_nuc, n_min,
                 theta_prot[s], theta_acc[s], informative[s] = \
                     _calibrate_from_controls(
                         *meth_counts[s], *unmeth_counts[s], ctx,
-                        nu=nu, rho_leak=rho_leak, min_gap=min_gap)
+                        nu=nu, rho_leak=rho_leak, min_gap=min_gap,
+                        channels=channels)
                 calib_info[s] = {
                     "has_controls": has_controls,
-                    **_frac_informative_by_context(ctx, informative[s])}
+                    **_frac_informative_by_context(ctx, informative[s],
+                                                   channels=channels)}
         else:
             meth_k, meth_n = _streamed_call_count(
                 exp, chrom, "meth", ctx, batch_size, mask_name)
@@ -975,10 +1003,12 @@ def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, l_nuc, n_min,
                 exp, chrom, "unmeth", ctx, batch_size, mask_name)
             theta_prot, theta_acc, informative = _calibrate_from_controls(
                 meth_k, meth_n, unmeth_k, unmeth_n, ctx,
-                nu=nu, rho_leak=rho_leak, min_gap=min_gap)
+                nu=nu, rho_leak=rho_leak, min_gap=min_gap,
+                channels=channels)
             calib_info = {
                 "has_controls": has_controls,
-                **_frac_informative_by_context(ctx, informative)}
+                **_frac_informative_by_context(ctx, informative,
+                                               channels=channels)}
     else:
         if norm_by_strand:
             test_strand = _strand_of_mol(raw.test_data,
@@ -986,7 +1016,7 @@ def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, l_nuc, n_min,
             win_counts = _streamed_window_count(
                 exp, chrom, ctx, l_nuc, n_min, batch_size, mask_name,
                 row_masks={"+": test_strand == "+",
-                          "-": test_strand == "-"})
+                          "-": test_strand == "-"}, channels=channels)
             theta_prot, theta_acc, informative = {}, {}, {}
             calib_info = {}
             for s in ("+", "-"):
@@ -998,11 +1028,13 @@ def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, l_nuc, n_min,
                         min_gap=min_gap)
                 calib_info[s] = {
                     "has_controls": has_controls,
-                    **_frac_informative_by_context(ctx, informative[s]),
+                    **_frac_informative_by_context(ctx, informative[s],
+                                                   channels=channels),
                     **em_diag}
         else:
             K, N, codes = _streamed_window_count(
-                exp, chrom, ctx, l_nuc, n_min, batch_size, mask_name)
+                exp, chrom, ctx, l_nuc, n_min, batch_size, mask_name,
+                channels=channels)
             theta_prot, theta_acc, informative, em_diag = \
                 _calibrate_from_data(
                     K, N, ctx, codes, max_iters=max_iters,
@@ -1010,7 +1042,9 @@ def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, l_nuc, n_min,
                     min_gap=min_gap)
             calib_info = {
                 "has_controls": has_controls,
-                **_frac_informative_by_context(ctx, informative), **em_diag}
+                **_frac_informative_by_context(ctx, informative,
+                                               channels=channels),
+                **em_diag}
     return ctx, theta_prot, theta_acc, informative, has_controls, calib_info
 
 
@@ -1563,7 +1597,9 @@ class MethPrintAnalysis:
             methylated control when available, or from the test data
             otherwise. A float pins every channel to that value; a
             dict pins only the named channels, leaving any not
-            mentioned to be auto-estimated. The value(s) actually
+            mentioned to be auto-estimated. Only channels actually
+            assayed by `exp.mtase` are estimated and reported (all
+            four if `exp.mtase` is unset). The value(s) actually
             applied are stored in
             `exp.global_analysis[f"{prob_name}_eta"]` afterward.
         eta_max_lag : int, default 10
@@ -1660,7 +1696,8 @@ class MethPrintAnalysis:
 
         Per-chromosome (and, if `norm_by_strand`, per-strand)
         calibration diagnostics -- whether controls were used,
-        fraction of informative positions per context, and
+        fraction of informative positions per context (only channels
+        actually assayed by `exp.mtase`, or all four if unset), and
         (no-controls path only) actual EM iterations run, final
         log-likelihood, fitted mixing fraction, and fitted
         theta_prot/theta_acc per context -- are stored in
@@ -1674,8 +1711,9 @@ class MethPrintAnalysis:
         tmp_dir = exp.resolve_tmp_dir()
         log_odds_fill = -logit(fill_edge)
 
+        channels = _active_channels(exp)
         overrides = _resolve_eta_overrides(eta)
-        need_auto = set(_ETA_CHANNELS) - set(overrides)
+        need_auto = set(channels) - set(overrides)
         channel_eta = dict(overrides)
 
         calib_kwargs = dict(nu=nu, rho_leak=rho_leak, min_gap=min_gap,
@@ -1683,7 +1721,7 @@ class MethPrintAnalysis:
                             init_prot=init_prot, init_acc=init_acc,
                             tol=tol, batch_size=batch_size,
                             mask_name=mask_name,
-                            norm_by_strand=norm_by_strand)
+                            norm_by_strand=norm_by_strand, channels=channels)
         _strand_suffix = {"+": "pos", "-": "neg"}
 
         def _calib_rows(chrom, info):
@@ -1740,11 +1778,11 @@ class MethPrintAnalysis:
                 exp.global_analysis[f"{prob_name}_rho"] = pd.DataFrame({
                     "lag": np.arange(1, eta_max_lag + 1),
                     **{f"rho_{CONTEXT_NAMES[c]}": rho_by_channel[c]
-                      for c in _ETA_CHANNELS if c in rho_by_channel}})
+                      for c in channels if c in rho_by_channel}})
 
         exp.global_analysis[f"{prob_name}_eta"] = pd.DataFrame([{
             f"eta_{CONTEXT_NAMES[c]}": channel_eta[c]
-            for c in _ETA_CHANNELS}])
+            for c in channels}])
 
         exp.global_analysis[f"{prob_name}_params"] = pd.DataFrame([{
             "pi0": pi0, "eta_max_lag": eta_max_lag, "nu": nu,
@@ -1779,7 +1817,7 @@ class MethPrintAnalysis:
             exp.analysis[chrom][f"{prob_name}_theta"] = theta_df
 
             eta_by_pos = np.ones(len(ctx))
-            for c in _ETA_CHANNELS:
+            for c in channels:
                 eta_by_pos[ctx == c] = channel_eta[c]
 
             nmol = len(raw.test_mol_id)

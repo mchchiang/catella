@@ -32,6 +32,32 @@ CONTEXT_NAMES = {NONE: "none", M6A: "M6A", GCH: "GCH", HCG: "HCG",
 _ETA_CHANNELS = (M6A, GCH, HCG, GCG)
 _CHANNEL_NAME_TO_CODE = {CONTEXT_NAMES[c]: c for c in _ETA_CHANNELS}
 
+# Context channel(s) each mtase label actually methylates. "CG"/"GC"
+# both include GCG, since that position matches both rules (see
+# _reference_contexts).
+_MTASE_CHANNELS = {"A": (M6A,), "CG": (HCG, GCG), "GC": (GCH, GCG)}
+
+
+def _active_channels(exp):
+    """
+    Channels actually assayed by `exp.mtase`.
+
+    Parameters
+    ----------
+    exp : MethPrintExperiment
+        The experiment object.
+
+    Returns
+    -------
+    tuple of int
+        Subset of `_ETA_CHANNELS`, in `_ETA_CHANNELS` order. All of
+        `_ETA_CHANNELS` if `exp.mtase` is unset (None).
+    """
+    if exp.mtase is None:
+        return _ETA_CHANNELS
+    active = {c for label in exp.mtase for c in _MTASE_CHANNELS[label]}
+    return tuple(c for c in _ETA_CHANNELS if c in active)
+
 # Warn (not raise) if more than this fraction of wrap-mirrored position
 # pairs disagree on context when folding ctx in model_prob.
 _WRAP_CTX_DISAGREE_WARN_FRAC = 0.02

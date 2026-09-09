@@ -33,8 +33,11 @@ class MethPlot:
     fontsize : int = 14
     """The base font size for labels, ticks, and titles."""
 
-    cmap : str = "viridis"
+    cmap : str = "OrRd"
     """The Matplotlib colormap name used for heatmaps."""
+
+    nan_color : str = "lightgray"
+    """The color used to render NaN cells in heatmaps."""
 
     _rc : dict = field(init=None)
 
@@ -60,6 +63,8 @@ class MethPlot:
     def plot_methmap(self, data, *,
                      vmin : float | None = None,
                      vmax : float | None = None,
+                     cmap : str | None = None,
+                     cbar_label : str = "Methylation prob.",
                      out_file : str | Path | None = None,
                      link_mat : np.ndarray | None = None,
                      show : bool = True):
@@ -84,6 +89,11 @@ class MethPlot:
         vmax : float, optional
             Upper bound for the color scale. If None, inferred from
             `data`.
+        cmap : str, optional
+            Matplotlib colormap name to use for this plot. If None,
+            `self.cmap` is used.
+        cbar_label : str, default "Methylation prob."
+            Label drawn next to the colorbar.
         out_file : str or pathlib.Path, optional
             Path to save the generated figure. Directories are created
             if they do not exist.
@@ -112,17 +122,22 @@ class MethPlot:
         matrix = np.asarray(data)
         nrow, ncol = matrix.shape
         norm = Normalize(vmin=vmin, vmax=vmax)
+        cmap_obj = plt.get_cmap(cmap if cmap is not None else self.cmap)
+        cmap_obj = cmap_obj.copy()
+        cmap_obj.set_bad(self.nan_color)
 
         if link_mat is not None:
-            fig, ax = plt.subplots(ncols=2,
-                                   gridspec_kw={"width_ratios": [5, 1]})
-            hm_ax, dend_ax = ax
+            fig, ax = plt.subplots(
+                ncols=3, gridspec_kw={"width_ratios": [5, 1, 0.25]})
+            hm_ax, dend_ax, cbar_ax = ax
         else:
-            fig, hm_ax = plt.subplots()
+            fig, ax = plt.subplots(
+                ncols=2, gridspec_kw={"width_ratios": [20, 1]})
+            hm_ax, cbar_ax = ax
 
-        hm_ax.imshow(matrix, cmap=self.cmap, norm=norm, aspect="auto",
-                     origin="lower", interpolation="none",
-                     extent=[0, ncol, 0, nrow])
+        im = hm_ax.imshow(matrix, cmap=cmap_obj, norm=norm, aspect="auto",
+                          origin="lower", interpolation="none",
+                          extent=[0, ncol, 0, nrow])
         hm_ax.set_xlabel("Position [bp]")
         hm_ax.set_ylabel("Molecule index")
 
@@ -130,6 +145,11 @@ class MethPlot:
             sch.dendrogram(link_mat, orientation="right", ax=dend_ax,
                            no_labels=True, link_color_func=lambda x: "black")
             dend_ax.axis("off")
+
+        # cbar_ax is always the rightmost column, so the colorbar
+        # appears to the right of the dendrogram when one is shown.
+        cbar = fig.colorbar(im, cax=cbar_ax)
+        cbar.set_label(cbar_label, rotation=270, labelpad=15)
 
         fig.tight_layout()
 

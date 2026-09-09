@@ -31,9 +31,12 @@ class SimPlot:
     fontsize : int = 14
     """The base font size for labels, ticks, and titles."""
     
-    cmap : str = "viridis"
+    cmap : str = "OrRd"
     """The Matplotlib colormap name used for heatmaps."""
-    
+
+    nan_color : str = "lightgray"
+    """The color used to render NaN cells in heatmaps."""
+
     _rc : dict = field(init=None)
 
     def __post_init__(self):
@@ -168,6 +171,7 @@ class SimPlot:
                      tend : int | None = None,
                      tscale : int = 1000000,
                      xscale : int = 1000,
+                     cmap : str | None = None,
                      out_file : str | Path | None = None,
                      plot_eseq : bool = False,
                      show : bool = True):
@@ -195,6 +199,9 @@ class SimPlot:
         xscale : int, default 1000
             Spatial scaling factor (must be a power of 10) for the x-axis
             labels.
+        cmap : str, optional
+            Matplotlib colormap name to use for this plot. If None,
+            `self.cmap` is used.
         out_file : str or Path, optional
             Path to save the generated figure. Directories are created if
             they do not exist.
@@ -215,7 +222,7 @@ class SimPlot:
 
         tpow = int(self._log10(tscale, "tscale"))
         xpow = int(self._log10(xscale, "xscale"))
-        
+
         # Retrieve the data
         data = dataset.raw[chrom,mol,run]
         nuc_map = NucFiberMap(nbp=data.nbp, nucbp=data.nucbp)
@@ -231,30 +238,45 @@ class SimPlot:
         tstart = data.time[start_idx]
         tend = data.time[end_idx-1]
         
-        # Set up the figure
+        # Set up the figure. The second column is a dedicated,
+        # narrow slot for the colorbar so it doesn't shrink the
+        # heatmap panel itself.
+        gridspec_kw = {"width_ratios": [20, 1]}
         if plot_eseq:
             nplots = 2
-            fig, ax = plt.subplots(nrows=nplots, ncols=1,
-                                   gridspec_kw={"height_ratios": [4, 1]})
+            gridspec_kw["height_ratios"] = [4, 1]
+            fig, ax = plt.subplots(nrows=nplots, ncols=2,
+                                   gridspec_kw=gridspec_kw)
             w, h = fig.get_size_inches()
-            fig.set_size_inches(w, h*1.25) 
+            fig.set_size_inches(w, h*1.25)
+            hm_ax, cbar_ax = ax[0, 0], ax[0, 1]
+            seq_ax = ax[1, 0]
+            ax[1, 1].axis("off")
         else:
             nplots = 1
-            fig, ax = plt.subplots(nrows=nplots, ncols=1)
-            ax = [ax]
+            fig, ax = plt.subplots(nrows=nplots, ncols=2,
+                                   gridspec_kw=gridspec_kw)
+            hm_ax, cbar_ax = ax[0], ax[1]
+            seq_ax = None
 
-        # Plot the nucleosome position as a heat map            
+        # Plot the nucleosome position as a heat map
         norm = Normalize(vmin=0, vmax=1)
-        ax[0].imshow(occup, cmap=self.cmap, norm=norm, aspect="auto",
-                     origin="lower", interpolation="none",
-                     extent=[0, data.nbp/xscale, tstart/tscale, tend/tscale])
+        cmap_obj = plt.get_cmap(cmap if cmap is not None else self.cmap)
+        cmap_obj = cmap_obj.copy()
+        cmap_obj.set_bad(self.nan_color)
+        im = hm_ax.imshow(occup, cmap=cmap_obj, norm=norm, aspect="auto",
+                          origin="lower", interpolation="none",
+                          extent=[0, data.nbp/xscale, tstart/tscale,
+                                  tend/tscale])
         xpow_str = rf"$10^{{{xpow}}}$"
         tpow_str = rf"$10^{{{tpow}}}$"
-        ax[0].invert_yaxis()
-        ax[0].set_xlim(0, data.nbp/xscale)
+        hm_ax.invert_yaxis()
+        hm_ax.set_xlim(0, data.nbp/xscale)
         if plot_eseq:
-            ax[0].get_xaxis().set_visible(False)
-        ax[0].set_ylabel(rf"Time $t$ [{tpow_str} MCS]")
+            hm_ax.get_xaxis().set_visible(False)
+        hm_ax.set_ylabel(rf"Time $t$ [{tpow_str} MCS]")
+        cbar = fig.colorbar(im, cax=cbar_ax)
+        cbar.set_label("Occupancy", rotation=270, labelpad=15)
 
         # Plot the sequence energy if needed
         if plot_eseq:
@@ -264,18 +286,19 @@ class SimPlot:
             nsig = 3 # Plot up to how many sigma
             emin = -nsig*sigma+med
             emax = min(med+nsig*sigma,dataset.settings["emax"])
-            ax[1].set_ylim(emin,emax)            
-            binsize = dataset.settings["nucbp"]            
+            seq_ax.set_ylim(emin,emax)
+            binsize = dataset.settings["nucbp"]
             trans = CoordsTransform(binsize=binsize)
             eseq = trans.left_to_center_aligned(eseq)
             eseq[:binsize//2] = np.nan
-            eseq[len(eseq)-binsize//2:] = np.nan            
-            ax[1].plot(np.arange(0,data.nbp)/xscale, eseq)
-            ax[1].set_ylabel(r"$E_{\text{seq}}$ [$k_BT$]")            
-            ax[1].set_xlim(0, data.nbp/xscale)
+            eseq[len(eseq)-binsize//2:] = np.nan
+            seq_ax.plot(np.arange(0,data.nbp)/xscale, eseq)
+            seq_ax.set_ylabel(r"$E_{\text{seq}}$ [$k_BT$]")
+            seq_ax.set_xlim(0, data.nbp/xscale)
 
         # Common x-axis label
-        ax[nplots-1].set_xlabel(rf"Position $x$ [{xpow_str} bp]")
+        btm_ax = seq_ax if plot_eseq else hm_ax
+        btm_ax.set_xlabel(rf"Position $x$ [{xpow_str} bp]")
         
         fig.tight_layout()
         
@@ -294,6 +317,7 @@ class SimPlot:
                    occup_name : str = "occup",
                    mols : Iterable[int] | None = None,
                    xscale : int = 1000,
+                   cmap : str | None = None,
                    out_file : str | Path | None = None,
                    plot_eseq : bool = False,
                    link_mat : np.ndarray | None = None,
@@ -325,6 +349,9 @@ class SimPlot:
         xscale : int, default 1000
             Spatial scaling factor (must be a power of 10) for the x-axis
             labels.
+        cmap : str, optional
+            Matplotlib colormap name to use for this plot. If None,
+            `self.cmap` is used.
         out_file : str or Path, optional
             Path to save the generated figure. Directories are created if
             they do not exist.
@@ -360,9 +387,12 @@ class SimPlot:
             occup = np.asarray(occup)[list(mols)]
         sort_data = link_mat is not None
         
-        # Set up the figure
-        ncols = 2 if sort_data else 1
-        gridspec_kw = {"width_ratios": [5, 1]} if sort_data else {}
+        # Set up the figure. The rightmost column is a dedicated,
+        # narrow slot for the colorbar, so it appears to the right of
+        # the dendrogram (when shown) instead of shrinking hm_ax.
+        ncols = 3 if sort_data else 2
+        width_ratios = [5, 1, 0.25] if sort_data else [20, 1]
+        gridspec_kw = {"width_ratios": width_ratios}
         if plot_eseq:
             nrows = 2
             gridspec_kw["height_ratios"] = [4, 1]
@@ -370,29 +400,37 @@ class SimPlot:
                                    gridspec_kw=gridspec_kw)
             w, h = fig.get_size_inches()
             fig.set_size_inches(w*1.25, h*1.25)
-            hm_ax = ax[0,0] if sort_data else ax[0]
+            hm_ax = ax[0,0]
             dend_ax = ax[0,1] if sort_data else None
-            seq_ax = ax[1,0] if sort_data else ax[1]
-            if sort_data: ax[1,1].axis("off")
+            cbar_ax = ax[0,2] if sort_data else ax[0,1]
+            seq_ax = ax[1,0]
+            ax[1,1].axis("off")
+            if sort_data: ax[1,2].axis("off")
         else:
             nrows = 1
             fig, ax = plt.subplots(nrows=nrows, ncols=ncols,
                                    gridspec_kw=gridspec_kw)
-            hm_ax = ax[0] if sort_data else ax
+            hm_ax = ax[0]
             dend_ax = ax[1] if sort_data else None
+            cbar_ax = ax[2] if sort_data else ax[1]
             seq_ax = None
-        
+
         # Plot the nucleosome position as a heat map
         nbp = dataset.nbp[chrom]
         norm = Normalize(vmin=0, vmax=1)
-        hm_ax.imshow(occup, cmap=self.cmap, norm=norm, aspect="auto",
-                     origin="lower", interpolation="none",
-                     extent=[0,occup.shape[1]/xscale,0,occup.shape[0]])
+        cmap_obj = plt.get_cmap(cmap if cmap is not None else self.cmap)
+        cmap_obj = cmap_obj.copy()
+        cmap_obj.set_bad(self.nan_color)
+        im = hm_ax.imshow(occup, cmap=cmap_obj, norm=norm, aspect="auto",
+                          origin="lower", interpolation="none",
+                          extent=[0,occup.shape[1]/xscale,0,occup.shape[0]])
         xpow_str = rf"$10^{{{xpow}}}$"
         hm_ax.set_xlim(0, nbp/xscale)
         if plot_eseq:
             hm_ax.get_xaxis().set_visible(False)
         hm_ax.set_ylabel(r"Molecule index")
+        cbar = fig.colorbar(im, cax=cbar_ax)
+        cbar.set_label("Occupancy", rotation=270, labelpad=15)
 
         # Plot dendrogram on the right panel
         if sort_data:

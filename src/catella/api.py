@@ -104,7 +104,7 @@ def load_raw(*, chromsize : str | Path,
         tmp_dir=tmp_dir, max_cached_chroms=max_cached_chroms)
 
 
-def compute_empirical_prob(*, exp : MethPrintExperiment,
+def compute_empirical_prob(exp : MethPrintExperiment, *,
                out_file : str | Path | None = None,
                binsize : int = 147,
                prob_name : str = "meth_prob",
@@ -196,7 +196,7 @@ def compute_empirical_prob(*, exp : MethPrintExperiment,
     return exp
 
 
-def compute_model_prob(*, exp : MethPrintExperiment,
+def compute_model_prob(exp : MethPrintExperiment, *,
                out_file : str | Path | None = None,
                prob_name : str = "meth_prob",
                pi0 : float = 0.5,
@@ -358,7 +358,7 @@ def compute_model_prob(*, exp : MethPrintExperiment,
     return exp
 
 
-def filter_dropout(*, exp : MethPrintExperiment,
+def filter_dropout(exp : MethPrintExperiment, *,
            which : str | None = None,
            mtase : list | None = None,
            chroms : list | None = None,
@@ -420,7 +420,7 @@ def filter_dropout(*, exp : MethPrintExperiment,
                        method=method, mask_name=mask_name)
 
 
-def summarize_dropout(*, exp : MethPrintExperiment,
+def summarize_dropout(exp : MethPrintExperiment, *,
               which : str | None = None,
               mtase : list | None = None,
               chroms : list | None = None,
@@ -466,7 +466,7 @@ def summarize_dropout(*, exp : MethPrintExperiment,
                                  unmapped_strand=unmapped_strand)
 
 
-def plot_dropout_ecdf(*, exp : MethPrintExperiment,
+def plot_dropout_ecdf(exp : MethPrintExperiment, *,
                 chrom : str,
                 which : str | None = None,
                 mtase : list | None = None,
@@ -590,7 +590,7 @@ def run(*, chroms : str | Iterable[str],
                           use_zero_point_mu=use_zero_point_mu)    
     return dataset
 
-def analyze(*, dataset : SimDataset,
+def analyze(dataset : SimDataset, *,
             time : int | None = None,
             occup_name : str = "occup",
             mean_nnuc_name : str = "mean_nnuc"):
@@ -619,8 +619,8 @@ def analyze(*, dataset : SimDataset,
     ana.compute_occup(dataset=dataset, time=time, name=occup_name)
     ana.compute_mean_nnuc(dataset=dataset, time=time, name=mean_nnuc_name)
 
-def plot_occup(*, chrom : str,
-               dataset : SimDataset,
+def plot_occup(dataset : SimDataset, *,
+               chrom : str,
                out_file : str | Path | None = None,
                occup_name : str = "occup",
                mols : Iterable[int] | None = None,
@@ -636,10 +636,10 @@ def plot_occup(*, chrom : str,
 
     Parameters
     ----------
-    chrom : str
-        The identifier of the chromosome to plot.
     dataset : SimDataset
         The simulation dataset containing the computed occupancy data.
+    chrom : str
+        The identifier of the chromosome to plot.
     out_file : str | Path, optional
         Path where the generated plot will be saved. If None, the plot
         is not saved to disk.
@@ -672,10 +672,10 @@ def plot_occup(*, chrom : str,
                        mols=mols, out_file=out_file, plot_eseq=plot_eseq,
                        link_mat=link_mat, show=show)
 
-def plot_nuc_pos(*, chrom : str,
+def plot_nuc_pos(dataset : SimDataset, *,
+                 chrom : str,
                  mol : int,
                  run : int,
-                 dataset : SimDataset,
                  out_file : str | Path | None = None,
                  plot_eseq : bool = False,
                  show : bool = True):
@@ -689,16 +689,16 @@ def plot_nuc_pos(*, chrom : str,
 
     Parameters
     ----------
+    dataset : SimDataset
+        The simulation dataset containing the positional coordinates.
     chrom : str
         The identifier of the chromosome to plot.
     mol : int
         The index of the specific molecule (fiber) to visualize.
     run : int
         The specific simulation run index for the chosen molecule.
-    dataset : SimDataset
-        The simulation dataset containing the positional coordinates.
     out_file : str | Path, optional
-        Path where the generated plot will be saved. If None, the plot 
+        Path where the generated plot will be saved. If None, the plot
         is not saved to disk.
     plot_eseq : bool, default False
         Whether to plot the underlying sequence-specific nucleosome binding 
@@ -717,10 +717,10 @@ def plot_nuc_pos(*, chrom : str,
                          out_file=out_file, plot_eseq=plot_eseq, show=show)
 
 
-def plot_energy(*, chrom : str,
+def plot_energy(dataset : SimDataset, *,
+                chrom : str,
                 mol : int,
                 run : int,
-                dataset : SimDataset,
                 out_file : str | Path | None = None,
                 show : bool = True):
     """
@@ -729,23 +729,23 @@ def plot_energy(*, chrom : str,
 
     Parameters
     ----------
+    dataset : SimDataset
+        The simulation dataset containing the positional coordinates.
     chrom : str
         The identifier of the chromosome to plot.
     mol : int
         The index of the specific molecule (fiber) to visualize.
     run : int
         The specific simulation run index for the chosen molecule.
-    dataset : SimDataset
-        The simulation dataset containing the positional coordinates.
     out_file : str | Path, optional
-        Path where the generated plot will be saved. If None, the plot 
+        Path where the generated plot will be saved. If None, the plot
         is not saved to disk.
     show : bool, default True
         Whether to display the figure using the active plotting backend.
 
     Notes
     -----
-    This visualization requires that 'energy' (or 'all') was included 
+    This visualization requires that 'energy' (or 'all') was included
     in the `out_types` during the `run` execution.
     """
     simplot = SimPlot()
@@ -753,7 +753,7 @@ def plot_energy(*, chrom : str,
                         out_file=out_file, show=show)
 
 
-def plot_methmap(*, data : H5Array | pd.DataFrame | np.ndarray,
+def plot_methmap(data : H5Array | pd.DataFrame | np.ndarray, *,
                  vmin : float | None = None,
                  vmax : float | None = None,
                  out_file : str | Path | None = None,

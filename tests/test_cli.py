@@ -710,6 +710,9 @@ class TestPlotOccup:
     # Plot content is not asserted (matches the repo's existing plotting
     # test convention in tests/experiment/test_plot.py); this only checks
     # the CLI wires arguments through to a successful render.
+    @pytest.mark.filterwarnings(
+        "ignore:__array__ implementation doesn't accept a copy keyword"
+        ":DeprecationWarning")
     def test_writes_figure_file(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=6, nbp=10)
         SimAnalysis().compute_occup(dataset=dataset)

@@ -35,6 +35,9 @@ def _close_figures():
     plt.close("all")
 
 
+@pytest.mark.filterwarnings(
+    "ignore:__array__ implementation doesn't accept a copy keyword"
+    ":DeprecationWarning")
 class TestPlotOccupMolsSlicing:
     def test_mols_none_shows_all_molecules(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=6, nbp=20)

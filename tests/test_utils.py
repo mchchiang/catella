@@ -208,6 +208,7 @@ def test_fill_nan_handles_zero_overlap_row(as_h5array, fill_nan):
     assert np.isfinite(link_mat).all()
 
 
+@pytest.mark.filterwarnings("ignore:Mean of empty slice:RuntimeWarning")
 def test_fill_nan_all_nan_column_falls_back_to_zero():
     data = np.random.default_rng(10).random((6, 3))
     data[:, 1] = np.nan

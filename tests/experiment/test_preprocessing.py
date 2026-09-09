@@ -698,13 +698,14 @@ def _make_footprint_experiment(*, nmol=20, meth_nmol=30, unmeth_nmol=30,
                                corr_source=None, corr_channel=None,
                                corr_lag=1, corr_strength=0.95,
                                strand_of=None, strand_call_bias=None,
-                               unmapped_test_mol=None):
+                               unmapped_test_mol=None, mtase=None):
     # Synthetic multi-channel footprinting experiment with a known
     # planted "protected" region, for testing model_prob end to end.
     # corr_source/corr_channel inject deterministic lag-k correlation
     # into one raw source's calls, for testing eta auto-estimation.
     # strand_of/strand_call_bias plant a strand-correlated call-rate
-    # bias, for testing norm_by_strand.
+    # bias, for testing norm_by_strand. mtase sets exp.mtase, for
+    # testing model_prob's channel restriction.
     from catella.experiment.preprocessing import (
         _reference_contexts, NONE, M6A, GCH, HCG, GCG)
 
@@ -788,7 +789,9 @@ def _make_footprint_experiment(*, nmol=20, meth_nmol=30, unmeth_nmol=30,
         chrom="chr1", nbp=L, refseq=seq, test_mol_id=test_mol_id,
         test_data=test_df, meth_mol_id=meth_mol_id, meth_data=meth_df,
         unmeth_mol_id=unmeth_mol_id, unmeth_data=unmeth_df)
-    return MethPrintExperiment._create(_raw_data={"chr1": raw})
+    mtase_tuple = tuple(mtase) if mtase is not None else None
+    return MethPrintExperiment._create(_raw_data={"chr1": raw},
+                                       _mtase=mtase_tuple)
 
 
 class TestModelProb:
@@ -1352,6 +1355,47 @@ class TestModelProbCalib:
         params = exp.global_analysis["meth_prob_params"]
         assert params.iloc[0]["max_iters"] == 50
         assert "iters" not in params.columns
+
+
+class TestModelProbMtase:
+    def test_mtase_a_restricts_calib_and_eta_to_m6a(self):
+        exp = _make_footprint_experiment(with_controls=True,
+                                         planted_edges=(30,), l_nuc=30,
+                                         mtase=["A"])
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=exp, l_nuc=30, batch_size=7)
+        calib = exp.global_analysis["meth_prob_calib"]
+        frac_cols = [c for c in calib.columns
+                    if c.startswith("frac_informative_")]
+        assert frac_cols == ["frac_informative_M6A"]
+        eta_row = exp.global_analysis["meth_prob_eta"].iloc[0]
+        assert list(eta_row.index) == ["eta_M6A"]
+
+    def test_mtase_cg_gives_hcg_and_gcg_only(self):
+        exp = _make_footprint_experiment(with_controls=True,
+                                         planted_edges=(30,), l_nuc=30,
+                                         mtase=["CG"])
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=exp, l_nuc=30, batch_size=7)
+        eta_row = exp.global_analysis["meth_prob_eta"].iloc[0]
+        assert set(eta_row.index) == {"eta_HCG", "eta_GCG"}
+        calib = exp.global_analysis["meth_prob_calib"]
+        frac_cols = {c for c in calib.columns
+                    if c.startswith("frac_informative_")}
+        assert frac_cols == {"frac_informative_HCG", "frac_informative_GCG"}
+
+    def test_mtase_a_restricts_no_controls_theta_columns(self):
+        exp = _make_footprint_experiment(with_controls=False, nmol=120,
+                                         planted_edges=(30, 120, 200),
+                                         l_nuc=30, mtase=["A"])
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp=exp, l_nuc=30, n_min=3, batch_size=17)
+        calib = exp.global_analysis["meth_prob_calib"]
+        assert "theta_prot_M6A" in calib.columns
+        assert "theta_acc_M6A" in calib.columns
+        for ch in ("GCH", "HCG", "GCG"):
+            assert f"theta_prot_{ch}" not in calib.columns
+            assert f"theta_acc_{ch}" not in calib.columns
 
 
 class TestModelProbTheta:

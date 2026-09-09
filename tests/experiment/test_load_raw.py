@@ -457,6 +457,56 @@ class TestStrandConsistency:
         assert raw.test_data["pos"].iloc[0] == 2  # folded: 8-5-1=2
         exp.close()
 
+    def test_ignore_strand_keeps_row_valid_on_opposite_strand(
+            self, tmp_path):
+        seq = "ATCGATCG"
+        rows = [("m0", 1, "chr1", "+", 0.9, "a")]  # ref 'T': valid on '-'
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": len(seq)})
+        fasta_file = tmp_path / "ref.fa"
+        _write_fasta(fasta_file, {"chr1": seq})
+
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file, fasta_file=fasta_file,
+            mtase="A", ignore_strand=True)
+        assert len(exp.raw["chr1"].test_data) == 1
+        exp.close()
+
+    def test_ignore_strand_still_drops_row_invalid_on_both_strands(
+            self, tmp_path):
+        seq = "ATCGATCG"
+        rows = [("m0", 2, "chr1", "+", 0.9, "a")]  # ref 'C': invalid on both
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": len(seq)})
+        fasta_file = tmp_path / "ref.fa"
+        _write_fasta(fasta_file, {"chr1": seq})
+
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file, fasta_file=fasta_file,
+            mtase="A", ignore_strand=True)
+        assert len(exp.raw["chr1"].test_data) == 0
+        exp.close()
+
+    def test_ignore_strand_defaults_to_false(self, tmp_path):
+        seq = "ATCGATCG"
+        rows = [("m0", 1, "chr1", "+", 0.9, "a")]  # ref 'T': invalid on '+'
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": len(seq)})
+        fasta_file = tmp_path / "ref.fa"
+        _write_fasta(fasta_file, {"chr1": seq})
+
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file, fasta_file=fasta_file,
+            mtase="A")
+        assert len(exp.raw["chr1"].test_data) == 0
+        exp.close()
+
 
 class TestMtase:
     def test_no_mtase_defaults_to_none(self, tmp_path):
@@ -576,6 +626,48 @@ class TestWrapAttribute:
 
         exp2 = MethPrintExperiment.load(exp_file)
         assert exp2.wrap is True
+
+
+class TestIgnoreStrandAttribute:
+    def test_defaults_to_false(self, tmp_path):
+        rows = _make_rows("chr1", ["m0"], [1, 2])
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 10})
+
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file)
+        assert exp.ignore_strand is False
+        exp.close()
+
+    def test_true_when_requested(self, tmp_path):
+        rows = _make_rows("chr1", ["m0"], [1, 2])
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 10})
+
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file, ignore_strand=True)
+        assert exp.ignore_strand is True
+        exp.close()
+
+    def test_persists_through_save_load_roundtrip(self, tmp_path):
+        rows = _make_rows("chr1", ["m0"], [1, 2])
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 10})
+
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file, ignore_strand=True)
+        exp_file = tmp_path / "exp.h5"
+        exp.save(exp_file)
+        exp.close()
+
+        exp2 = MethPrintExperiment.load(exp_file)
+        assert exp2.ignore_strand is True
 
 
 class TestLazyAndScratchLifecycle:

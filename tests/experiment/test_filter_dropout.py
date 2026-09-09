@@ -27,7 +27,8 @@ def _write_fasta(path, records):
             f.write(f">{chrom}\n{seq}\n")
 
 
-def _load(tmp_path, refseq, rows, *, mtase, chrom="chr1"):
+def _load(tmp_path, refseq, rows, *, mtase, chrom="chr1",
+          ignore_strand=False):
     chromsize = tmp_path / "sizes.tsv"
     _write_chromsize(chromsize, {chrom: len(refseq)})
     fasta = tmp_path / "ref.fa"
@@ -36,7 +37,7 @@ def _load(tmp_path, refseq, rows, *, mtase, chrom="chr1"):
     _write_tsv(test_file, rows)
     return MethPrintExperiment.load_raw(
         chromsize=chromsize, test_file=test_file, fasta_file=fasta,
-        mtase=mtase)
+        mtase=mtase, ignore_strand=ignore_strand)
 
 
 class TestValidation:
@@ -267,6 +268,45 @@ class TestUnmappedStrand:
                           unmapped_strand=mode)
         keep = exp.analysis["chr1"]["test_dropout_mask"]["keep"].tolist()
         assert keep == [expected]
+        exp.close()
+
+
+class TestIgnoreStrand:
+    # refseq "AT": A+ mask=idx0, A- mask=idx1. molecule recorded on
+    # '+' strand with signal only at idx1 (a T, valid on '-').
+    def test_default_uses_recorded_strand(self, tmp_path):
+        exp = _load(tmp_path, "AT",
+                   [("m0", 1, "chr1", "+", 0.5, "a")], mtase="A")
+        exp.filter_dropout(which="test", thres_max=0.2)
+        keep = exp.analysis["chr1"]["test_dropout_mask"]["keep"].tolist()
+        assert keep == [False]  # + mask excludes idx1 -> uncovered
+        exp.close()
+
+    def test_ignore_strand_lets_unmapped_strand_govern(self, tmp_path):
+        exp = _load(tmp_path, "AT",
+                   [("m0", 1, "chr1", "+", 0.5, "a")], mtase="A",
+                   ignore_strand=True)
+        exp.filter_dropout(which="test", thres_max=0.2,
+                          unmapped_strand="-")
+        keep = exp.analysis["chr1"]["test_dropout_mask"]["keep"].tolist()
+        assert keep == [True]  # '-' mask includes idx1 -> covered
+        exp.close()
+
+    def test_summarize_dropout_site_counts_unaffected(self, tmp_path):
+        exp = _load(tmp_path, "AT",
+                   [("m0", 1, "chr1", "+", 0.5, "a")], mtase="A",
+                   ignore_strand=True)
+        summary = exp.summarize_dropout().set_index("label")
+        assert summary.loc["A", "n_sites_plus"] == 1
+        assert summary.loc["A", "n_sites_minus"] == 1
+        exp.close()
+
+    def test_dropout_fractions_matches_filter_dropout(self, tmp_path):
+        exp = _load(tmp_path, "AT",
+                   [("m0", 1, "chr1", "+", 0.5, "a")], mtase="A",
+                   ignore_strand=True)
+        fracs = exp.dropout_fractions(unmapped_strand="-")
+        assert fracs[("chr1", "test", "A")] == pytest.approx([0.0])
         exp.close()
 
 

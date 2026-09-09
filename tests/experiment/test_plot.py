@@ -113,6 +113,27 @@ def test_plot_methmap_end_to_end_with_sort_by_linkage(tmp_path):
     assert out_file.exists()
 
 
+def test_plot_methmap_with_nan_values(methplot, tmp_path):
+    values = np.random.default_rng(8).random((5, 4))
+    values[0, 0] = np.nan
+    values[2, :] = np.nan
+
+    out_file = tmp_path / "nan_methmap.png"
+    methplot.plot_methmap(values, out_file=out_file, show=False)
+    assert out_file.exists()
+
+
+def test_plot_methmap_cmap_override_does_not_mutate_instance(
+        methplot, tmp_path):
+    values = np.random.default_rng(9).random((5, 4))
+
+    out_file = tmp_path / "override_methmap.png"
+    methplot.plot_methmap(values, cmap="viridis", out_file=out_file,
+                          show=False)
+    assert out_file.exists()
+    assert methplot.cmap == "OrRd"
+
+
 def test_plot_methmap_warns_above_plot_warn_rows(methplot, monkeypatch):
     import catella.experiment.plot as plot_module
     monkeypatch.setattr(plot_module, "_PLOT_WARN_ROWS", 5)

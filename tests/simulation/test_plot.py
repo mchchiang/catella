@@ -4,6 +4,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import pytest
 
 from catella.simulation.config import SimSettings
@@ -96,6 +97,31 @@ class TestPlotOccupMolsSlicing:
 @pytest.mark.filterwarnings(
     "ignore:__array__ implementation doesn't accept a copy keyword"
     ":DeprecationWarning")
+class TestPlotOccupCmapAndNan:
+    def test_nan_cells_do_not_raise(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=6, nbp=20)
+        ana = SimAnalysis()
+        ana.compute_occup(dataset=dataset, batch_size=2)
+        occup = dataset.analysis["chr1"]["occup"].to_numpy()
+        occup[0, 0] = np.nan
+        dataset.analysis["chr1"]["occup"] = pd.DataFrame(occup)
+
+        SimPlot().plot_occup(chrom="chr1", dataset=dataset, show=False)
+
+    def test_cmap_override_does_not_mutate_instance(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=6, nbp=20)
+        ana = SimAnalysis()
+        ana.compute_occup(dataset=dataset, batch_size=2)
+
+        simplot = SimPlot()
+        simplot.plot_occup(chrom="chr1", dataset=dataset, cmap="viridis",
+                           show=False)
+        assert simplot.cmap == "OrRd"
+
+
+@pytest.mark.filterwarnings(
+    "ignore:__array__ implementation doesn't accept a copy keyword"
+    ":DeprecationWarning")
 class TestPositionalDatasetArg:
     def test_plot_occup_accepts_dataset_positionally(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=4, nbp=20)
@@ -121,3 +147,16 @@ class TestPositionalDatasetArg:
                                show=False)
 
         assert plt.gcf().axes
+
+
+@pytest.mark.filterwarnings(
+    "ignore:__array__ implementation doesn't accept a copy keyword"
+    ":DeprecationWarning")
+class TestPlotNucPosCmapOverride:
+    def test_cmap_override_does_not_mutate_instance(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=2, nbp=20)
+
+        simplot = SimPlot()
+        simplot.plot_nuc_pos(dataset, chrom="chr1", mol=0, run=0,
+                             cmap="viridis", show=False)
+        assert simplot.cmap == "OrRd"

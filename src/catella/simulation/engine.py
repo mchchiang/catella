@@ -134,7 +134,7 @@ class SimManager:
             seed : int | None = None,
             mols : IndexType | Mapping[str,IndexType] = slice(None),
             store_eseq : bool = True,
-            use_zero_point_mu : bool = False
+            use_median_eseq_mu : bool = False
             ) -> SimDataset:
         """
         Execute simulations in parallel across chromosomes and molecules.
@@ -177,7 +177,7 @@ class SimManager:
         store_eseq : bool, default True
             Whether to store the sequence-specific nucleosome binding energy
             landscape derived from the methylation data to output dataset file.
-        use_zero_point_mu : bool : default False
+        use_median_eseq_mu : bool : default False
             Whether to modify the chemical potential parameter so that it is
             equal to the median of the sequence-specific nucleosome binding
             energy.
@@ -297,12 +297,12 @@ class SimManager:
                     eseq[chrom][i] = model.getSeqEnergy()
 
         # Adjust the chemical potential if needed
-        if use_zero_point_mu:
+        if use_median_eseq_mu:
             avg_eseq = np.empty(len(chroms))
             for i,chrom in enumerate(chroms):
                 avg_eseq[i] = np.median(eseq[chrom])
             avg_eseq = np.mean(avg_eseq)
-            print(f"Using zero point mu: {avg_eseq}")
+            print(f"Using median eseq mu: {avg_eseq}")
             settings = replace(settings, mu=avg_eseq)
             
         # Resolve the master seed and precompute a full per-run seed table

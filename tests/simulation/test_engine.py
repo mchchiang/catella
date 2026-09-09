@@ -155,8 +155,8 @@ class TestSimManagerRun:
             recorded_seed = int(f["params"].attrs["seed"])
         assert int(dataset.seed_table["chr1"][1, 0]) == recorded_seed
 
-    def test_zero_point_mu_reflected_in_persisted_settings(self, tmp_path):
-        # Regression test: use_zero_point_mu used to adjust mu only via a
+    def test_median_eseq_mu_reflected_in_persisted_settings(self, tmp_path):
+        # Regression test: use_median_eseq_mu used to adjust mu only via a
         # per-job SimRun.override dict, so dataset.settings.mu silently
         # kept showing the pre-adjustment value. It's now applied via
         # dataclasses.replace() before the dataset is created, so the
@@ -165,8 +165,8 @@ class TestSimManagerRun:
         manager = SimManager(nworker=1, verbose=False)
         dataset = manager.run(chroms="chr1", nsim=1, settings=_make_settings(),
                               meth_prob=meth_prob,
-                              out_dir=tmp_path / "zeropoint", seed=1,
-                              use_zero_point_mu=True)
+                              out_dir=tmp_path / "medianmu", seed=1,
+                              use_median_eseq_mu=True)
         assert dataset.settings["mu"] == np.median(dataset.eseq["chr1"])
 
     def test_same_seed_gives_same_seed_table_regardless_of_mols(self, tmp_path):

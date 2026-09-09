@@ -533,7 +533,7 @@ def run(*, chroms : str | Iterable[str],
         seed : int | None = None,        
         mols : IndexType | Mapping[str,IndexType] = slice(None),
         store_eseq : bool = True,
-        use_zero_point_mu : bool = False,
+        use_median_eseq_mu : bool = False,
         nworker : int = 1,
         verbose : bool = True) -> SimDataset:
     """
@@ -568,7 +568,7 @@ def run(*, chroms : str | Iterable[str],
     store_eseq : bool, default True
         Whether to store the sequence-specific nucleosome binding energy
         landscape derived from the methylation data to output dataset file.
-    use_zero_point_mu : bool : default False
+    use_median_eseq_mu : bool : default False
         Whether to modify the chemical potential parameter so that it is
         equal to the mean of the methlyation energy.    
     nworker : int, default 1
@@ -587,7 +587,7 @@ def run(*, chroms : str | Iterable[str],
                           meth_prob=meth_prob, out_types=out_types,
                           out_dir=out_dir, dataset_name=dataset_name,
                           seed=seed, mols=mols, store_eseq=store_eseq,
-                          use_zero_point_mu=use_zero_point_mu)    
+                          use_median_eseq_mu=use_median_eseq_mu)    
     return dataset
 
 def analyze(dataset : SimDataset, *,

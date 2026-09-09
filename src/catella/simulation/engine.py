@@ -300,7 +300,7 @@ class SimManager:
         if use_median_eseq_mu:
             avg_eseq = np.empty(len(chroms))
             for i,chrom in enumerate(chroms):
-                avg_eseq[i] = np.median(eseq[chrom])
+                avg_eseq[i] = np.nanmedian(eseq[chrom])
             avg_eseq = np.mean(avg_eseq)
             print(f"Using median eseq mu: {avg_eseq}")
             settings = replace(settings, mu=avg_eseq)

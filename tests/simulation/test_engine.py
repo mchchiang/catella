@@ -169,6 +169,21 @@ class TestSimManagerRun:
                               use_median_eseq_mu=True)
         assert dataset.settings["mu"] == np.median(dataset.eseq["chr1"])
 
+    def test_median_eseq_mu_ignores_nan(self, tmp_path):
+        # meth_prob commonly has trailing NaN columns (left-aligned
+        # window edge from compute_model_prob/compute_empirical_prob)
+        # or all-NaN dropout rows. Those must not turn mu (and hence
+        # the whole simulation's energy) into NaN.
+        meth_prob = _make_meth_prob(nmol=2, nbp=50)
+        meth_prob[:, -5:] = np.nan
+        manager = SimManager(nworker=1, verbose=False)
+        dataset = manager.run(chroms="chr1", nsim=1, settings=_make_settings(),
+                              meth_prob=meth_prob,
+                              out_dir=tmp_path / "mediannan", seed=1,
+                              use_median_eseq_mu=True)
+        assert not np.isnan(dataset.settings["mu"])
+        assert dataset.settings["mu"] == np.nanmedian(dataset.eseq["chr1"])
+
     def test_same_seed_gives_same_seed_table_regardless_of_mols(self, tmp_path):
         # The seed table is order-independent: a triplet's seed doesn't
         # depend on which other molecules were selected via 'mols'.

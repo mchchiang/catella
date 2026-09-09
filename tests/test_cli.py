@@ -171,13 +171,13 @@ class TestFilterDropout:
 
         cli_out = tmp_path / "cli_exp.h5"
         result = runner.invoke(app, ["filter_dropout", str(raw_file),
-                                     "--threshold", "0.5",
+                                     "--thres-max", "0.5",
                                      "--out-file", str(cli_out)])
         assert result.exit_code == 0, result.output
 
         expected = catella.load_raw(chromsize=chromsize, test_file=test_file,
                                     fasta_file=fasta_file, mtase="A")
-        catella.filter_dropout(exp=expected, threshold=0.5)
+        catella.filter_dropout(exp=expected, thres_max=0.5)
 
         got = MethPrintExperiment.load(cli_out)
         np.testing.assert_array_equal(
@@ -189,7 +189,7 @@ class TestFilterDropout:
         raw_file, *_ = _load_raw_a_mtase(tmp_path)
 
         result = runner.invoke(app, ["filter_dropout", str(raw_file),
-                                     "--threshold", "0.5",
+                                     "--thres-max", "0.5",
                                      "--mask-name", "qc_mask"])
         assert result.exit_code == 0, result.output
 

@@ -1560,7 +1560,8 @@ class MethPrintExperiment:
     def filter_dropout(self, *, which: str | None = None,
                        mtase: list | None = None,
                        chroms: list | None = None,
-                       threshold: float = 0.2,
+                       thres_min: float = 0.0,
+                       thres_max: float = 1.0,
                        unmapped_strand: str = "union",
                        method: str = "separate",
                        mask_name: str = "dropout_mask") -> None:
@@ -1584,7 +1585,10 @@ class MethPrintExperiment:
         chroms : list of str, optional
             Subset of `self.chroms` to evaluate. None (default)
             evaluates every chromosome.
-        threshold : float, default 0.2
+        thres_min : float, default 0.0
+            Min allowed no-signal fraction (per label, or of the
+            pooled total under `method="aggregate"`) to be kept.
+        thres_max : float, default 1.0
             Max allowed no-signal fraction (per label, or of the
             pooled total under `method="aggregate"`) to be kept.
         unmapped_strand : {"union", "drop", "+", "-"}, default "union"
@@ -1593,7 +1597,8 @@ class MethPrintExperiment:
             strand.
         method : {"separate", "aggregate"}, default "separate"
             How multiple `mtase` labels combine into `keep`.
-            "separate": must clear `threshold` per label. "aggregate":
+            "separate": must clear `thres_min`/`thres_max` per label.
+            "aggregate":
             site counts pooled across labels into one fraction first.
             Irrelevant for a single label.
         mask_name : str, default "dropout_mask"
@@ -1606,15 +1611,23 @@ class MethPrintExperiment:
         ValueError
             If `mtase` is unset on this experiment, `mtase` contains a
             label not in `self.mtase`, `chroms` contains a chromosome
-            not in `self.chroms`, `threshold` is not in [0, 1],
+            not in `self.chroms`, `thres_min` or `thres_max` is not
+            in [0, 1], `thres_min` is greater than `thres_max`,
             `unmapped_strand`/`method` is invalid, a requested source
             is missing for some chromosome, or `refseq` is missing.
         """
         labels = self._resolve_mtase_subset(mtase)
         chroms = self._resolve_chroms_subset(chroms)
-        if not (0.0 <= threshold <= 1.0):
+        if not (0.0 <= thres_min <= 1.0):
             raise ValueError(
-                f"'threshold' must be in [0, 1], got {threshold}.")
+                f"'thres_min' must be in [0, 1], got {thres_min}.")
+        if not (0.0 <= thres_max <= 1.0):
+            raise ValueError(
+                f"'thres_max' must be in [0, 1], got {thres_max}.")
+        if thres_min > thres_max:
+            raise ValueError(
+                "'thres_min' must be <= 'thres_max', got "
+                f"thres_min={thres_min}, thres_max={thres_max}.")
         if unmapped_strand not in _VALID_UNMAPPED_STRAND:
             raise ValueError(
                 "'unmapped_strand' must be one of "
@@ -1645,9 +1658,11 @@ class MethPrintExperiment:
                 dropout_frac, combined_frac = _dropout_fracs(cov, labels)
 
                 if method == "separate":
-                    keep = (dropout_frac <= threshold).all(axis=0)
+                    keep = ((dropout_frac >= thres_min) &
+                            (dropout_frac <= thres_max)).all(axis=0)
                 else:
-                    keep = combined_frac <= threshold
+                    keep = (combined_frac >= thres_min) & \
+                           (combined_frac <= thres_max)
 
                 # Stored as int, not bool: bool isn't a numeric dtype
                 # to h5_utils' save/load, so it would round-trip

@@ -190,8 +190,8 @@ class TestFilterDropout:
         expected = _make_experiment(nmol=6, nbp=nbp, seed=3,
                                     refseq="A" * nbp, mtase=("A",))
 
-        catella.filter_dropout(exp=exp, threshold=0.5)
-        expected.filter_dropout(threshold=0.5)
+        catella.filter_dropout(exp=exp, thres_max=0.5)
+        expected.filter_dropout(thres_max=0.5)
 
         np.testing.assert_array_equal(
             exp.analysis["chr1"]["test_dropout_mask"]["keep"].to_numpy(),

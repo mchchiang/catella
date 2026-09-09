@@ -362,7 +362,8 @@ def filter_dropout(*, exp : MethPrintExperiment,
            which : str | None = None,
            mtase : list | None = None,
            chroms : list | None = None,
-           threshold : float = 0.2,
+           thres_min : float = 0.0,
+           thres_max : float = 1.0,
            unmapped_strand : str = "union",
            method : str = "separate",
            mask_name : str = "dropout_mask") -> None:
@@ -384,7 +385,10 @@ def filter_dropout(*, exp : MethPrintExperiment,
     chroms : list of str, optional
         Subset of `exp.chroms` to evaluate. None (default) evaluates
         every chromosome.
-    threshold : float, default 0.2
+    thres_min : float, default 0.0
+        Min allowed no-signal fraction (per label, or of the pooled
+        total under `method="aggregate"`) to be kept.
+    thres_max : float, default 1.0
         Max allowed no-signal fraction (per label, or of the pooled
         total under `method="aggregate"`) to be kept.
     unmapped_strand : {"union", "drop", "+", "-"}, default "union"
@@ -393,9 +397,9 @@ def filter_dropout(*, exp : MethPrintExperiment,
         strand.
     method : {"separate", "aggregate"}, default "separate"
         How multiple `mtase` labels combine into `keep`. "separate":
-        must clear `threshold` per label. "aggregate": site counts
-        pooled across labels into one fraction first. Irrelevant for
-        a single label.
+        must clear `thres_min`/`thres_max` per label. "aggregate":
+        site counts pooled across labels into one fraction first.
+        Irrelevant for a single label.
     mask_name : str, default "dropout_mask"
         Key for the mask in `exp.analysis[chrom]`, as
         `f"{source}_{mask_name}"`.
@@ -405,12 +409,14 @@ def filter_dropout(*, exp : MethPrintExperiment,
     ValueError
         If `mtase` is unset on `exp`, `mtase` contains a label not in
         `exp.mtase`, `chroms` contains a chromosome not in
-        `exp.chroms`, `threshold` is not in [0, 1],
+        `exp.chroms`, `thres_min` or `thres_max` is not in [0, 1],
+        `thres_min` is greater than `thres_max`,
         `unmapped_strand`/`method` is invalid, a requested source is
         missing for some chromosome, or `refseq` is missing.
     """
     exp.filter_dropout(which=which, mtase=mtase, chroms=chroms,
-                       threshold=threshold, unmapped_strand=unmapped_strand,
+                       thres_min=thres_min, thres_max=thres_max,
+                       unmapped_strand=unmapped_strand,
                        method=method, mask_name=mask_name)
 
 

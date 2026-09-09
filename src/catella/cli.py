@@ -144,8 +144,10 @@ def filter_dropout(
         Optional[str],
         typer.Option(callback=csv_parser(str),
                     help="Subset of chromosomes to evaluate")] = None,
-    threshold: Annotated[
-        float, typer.Option(help="Max allowed no-signal fraction")] = 0.2,
+    thres_min: Annotated[
+        float, typer.Option(help="Min allowed no-signal fraction")] = 0.0,
+    thres_max: Annotated[
+        float, typer.Option(help="Max allowed no-signal fraction")] = 1.0,
     unmapped_strand: Annotated[
         str, typer.Option(help="union, drop, +, or -")] = "union",
     method: Annotated[
@@ -168,7 +170,8 @@ def filter_dropout(
     """
     exp = MethPrintExperiment.load(source_file)
     catella.filter_dropout(exp=exp, which=which, mtase=mtase,
-                           chroms=chroms, threshold=threshold,
+                           chroms=chroms, thres_min=thres_min,
+                           thres_max=thres_max,
                            unmapped_strand=unmapped_strand, method=method,
                            mask_name=mask_name)
     if out_file is not None:
@@ -694,6 +697,10 @@ def plot_methmap(
         if link_mat_name is not None else None
     catella.plot_methmap(data=data, vmin=vmin, vmax=vmax, out_file=out_file,
                        link_mat=link_mat, show=show)
+
+
+# Click adapter of `app`, used by sphinx-click for the CLI reference docs.
+click_app = typer.main.get_command(app)
 
 
 if __name__ == "__main__":

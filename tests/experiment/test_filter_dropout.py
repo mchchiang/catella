@@ -58,11 +58,25 @@ class TestValidation:
             exp.filter_dropout()
         exp.close()
 
-    def test_bad_threshold_raises(self, tmp_path):
+    def test_bad_thres_max_raises(self, tmp_path):
         exp = _load(tmp_path, "A", [("m0", 0, "chr1", "+", 0.5, "a")],
                    mtase="A")
         with pytest.raises(ValueError):
-            exp.filter_dropout(threshold=1.5)
+            exp.filter_dropout(thres_max=1.5)
+        exp.close()
+
+    def test_bad_thres_min_raises(self, tmp_path):
+        exp = _load(tmp_path, "A", [("m0", 0, "chr1", "+", 0.5, "a")],
+                   mtase="A")
+        with pytest.raises(ValueError):
+            exp.filter_dropout(thres_min=-0.1)
+        exp.close()
+
+    def test_thres_min_above_thres_max_raises(self, tmp_path):
+        exp = _load(tmp_path, "A", [("m0", 0, "chr1", "+", 0.5, "a")],
+                   mtase="A")
+        with pytest.raises(ValueError):
+            exp.filter_dropout(thres_min=0.5, thres_max=0.2)
         exp.close()
 
     def test_bad_unmapped_strand_raises(self, tmp_path):
@@ -97,7 +111,7 @@ class TestAContext:
             ("minus_at_A", 0, "chr1", "-", 0.5, "a"),
         ]
         exp = _load(tmp_path, "AT", rows, mtase="A")
-        exp.filter_dropout(which="test", threshold=0.2)
+        exp.filter_dropout(which="test", thres_max=0.2)
         mol_id = exp.raw["chr1"].test_mol_id
         mask = exp.analysis["chr1"]["test_dropout_mask"]
         keep = dict(zip(mol_id, mask["keep"]))
@@ -118,7 +132,7 @@ class TestDinucleotideContext:
             ("minus_at_0", 0, "chr1", "-", 0.5, "a"),
         ]
         exp = _load(tmp_path, "CG", rows, mtase="CG")
-        exp.filter_dropout(which="test", threshold=0.2)
+        exp.filter_dropout(which="test", thres_max=0.2)
         mol_id = exp.raw["chr1"].test_mol_id
         keep = dict(zip(mol_id,
                         exp.analysis["chr1"]["test_dropout_mask"]["keep"]))
@@ -137,7 +151,7 @@ class TestDinucleotideContext:
             ("minus_at_1", 1, "chr1", "-", 0.5, "a"),
         ]
         exp = _load(tmp_path, "GC", rows, mtase="GC")
-        exp.filter_dropout(which="test", threshold=0.2)
+        exp.filter_dropout(which="test", thres_max=0.2)
         mol_id = exp.raw["chr1"].test_mol_id
         keep = dict(zip(mol_id,
                         exp.analysis["chr1"]["test_dropout_mask"]["keep"]))
@@ -153,7 +167,7 @@ class TestMultiLabel:
     def test_gcg_shared_measurement_counts_for_both_labels(self, tmp_path):
         exp = _load(tmp_path, "AGCGA",
                    [("m0", 2, "chr1", "+", 0.5, "a")], mtase=["CG", "GC"])
-        exp.filter_dropout(which="test", threshold=0.2, method="separate")
+        exp.filter_dropout(which="test", thres_max=0.2, method="separate")
         keep = exp.analysis["chr1"]["test_dropout_mask"]["keep"].tolist()
         assert keep == [True]
         exp.close()
@@ -163,7 +177,7 @@ class TestMultiLabel:
         refseq = "AAAAAAAAAACG"
         rows = [("m0", i, "chr1", "+", 0.5, "a") for i in range(9)]
         exp = _load(tmp_path, refseq, rows, mtase=["A", "CG"])
-        exp.filter_dropout(which="test", threshold=0.2, method="separate")
+        exp.filter_dropout(which="test", thres_max=0.2, method="separate")
         keep = exp.analysis["chr1"]["test_dropout_mask"]["keep"].tolist()
         # A: 9/10 covered (dropout 0.1, passes). CG: 0/1 covered
         # (dropout 1.0, fails) -> overall False under "separate".
@@ -174,7 +188,7 @@ class TestMultiLabel:
         refseq = "AAAAAAAAAACG"
         rows = [("m0", i, "chr1", "+", 0.5, "a") for i in range(9)]
         exp = _load(tmp_path, refseq, rows, mtase=["A", "CG"])
-        exp.filter_dropout(which="test", threshold=0.2, method="aggregate")
+        exp.filter_dropout(which="test", thres_max=0.2, method="aggregate")
         keep = exp.analysis["chr1"]["test_dropout_mask"]["keep"].tolist()
         # pooled: covered=9, total=11 -> dropout_frac = 2/11 = 0.182 <= 0.2
         assert keep == [True]
@@ -188,11 +202,52 @@ class TestMultiLabel:
         # Cover ALL 10 A-sites but 0/1 CG-sites.
         rows = [("m0", i, "chr1", "+", 0.5, "a") for i in range(10)]
         exp = _load(tmp_path, refseq, rows, mtase=["A", "CG"])
-        exp.filter_dropout(which="test", threshold=0.2, method="aggregate")
+        exp.filter_dropout(which="test", thres_max=0.2, method="aggregate")
         keep = exp.analysis["chr1"]["test_dropout_mask"]["keep"].tolist()
         # plain mean of fractions: (0 + 1.0)/2 = 0.5 -> would fail 0.2.
         # pooled: covered=10, total=11 -> dropout_frac=1/11=0.0909 <= 0.2
         assert keep == [True]
+        exp.close()
+
+
+class TestThresholdRange:
+    # refseq "N" + "A"*8: pos0='N' is not methylatable (registers a
+    # molecule without covering any A-site); pos1-8 are the 8 A-sites
+    # used to vary each molecule's dropout fraction. 8 sites (a power
+    # of two) keeps dropout fractions exact in binary floating point.
+    def _make(self, tmp_path):
+        refseq = "N" + "A" * 8
+        rows = (
+            [("mol_none", 0, "chr1", "+", 0.5, "a")]
+            + [("mol_mid", i, "chr1", "+", 0.5, "a") for i in range(5)]
+            + [("mol_high", i, "chr1", "+", 0.5, "a") for i in range(8)]
+            + [("mol_full", i, "chr1", "+", 0.5, "a") for i in range(9)])
+        return _load(tmp_path, refseq, rows, mtase="A")
+
+    def test_range_keeps_only_middle_dropout(self, tmp_path):
+        exp = self._make(tmp_path)
+        # dropout fractions: mol_none=1.0, mol_mid=0.5, mol_high=0.125,
+        # mol_full=0.0
+        exp.filter_dropout(which="test", thres_min=0.2, thres_max=0.8)
+        mol_id = exp.raw["chr1"].test_mol_id
+        keep = dict(zip(mol_id,
+                        exp.analysis["chr1"]["test_dropout_mask"]["keep"]))
+        assert keep["mol_none"] == False
+        assert keep["mol_mid"] == True
+        assert keep["mol_high"] == False
+        assert keep["mol_full"] == False
+        exp.close()
+
+    def test_range_bounds_are_inclusive(self, tmp_path):
+        exp = self._make(tmp_path)
+        exp.filter_dropout(which="test", thres_min=0.125, thres_max=0.5)
+        mol_id = exp.raw["chr1"].test_mol_id
+        keep = dict(zip(mol_id,
+                        exp.analysis["chr1"]["test_dropout_mask"]["keep"]))
+        assert keep["mol_mid"] == True
+        assert keep["mol_high"] == True
+        assert keep["mol_none"] == False
+        assert keep["mol_full"] == False
         exp.close()
 
 
@@ -208,7 +263,7 @@ class TestUnmappedStrand:
     def test_modes(self, tmp_path, mode, expected):
         exp = _load(tmp_path, "AT",
                    [("m0", 1, "chr1", ".", 0.5, "a")], mtase="A")
-        exp.filter_dropout(which="test", threshold=0.2,
+        exp.filter_dropout(which="test", thres_max=0.2,
                           unmapped_strand=mode)
         keep = exp.analysis["chr1"]["test_dropout_mask"]["keep"].tolist()
         assert keep == [expected]
@@ -229,7 +284,7 @@ class TestWhichAndMaskName:
         exp = MethPrintExperiment.load_raw(
             chromsize=chromsize, test_file=test_file, meth_file=meth_file,
             fasta_file=fasta, mtase="A")
-        exp.filter_dropout(which=None, threshold=0.2)
+        exp.filter_dropout(which=None, thres_max=0.2)
         assert "test_dropout_mask" in exp.analysis["chr1"]
         assert "meth_dropout_mask" in exp.analysis["chr1"]
         assert "unmeth_dropout_mask" not in exp.analysis["chr1"]
@@ -238,7 +293,7 @@ class TestWhichAndMaskName:
     def test_custom_mask_name(self, tmp_path):
         exp = _load(tmp_path, "AT",
                    [("m0", 0, "chr1", "+", 0.5, "a")], mtase="A")
-        exp.filter_dropout(which="test", threshold=0.2, mask_name="qc")
+        exp.filter_dropout(which="test", thres_max=0.2, mask_name="qc")
         assert "test_qc" in exp.analysis["chr1"]
         assert "test_dropout_mask" not in exp.analysis["chr1"]
         exp.close()
@@ -258,7 +313,7 @@ class TestSaveLoadRoundTrip:
             ("plus_at_T", 1, "chr1", "+", 0.5, "a"),
         ]
         exp = _load(tmp_path, "AT", rows, mtase="A")
-        exp.filter_dropout(which="test", threshold=0.2)
+        exp.filter_dropout(which="test", thres_max=0.2)
         before = exp.analysis["chr1"]["test_dropout_mask"]["keep"].tolist()
 
         exp_file = tmp_path / "exp.h5"
@@ -291,18 +346,18 @@ class TestMtaseSubset:
         exp = _load(tmp_path, "AGCG",
                    [("m0", 0, "chr1", "+", 0.5, "a")], mtase=["A", "CG"])
         # Full mtase ["A", "CG"]: CG-site (idx2) uncovered -> fails.
-        exp.filter_dropout(threshold=0.0, mask_name="full")
+        exp.filter_dropout(thres_max=0.0, mask_name="full")
         assert exp.analysis["chr1"]["test_full"]["keep"].tolist() == [False]
         # Subset to just ["A"]: only the covered A-site is checked.
-        exp.filter_dropout(mtase=["A"], threshold=0.0, mask_name="a_only")
+        exp.filter_dropout(mtase=["A"], thres_max=0.0, mask_name="a_only")
         assert exp.analysis["chr1"]["test_a_only"]["keep"].tolist() == [True]
         exp.close()
 
     def test_default_none_uses_full_mtase(self, tmp_path):
         exp = _load(tmp_path, "AGCG",
                    [("m0", 0, "chr1", "+", 0.5, "a")], mtase=["A", "CG"])
-        exp.filter_dropout(mtase=None, threshold=0.0, mask_name="explicit")
-        exp.filter_dropout(threshold=0.0, mask_name="implicit")
+        exp.filter_dropout(mtase=None, thres_max=0.0, mask_name="explicit")
+        exp.filter_dropout(thres_max=0.0, mask_name="implicit")
         explicit = exp.analysis["chr1"]["test_explicit"]["keep"].tolist()
         implicit = exp.analysis["chr1"]["test_implicit"]["keep"].tolist()
         assert explicit == implicit == [False]
@@ -340,7 +395,7 @@ class TestChromsSubset:
 
     def test_filter_dropout_restricts_to_given_chroms(self, tmp_path):
         exp = self._make(tmp_path)
-        exp.filter_dropout(chroms=["chr1"], threshold=0.0)
+        exp.filter_dropout(chroms=["chr1"], thres_max=0.0)
         assert "test_dropout_mask" in exp.analysis["chr1"]
         assert "test_dropout_mask" not in exp.analysis["chr2"]
         exp.close()

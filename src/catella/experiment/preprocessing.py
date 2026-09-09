@@ -27,10 +27,10 @@ NONE, M6A, GCH, HCG, GCG = 0, 1, 2, 3, 4
 CONTEXT_NAMES = {NONE: "none", M6A: "M6A", GCH: "GCH", HCG: "HCG",
                  GCG: "GCG"}
 
-# Channels eta is estimated/applied per, and the reverse of
+# The four assayable context channels, and the reverse of
 # CONTEXT_NAMES restricted to them, for parsing user eta overrides.
-_ETA_CHANNELS = (M6A, GCH, HCG, GCG)
-_CHANNEL_NAME_TO_CODE = {CONTEXT_NAMES[c]: c for c in _ETA_CHANNELS}
+_ALL_CHANNELS = (M6A, GCH, HCG, GCG)
+_CHANNEL_NAME_TO_CODE = {CONTEXT_NAMES[c]: c for c in _ALL_CHANNELS}
 
 # Context channel(s) each mtase label actually methylates. "CG"/"GC"
 # both include GCG, since that position matches both rules (see
@@ -50,13 +50,13 @@ def _active_channels(exp):
     Returns
     -------
     tuple of int
-        Subset of `_ETA_CHANNELS`, in `_ETA_CHANNELS` order. All of
-        `_ETA_CHANNELS` if `exp.mtase` is unset (None).
+        Subset of `_ALL_CHANNELS`, in `_ALL_CHANNELS` order. All of
+        `_ALL_CHANNELS` if `exp.mtase` is unset (None).
     """
     if exp.mtase is None:
-        return _ETA_CHANNELS
+        return _ALL_CHANNELS
     active = {c for label in exp.mtase for c in _MTASE_CHANNELS[label]}
-    return tuple(c for c in _ETA_CHANNELS if c in active)
+    return tuple(c for c in _ALL_CHANNELS if c in active)
 
 # Warn (not raise) if more than this fraction of wrap-mirrored position
 # pairs disagree on context when folding ctx in model_prob.
@@ -134,7 +134,7 @@ def _context_prior_rate(k, n_mol, ctx, nu=10.0, eps=1e-4, channels=None):
         Clip bound keeping rates away from exactly 0 or 1.
     channels : iterable of int, optional
         Context channels to compute a rate for; positions in any other
-        channel are left nan. Defaults to all of `_ETA_CHANNELS`.
+        channel are left nan. Defaults to all of `_ALL_CHANNELS`.
 
     Returns
     -------
@@ -142,7 +142,7 @@ def _context_prior_rate(k, n_mol, ctx, nu=10.0, eps=1e-4, channels=None):
         float64, length L, in [eps, 1 - eps], nan outside `channels`.
     """
     if channels is None:
-        channels = _ETA_CHANNELS
+        channels = _ALL_CHANNELS
     theta = np.full(len(ctx), np.nan)
     for code in channels:
         sel = ctx == code
@@ -286,7 +286,7 @@ def _calibrate_from_controls(meth_k, meth_n, unmeth_k, unmeth_n, ctx,
         Forwarded to `_informative_mask`.
     channels : iterable of int, optional
         Forwarded to `_context_prior_rate`. Defaults to all of
-        `_ETA_CHANNELS`; positions outside `channels` come back
+        `_ALL_CHANNELS`; positions outside `channels` come back
         uninformative, since their theta_acc is left nan.
 
     Returns
@@ -341,7 +341,7 @@ def _streamed_window_count(exp, chrom, ctx, l_nuc, n_min, batch_size,
         across keys, since it depends only on `ctx`.
     channels : iterable of int, optional
         Context channels eligible to be counted. Defaults to all of
-        `_ETA_CHANNELS`.
+        `_ALL_CHANNELS`.
 
     Returns
     -------
@@ -364,7 +364,7 @@ def _streamed_window_count(exp, chrom, ctx, l_nuc, n_min, batch_size,
         `row_masks` is given).
     """
     if channels is None:
-        channels = _ETA_CHANNELS
+        channels = _ALL_CHANNELS
     arr = exp.to_dense(chrom, which="test", as_h5array=True,
                        batch_size=batch_size, mask_name=mask_name)
     n_total, L = arr.shape
@@ -645,7 +645,7 @@ def _resolve_eta_overrides(eta):
                     f"of {sorted(_CHANNEL_NAME_TO_CODE)}.")
             overrides[_CHANNEL_NAME_TO_CODE[name]] = float(val)
         return overrides
-    return {c: float(eta) for c in _ETA_CHANNELS}
+    return {c: float(eta) for c in _ALL_CHANNELS}
 
 
 def _init_autocorr_stats(max_lag):
@@ -653,7 +653,7 @@ def _init_autocorr_stats(max_lag):
     return {c: {"n": 0.0, "s1": 0.0, "s2": 0.0,
                "npair": np.zeros(max_lag), "pprod": np.zeros(max_lag),
                "psumA": np.zeros(max_lag), "psumB": np.zeros(max_lag)}
-           for c in _ETA_CHANNELS}
+           for c in _ALL_CHANNELS}
 
 
 def _accumulate_autocorr_stats(stats, log_odds, called, ctx, max_lag,
@@ -684,10 +684,10 @@ def _accumulate_autocorr_stats(stats, log_odds, called, ctx, max_lag,
         Maximum lag (bp) to accumulate pair sums for.
     channels : iterable of int, optional
         Channel codes to accumulate. Defaults to all of
-        `_ETA_CHANNELS`.
+        `_ALL_CHANNELS`.
     """
     if channels is None:
-        channels = _ETA_CHANNELS
+        channels = _ALL_CHANNELS
     L = log_odds.shape[1]
     for c in channels:
         mask_c = called & (ctx == c)[None, :]
@@ -852,7 +852,7 @@ def _frac_informative_by_context(ctx, informative, channels=None):
     informative : np.ndarray
         bool, length L.
     channels : iterable of int, optional
-        Context channels to report. Defaults to all of `_ETA_CHANNELS`.
+        Context channels to report. Defaults to all of `_ALL_CHANNELS`.
 
     Returns
     -------
@@ -861,7 +861,7 @@ def _frac_informative_by_context(ctx, informative, channels=None):
         channel in `channels` present in `ctx`.
     """
     if channels is None:
-        channels = _ETA_CHANNELS
+        channels = _ALL_CHANNELS
     return {f"frac_informative_{CONTEXT_NAMES[c]}":
            float(informative[ctx == c].mean())
            for c in channels if (ctx == c).any()}
@@ -897,7 +897,7 @@ def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, l_nuc, n_min,
         arrays.
     channels : iterable of int, optional
         Context channels actually assayed, from `_active_channels`.
-        Defaults to all of `_ETA_CHANNELS`.
+        Defaults to all of `_ALL_CHANNELS`.
 
     Returns
     -------
@@ -934,7 +934,7 @@ def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, l_nuc, n_min,
         disagree on context.
     """
     if channels is None:
-        channels = _ETA_CHANNELS
+        channels = _ALL_CHANNELS
     raw = exp.raw[chrom]
     if raw.refseq is None:
         raise ValueError(

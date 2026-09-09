@@ -82,11 +82,10 @@ class SimPlot:
         return log10x
 
     @_apply_style
-    def plot_energy(self, *,
+    def plot_energy(self, dataset : SimDataset, *,
                     chrom : str,
                     mol : int,
                     run : int,
-                    dataset : SimDataset,
                     tstart : int | None = None,
                     tend : int | None = None,
                     tscale : int = 1000000,
@@ -98,14 +97,14 @@ class SimPlot:
 
         Parameters
         ----------
+        dataset : SimDataset
+            The dataset object containing raw simulation results.
         chrom : str
             Chromosome identifier.
         mol : int
             Molecule index within the dataset.
         run : int
             Simulation run index.
-        dataset : SimDataset
-            The dataset object containing raw simulation results.
         tstart : int, optional
             Starting time step. If None, defaults to the beginning of the
             simulation.
@@ -129,10 +128,10 @@ class SimPlot:
             raise ValueError("'tend' must be greater than 'tstart'.")
 
         tpow = int(self._log10(tscale, "tscale"))
-        
+
         # Retrieve the data
         data = dataset.raw[chrom,mol,run]
-        
+
         # Normalize time indices and validate time values
         nframes = len(data.time)
         start_idx = 0 if tstart is None else data.time_index(tstart)
@@ -161,11 +160,10 @@ class SimPlot:
     
     
     @_apply_style
-    def plot_nuc_pos(self, *,
+    def plot_nuc_pos(self, dataset : SimDataset, *,
                      chrom : str,
                      mol : int,
                      run : int,
-                     dataset : SimDataset,
                      tstart : int | None = None,
                      tend : int | None = None,
                      tscale : int = 1000000,
@@ -179,14 +177,14 @@ class SimPlot:
 
         Parameters
         ----------
+        dataset : SimDataset
+            The dataset object containing raw simulation results.
         chrom : str
             Chromosome identifier.
         mol : int
             Molecule index within the dataset.
         run : int
             Simulation run index.
-        dataset : SimDataset
-            The dataset object containing raw simulation results.
         tstart : int, optional
             Starting time step. If None, defaults to the beginning of the
             simulation.
@@ -290,9 +288,8 @@ class SimPlot:
             fig.savefig(out_file)
         
     @_apply_style
-    def plot_occup(self, *,
+    def plot_occup(self, dataset : SimDataset, *,
                    chrom : str,
-                   dataset : SimDataset,
                    time : int | None = None,
                    occup_name : str = "occup",
                    mols : Iterable[int] | None = None,
@@ -310,10 +307,10 @@ class SimPlot:
 
         Parameters
         ----------
-        chrom : str
-            Chromosome identifier.
         dataset : SimDataset
             The dataset object containing analysis results or raw data.
+        chrom : str
+            Chromosome identifier.
         time : int, optional
             The time step of interest if occupancy needs to be computed.
         occup_name : str, default "occup"

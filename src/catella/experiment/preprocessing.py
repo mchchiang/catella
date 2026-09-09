@@ -1068,8 +1068,8 @@ class MethPrintAnalysis:
     
     _EPSILON = np.finfo(float).eps  # Smallest float to avoid DivByZero
 
-    def smooth(self, *, binsize : int,
-               exp : MethPrintExperiment,
+    def smooth(self, exp : MethPrintExperiment, *,
+               binsize : int,
                name : str = "smoothed",
                nan_method : str = "mean",
                fill_edge : float | str = np.nan,
@@ -1087,10 +1087,10 @@ class MethPrintAnalysis:
 
         Parameters
         ----------
-        binsize : int
-            Window size in base pairs for the rolling average smoothing.
         exp : MethPrintExperiment
             The experiment object containing raw data and analysis maps.
+        binsize : int
+            Window size in base pairs for the rolling average smoothing.
         name : str, default "smoothed"
             The suffix used to store the resulting array in `exp.analysis`.
             Results are stored as 'test_{name}', 'meth_{name}', etc.
@@ -1216,7 +1216,7 @@ class MethPrintAnalysis:
                     src_keep("unmeth"))
                 
             
-    def empirical_prob(self, *, exp : MethPrintExperiment,
+    def empirical_prob(self, exp : MethPrintExperiment, *,
                   binsize : int | None = None,
                   smoothed_name : str = "smoothed",
                   prob_name : str = "meth_prob",
@@ -1549,7 +1549,7 @@ class MethPrintAnalysis:
                 out.write_batch(start, stop, prob)
             ana[prob_name] = out
 
-    def model_prob(self, *, exp : MethPrintExperiment,
+    def model_prob(self, exp : MethPrintExperiment, *,
                    prob_name : str = "meth_prob",
                    pi0 : float = 0.5,
                    eta : float | dict[str, float] | None = None,
@@ -1870,8 +1870,7 @@ class MethPrintAnalysis:
         exp.global_analysis[f"{prob_name}_calib"] = pd.DataFrame(
             calib_records)
 
-    def sort_by_linkage(self, *,
-                        exp : MethPrintExperiment,
+    def sort_by_linkage(self, exp : MethPrintExperiment, *,
                         chroms : str | Iterable[str] | None = None,
                         data_name : str = "test_smoothed",
                         raw_which : str | None = None,

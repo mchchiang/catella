@@ -142,8 +142,7 @@ class SimAnalysis:
     trajectories. Results are stored directly in the provided dataset's
     analysis map.
     """
-    def compute_occup(self, *,
-                      dataset : SimDataset,
+    def compute_occup(self, dataset : SimDataset, *,
                       time : int | None = None,
                       chroms : str | Iterable[str] | None = None,
                       name : str = "occup",
@@ -214,8 +213,7 @@ class SimAnalysis:
                       f"for chrom {chrom!r}; occupancy filled with NaN.")
             dataset.analysis[chrom][name] = out
 
-    def compute_access(self, *,
-                       dataset : SimDataset,
+    def compute_access(self, dataset : SimDataset, *,
                        time : int | None = None,
                        chroms : str | Iterable[str] | None = None,
                        occup_name : str = "occup",
@@ -286,8 +284,7 @@ class SimAnalysis:
                       "NaN.")
             dataset.analysis[chrom][access_name] = out
 
-    def compute_mean_nnuc(self, *,
-                          dataset : SimDataset,
+    def compute_mean_nnuc(self, dataset : SimDataset, *,
                           time : int | None = None,
                           chroms : str | Iterable[str] | None = None,
                           name : str = "mean_nnuc",
@@ -328,8 +325,7 @@ class SimAnalysis:
         for chrom in chroms:
             dataset.analysis[chrom][name] = pd.DataFrame(mean_nnuc[chrom])
 
-    def sort_by_linkage(self, *,
-                        dataset : SimDataset,
+    def sort_by_linkage(self, dataset : SimDataset, *,
                         chroms : str | Iterable[str] | None = None,
                         data_name : str = "occup",
                         sorted_name : str | None = None,

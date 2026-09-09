@@ -355,8 +355,7 @@ class SimManager:
 
         return dataset
 
-    def rerun(self, *,
-             dataset : SimDataset,
+    def rerun(self, dataset : SimDataset, *,
              meth_prob : np.ndarray | Mapping[str,np.ndarray|pd.DataFrame],
              only : Iterable[Tuple[str,int,int]] | None = None,
              seed : int | None = None,

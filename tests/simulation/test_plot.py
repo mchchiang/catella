@@ -91,3 +91,33 @@ class TestPlotOccupMolsSlicing:
 
         SimPlot().plot_occup(chrom="chr1", dataset=dataset, plot_eseq=True,
                              show=False)
+
+
+@pytest.mark.filterwarnings(
+    "ignore:__array__ implementation doesn't accept a copy keyword"
+    ":DeprecationWarning")
+class TestPositionalDatasetArg:
+    def test_plot_occup_accepts_dataset_positionally(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=4, nbp=20)
+        ana = SimAnalysis()
+        ana.compute_occup(dataset=dataset, batch_size=2)
+
+        SimPlot().plot_occup(dataset, chrom="chr1", show=False)
+
+        assert plt.gcf().axes[0].images
+
+    def test_plot_energy_accepts_dataset_positionally(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=2, nbp=20)
+
+        SimPlot().plot_energy(dataset, chrom="chr1", mol=0, run=0,
+                              show=False)
+
+        assert plt.gcf().axes
+
+    def test_plot_nuc_pos_accepts_dataset_positionally(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=2, nbp=20)
+
+        SimPlot().plot_nuc_pos(dataset, chrom="chr1", mol=0, run=0,
+                               show=False)
+
+        assert plt.gcf().axes

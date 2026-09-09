@@ -237,6 +237,19 @@ class TestSimManagerRerun:
         with h5py.File(target_file, "r") as f:
             assert int(f["params"].attrs["seed"]) == original_seed
 
+    def test_dataset_accepted_positionally(self, tmp_path):
+        meth_prob = _make_meth_prob(nmol=2, nbp=50)
+        manager = SimManager(nworker=1, verbose=False)
+        dataset = manager.run(chroms="chr1", nsim=1, settings=_make_settings(),
+                              meth_prob=meth_prob, out_dir=tmp_path / "rr_pos",
+                              seed=5)
+        dataset.sim_file("chr1", 1, 0).unlink()
+
+        manager.rerun(dataset, meth_prob=meth_prob)
+
+        incomplete = dataset.find_incomplete_runs()
+        assert incomplete == {"missing": [], "corrupted": [], "truncated": []}
+
     def test_explicit_only_reruns_exactly_that_target(self, tmp_path,
                                                        monkeypatch):
         meth_prob = _make_meth_prob(nmol=2, nbp=50)

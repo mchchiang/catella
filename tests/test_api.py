@@ -205,6 +205,13 @@ class TestFilterDropout:
         with pytest.raises(ValueError):
             catella.filter_dropout(exp=exp, chroms=["bogus"])
 
+    def test_exp_accepted_positionally(self):
+        nbp = 10
+        exp = _make_experiment(nmol=6, nbp=nbp, seed=3, refseq="A" * nbp,
+                               mtase=("A",))
+        catella.filter_dropout(exp, thres_max=0.5)
+        assert "test_dropout_mask" in exp.analysis["chr1"]
+
 
 class TestSummarizeDropout:
     def test_matches_direct_method_call(self):
@@ -238,6 +245,11 @@ class TestComputeEmpiricalProb:
         np.testing.assert_allclose(
             exp.analysis["chr1"]["meth_prob"].to_numpy(),
             expected.analysis["chr1"]["meth_prob"].to_numpy())
+
+    def test_exp_accepted_positionally(self):
+        exp = _make_experiment(nmol=6, nbp=10, seed=3)
+        catella.compute_empirical_prob(exp, binsize=3)
+        assert "meth_prob" in exp.analysis["chr1"]
 
     def test_mask_name_excludes_dropped_molecules(self):
         exp = _make_experiment(nmol=6, nbp=10, seed=3)
@@ -330,3 +342,11 @@ class TestComputeModelProb:
             pd.testing.assert_frame_equal(
                 exp.global_analysis["meth_prob_rho"],
                 expected.global_analysis["meth_prob_rho"])
+
+
+class TestAnalyze:
+    def test_dataset_accepted_positionally(self, tmp_path):
+        dataset = _make_dataset(tmp_path)
+        catella.analyze(dataset)
+        assert "occup" in dataset.analysis["chr1"]
+        assert "mean_nnuc" in dataset.analysis["chr1"]

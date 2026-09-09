@@ -75,6 +75,12 @@ class TestComputeOccup:
             assert not np.isnan(occup[mol]).any()
         assert "chr1" in capsys.readouterr().out
 
+    def test_dataset_accepted_positionally(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=5, nbp=40)
+        ana = SimAnalysis()
+        ana.compute_occup(dataset, batch_size=2)
+        assert "occup" in dataset.analysis["chr1"]
+
 
 class TestComputeAccess:
     def test_output_is_h5array_and_complement_of_occup(self, tmp_path):
@@ -125,6 +131,20 @@ class TestComputeAccess:
             assert not np.isnan(access[mol]).any()
         assert "chr1" in capsys.readouterr().out
 
+    def test_dataset_accepted_positionally(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=4, nbp=15)
+        ana = SimAnalysis()
+        ana.compute_access(dataset, batch_size=2)
+        assert "access" in dataset.analysis["chr1"]
+
+
+class TestComputeMeanNnuc:
+    def test_dataset_accepted_positionally(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=4, nbp=20)
+        ana = SimAnalysis()
+        ana.compute_mean_nnuc(dataset)
+        assert "mean_nnuc" in dataset.analysis["chr1"]
+
 
 class TestSaveLoadRoundTrip:
     def test_h5array_analysis_round_trips(self, tmp_path):
@@ -173,6 +193,13 @@ class TestSortByLinkage:
         order, ref_link = utils.compute_linkage(occup)
         np.testing.assert_allclose(sorted_arr.to_numpy(), occup[order])
         np.testing.assert_allclose(link_mats["chr1"], ref_link)
+
+    def test_dataset_accepted_positionally(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=6, nbp=20)
+        ana = SimAnalysis()
+        ana.compute_occup(dataset, batch_size=2)
+        link_mats = ana.sort_by_linkage(dataset, batch_size=2)
+        assert "chr1" in link_mats
 
     def test_sorted_rows_are_a_permutation_of_original_rows(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=5, nbp=12)

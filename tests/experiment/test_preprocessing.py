@@ -193,6 +193,16 @@ class TestSmooth:
         with pytest.raises(ValueError):
             ana.smooth(binsize=1, exp=exp, fill_edge=1.5, batch_size=100)
 
+    def test_exp_accepted_positionally(self):
+        exp_kw = _make_experiment(nmol=5, nbp=8)
+        exp_pos = _make_experiment(nmol=5, nbp=8)
+        ana = MethPrintAnalysis()
+        ana.smooth(exp_kw, binsize=3, batch_size=100)
+        ana.smooth(exp_pos, binsize=3, batch_size=100)
+        np.testing.assert_array_equal(
+            exp_kw.analysis["chr1"]["test_smoothed"].to_numpy(),
+            exp_pos.analysis["chr1"]["test_smoothed"].to_numpy())
+
 
 class TestEmpiricalProb:
     def test_output_in_unit_range(self):
@@ -329,6 +339,13 @@ class TestEmpiricalProb:
         with pytest.raises(ValueError):
             ana.empirical_prob(exp=exp, binsize=None, batch_size=100,
                           percentile_sample_size=1000)
+
+    def test_exp_accepted_positionally(self):
+        exp = _make_experiment(nmol=6, nbp=10)
+        ana = MethPrintAnalysis()
+        ana.empirical_prob(exp, binsize=3, batch_size=100,
+                      percentile_sample_size=1000)
+        assert "meth_prob" in exp.analysis["chr1"]
 
 
 class TestEmpiricalProbResmooth:
@@ -548,6 +565,12 @@ class TestSortByLinkage:
         sorted_arr = exp.analysis["chr1"]["test_sorted"]
         assert isinstance(sorted_arr, H5Array)
         assert sorted_arr.shape == (6, 10)
+        assert "chr1" in link_mats
+
+    def test_exp_accepted_positionally(self):
+        exp = _make_experiment(nmol=6, nbp=10)
+        ana = MethPrintAnalysis()
+        link_mats = ana.sort_by_linkage(exp, batch_size=2)
         assert "chr1" in link_mats
 
     def test_default_prefers_smoothed_once_available(self):
@@ -806,6 +829,13 @@ class TestModelProb:
         background = np.nanmean(prob[:, 0])
         assert planted < 0.1
         assert background > 0.5
+
+    def test_exp_accepted_positionally(self):
+        exp = _make_footprint_experiment(with_controls=True,
+                                         planted_edges=(30,), l_nuc=30)
+        ana = MethPrintAnalysis()
+        ana.model_prob(exp, l_nuc=30, batch_size=7)
+        assert "meth_prob" in exp.analysis["chr1"]
 
     def test_continuous_confidence_favors_planted_region(self):
         # mod_qual values are graded confidence scores rather than hard

@@ -476,7 +476,16 @@ def _calibrate_from_data(K, N, ctx, codes, max_iters=200, eps=1e-3,
         `theta_acc` (float64, length `len(codes)`, the final per-context
         rates before broadcasting to `theta_prot`/`theta_acc` above).
     """
-    from scipy.stats import binom
+    from scipy.special import gammaln
+
+    def _log_binom_pmf(k, n, p):
+        # k here is a confidence-score sum, usually fractional.
+        # scipy.stats.binom.logpmf requires integer k and returns
+        # -inf otherwise, so use the Gamma-function extension of the
+        # binomial coefficient instead; it agrees with
+        # scipy.stats.binom.logpmf for integer k.
+        coef = gammaln(n + 1) - gammaln(k + 1) - gammaln(n - k + 1)
+        return coef + k * np.log(p) + (n - k) * np.log1p(-p)
 
     tp = np.full(len(codes), init_prot)
     ta = np.full(len(codes), init_acc)
@@ -486,9 +495,9 @@ def _calibrate_from_data(K, N, ctx, codes, max_iters=200, eps=1e-3,
 
     for it in range(max_iters):
         n_iter = it + 1
-        lp = np.log(pi) + sum(binom.logpmf(K[c], N[c], tp[c])
+        lp = np.log(pi) + sum(_log_binom_pmf(K[c], N[c], tp[c])
                               for c in range(len(codes)))
-        la = np.log1p(-pi) + sum(binom.logpmf(K[c], N[c], ta[c])
+        la = np.log1p(-pi) + sum(_log_binom_pmf(K[c], N[c], ta[c])
                                  for c in range(len(codes)))
         m = np.maximum(lp, la)
         ll = (m + np.log(np.exp(lp - m) + np.exp(la - m))).sum()

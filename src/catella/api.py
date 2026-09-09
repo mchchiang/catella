@@ -27,6 +27,7 @@ def load_raw(*, chromsize : str | Path,
              mtase : str | Iterable[str] | None = None,
              chroms : Iterable[str] | None = None,
              wrap : bool = False,
+             ignore_strand : bool = False,
              colidx : Iterable | None = None,
              max_nmol : int | None = None,
              seed : int | None = None,
@@ -67,6 +68,11 @@ def load_raw(*, chromsize : str | Path,
     wrap : bool, default False
         If True, calculates positions relative to the fiber center
         (useful for circular or symmetrical fibers).
+    ignore_strand : bool, default False
+        If True, ignore each row's recorded `strand` for `mtase`
+        context filtering, and in `filter_dropout`,
+        `summarize_dropout`, `dropout_fractions`. Independent of
+        `norm_by_strand`.
     colidx : Iterable, optional
         Specific column indices to use if the input file does not follow
         the standard ModKit format.
@@ -100,8 +106,9 @@ def load_raw(*, chromsize : str | Path,
         chromsize=chromsize, test_file=test_file,
         unmeth_file=unmeth_file, meth_file=meth_file,
         fasta_file=fasta_file, mtase=mtase, chroms=chroms, wrap=wrap,
-        colidx=colidx, max_nmol=max_nmol, seed=seed, chunk_size=chunk_size,
-        tmp_dir=tmp_dir, max_cached_chroms=max_cached_chroms)
+        ignore_strand=ignore_strand, colidx=colidx, max_nmol=max_nmol,
+        seed=seed, chunk_size=chunk_size, tmp_dir=tmp_dir,
+        max_cached_chroms=max_cached_chroms)
 
 
 def compute_empirical_prob(exp : MethPrintExperiment, *,

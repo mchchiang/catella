@@ -281,7 +281,7 @@ def _scan_accepted_mols(data_file, header_names, name_for, sep,
 def _stream_rows_to_staging(data_file, header_names, name_for, sep,
                             chunk_size, block_size, full_sizes, wrap,
                             mol_maps, appenders, refseq_by_chrom=None,
-                            mtase=None):
+                            mtase=None, ignore_strand=False):
     """
     Stream full rows, transform them, and append to per-chromosome
     disk-backed appenders.
@@ -322,6 +322,10 @@ def _stream_rows_to_staging(data_file, header_names, name_for, sep,
         Methyltransferase label(s) (as normalized by
         `_normalize_mtase`) to validate rows against. If None, no
         strand-consistency filtering is applied.
+    ignore_strand : bool, default False
+        If True, a row is kept if its `upos` is methylatable by any
+        `mtase` label on either strand, instead of only the row's own
+        recorded `strand`.
     """
     valid_by_chrom = {}
     if mtase is not None and refseq_by_chrom is not None:
@@ -348,11 +352,14 @@ def _stream_rows_to_staging(data_file, header_names, name_for, sep,
             if masks is not None:
                 plus, minus = masks
                 upos_all = group["upos"].to_numpy()
-                strand_all = group["strand"].to_numpy()
-                # Unmapped strand ('.') can't be validated -- kept.
-                consistent = np.where(
-                    strand_all == "+", plus[upos_all],
-                    np.where(strand_all == "-", minus[upos_all], True))
+                if ignore_strand:
+                    consistent = (plus | minus)[upos_all]
+                else:
+                    strand_all = group["strand"].to_numpy()
+                    # Unmapped strand ('.') is not validated -- kept.
+                    consistent = np.where(
+                        strand_all == "+", plus[upos_all],
+                        np.where(strand_all == "-", minus[upos_all], True))
                 keep = keep & consistent
 
             if not keep.any():
@@ -636,7 +643,8 @@ def _resolve_sources(raw, which):
             if getattr(raw, f"{src}_data") is not None]
 
 
-def _label_coverage(df, mol_id, refseq, labels, unmapped_strand):
+def _label_coverage(df, mol_id, refseq, labels, unmapped_strand,
+                    ignore_strand=False):
     """
     Per-molecule covered/total methylatable-site counts, per label.
 
@@ -652,6 +660,9 @@ def _label_coverage(df, mol_id, refseq, labels, unmapped_strand):
         `mtase` labels to evaluate, each in {"A", "CG", "GC"}.
     unmapped_strand : {"union", "drop", "+", "-"}
         How to evaluate unmapped ('.') strand molecules.
+    ignore_strand : bool, default False
+        If True, treat every row and molecule as unmapped-strand, so
+        `unmapped_strand` governs coverage for all of them.
 
     Returns
     -------
@@ -666,7 +677,11 @@ def _label_coverage(df, mol_id, refseq, labels, unmapped_strand):
     strand = _strand_of_mol(df, nmol)
     pos = df["pos"].to_numpy().astype(np.int64)
     mol_index = df["mol_index"].to_numpy().astype(np.int64)
-    row_strand = strand[mol_index]
+    if ignore_strand:
+        strand = np.full(nmol, ".", dtype="<U1")
+        row_strand = np.full(len(pos), ".", dtype="<U1")
+    else:
+        row_strand = strand[mol_index]
     is_plus = row_strand == "+"
     is_minus = row_strand == "-"
     is_dot = row_strand == "."
@@ -799,6 +814,7 @@ class MethPrintExperiment:
     _exp_file : str | None
     _mtase : Tuple[str, ...] | None
     _wrap : bool
+    _ignore_strand : bool
 
     def __init__(self, **kwargs : Any):
         if not kwargs.pop("_internal", False):
@@ -834,6 +850,11 @@ class MethPrintExperiment:
         # Whether raw positions were folded around the fiber center;
         # set at load_raw() time.
         self._wrap = kwargs.get("_wrap", False)
+
+        # Whether strand was ignored when resolving methylatable
+        # positions (both strands' motif context OR'd together); set
+        # at load_raw() time.
+        self._ignore_strand = kwargs.get("_ignore_strand", False)
 
     @staticmethod
     def _cleanup_tmp_dir(tmp_dir):
@@ -886,6 +907,7 @@ class MethPrintExperiment:
                  mtase : str | List[str] | None = None,
                  chroms : List[str] | None = None,
                  wrap : bool = False,
+                 ignore_strand : bool = False,
                  colidx : List | None = None,
                  max_nmol : int | None = None,
                  seed : int | None = None,
@@ -930,6 +952,11 @@ class MethPrintExperiment:
         wrap : bool, default False
             If True, calculates positions relative to the fiber center
             (useful for circular or symmetrical fibers).
+        ignore_strand : bool, default False
+            If True, ignore each row's recorded `strand` for `mtase`
+            context filtering, and in `filter_dropout`,
+            `summarize_dropout`, `dropout_fractions`. Independent of
+            `norm_by_strand`.
         colidx : list of int, optional
             Explicit column indices if the input file has no header
             matching Modkit's column names. Positionally parallel to
@@ -1055,6 +1082,7 @@ class MethPrintExperiment:
                 if mtase is not None:
                     h5stream.attrs["mtase"] = ",".join(mtase)
                 h5stream.attrs["wrap"] = bool(wrap)
+                h5stream.attrs["ignore_strand"] = bool(ignore_strand)
 
                 files = [("test", test_file)]
                 if unmeth_file is not None:
@@ -1096,7 +1124,8 @@ class MethPrintExperiment:
                     _stream_rows_to_staging(
                         data_file, header_names, name_for, sep, chunk_size,
                         block_size, full_sizes, wrap, mol_maps, appenders,
-                        refseq_by_chrom=refseq_by_chrom, mtase=mtase)
+                        refseq_by_chrom=refseq_by_chrom, mtase=mtase,
+                        ignore_strand=ignore_strand)
         except BaseException:
             shutil.rmtree(tmp_dir, ignore_errors=True)
             raise
@@ -1183,6 +1212,7 @@ class MethPrintExperiment:
                 if self._mtase is not None:
                     h5stream.attrs["mtase"] = ",".join(self._mtase)
                 h5stream.attrs["wrap"] = self._wrap
+                h5stream.attrs["ignore_strand"] = self._ignore_strand
 
             # Save any analysis data
             if "analysis" in h5stream: del h5stream["analysis"]
@@ -1255,9 +1285,11 @@ class MethPrintExperiment:
             mtase = tuple(h5stream.attrs["mtase"].split(",")) \
                 if "mtase" in h5stream.attrs else None
             wrap = bool(h5stream.attrs.get("wrap", False))
+            ignore_strand = bool(h5stream.attrs.get("ignore_strand", False))
             obj = cls._create(_raw_data=raw_data,
                               _exp_file=str(Path(exp_file).resolve()),
-                              _mtase=mtase, _wrap=wrap)
+                              _mtase=mtase, _wrap=wrap,
+                              _ignore_strand=ignore_strand)
 
             # Load any analysis data
             gana = h5stream["analysis"]
@@ -1320,6 +1352,18 @@ class MethPrintExperiment:
             True if `load_raw` was called with `wrap=True`.
         """
         return self._wrap
+
+    @property
+    def ignore_strand(self) -> bool:
+        """
+        Get whether strand was ignored for methylatable positions.
+
+        Returns
+        -------
+        bool
+            True if `load_raw` was called with `ignore_strand=True`.
+        """
+        return self._ignore_strand
 
     @property
     def raw(self) -> Mapping[str,MethPrintData]:
@@ -1573,6 +1617,8 @@ class MethPrintExperiment:
         signal, and stores a keep/drop mask in `analysis`. Raw data is
         never modified -- pass `mask_name` to `to_dense`/
         `MethPrintAnalysis.smooth`/`.meth_prob` to apply it downstream.
+        If this experiment was loaded with `ignore_strand=True`,
+        `unmapped_strand` governs coverage for every molecule.
 
         Parameters
         ----------
@@ -1654,7 +1700,8 @@ class MethPrintExperiment:
                     raise ValueError(
                         f"No '{src}' data available for chrom '{chrom}'")
                 cov = _label_coverage(
-                    df, mol_id, raw.refseq, labels, unmapped_strand)
+                    df, mol_id, raw.refseq, labels, unmapped_strand,
+                    ignore_strand=self._ignore_strand)
                 dropout_frac, combined_frac = _dropout_fracs(cov, labels)
 
                 if method == "separate":
@@ -1681,7 +1728,9 @@ class MethPrintExperiment:
 
         Same coverage computation as `filter_dropout`, reporting the
         per-molecule dropout fraction distribution instead of
-        filtering. Nothing is stored in `analysis`.
+        filtering. Nothing is stored in `analysis`. `n_sites_plus`/
+        `n_sites_minus` always report reference-level per-strand
+        counts, regardless of `unmapped_strand` or `ignore_strand`.
 
         Parameters
         ----------
@@ -1741,7 +1790,8 @@ class MethPrintExperiment:
                     raise ValueError(
                         f"No '{src}' data available for chrom '{chrom}'")
                 cov = _label_coverage(
-                    df, mol_id, raw.refseq, labels, unmapped_strand)
+                    df, mol_id, raw.refseq, labels, unmapped_strand,
+                    ignore_strand=self._ignore_strand)
                 frac, pooled = _dropout_fracs(cov, labels)
 
                 for i, label in enumerate(labels):
@@ -1777,6 +1827,9 @@ class MethPrintExperiment:
                           unmapped_strand: str = "union") -> dict:
         """
         Return each molecule's dropout fraction (QC check).
+
+        If this experiment was loaded with `ignore_strand=True`,
+        `unmapped_strand` governs coverage for every molecule.
 
         Parameters
         ----------
@@ -1837,7 +1890,8 @@ class MethPrintExperiment:
                     raise ValueError(
                         f"No '{src}' data available for chrom '{chrom}'")
                 cov = _label_coverage(
-                    df, mol_id, raw.refseq, labels, unmapped_strand)
+                    df, mol_id, raw.refseq, labels, unmapped_strand,
+                    ignore_strand=self._ignore_strand)
                 frac, pooled = _dropout_fracs(cov, labels)
 
                 for i, label in enumerate(labels):

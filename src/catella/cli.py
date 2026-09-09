@@ -95,6 +95,9 @@ def load_raw(
                     help="Subset of chromosomes to load")] = None,
     wrap: Annotated[
         bool, typer.Option(help="Wrap relative to center")] = False,
+    ignore_strand: Annotated[
+        bool, typer.Option(help="Ignore recorded strand for mtase "
+                           "context filtering")] = False,
     colidx: Annotated[
         Optional[str],
         typer.Option(callback=csv_parser(int), help="ModKit column indices")
@@ -120,9 +123,9 @@ def load_raw(
     exp = catella.load_raw(
         chromsize=chromsize, test_file=test_file, unmeth_file=unmeth_file,
         meth_file=meth_file, fasta_file=fasta_file, mtase=mtase,
-        chroms=chroms, wrap=wrap, colidx=colidx, max_nmol=max_nmol,
-        seed=seed, chunk_size=chunk_size, tmp_dir=tmp_dir,
-        max_cached_chroms=max_cached_chroms)
+        chroms=chroms, wrap=wrap, ignore_strand=ignore_strand,
+        colidx=colidx, max_nmol=max_nmol, seed=seed, chunk_size=chunk_size,
+        tmp_dir=tmp_dir, max_cached_chroms=max_cached_chroms)
     exp.save(out_file)
 
 

@@ -93,6 +93,43 @@ class TestPlotOccupMolsSlicing:
         SimPlot().plot_occup(chrom="chr1", dataset=dataset, plot_eseq=True,
                              show=False)
 
+    def test_plot_eseq_skips_ylim_when_all_nan(self, tmp_path):
+        # If every selected molecule has no coverage at all, the eseq
+        # average is all-NaN; set_ylim must be skipped instead of
+        # raising "Axis limits cannot be NaN or Inf".
+        rng = np.random.default_rng(4)
+        meth_prob = rng.random((6, 20))
+        meth_prob[0, :] = np.nan
+        manager = SimManager(nworker=1, verbose=False)
+        dataset = manager.run(chroms="chr1", nsim=2, settings=_make_settings(),
+                              meth_prob=meth_prob, out_dir=tmp_path / "dataset",
+                              seed=4)
+        ana = SimAnalysis()
+        ana.compute_occup(dataset=dataset, batch_size=2)
+        assert np.isnan(dataset.eseq["chr1"][0, :]).all()
+
+        SimPlot().plot_occup(chrom="chr1", dataset=dataset, mols=[0],
+                             plot_eseq=True, show=False)
+
+        seq_ax = plt.gcf().axes[2]
+        assert np.isfinite(seq_ax.get_ylim()).all()
+
+    def test_plot_eseq_ylim_matches_full_data_range(self, tmp_path):
+        # emin/emax must span the actual eseq range rather than a
+        # narrower window, otherwise real energy values get clipped
+        # off the visible axis.
+        dataset = _make_dataset(tmp_path, nmol=6, nbp=20)
+        ana = SimAnalysis()
+        ana.compute_occup(dataset=dataset, batch_size=2)
+
+        SimPlot().plot_occup(chrom="chr1", dataset=dataset, plot_eseq=True,
+                             show=False)
+
+        seq_ax = plt.gcf().axes[2]
+        eseq_mean = np.nanmean(dataset.eseq["chr1"], axis=0)
+        np.testing.assert_allclose(seq_ax.get_ylim(),
+                                   (np.nanmin(eseq_mean), np.nanmax(eseq_mean)))
+
 
 @pytest.mark.filterwarnings(
     "ignore:__array__ implementation doesn't accept a copy keyword"
@@ -160,3 +197,51 @@ class TestPlotNucPosCmapOverride:
         simplot.plot_nuc_pos(dataset, chrom="chr1", mol=0, run=0,
                              cmap="viridis", show=False)
         assert simplot.cmap == "OrRd"
+
+
+@pytest.mark.filterwarnings(
+    "ignore:__array__ implementation doesn't accept a copy keyword"
+    ":DeprecationWarning")
+class TestPlotNucPosEseq:
+    def test_plot_eseq_handles_nan_from_missing_coverage(self, tmp_path):
+        # A genomic position with no coverage (NaN in meth_prob) propagates
+        # NaN into eseq for that molecule; the y-limit calculation must
+        # tolerate that instead of crashing.
+        rng = np.random.default_rng(5)
+        meth_prob = rng.random((2, 20))
+        meth_prob[:, 5] = np.nan
+        manager = SimManager(nworker=1, verbose=False)
+        dataset = manager.run(chroms="chr1", nsim=2, settings=_make_settings(),
+                              meth_prob=meth_prob, out_dir=tmp_path / "dataset",
+                              seed=5)
+        assert np.isnan(dataset.eseq["chr1"][:, 5]).all()
+
+        SimPlot().plot_nuc_pos(dataset, chrom="chr1", mol=0, run=0,
+                               plot_eseq=True, show=False)
+
+    def test_plot_eseq_skips_ylim_when_all_nan(self, tmp_path):
+        rng = np.random.default_rng(6)
+        meth_prob = rng.random((2, 20))
+        meth_prob[0, :] = np.nan
+        manager = SimManager(nworker=1, verbose=False)
+        dataset = manager.run(chroms="chr1", nsim=2, settings=_make_settings(),
+                              meth_prob=meth_prob, out_dir=tmp_path / "dataset",
+                              seed=6)
+        assert np.isnan(dataset.eseq["chr1"][0, :]).all()
+
+        SimPlot().plot_nuc_pos(dataset, chrom="chr1", mol=0, run=0,
+                               plot_eseq=True, show=False)
+
+        seq_ax = plt.gcf().axes[2]
+        assert np.isfinite(seq_ax.get_ylim()).all()
+
+    def test_plot_eseq_ylim_matches_full_data_range(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=2, nbp=20)
+
+        SimPlot().plot_nuc_pos(dataset, chrom="chr1", mol=0, run=0,
+                               plot_eseq=True, show=False)
+
+        seq_ax = plt.gcf().axes[2]
+        eseq = dataset.eseq["chr1"][0, :]
+        np.testing.assert_allclose(seq_ax.get_ylim(),
+                                   (np.nanmin(eseq), np.nanmax(eseq)))

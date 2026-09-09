@@ -281,12 +281,12 @@ class SimPlot:
         # Plot the sequence energy if needed
         if plot_eseq:
             eseq = dataset.eseq[chrom][mol,:]
-            med = np.median(eseq)
-            sigma = np.median(np.abs(eseq-med)) * 1.4826 # MAD to SD
-            nsig = 3 # Plot up to how many sigma
-            emin = -nsig*sigma+med
-            emax = min(med+nsig*sigma,dataset.settings["emax"])
-            seq_ax.set_ylim(emin,emax)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=RuntimeWarning)
+                emin = max(np.nanmin(eseq), -dataset.settings["emax"])
+                emax = min(np.nanmax(eseq), dataset.settings["emax"])
+            if np.isfinite(emin) and np.isfinite(emax):
+                seq_ax.set_ylim(emin,emax)
             binsize = dataset.settings["nucbp"]
             trans = CoordsTransform(binsize=binsize)
             eseq = trans.left_to_center_aligned(eseq)
@@ -446,13 +446,11 @@ class SimPlot:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", category=RuntimeWarning)
                 eseq = np.nanmean(eseq_src, axis=0)
-                med = np.nanmedian(eseq)
-                sigma = np.nanmedian(np.abs(eseq-med)) * 1.4826 # MAD to SD
-            nsig = 3 # Plot up to how many sigma
-            emin = -nsig*sigma+med
-            emax = min(med+nsig*sigma,dataset.settings["emax"])
-            seq_ax.set_ylim(emin,emax)            
-            binsize = dataset.settings["nucbp"]            
+                emin = max(np.nanmin(eseq), -dataset.settings["emax"])
+                emax = min(np.nanmax(eseq), dataset.settings["emax"])
+            if np.isfinite(emin) and np.isfinite(emax):
+                seq_ax.set_ylim(emin,emax)
+            binsize = dataset.settings["nucbp"]
             trans = CoordsTransform(binsize=binsize)
             eseq = trans.left_to_center_aligned(eseq)
             eseq[:binsize//2] = np.nan

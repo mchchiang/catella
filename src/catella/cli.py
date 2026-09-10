@@ -683,6 +683,11 @@ def plot_methmap(
     vmax: Annotated[
         Optional[float], typer.Option(help="Upper color scale bound")
     ] = None,
+    cmap: Annotated[
+        Optional[str], typer.Option(help="Matplotlib colormap name")
+    ] = None,
+    cbar_label: Annotated[
+        str, typer.Option(help="Colorbar label")] = "Methylation prob.",
     out_file: Annotated[
         Optional[Path], typer.Option(help="Path to save the figure",
                                      file_okay=True, dir_okay=False)] = None,
@@ -698,7 +703,8 @@ def plot_methmap(
     data = exp.analysis[chrom][key]
     link_mat = exp.analysis[chrom][link_mat_name].to_numpy() \
         if link_mat_name is not None else None
-    catella.plot_methmap(data=data, vmin=vmin, vmax=vmax, out_file=out_file,
+    catella.plot_methmap(data=data, vmin=vmin, vmax=vmax, cmap=cmap,
+                       cbar_label=cbar_label, out_file=out_file,
                        link_mat=link_mat, show=show)
 
 

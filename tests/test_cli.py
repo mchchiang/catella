@@ -777,3 +777,39 @@ class TestPlotMethmap:
             "--out-file", str(out_file), "--no-show"])
         assert result.exit_code == 0, result.output
         assert out_file.exists()
+
+    def test_with_cmap(self, tmp_path):
+        rows = _make_test_rows(nmol=6, nbp=20)
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 20})
+        exp_file = tmp_path / "exp.h5"
+        exp = catella.load_raw(chromsize=chromsize, test_file=test_file)
+        catella.compute_empirical_prob(exp=exp, out_file=exp_file, binsize=5)
+        out_file = tmp_path / "methmap_cmap.png"
+
+        result = runner.invoke(app, [
+            "plot_methmap", str(exp_file), "chr1",
+            "--cmap", "viridis",
+            "--out-file", str(out_file), "--no-show"])
+        assert result.exit_code == 0, result.output
+        assert out_file.exists()
+
+    def test_with_cbar_label(self, tmp_path):
+        rows = _make_test_rows(nmol=6, nbp=20)
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 20})
+        exp_file = tmp_path / "exp.h5"
+        exp = catella.load_raw(chromsize=chromsize, test_file=test_file)
+        catella.compute_empirical_prob(exp=exp, out_file=exp_file, binsize=5)
+        out_file = tmp_path / "methmap_cbar_label.png"
+
+        result = runner.invoke(app, [
+            "plot_methmap", str(exp_file), "chr1",
+            "--cbar-label", "Custom label",
+            "--out-file", str(out_file), "--no-show"])
+        assert result.exit_code == 0, result.output
+        assert out_file.exists()

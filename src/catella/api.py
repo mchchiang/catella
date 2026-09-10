@@ -763,6 +763,8 @@ def plot_energy(dataset : SimDataset, *,
 def plot_methmap(data : H5Array | pd.DataFrame | np.ndarray, *,
                  vmin : float | None = None,
                  vmax : float | None = None,
+                 cmap : str | None = None,
+                 cbar_label : str = "Methylation prob.",
                  out_file : str | Path | None = None,
                  link_mat : np.ndarray | None = None,
                  show : bool = True):
@@ -786,6 +788,11 @@ def plot_methmap(data : H5Array | pd.DataFrame | np.ndarray, *,
     vmax : float, optional
         Upper bound for the color scale. If None, inferred from
         `data`.
+    cmap : str, optional
+        Matplotlib colormap name to use for this plot. If None, the
+        `MethPlot` default is used.
+    cbar_label : str, default "Methylation prob."
+        Label drawn next to the colorbar.
     out_file : str | Path, optional
         Path where the generated plot will be saved. If None, the plot
         is not saved to disk.
@@ -799,7 +806,8 @@ def plot_methmap(data : H5Array | pd.DataFrame | np.ndarray, *,
         backend.
     """
     methplot = MethPlot()
-    methplot.plot_methmap(data, vmin=vmin, vmax=vmax, out_file=out_file,
+    methplot.plot_methmap(data, vmin=vmin, vmax=vmax, cmap=cmap,
+                          cbar_label=cbar_label, out_file=out_file,
                           link_mat=link_mat, show=show)
 
 

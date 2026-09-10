@@ -797,6 +797,17 @@ class TestPlotEnergy:
         assert result.exit_code == 0, result.output
         assert out_file.exists()
 
+    def test_with_time_scale(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=3, nbp=10)
+        out_file = tmp_path / "energy_scaled.png"
+
+        result = runner.invoke(app, [
+            "plot_energy", "chr1", "0", "0", str(dataset._dataset_file),
+            "--tstart", "0", "--tend", "1", "--tscale", "1",
+            "--out-file", str(out_file), "--no-show"])
+        assert result.exit_code == 0, result.output
+        assert out_file.exists()
+
 
 class TestPlotMethmap:
     def test_with_link_mat_name(self, tmp_path):

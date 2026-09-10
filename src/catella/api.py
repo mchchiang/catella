@@ -771,6 +771,9 @@ def plot_energy(dataset : SimDataset, *,
                 chrom : str,
                 mol : int,
                 run : int,
+                tstart : int | None = None,
+                tend : int | None = None,
+                tscale : int = 1000,
                 out_file : str | Path | None = None,
                 show : bool = True):
     """
@@ -787,11 +790,23 @@ def plot_energy(dataset : SimDataset, *,
         The index of the specific molecule (fiber) to visualize.
     run : int
         The specific simulation run index for the chosen molecule.
+    tstart : int, optional
+        Starting time step. If None, defaults to the beginning of the
+        simulation.
+    tend : int, optional
+        Ending time step. If None, defaults to the end of the simulation.
+    tscale : int, default 1000
+        Time scaling factor (must be a power of 10) for the y-axis labels.
     out_file : str | Path, optional
         Path where the generated plot will be saved. If None, the plot
         is not saved to disk.
     show : bool, default True
         Whether to display the figure using the active plotting backend.
+
+    Raises
+    ------
+    ValueError
+        If `tend` < `tstart` or if scaling factors are not powers of 10.
 
     Notes
     -----
@@ -800,6 +815,7 @@ def plot_energy(dataset : SimDataset, *,
     """
     simplot = SimPlot()
     simplot.plot_energy(chrom=chrom, mol=mol, run=run, dataset=dataset,
+                        tstart=tstart, tend=tend, tscale=tscale,
                         out_file=out_file, show=show)
 
 

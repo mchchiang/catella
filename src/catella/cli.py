@@ -684,6 +684,13 @@ def plot_energy(
         Path, typer.Argument(help="Simulation dataset HDF5 file",
                              exists=True, file_okay=True, dir_okay=False,
                              readable=True)],
+    tstart: Annotated[
+        Optional[int], typer.Option(help="Starting time step")] = None,
+    tend: Annotated[
+        Optional[int], typer.Option(help="Ending time step")] = None,
+    tscale: Annotated[
+        int, typer.Option(help="Time scale factor (power of 10) for "
+                          "the y-axis")] = 1000,
     out_file: Annotated[
         Optional[Path], typer.Option(help="Path to save the figure",
                                      file_okay=True, dir_okay=False)] = None,
@@ -693,6 +700,7 @@ def plot_energy(
     """
     dataset = SimDataset.load(dataset_file)
     catella.plot_energy(chrom=chrom, mol=mol, run=run, dataset=dataset,
+                      tstart=tstart, tend=tend, tscale=tscale,
                       out_file=out_file, show=show)
 
 

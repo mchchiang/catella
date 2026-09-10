@@ -298,10 +298,10 @@ class TestComputeModelProb:
         expected = catella.load_raw(chromsize=chromsize, test_file=test_file,
                                     fasta_file=fasta_file)
 
-        catella.compute_model_prob(exp=exp, l_nuc=30, n_min=3)
+        catella.compute_model_prob(exp=exp, lnuc=30, n_min=3)
 
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=expected, l_nuc=30, n_min=3)
+        ana.model_prob(exp=expected, lnuc=30, n_min=3)
 
         np.testing.assert_allclose(
             exp.analysis["chr1"]["meth_prob"].to_numpy(),
@@ -311,7 +311,7 @@ class TestComputeModelProb:
     def test_missing_refseq_raises(self):
         exp = _make_experiment(nmol=6, nbp=10, seed=3)
         with pytest.raises(ValueError):
-            catella.compute_model_prob(exp=exp, l_nuc=10)
+            catella.compute_model_prob(exp=exp, lnuc=10)
 
     def test_store_rho_propagates(self, tmp_path):
         rng = np.random.default_rng(11)
@@ -329,11 +329,11 @@ class TestComputeModelProb:
         expected = catella.load_raw(chromsize=chromsize, test_file=test_file,
                                     fasta_file=fasta_file)
 
-        catella.compute_model_prob(exp=exp, l_nuc=30, n_min=3,
+        catella.compute_model_prob(exp=exp, lnuc=30, n_min=3,
                                    eta_max_lag=4, store_rho=True)
 
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=expected, l_nuc=30, n_min=3, eta_max_lag=4,
+        ana.model_prob(exp=expected, lnuc=30, n_min=3, eta_max_lag=4,
                        store_rho=True)
 
         assert ("meth_prob_rho" in exp.global_analysis) == (

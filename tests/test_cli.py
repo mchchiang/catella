@@ -381,13 +381,13 @@ class TestComputeModelProb:
         cli_out = tmp_path / "cli_exp.h5"
         result = runner.invoke(app, ["compute_model_prob", str(raw_file),
                                      "--out-file", str(cli_out),
-                                     "--l-nuc", "30", "--n-min", "3"])
+                                     "--lnuc", "30", "--n-min", "3"])
         assert result.exit_code == 0, result.output
 
         expected = catella.load_raw(chromsize=chromsize, test_file=test_file,
                                     fasta_file=fasta_file, max_nmol=3,
                                     seed=7)
-        catella.compute_model_prob(exp=expected, l_nuc=30, n_min=3)
+        catella.compute_model_prob(exp=expected, lnuc=30, n_min=3)
 
         got = MethPrintExperiment.load(cli_out)
         np.testing.assert_allclose(
@@ -411,7 +411,7 @@ class TestComputeModelProb:
         assert load_result.exit_code == 0, load_result.output
 
         result = runner.invoke(app, ["compute_model_prob", str(raw_file),
-                                     "--l-nuc", "30", "--n-min", "3"])
+                                     "--lnuc", "30", "--n-min", "3"])
         assert result.exit_code == 0, result.output
 
         reloaded = MethPrintExperiment.load(raw_file)
@@ -435,13 +435,13 @@ class TestComputeModelProb:
         cli_out = tmp_path / "cli_exp.h5"
         result = runner.invoke(app, ["compute_model_prob", str(raw_file),
                                      "--out-file", str(cli_out),
-                                     "--l-nuc", "30", "--n-min", "3",
+                                     "--lnuc", "30", "--n-min", "3",
                                      "--eta-max-lag", "4", "--store-rho"])
         assert result.exit_code == 0, result.output
 
         expected = catella.load_raw(chromsize=chromsize, test_file=test_file,
                                     fasta_file=fasta_file)
-        catella.compute_model_prob(exp=expected, l_nuc=30, n_min=3,
+        catella.compute_model_prob(exp=expected, lnuc=30, n_min=3,
                                    eta_max_lag=4, store_rho=True)
 
         got = MethPrintExperiment.load(cli_out)
@@ -471,7 +471,7 @@ class TestComputeModelProb:
         cli_out = tmp_path / "cli_exp.h5"
         result = runner.invoke(app, ["compute_model_prob", str(raw_file),
                                      "--out-file", str(cli_out),
-                                     "--l-nuc", "30", "--n-min", "3",
+                                     "--lnuc", "30", "--n-min", "3",
                                      "--prob-name", "custom_prob"])
         assert result.exit_code == 0, result.output
 

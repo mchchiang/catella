@@ -342,7 +342,7 @@ def compute_model_prob(
     min_gap: Annotated[
         float, typer.Option(help="Min accessible/protected rate gap to "
                             "be informative")] = 0.05,
-    l_nuc: Annotated[
+    lnuc: Annotated[
         int, typer.Option(help="Nucleosome footprint / window size "
                           "(bp)")] = 147,
     n_min: Annotated[
@@ -387,7 +387,7 @@ def compute_model_prob(
     catella.compute_model_prob(
         exp=exp, prob_name=prob_name, pi0=pi0, eta=eta,
         eta_max_lag=eta_max_lag, store_rho=store_rho, nu=nu,
-        rho_leak=rho_leak, min_gap=min_gap, l_nuc=l_nuc, n_min=n_min,
+        rho_leak=rho_leak, min_gap=min_gap, lnuc=lnuc, n_min=n_min,
         max_iters=max_iters, init_prot=init_prot, init_acc=init_acc,
         tol=tol, fill_edge=fill_edge, norm_by_strand=norm_by_strand,
         batch_size=batch_size, mask_name=mask_name)

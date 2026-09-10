@@ -743,7 +743,7 @@ class TestSortByLinkage:
 
 def _make_footprint_experiment(*, nmol=20, meth_nmol=30, unmeth_nmol=30,
                                with_controls=True, planted_edges=(30,),
-                               l_nuc=30, seed=0, soft_q=False,
+                               lnuc=30, seed=0, soft_q=False,
                                corr_source=None, corr_channel=None,
                                corr_lag=1, corr_strength=0.95,
                                strand_of=None, strand_call_bias=None,
@@ -780,7 +780,7 @@ def _make_footprint_experiment(*, nmol=20, meth_nmol=30, unmeth_nmol=30,
 
     occ = np.zeros(L, dtype=bool)
     for e in planted_edges:
-        occ[e:e + l_nuc] = True
+        occ[e:e + lnuc] = True
     test_prob = np.where(occ, true_fpr + rho_leak * (true_acc - true_fpr),
                          true_acc)
 
@@ -846,9 +846,9 @@ def _make_footprint_experiment(*, nmol=20, meth_nmol=30, unmeth_nmol=30,
 class TestModelProb:
     def test_controls_path_favors_planted_region(self):
         exp = _make_footprint_experiment(with_controls=True,
-                                         planted_edges=(30,), l_nuc=30)
+                                         planted_edges=(30,), lnuc=30)
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, l_nuc=30, batch_size=7)
+        ana.model_prob(exp=exp, lnuc=30, batch_size=7)
         prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
         assert prob.shape == (20, len(exp.raw["chr1"].refseq))
         planted = np.nanmean(prob[:, 30])
@@ -858,19 +858,19 @@ class TestModelProb:
 
     def test_exp_accepted_positionally(self):
         exp = _make_footprint_experiment(with_controls=True,
-                                         planted_edges=(30,), l_nuc=30)
+                                         planted_edges=(30,), lnuc=30)
         ana = MethPrintAnalysis()
-        ana.model_prob(exp, l_nuc=30, batch_size=7)
+        ana.model_prob(exp, lnuc=30, batch_size=7)
         assert "meth_prob" in exp.analysis["chr1"]
 
     def test_continuous_confidence_favors_planted_region(self):
         # mod_qual values are graded confidence scores rather than hard
         # 0/1 calls; exercises the continuous-q_x likelihood path.
         exp = _make_footprint_experiment(with_controls=True,
-                                         planted_edges=(30,), l_nuc=30,
+                                         planted_edges=(30,), lnuc=30,
                                          soft_q=True)
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, l_nuc=30, batch_size=7)
+        ana.model_prob(exp=exp, lnuc=30, batch_size=7)
         prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
         planted = np.nanmean(prob[:, 30])
         background = np.nanmean(prob[:, 0])
@@ -879,9 +879,9 @@ class TestModelProb:
     def test_no_controls_em_path_favors_planted_region(self):
         exp = _make_footprint_experiment(with_controls=False, nmol=120,
                                          planted_edges=(30, 120, 200),
-                                         l_nuc=30)
+                                         lnuc=30)
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, l_nuc=30, n_min=3, batch_size=17)
+        ana.model_prob(exp=exp, lnuc=30, n_min=3, batch_size=17)
         prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
         planted = np.nanmean(prob[:, 30])
         background = np.nanmean(prob[:, 0])
@@ -890,7 +890,7 @@ class TestModelProb:
     def test_mask_name_excludes_dropped_molecules(self):
         exp = _make_footprint_experiment(with_controls=True, nmol=20,
                                          meth_nmol=30, unmeth_nmol=30,
-                                         planted_edges=(30,), l_nuc=30)
+                                         planted_edges=(30,), lnuc=30)
         keep_test = np.array([i not in (1, 3) for i in range(20)])
         keep_ctrl = np.array([i not in (1, 3) for i in range(30)])
         exp.analysis["chr1"]["test_drop"] = pd.DataFrame({"keep": keep_test})
@@ -899,7 +899,7 @@ class TestModelProb:
             {"keep": keep_ctrl})
 
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, l_nuc=30, batch_size=7, mask_name="drop")
+        ana.model_prob(exp=exp, lnuc=30, batch_size=7, mask_name="drop")
         prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
         assert np.isnan(prob[1]).all()
         assert np.isnan(prob[3]).all()
@@ -908,10 +908,10 @@ class TestModelProb:
     def test_missing_mask_raises(self):
         exp = _make_footprint_experiment(with_controls=True, nmol=10,
                                          meth_nmol=10, unmeth_nmol=10,
-                                         l_nuc=30)
+                                         lnuc=30)
         ana = MethPrintAnalysis()
         with pytest.raises(KeyError):
-            ana.model_prob(exp=exp, l_nuc=30, mask_name="nonexistent")
+            ana.model_prob(exp=exp, lnuc=30, mask_name="nonexistent")
 
     def test_closes_transient_scratch_files(self):
         # with_controls=False also exercises the no-control EM
@@ -922,12 +922,12 @@ class TestModelProb:
         # per-chromosome test_arr loop.
         exp = _make_footprint_experiment(with_controls=False, nmol=120,
                                          planted_edges=(30, 120, 200),
-                                         l_nuc=30)
+                                         lnuc=30)
         ana = MethPrintAnalysis()
         tmp_dir = Path(exp.resolve_tmp_dir())
         before = set(tmp_dir.glob("*.h5"))
 
-        ana.model_prob(exp=exp, l_nuc=30, n_min=3, batch_size=17)
+        ana.model_prob(exp=exp, lnuc=30, n_min=3, batch_size=17)
 
         # Only the persisted meth_prob output (one H5Array per
         # chromosome) should remain.
@@ -942,7 +942,7 @@ class TestModelProb:
         # instead, so this path can.
         exp = _make_footprint_experiment(with_controls=False, nmol=120,
                                          planted_edges=(30, 120, 200),
-                                         l_nuc=30)
+                                         lnuc=30)
         ana = MethPrintAnalysis()
         tmp_dir = Path(exp.resolve_tmp_dir())
         before = set(tmp_dir.glob("*.h5"))
@@ -950,7 +950,7 @@ class TestModelProb:
         with pytest.raises(ValueError) as excinfo:
             # n_min impossibly high -> _streamed_window_count raises
             # "too few windows" after its to_dense() array is created.
-            ana.model_prob(exp=exp, l_nuc=30, n_min=10**9, batch_size=17)
+            ana.model_prob(exp=exp, lnuc=30, n_min=10**9, batch_size=17)
 
         assert set(tmp_dir.glob("*.h5")) == before
         del excinfo
@@ -964,9 +964,9 @@ class TestModelProb:
     def test_fill_edge_default_is_nan_on_trailing_positions(self):
         exp = _make_footprint_experiment(with_controls=True, nmol=10,
                                          meth_nmol=10, unmeth_nmol=10,
-                                         l_nuc=30)
+                                         lnuc=30)
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, l_nuc=30, batch_size=5)
+        ana.model_prob(exp=exp, lnuc=30, batch_size=5)
         prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
         nbp = prob.shape[1]
         assert np.isnan(prob[:, nbp - 30 + 1:]).all()
@@ -975,9 +975,9 @@ class TestModelProb:
     def test_fill_edge_custom_value(self):
         exp = _make_footprint_experiment(with_controls=True, nmol=10,
                                          meth_nmol=10, unmeth_nmol=10,
-                                         l_nuc=30)
+                                         lnuc=30)
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, l_nuc=30, batch_size=5, fill_edge=0.25)
+        ana.model_prob(exp=exp, lnuc=30, batch_size=5, fill_edge=0.25)
         prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
         nbp = prob.shape[1]
         np.testing.assert_allclose(prob[:, nbp - 30 + 1:], 0.25)
@@ -985,9 +985,9 @@ class TestModelProb:
     def test_default_prob_name_matches_empirical_prob(self):
         exp = _make_footprint_experiment(with_controls=True, nmol=10,
                                          meth_nmol=10, unmeth_nmol=10,
-                                         l_nuc=30)
+                                         lnuc=30)
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, l_nuc=30, batch_size=5)
+        ana.model_prob(exp=exp, lnuc=30, batch_size=5)
         assert "meth_prob" in exp.analysis["chr1"]
 
 
@@ -999,9 +999,9 @@ def _eta_from(exp, prob_name="meth_prob"):
 class TestModelProbEta:
     def test_default_populates_channel_eta_for_present_channels(self):
         exp = _make_footprint_experiment(with_controls=True,
-                                         planted_edges=(30,), l_nuc=30)
+                                         planted_edges=(30,), lnuc=30)
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, l_nuc=30, batch_size=7)
+        ana.model_prob(exp=exp, lnuc=30, batch_size=7)
         eta = _eta_from(exp)
         assert set(eta) == {"M6A", "GCH", "HCG", "GCG"}
         assert all(v > 0 for v in eta.values())
@@ -1009,10 +1009,10 @@ class TestModelProbEta:
     def test_meth_control_correlation_lowers_that_channel_eta(self):
         from catella.experiment.preprocessing import M6A
         exp = _make_footprint_experiment(
-            with_controls=True, planted_edges=(30,), l_nuc=30,
+            with_controls=True, planted_edges=(30,), lnuc=30,
             corr_source="meth", corr_channel=M6A, corr_lag=1)
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, l_nuc=30, batch_size=7)
+        ana.model_prob(exp=exp, lnuc=30, batch_size=7)
         eta = _eta_from(exp)
         assert eta["M6A"] < 0.8
         assert eta["GCH"] > 0.8
@@ -1021,59 +1021,59 @@ class TestModelProbEta:
             self):
         from catella.experiment.preprocessing import M6A
         exp = _make_footprint_experiment(
-            with_controls=True, planted_edges=(30,), l_nuc=30,
+            with_controls=True, planted_edges=(30,), lnuc=30,
             corr_source="test", corr_channel=M6A, corr_lag=1)
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, l_nuc=30, batch_size=7)
+        ana.model_prob(exp=exp, lnuc=30, batch_size=7)
         assert _eta_from(exp)["M6A"] > 0.8
 
     def test_no_controls_falls_back_to_test_data(self):
         from catella.experiment.preprocessing import M6A
         exp = _make_footprint_experiment(
             with_controls=False, nmol=120, planted_edges=(30, 120, 200),
-            l_nuc=30, corr_source="test", corr_channel=M6A, corr_lag=1)
+            lnuc=30, corr_source="test", corr_channel=M6A, corr_lag=1)
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, l_nuc=30, n_min=3, batch_size=17)
+        ana.model_prob(exp=exp, lnuc=30, n_min=3, batch_size=17)
         assert _eta_from(exp)["M6A"] < 0.8
 
     def test_float_override_applies_uniformly(self):
         exp = _make_footprint_experiment(with_controls=True,
-                                         planted_edges=(30,), l_nuc=30)
+                                         planted_edges=(30,), lnuc=30)
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, l_nuc=30, batch_size=7, eta=0.5)
+        ana.model_prob(exp=exp, lnuc=30, batch_size=7, eta=0.5)
         assert _eta_from(exp) == {
             "M6A": 0.5, "GCH": 0.5, "HCG": 0.5, "GCG": 0.5}
 
     def test_dict_override_partial_leaves_rest_auto(self):
         exp = _make_footprint_experiment(with_controls=True,
-                                         planted_edges=(30,), l_nuc=30)
+                                         planted_edges=(30,), lnuc=30)
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, l_nuc=30, batch_size=7, eta={"M6A": 0.5})
+        ana.model_prob(exp=exp, lnuc=30, batch_size=7, eta={"M6A": 0.5})
         eta = _eta_from(exp)
         assert eta["M6A"] == 0.5
         assert eta["GCH"] != 0.5
 
     def test_unknown_channel_name_raises(self):
         exp = _make_footprint_experiment(with_controls=True,
-                                         planted_edges=(30,), l_nuc=30)
+                                         planted_edges=(30,), lnuc=30)
         ana = MethPrintAnalysis()
         with pytest.raises(ValueError):
-            ana.model_prob(exp=exp, l_nuc=30, batch_size=7,
+            ana.model_prob(exp=exp, lnuc=30, batch_size=7,
                            eta={"bogus": 0.5})
 
     def test_eta_max_lag_changes_estimate(self):
         from catella.experiment.preprocessing import M6A
         exp_short = _make_footprint_experiment(
-            with_controls=True, planted_edges=(30,), l_nuc=30,
+            with_controls=True, planted_edges=(30,), lnuc=30,
             corr_source="meth", corr_channel=M6A, corr_lag=5)
         exp_long = _make_footprint_experiment(
-            with_controls=True, planted_edges=(30,), l_nuc=30,
+            with_controls=True, planted_edges=(30,), lnuc=30,
             corr_source="meth", corr_channel=M6A, corr_lag=5)
         ana_short = MethPrintAnalysis()
-        ana_short.model_prob(exp=exp_short, l_nuc=30, batch_size=7,
+        ana_short.model_prob(exp=exp_short, lnuc=30, batch_size=7,
                              eta_max_lag=1)
         ana_long = MethPrintAnalysis()
-        ana_long.model_prob(exp=exp_long, l_nuc=30, batch_size=7,
+        ana_long.model_prob(exp=exp_long, lnuc=30, batch_size=7,
                             eta_max_lag=10)
         assert _eta_from(exp_short)["M6A"] != pytest.approx(
             _eta_from(exp_long)["M6A"], rel=1e-6)
@@ -1082,16 +1082,16 @@ class TestModelProbEta:
 class TestModelProbStoreRho:
     def test_default_does_not_store_rho(self):
         exp = _make_footprint_experiment(with_controls=True,
-                                         planted_edges=(30,), l_nuc=30)
+                                         planted_edges=(30,), lnuc=30)
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, l_nuc=30, batch_size=7)
+        ana.model_prob(exp=exp, lnuc=30, batch_size=7)
         assert "meth_prob_rho" not in exp.global_analysis
 
     def test_stores_rho_for_auto_estimated_channels(self):
         exp = _make_footprint_experiment(with_controls=True,
-                                         planted_edges=(30,), l_nuc=30)
+                                         planted_edges=(30,), lnuc=30)
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, l_nuc=30, batch_size=7, eta_max_lag=5,
+        ana.model_prob(exp=exp, lnuc=30, batch_size=7, eta_max_lag=5,
                        store_rho=True)
         rho = exp.global_analysis["meth_prob_rho"]
         assert list(rho["lag"]) == [1, 2, 3, 4, 5]
@@ -1100,9 +1100,9 @@ class TestModelProbStoreRho:
 
     def test_pinned_channel_excluded_from_rho(self):
         exp = _make_footprint_experiment(with_controls=True,
-                                         planted_edges=(30,), l_nuc=30)
+                                         planted_edges=(30,), lnuc=30)
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, l_nuc=30, batch_size=7,
+        ana.model_prob(exp=exp, lnuc=30, batch_size=7,
                        eta={"M6A": 0.5}, store_rho=True)
         rho = exp.global_analysis["meth_prob_rho"]
         assert "rho_M6A" not in rho.columns
@@ -1110,9 +1110,9 @@ class TestModelProbStoreRho:
 
     def test_all_channels_pinned_skips_rho_entry(self):
         exp = _make_footprint_experiment(with_controls=True,
-                                         planted_edges=(30,), l_nuc=30)
+                                         planted_edges=(30,), lnuc=30)
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, l_nuc=30, batch_size=7, eta=0.5,
+        ana.model_prob(exp=exp, lnuc=30, batch_size=7, eta=0.5,
                        store_rho=True)
         assert "meth_prob_rho" not in exp.global_analysis
 
@@ -1155,7 +1155,7 @@ class TestModelProbWrap:
                                           _wrap=True)
 
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, l_nuc=10, batch_size=4)
+        ana.model_prob(exp=exp, lnuc=10, batch_size=4)
         prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
         assert prob.shape == (nmol, nbp)
 
@@ -1185,7 +1185,7 @@ class TestModelProbWrap:
         exp = MethPrintExperiment._create(_raw_data={"chr1": raw},
                                           _wrap=True)
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, l_nuc=10)
+        ana.model_prob(exp=exp, lnuc=10)
         assert not any(issubclass(w.category, UserWarning) for w in recwarn)
 
     def test_small_disagreement_ignored_in_output(self):
@@ -1243,9 +1243,9 @@ class TestModelProbWrap:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             exp_low = make_exp(0.01)
-            ana.model_prob(exp=exp_low, l_nuc=10)
+            ana.model_prob(exp=exp_low, lnuc=10)
             exp_high = make_exp(0.99)
-            ana.model_prob(exp=exp_high, l_nuc=10)
+            ana.model_prob(exp=exp_high, lnuc=10)
         prob_low = exp_low.analysis["chr1"]["meth_prob"].to_numpy()
         prob_high = exp_high.analysis["chr1"]["meth_prob"].to_numpy()
         np.testing.assert_allclose(prob_low, prob_high)
@@ -1279,7 +1279,7 @@ class TestModelProbWrap:
                                           _wrap=True)
         ana = MethPrintAnalysis()
         with pytest.warns(UserWarning):
-            ana.model_prob(exp=exp, l_nuc=10)
+            ana.model_prob(exp=exp, lnuc=10)
 
 
 class TestModelProbStrand:
@@ -1288,28 +1288,28 @@ class TestModelProbStrand:
     def test_rejects_unmapped_strand_with_controls(self):
         exp = _make_footprint_experiment(with_controls=True, nmol=10,
                                          meth_nmol=10, unmeth_nmol=10,
-                                         l_nuc=30, unmapped_test_mol=0)
+                                         lnuc=30, unmapped_test_mol=0)
         ana = MethPrintAnalysis()
         with pytest.raises(ValueError):
-            ana.model_prob(exp=exp, l_nuc=30, norm_by_strand=True)
+            ana.model_prob(exp=exp, lnuc=30, norm_by_strand=True)
 
     def test_rejects_unmapped_strand_no_controls(self):
         exp = _make_footprint_experiment(with_controls=False, nmol=10,
-                                         l_nuc=30, unmapped_test_mol=0)
+                                         lnuc=30, unmapped_test_mol=0)
         ana = MethPrintAnalysis()
         with pytest.raises(ValueError):
-            ana.model_prob(exp=exp, l_nuc=30, norm_by_strand=True)
+            ana.model_prob(exp=exp, lnuc=30, norm_by_strand=True)
 
     @pytest.mark.parametrize("norm_by_strand", [False, True])
     def test_batching_matches_single_batch(self, norm_by_strand):
         exp_a = _make_footprint_experiment(with_controls=True, nmol=40,
-                                           l_nuc=30, strand_of=self._strand_of)
+                                           lnuc=30, strand_of=self._strand_of)
         exp_b = _make_footprint_experiment(with_controls=True, nmol=40,
-                                           l_nuc=30, strand_of=self._strand_of)
+                                           lnuc=30, strand_of=self._strand_of)
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp_a, l_nuc=30, batch_size=1000,
+        ana.model_prob(exp=exp_a, lnuc=30, batch_size=1000,
                        norm_by_strand=norm_by_strand)
-        ana.model_prob(exp=exp_b, l_nuc=30, batch_size=3,
+        ana.model_prob(exp=exp_b, lnuc=30, batch_size=3,
                        norm_by_strand=norm_by_strand)
         a = exp_a.analysis["chr1"]["meth_prob"].to_numpy()
         b = exp_b.analysis["chr1"]["meth_prob"].to_numpy()
@@ -1319,15 +1319,15 @@ class TestModelProbStrand:
             self):
         bias = {"+": 0.0, "-": 0.35}
         exp_pooled = _make_footprint_experiment(
-            with_controls=True, nmol=40, planted_edges=(30,), l_nuc=30,
+            with_controls=True, nmol=40, planted_edges=(30,), lnuc=30,
             strand_of=self._strand_of, strand_call_bias=bias)
         exp_split = _make_footprint_experiment(
-            with_controls=True, nmol=40, planted_edges=(30,), l_nuc=30,
+            with_controls=True, nmol=40, planted_edges=(30,), lnuc=30,
             strand_of=self._strand_of, strand_call_bias=bias)
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp_pooled, l_nuc=30, batch_size=7,
+        ana.model_prob(exp=exp_pooled, lnuc=30, batch_size=7,
                        norm_by_strand=False)
-        ana.model_prob(exp=exp_split, l_nuc=30, batch_size=7,
+        ana.model_prob(exp=exp_split, lnuc=30, batch_size=7,
                        norm_by_strand=True)
 
         neg = np.array([self._strand_of(m) for m in range(40)]) == "-"
@@ -1342,9 +1342,9 @@ class TestModelProbStrand:
     def test_no_controls_path_norm_by_strand_favors_planted_region(self):
         exp = _make_footprint_experiment(
             with_controls=False, nmol=200, planted_edges=(30, 120, 200),
-            l_nuc=30, strand_of=self._strand_of)
+            lnuc=30, strand_of=self._strand_of)
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, l_nuc=30, n_min=3, batch_size=17,
+        ana.model_prob(exp=exp, lnuc=30, n_min=3, batch_size=17,
                        norm_by_strand=True)
         prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
         planted = np.nanmean(prob[:, 30])
@@ -1357,9 +1357,9 @@ class TestModelProbStrand:
         exp_b = _make_footprint_experiment(
             with_controls=True, nmol=40, strand_of=self._strand_of, seed=1)
         ana_a = MethPrintAnalysis()
-        ana_a.model_prob(exp=exp_a, l_nuc=30, norm_by_strand=False)
+        ana_a.model_prob(exp=exp_a, lnuc=30, norm_by_strand=False)
         ana_b = MethPrintAnalysis()
-        ana_b.model_prob(exp=exp_b, l_nuc=30, norm_by_strand=True)
+        ana_b.model_prob(exp=exp_b, lnuc=30, norm_by_strand=True)
         eta_a, eta_b = _eta_from(exp_a), _eta_from(exp_b)
         for channel in ("M6A", "GCH", "HCG", "GCG"):
             assert eta_b[channel] == pytest.approx(
@@ -1369,9 +1369,9 @@ class TestModelProbStrand:
 class TestModelProbEtaTable:
     def test_eta_table_always_created_and_separate_from_params(self):
         exp = _make_footprint_experiment(with_controls=True,
-                                         planted_edges=(30,), l_nuc=30)
+                                         planted_edges=(30,), lnuc=30)
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, l_nuc=30, batch_size=7)
+        ana.model_prob(exp=exp, lnuc=30, batch_size=7)
         assert "meth_prob_eta" in exp.global_analysis
         eta_row = exp.global_analysis["meth_prob_eta"].iloc[0]
         for ch in ("M6A", "GCH", "HCG", "GCG"):
@@ -1385,9 +1385,9 @@ class TestModelProbCalib:
     def test_no_controls_path_populates_calib_table(self):
         exp = _make_footprint_experiment(with_controls=False, nmol=120,
                                          planted_edges=(30, 120, 200),
-                                         l_nuc=30)
+                                         lnuc=30)
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, l_nuc=30, n_min=3, batch_size=17)
+        ana.model_prob(exp=exp, lnuc=30, n_min=3, batch_size=17)
         calib = exp.global_analysis["meth_prob_calib"]
         assert len(calib) == 1
         row = calib.iloc[0]
@@ -1407,9 +1407,9 @@ class TestModelProbCalib:
 
     def test_controls_path_row_has_no_em_diagnostics(self):
         exp = _make_footprint_experiment(with_controls=True,
-                                         planted_edges=(30,), l_nuc=30)
+                                         planted_edges=(30,), lnuc=30)
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, l_nuc=30, batch_size=7)
+        ana.model_prob(exp=exp, lnuc=30, batch_size=7)
         calib = exp.global_analysis["meth_prob_calib"]
         row = calib.iloc[0]
         assert row["has_controls"] == True
@@ -1424,9 +1424,9 @@ class TestModelProbCalib:
     def test_max_iters_caps_actual_iterations(self):
         exp = _make_footprint_experiment(with_controls=False, nmol=120,
                                          planted_edges=(30, 120, 200),
-                                         l_nuc=30)
+                                         lnuc=30)
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, l_nuc=30, n_min=3, batch_size=17,
+        ana.model_prob(exp=exp, lnuc=30, n_min=3, batch_size=17,
                        max_iters=1)
         calib = exp.global_analysis["meth_prob_calib"]
         assert calib.iloc[0]["iters"] <= 1
@@ -1435,9 +1435,9 @@ class TestModelProbCalib:
         strand_of = lambda m: "+" if m % 2 == 0 else "-"
         exp = _make_footprint_experiment(
             with_controls=False, nmol=200, planted_edges=(30, 120, 200),
-            l_nuc=30, strand_of=strand_of)
+            lnuc=30, strand_of=strand_of)
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, l_nuc=30, n_min=3, batch_size=17,
+        ana.model_prob(exp=exp, lnuc=30, n_min=3, batch_size=17,
                        norm_by_strand=True)
         calib = exp.global_analysis["meth_prob_calib"]
         assert len(calib) == 2
@@ -1447,9 +1447,9 @@ class TestModelProbCalib:
 
     def test_params_table_has_max_iters_not_iters(self):
         exp = _make_footprint_experiment(with_controls=True,
-                                         planted_edges=(30,), l_nuc=30)
+                                         planted_edges=(30,), lnuc=30)
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, l_nuc=30, batch_size=7, max_iters=50)
+        ana.model_prob(exp=exp, lnuc=30, batch_size=7, max_iters=50)
         params = exp.global_analysis["meth_prob_params"]
         assert params.iloc[0]["max_iters"] == 50
         assert "iters" not in params.columns
@@ -1458,10 +1458,10 @@ class TestModelProbCalib:
 class TestModelProbMtase:
     def test_mtase_a_restricts_calib_and_eta_to_m6a(self):
         exp = _make_footprint_experiment(with_controls=True,
-                                         planted_edges=(30,), l_nuc=30,
+                                         planted_edges=(30,), lnuc=30,
                                          mtase=["A"])
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, l_nuc=30, batch_size=7)
+        ana.model_prob(exp=exp, lnuc=30, batch_size=7)
         calib = exp.global_analysis["meth_prob_calib"]
         frac_cols = [c for c in calib.columns
                     if c.startswith("frac_informative_")]
@@ -1471,10 +1471,10 @@ class TestModelProbMtase:
 
     def test_mtase_cg_gives_hcg_and_gcg_only(self):
         exp = _make_footprint_experiment(with_controls=True,
-                                         planted_edges=(30,), l_nuc=30,
+                                         planted_edges=(30,), lnuc=30,
                                          mtase=["CG"])
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, l_nuc=30, batch_size=7)
+        ana.model_prob(exp=exp, lnuc=30, batch_size=7)
         eta_row = exp.global_analysis["meth_prob_eta"].iloc[0]
         assert set(eta_row.index) == {"eta_HCG", "eta_GCG"}
         calib = exp.global_analysis["meth_prob_calib"]
@@ -1485,9 +1485,9 @@ class TestModelProbMtase:
     def test_mtase_a_restricts_no_controls_theta_columns(self):
         exp = _make_footprint_experiment(with_controls=False, nmol=120,
                                          planted_edges=(30, 120, 200),
-                                         l_nuc=30, mtase=["A"])
+                                         lnuc=30, mtase=["A"])
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, l_nuc=30, n_min=3, batch_size=17)
+        ana.model_prob(exp=exp, lnuc=30, n_min=3, batch_size=17)
         calib = exp.global_analysis["meth_prob_calib"]
         assert "theta_prot_M6A" in calib.columns
         assert "theta_acc_M6A" in calib.columns
@@ -1500,9 +1500,9 @@ class TestModelProbTheta:
     def test_theta_table_present_for_no_controls_path(self):
         exp = _make_footprint_experiment(with_controls=False, nmol=120,
                                          planted_edges=(30, 120, 200),
-                                         l_nuc=30)
+                                         lnuc=30)
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, l_nuc=30, n_min=3, batch_size=17)
+        ana.model_prob(exp=exp, lnuc=30, n_min=3, batch_size=17)
         theta = exp.analysis["chr1"]["meth_prob_theta"]
         nbp = len(exp.raw["chr1"].refseq)
         assert len(theta) == nbp
@@ -1511,9 +1511,9 @@ class TestModelProbTheta:
 
     def test_theta_table_present_for_controls_path(self):
         exp = _make_footprint_experiment(with_controls=True,
-                                         planted_edges=(30,), l_nuc=30)
+                                         planted_edges=(30,), lnuc=30)
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, l_nuc=30, batch_size=7)
+        ana.model_prob(exp=exp, lnuc=30, batch_size=7)
         theta = exp.analysis["chr1"]["meth_prob_theta"]
         nbp = len(exp.raw["chr1"].refseq)
         assert len(theta) == nbp
@@ -1527,10 +1527,10 @@ class TestModelProbTheta:
     def test_norm_by_strand_gives_suffixed_columns(self):
         strand_of = lambda m: "+" if m % 2 == 0 else "-"
         exp = _make_footprint_experiment(
-            with_controls=True, nmol=40, planted_edges=(30,), l_nuc=30,
+            with_controls=True, nmol=40, planted_edges=(30,), lnuc=30,
             strand_of=strand_of)
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, l_nuc=30, batch_size=7, norm_by_strand=True)
+        ana.model_prob(exp=exp, lnuc=30, batch_size=7, norm_by_strand=True)
         theta = exp.analysis["chr1"]["meth_prob_theta"]
         expected = {"theta_prot_pos", "theta_acc_pos", "informative_pos",
                    "theta_prot_neg", "theta_acc_neg", "informative_neg"}

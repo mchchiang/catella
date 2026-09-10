@@ -307,7 +307,7 @@ def _calibrate_from_controls(meth_k, meth_n, unmeth_k, unmeth_n, ctx,
     return theta_prot, theta_acc, informative
 
 
-def _streamed_window_count(exp, chrom, ctx, l_nuc, n_min, batch_size,
+def _streamed_window_count(exp, chrom, ctx, lnuc, n_min, batch_size,
                            mask_name, row_masks=None, channels=None):
     """
     Per-window, per-read summed methylation-calling confidence and
@@ -327,7 +327,7 @@ def _streamed_window_count(exp, chrom, ctx, l_nuc, n_min, batch_size,
         Chromosome identifier.
     ctx : np.ndarray
         int8, length L, context code per position.
-    l_nuc : int
+    lnuc : int
         Nucleosome footprint size (bp), used as the window size.
     n_min : int
         Minimum context-eligible sites (summed over all contexts) a
@@ -373,13 +373,13 @@ def _streamed_window_count(exp, chrom, ctx, l_nuc, n_min, batch_size,
                        batch_size=batch_size, mask_name=mask_name)
     try:
         n_total, L = arr.shape
-        starts = np.arange(0, L - l_nuc + 1, l_nuc)
+        starts = np.arange(0, L - lnuc + 1, lnuc)
         codes = [c for c in channels if (ctx == c).any()]
         if not codes:
             raise ValueError("no assayable contexts in ctx")
 
         n_win = {c: np.array(
-            [(ctx[s:s + l_nuc] == c).sum() for s in starts])
+            [(ctx[s:s + lnuc] == c).sum() for s in starts])
                 for c in codes}
         total_win = sum(n_win[c] for c in codes)
         keep = total_win >= n_min
@@ -412,7 +412,7 @@ def _streamed_window_count(exp, chrom, ctx, l_nuc, n_min, batch_size,
                 for c in codes:
                     sel = ctx == c
                     k_c = np.stack(
-                        [np.nansum(q[:, s:s + l_nuc][:, sel[s:s + l_nuc]],
+                        [np.nansum(q[:, s:s + lnuc][:, sel[s:s + lnuc]],
                                   axis=1) for s in kept_starts], axis=1)
                     K_batches[key][c].append(k_c)
 
@@ -596,18 +596,18 @@ def _per_base_log_odds(q, theta_prot, theta_acc, informative, pi0=0.5,
     return np.where(informative, log_odds, 0.0)
 
 
-def _window_sum_log_odds(log_odds, l_nuc, fill_edge=0.0):
+def _window_sum_log_odds(log_odds, lnuc, fill_edge=0.0):
     """
-    Left-aligned rolling sum of `log_odds` over a window of `l_nuc`
-    positions: position i summarizes `[i, i + l_nuc)`. The trailing
-    `l_nuc - 1` positions, which have no full window, are filled with
+    Left-aligned rolling sum of `log_odds` over a window of `lnuc`
+    positions: position i summarizes `[i, i + lnuc)`. The trailing
+    `lnuc - 1` positions, which have no full window, are filled with
     `fill_edge`.
 
     Parameters
     ----------
     log_odds : np.ndarray
         float64, (n_mol, L).
-    l_nuc : int
+    lnuc : int
         Window size.
     fill_edge : float, default 0.0
         Value used for the trailing positions.
@@ -619,12 +619,12 @@ def _window_sum_log_odds(log_odds, l_nuc, fill_edge=0.0):
     """
     n_mol, L = log_odds.shape
     out = np.full((n_mol, L), fill_edge)
-    n_win = L - l_nuc + 1
+    n_win = L - lnuc + 1
     if n_win <= 0:
         return out
     cum = np.concatenate(
         [np.zeros((n_mol, 1)), np.cumsum(log_odds, axis=1)], axis=1)
-    out[:, :n_win] = cum[:, l_nuc:] - cum[:, :-l_nuc]
+    out[:, :n_win] = cum[:, lnuc:] - cum[:, :-lnuc]
     return out
 
 
@@ -890,7 +890,7 @@ def _frac_informative_by_context(ctx, informative, channels=None):
            for c in channels if (ctx == c).any()}
 
 
-def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, l_nuc, n_min,
+def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, lnuc, n_min,
                        max_iters, init_prot, init_acc, tol, batch_size,
                        mask_name, norm_by_strand=False, channels=None):
     """
@@ -905,7 +905,7 @@ def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, l_nuc, n_min,
         The experiment object containing raw data and analysis maps.
     chrom : str
         Chromosome identifier.
-    nu, rho_leak, min_gap, l_nuc, n_min, max_iters, init_prot, init_acc,
+    nu, rho_leak, min_gap, lnuc, n_min, max_iters, init_prot, init_acc,
     tol : as in `model_prob`.
     batch_size : int
         Number of molecules processed per batch.
@@ -1037,7 +1037,7 @@ def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, l_nuc, n_min,
             test_strand = _strand_of_mol(raw.test_data,
                                          len(raw.test_mol_id))
             win_counts = _streamed_window_count(
-                exp, chrom, ctx, l_nuc, n_min, batch_size, mask_name,
+                exp, chrom, ctx, lnuc, n_min, batch_size, mask_name,
                 row_masks={"+": test_strand == "+",
                           "-": test_strand == "-"}, channels=channels)
             theta_prot, theta_acc, informative = {}, {}, {}
@@ -1056,7 +1056,7 @@ def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, l_nuc, n_min,
                     **em_diag}
         else:
             K, N, codes = _streamed_window_count(
-                exp, chrom, ctx, l_nuc, n_min, batch_size, mask_name,
+                exp, chrom, ctx, lnuc, n_min, batch_size, mask_name,
                 channels=channels)
             theta_prot, theta_acc, informative, em_diag = \
                 _calibrate_from_data(
@@ -1572,7 +1572,7 @@ class MethPrintAnalysis:
                    nu : float = 10.0,
                    rho_leak : float = 0.1,
                    min_gap : float = 0.05,
-                   l_nuc : int = 147,
+                   lnuc : int = 147,
                    n_min : int = 10,
                    max_iters : int = 200,
                    init_prot : float = 0.05,
@@ -1647,7 +1647,7 @@ class MethPrintAnalysis:
             Minimum required gap between the accessible and protected
             call rates for a position to be treated as informative;
             positions below this gap contribute no evidence.
-        l_nuc : int, default 147
+        lnuc : int, default 147
             Nucleosome footprint size (bp): the expectation-maximization
             window size (no-controls path) and the output window-sum
             size.
@@ -1668,7 +1668,7 @@ class MethPrintAnalysis:
             Relative log-likelihood convergence tolerance for the
             no-controls expectation-maximization fit.
         fill_edge : float, default nan
-            Probability used to fill the trailing `l_nuc - 1` positions
+            Probability used to fill the trailing `lnuc - 1` positions
             of the result, which have no full window to summarize. The
             nan default leaves those positions unfilled.
         norm_by_strand : bool, default False
@@ -1711,7 +1711,7 @@ class MethPrintAnalysis:
         Notes
         -----
         Position `i` in the result summarizes the window
-        `[i, i + l_nuc)`. If `exp.wrap` is True, `refseq` (always
+        `[i, i + lnuc)`. If `exp.wrap` is True, `refseq` (always
         stored full-length) is folded to length `nbp` before use:
         positions `i` and `length-1-i` must classify to the same
         context to be kept; where they disagree, the folded position
@@ -1740,7 +1740,7 @@ class MethPrintAnalysis:
         channel_eta = dict(overrides)
 
         calib_kwargs = dict(nu=nu, rho_leak=rho_leak, min_gap=min_gap,
-                            l_nuc=l_nuc, n_min=n_min, max_iters=max_iters,
+                            lnuc=lnuc, n_min=n_min, max_iters=max_iters,
                             init_prot=init_prot, init_acc=init_acc,
                             tol=tol, batch_size=batch_size,
                             mask_name=mask_name,
@@ -1809,7 +1809,7 @@ class MethPrintAnalysis:
 
         exp.global_analysis[f"{prob_name}_params"] = pd.DataFrame([{
             "pi0": pi0, "eta_max_lag": eta_max_lag, "nu": nu,
-            "rho_leak": rho_leak, "min_gap": min_gap, "l_nuc": l_nuc,
+            "rho_leak": rho_leak, "min_gap": min_gap, "lnuc": lnuc,
             "n_min": n_min, "max_iters": max_iters, "init_prot": init_prot,
             "init_acc": init_acc, "tol": tol, "fill_edge": fill_edge,
             "norm_by_strand": norm_by_strand,
@@ -1877,7 +1877,7 @@ class MethPrintAnalysis:
                             q, theta_prot, theta_acc, informative,
                             pi0=pi0, eta=eta_by_pos)
                     log_odds_win = _window_sum_log_odds(
-                        log_odds, l_nuc, fill_edge=log_odds_fill)
+                        log_odds, lnuc, fill_edge=log_odds_fill)
                     prob = expit(-log_odds_win)
                     prob[masked, :] = np.nan
                     out.write_batch(start, stop, prob)

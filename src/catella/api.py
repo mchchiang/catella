@@ -213,7 +213,7 @@ def compute_model_prob(exp : MethPrintExperiment, *,
                nu : float = 10.0,
                rho_leak : float = 0.1,
                min_gap : float = 0.05,
-               l_nuc : int = 147,
+               lnuc : int = 147,
                n_min : int = 10,
                max_iters : int = 200,
                init_prot : float = 0.05,
@@ -280,7 +280,7 @@ def compute_model_prob(exp : MethPrintExperiment, *,
         Minimum required gap between the accessible and protected
         call rates for a position to be treated as informative;
         positions below this gap contribute no evidence.
-    l_nuc : int, default 147
+    lnuc : int, default 147
         Nucleosome footprint size (bp): the expectation-maximization
         window size (no-controls path) and the output window-sum
         size.
@@ -301,7 +301,7 @@ def compute_model_prob(exp : MethPrintExperiment, *,
         Relative log-likelihood convergence tolerance for the
         no-controls expectation-maximization fit.
     fill_edge : float, default nan
-        Probability used to fill the trailing `l_nuc - 1` positions
+        Probability used to fill the trailing `lnuc - 1` positions
         of the result, which have no full window to summarize. The
         nan default leaves those positions unfilled.
     norm_by_strand : bool, default False
@@ -352,7 +352,7 @@ def compute_model_prob(exp : MethPrintExperiment, *,
     ana = MethPrintAnalysis()
     ana.model_prob(exp=exp, prob_name=prob_name, pi0=pi0, eta=eta,
                    eta_max_lag=eta_max_lag, store_rho=store_rho, nu=nu,
-                   rho_leak=rho_leak, min_gap=min_gap, l_nuc=l_nuc,
+                   rho_leak=rho_leak, min_gap=min_gap, lnuc=lnuc,
                    n_min=n_min, max_iters=max_iters, init_prot=init_prot,
                    init_acc=init_acc, tol=tol, fill_edge=fill_edge,
                    norm_by_strand=norm_by_strand, batch_size=batch_size,

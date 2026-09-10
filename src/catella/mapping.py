@@ -11,8 +11,8 @@ class CoordsTransform:
     """
     Handle alignment transformations for smoothed data.
     """
-    binsize : int
-    """The smoothing binsize size used to calculate the original mean."""
+    lnuc : int
+    """The smoothing window size used to calculate the original mean."""
 
     fill_edge : float = np.nan
     """The value used to fill empty spaces created by shifting data. Default
@@ -92,7 +92,7 @@ class CoordsTransform:
         axis : int, optional
             The axis along which to perform the shift. Default -1.
         trim : bool, optional
-            If True, symmetrically trims `binsize // 2` elements from both ends
+            If True, symmetrically trims `lnuc // 2` elements from both ends
             of the specified axis. Default False.
         batch_size : int, optional
             Number of rows streamed at a time when `x` is an `H5Array`.
@@ -110,7 +110,7 @@ class CoordsTransform:
         np.ndarray | pd.DataFrame | pd.Series | H5Array
             The center-aligned data.
         """
-        delta = int(self.binsize//2)
+        delta = int(self.lnuc//2)
         res = self._apply_shift_h5array(x, delta, axis, batch_size, path,
                                         dir) if isinstance(x, H5Array) \
             else self._apply_shift(x, delta, axis)
@@ -157,7 +157,7 @@ class CoordsTransform:
         np.ndarray | pd.DataFrame | pd.Series | H5Array
             The left-aligned data.
         """
-        delta = -int(self.binsize//2)
+        delta = -int(self.lnuc//2)
         res = self._apply_shift_h5array(x, delta, axis, batch_size, path,
                                         dir) if isinstance(x, H5Array) \
             else self._apply_shift(x, delta, axis)

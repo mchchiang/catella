@@ -287,11 +287,11 @@ class SimPlot:
                 emax = min(np.nanmax(eseq), dataset.settings["emax"])
             if np.isfinite(emin) and np.isfinite(emax):
                 seq_ax.set_ylim(emin,emax)
-            binsize = dataset.settings["nucbp"]
-            trans = CoordsTransform(binsize=binsize)
+            lnuc = dataset.settings["nucbp"]
+            trans = CoordsTransform(lnuc=lnuc)
             eseq = trans.left_to_center_aligned(eseq)
-            eseq[:binsize//2] = np.nan
-            eseq[len(eseq)-binsize//2:] = np.nan
+            eseq[:lnuc//2] = np.nan
+            eseq[len(eseq)-lnuc//2:] = np.nan
             seq_ax.plot(np.arange(0,data.nbp)/xscale, eseq)
             seq_ax.set_ylabel(r"$E_{\text{seq}}$ [$k_BT$]")
             seq_ax.set_xlim(0, data.nbp/xscale)
@@ -450,11 +450,11 @@ class SimPlot:
                 emax = min(np.nanmax(eseq), dataset.settings["emax"])
             if np.isfinite(emin) and np.isfinite(emax):
                 seq_ax.set_ylim(emin,emax)
-            binsize = dataset.settings["nucbp"]
-            trans = CoordsTransform(binsize=binsize)
+            lnuc = dataset.settings["nucbp"]
+            trans = CoordsTransform(lnuc=lnuc)
             eseq = trans.left_to_center_aligned(eseq)
-            eseq[:binsize//2] = np.nan
-            eseq[len(eseq)-binsize//2:] = np.nan
+            eseq[:lnuc//2] = np.nan
+            eseq[len(eseq)-lnuc//2:] = np.nan
             seq_ax.plot(np.arange(0,nbp)/xscale, eseq)
             seq_ax.set_ylabel(r"$\langle E_{\text{seq}} \rangle$ [$k_BT$]")
             seq_ax.set_xlim(0, nbp/xscale)

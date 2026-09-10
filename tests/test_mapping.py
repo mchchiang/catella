@@ -18,7 +18,7 @@ def _h5_from(values, index=None, columns=None):
 @pytest.mark.parametrize("batch_size", [2, 20000])
 def test_left_to_center_aligned_h5array_axis1_matches_ndarray(batch_size):
     values = np.arange(30, dtype=np.float64).reshape(6, 5)
-    trans = CoordsTransform(binsize=4)
+    trans = CoordsTransform(lnuc=4)
 
     expected = trans.left_to_center_aligned(values.copy(), axis=1)
     h5 = _h5_from(values)
@@ -31,7 +31,7 @@ def test_left_to_center_aligned_h5array_axis1_matches_ndarray(batch_size):
 @pytest.mark.parametrize("batch_size", [2, 20000])
 def test_center_to_left_aligned_h5array_axis1_matches_ndarray(batch_size):
     values = np.arange(30, dtype=np.float64).reshape(6, 5)
-    trans = CoordsTransform(binsize=4)
+    trans = CoordsTransform(lnuc=4)
 
     expected = trans.center_to_left_aligned(values.copy(), axis=1)
     h5 = _h5_from(values)
@@ -44,7 +44,7 @@ def test_center_to_left_aligned_h5array_axis1_matches_ndarray(batch_size):
 @pytest.mark.parametrize("batch_size", [2, 20000])
 def test_left_to_center_aligned_h5array_axis0_matches_ndarray(batch_size):
     values = np.arange(30, dtype=np.float64).reshape(6, 5)
-    trans = CoordsTransform(binsize=4)
+    trans = CoordsTransform(lnuc=4)
 
     expected = trans.left_to_center_aligned(values.copy(), axis=0)
     h5 = _h5_from(values)
@@ -57,7 +57,7 @@ def test_left_to_center_aligned_h5array_axis0_matches_ndarray(batch_size):
 @pytest.mark.parametrize("batch_size", [2, 20000])
 def test_center_to_left_aligned_h5array_axis0_matches_ndarray(batch_size):
     values = np.arange(30, dtype=np.float64).reshape(6, 5)
-    trans = CoordsTransform(binsize=4)
+    trans = CoordsTransform(lnuc=4)
 
     expected = trans.center_to_left_aligned(values.copy(), axis=0)
     h5 = _h5_from(values)
@@ -69,7 +69,7 @@ def test_center_to_left_aligned_h5array_axis0_matches_ndarray(batch_size):
 
 def test_left_to_center_aligned_h5array_trim_matches_ndarray():
     values = np.arange(30, dtype=np.float64).reshape(6, 5)
-    trans = CoordsTransform(binsize=4)
+    trans = CoordsTransform(lnuc=4)
 
     expected = trans.left_to_center_aligned(values.copy(), axis=1,
                                             trim=True)
@@ -84,7 +84,7 @@ def test_h5array_preserves_index_and_columns():
     index = pd.Index(["a", "b", "c"])
     columns = pd.Index([10, 20, 30, 40])
     h5 = _h5_from(values, index=index, columns=columns)
-    trans = CoordsTransform(binsize=2)
+    trans = CoordsTransform(lnuc=2)
 
     got = trans.left_to_center_aligned(h5, axis=1)
 
@@ -95,7 +95,7 @@ def test_h5array_preserves_index_and_columns():
 def test_h5array_uses_fill_edge_value():
     values = np.ones((4, 4), dtype=np.float64)
     h5 = _h5_from(values)
-    trans = CoordsTransform(binsize=4, fill_edge=-1.0)
+    trans = CoordsTransform(lnuc=4, fill_edge=-1.0)
 
     got = trans.left_to_center_aligned(h5, axis=1)
 

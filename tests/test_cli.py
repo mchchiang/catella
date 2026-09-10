@@ -772,6 +772,18 @@ class TestPlotNucPos:
         assert result.exit_code == 0, result.output
         assert out_file.exists()
 
+    def test_with_time_scale_cmap(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=3, nbp=10)
+        out_file = tmp_path / "nucpos_scaled.png"
+
+        result = runner.invoke(app, [
+            "plot_nuc_pos", "chr1", "0", "0", str(dataset._dataset_file),
+            "--tstart", "0", "--tend", "1",
+            "--tscale", "1", "--xscale", "1", "--cmap", "viridis",
+            "--out-file", str(out_file), "--no-show"])
+        assert result.exit_code == 0, result.output
+        assert out_file.exists()
+
 
 class TestPlotEnergy:
     def test_writes_figure_file(self, tmp_path):

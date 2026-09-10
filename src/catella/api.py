@@ -701,6 +701,11 @@ def plot_nuc_pos(dataset : SimDataset, *,
                  chrom : str,
                  mol : int,
                  run : int,
+                 tstart : int | None = None,
+                 tend : int | None = None,
+                 tscale : int = 1000,
+                 xscale : int = 1000,
+                 cmap : str | None = None,
                  out_file : str | Path | None = None,
                  plot_eseq : bool = False,
                  show : bool = True):
@@ -708,8 +713,8 @@ def plot_nuc_pos(dataset : SimDataset, *,
     Plot the time-course positions of nucleosomes for a specific simulation
     run of a molecule.
 
-    Generate a trajectory plot (often a kymograph or "spaghetti plot") 
-    visualizing how nucleosomes move or remain stable over simulation time 
+    Generate a trajectory plot (often a kymograph or "spaghetti plot")
+    visualizing how nucleosomes move or remain stable over simulation time
     steps for a specific molecule.
 
     Parameters
@@ -722,24 +727,44 @@ def plot_nuc_pos(dataset : SimDataset, *,
         The index of the specific molecule (fiber) to visualize.
     run : int
         The specific simulation run index for the chosen molecule.
+    tstart : int, optional
+        Starting time step. If None, defaults to the beginning of the
+        simulation.
+    tend : int, optional
+        Ending time step. If None, defaults to the end of the simulation.
+    tscale : int, default 1000
+        Time scaling factor (must be a power of 10) for the y-axis labels.
+    xscale : int, default 1000
+        Spatial scaling factor (must be a power of 10) for the x-axis
+        labels.
+    cmap : str, optional
+        Matplotlib colormap name to use for this plot. If None, the
+        `SimPlot` default is used.
     out_file : str | Path, optional
         Path where the generated plot will be saved. If None, the plot
         is not saved to disk.
     plot_eseq : bool, default False
-        Whether to plot the underlying sequence-specific nucleosome binding 
+        Whether to plot the underlying sequence-specific nucleosome binding
         energy.
     show : bool, default True
         Whether to display the figure using the active plotting backend.
 
+    Raises
+    ------
+    ValueError
+        If `tend` < `tstart` or if scaling factors are not powers of 10.
+
     Notes
     -----
-    This visualization requires that 'position' (or 'all') was included 
+    This visualization requires that 'position' (or 'all') was included
     in the `out_types` during the `run` execution. If `plot_seq` is True,
     it also requires that `store_eseq` was set to True during `run`.
     """
     simplot = SimPlot()
     simplot.plot_nuc_pos(chrom=chrom, mol=mol, run=run, dataset=dataset,
-                         out_file=out_file, plot_eseq=plot_eseq, show=show)
+                         tstart=tstart, tend=tend, tscale=tscale,
+                         xscale=xscale, cmap=cmap, out_file=out_file,
+                         plot_eseq=plot_eseq, show=show)
 
 
 def plot_energy(dataset : SimDataset, *,

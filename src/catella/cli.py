@@ -645,6 +645,19 @@ def plot_nuc_pos(
         Path, typer.Argument(help="Simulation dataset HDF5 file",
                              exists=True, file_okay=True, dir_okay=False,
                              readable=True)],
+    tstart: Annotated[
+        Optional[int], typer.Option(help="Starting time step")] = None,
+    tend: Annotated[
+        Optional[int], typer.Option(help="Ending time step")] = None,
+    tscale: Annotated[
+        int, typer.Option(help="Time scale factor (power of 10) for "
+                          "the y-axis")] = 1000,
+    xscale: Annotated[
+        int, typer.Option(help="Spatial scale factor (power of 10) for "
+                          "the x-axis")] = 1000,
+    cmap: Annotated[
+        Optional[str], typer.Option(help="Matplotlib colormap name")
+    ] = None,
     out_file: Annotated[
         Optional[Path], typer.Option(help="Path to save the figure",
                                      file_okay=True, dir_okay=False)] = None,
@@ -657,7 +670,9 @@ def plot_nuc_pos(
     """
     dataset = SimDataset.load(dataset_file)
     catella.plot_nuc_pos(chrom=chrom, mol=mol, run=run, dataset=dataset,
-                       out_file=out_file, plot_eseq=plot_eseq, show=show)
+                       tstart=tstart, tend=tend, tscale=tscale,
+                       xscale=xscale, cmap=cmap, out_file=out_file,
+                       plot_eseq=plot_eseq, show=show)
 
 
 @app.command(name="plot_energy")

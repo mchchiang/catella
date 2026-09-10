@@ -628,9 +628,12 @@ def analyze(dataset : SimDataset, *,
 
 def plot_occup(dataset : SimDataset, *,
                chrom : str,
+               time : int | None = None,
                out_file : str | Path | None = None,
                occup_name : str = "occup",
                mols : Iterable[int] | None = None,
+               xscale : int = 1000,
+               cmap : str | None = None,
                plot_eseq : bool = False,
                link_mat : np.ndarray | None = None,
                show : bool = True):
@@ -647,6 +650,8 @@ def plot_occup(dataset : SimDataset, *,
         The simulation dataset containing the computed occupancy data.
     chrom : str
         The identifier of the chromosome to plot.
+    time : int, optional
+        The time step of interest if occupancy needs to be computed.
     out_file : str | Path, optional
         Path where the generated plot will be saved. If None, the plot
         is not saved to disk.
@@ -657,6 +662,12 @@ def plot_occup(dataset : SimDataset, *,
         Molecule indices to display, restricting the heatmap (and, if
         `plot_eseq` is True, the sequence-energy average) to this
         subset. If None (default), all molecules are shown.
+    xscale : int, default 1000
+        Spatial scaling factor (must be a power of 10) for the x-axis
+        labels.
+    cmap : str, optional
+        Matplotlib colormap name to use for this plot. If None, the
+        `SimPlot` default is used.
     plot_eseq : bool, default False
         Whether to plot the underlying sequence-specific nucleosome binding
         energy, averaged across all molecules.
@@ -669,14 +680,21 @@ def plot_occup(dataset : SimDataset, *,
         If True, invokes the active plotting backend to display the
         figure immediately.
 
+    Raises
+    ------
+    ValueError
+        If the occupancy is missing and no `time` is provided for
+        computation.
+
     Notes
     -----
     This function requires that `analyze()` (specifically `compute_occup`)
     has been called on the dataset prior to plotting.
     """
     simplot = SimPlot()
-    simplot.plot_occup(chrom=chrom, dataset=dataset, occup_name=occup_name,
-                       mols=mols, out_file=out_file, plot_eseq=plot_eseq,
+    simplot.plot_occup(chrom=chrom, dataset=dataset, time=time,
+                       occup_name=occup_name, mols=mols, xscale=xscale,
+                       cmap=cmap, out_file=out_file, plot_eseq=plot_eseq,
                        link_mat=link_mat, show=show)
 
 def plot_nuc_pos(dataset : SimDataset, *,

@@ -728,6 +728,37 @@ class TestPlotOccup:
         assert result.exit_code == 0, result.output
         assert out_file.exists()
 
+    @pytest.mark.filterwarnings(
+        "ignore:__array__ implementation doesn't accept a copy keyword"
+        ":DeprecationWarning")
+    def test_with_mols_xscale_cmap(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=6, nbp=10)
+        SimAnalysis().compute_occup(dataset=dataset)
+        dataset.save()
+        out_file = tmp_path / "occup_subset.png"
+
+        result = runner.invoke(app, [
+            "plot_occup", "chr1", str(dataset._dataset_file),
+            "--mols", "0", "--mols", "2",
+            "--xscale", "1", "--cmap", "viridis",
+            "--out-file", str(out_file), "--no-show"])
+        assert result.exit_code == 0, result.output
+        assert out_file.exists()
+
+    @pytest.mark.filterwarnings(
+        "ignore:__array__ implementation doesn't accept a copy keyword"
+        ":DeprecationWarning")
+    def test_with_time_computes_occup(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=4, nbp=10)
+        out_file = tmp_path / "occup_time.png"
+
+        result = runner.invoke(app, [
+            "plot_occup", "chr1", str(dataset._dataset_file),
+            "--time", "0",
+            "--out-file", str(out_file), "--no-show"])
+        assert result.exit_code == 0, result.output
+        assert out_file.exists()
+
 
 class TestPlotNucPos:
     def test_writes_figure_file(self, tmp_path):

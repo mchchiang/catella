@@ -6,7 +6,7 @@ import catella
 import typer
 import pandas as pd
 from pathlib import Path
-from typing import Annotated, Type, TypeVar, Callable, Optional
+from typing import Annotated, Type, TypeVar, Callable, Optional, List
 from catella.experiment.methdata import MethPrintExperiment
 from catella.simulation.results import SimDataset
 
@@ -599,11 +599,23 @@ def plot_occup(
         Path, typer.Argument(help="Simulation dataset HDF5 file",
                              exists=True, file_okay=True, dir_okay=False,
                              readable=True)],
+    time: Annotated[
+        Optional[int], typer.Option(help="Time step to compute occupancy "
+                                    "at, if not already present")] = None,
     out_file: Annotated[
         Optional[Path], typer.Option(help="Path to save the figure",
                                      file_okay=True, dir_okay=False)] = None,
     occup_name: Annotated[
         str, typer.Option(help="Key of the occupancy data")] = "occup",
+    mols: Annotated[
+        Optional[List[int]], typer.Option(help="Molecule index to "
+                                          "display (repeatable)")] = None,
+    xscale: Annotated[
+        int, typer.Option(help="Spatial scale factor (power of 10) for "
+                          "the x-axis")] = 1000,
+    cmap: Annotated[
+        Optional[str], typer.Option(help="Matplotlib colormap name")
+    ] = None,
     plot_eseq: Annotated[
         bool, typer.Option(help="Plot the sequence-specific binding "
                            "energy")] = False,
@@ -618,8 +630,9 @@ def plot_occup(
     dataset = SimDataset.load(dataset_file)
     link_mat = dataset.analysis[chrom][link_mat_name].to_numpy() \
         if link_mat_name is not None else None
-    catella.plot_occup(chrom=chrom, dataset=dataset, out_file=out_file,
-                     occup_name=occup_name, plot_eseq=plot_eseq,
+    catella.plot_occup(chrom=chrom, dataset=dataset, time=time,
+                     out_file=out_file, occup_name=occup_name, mols=mols,
+                     xscale=xscale, cmap=cmap, plot_eseq=plot_eseq,
                      link_mat=link_mat, show=show)
 
 

@@ -256,8 +256,6 @@ def compute_empirical_prob(
         Path, typer.Argument(help="Experiment HDF5 file", exists=True,
                              file_okay=True, dir_okay=False,
                              readable=True)],
-    out_file: Annotated[Path, typer.Argument(help="Path to save results",
-                                             file_okay=True, dir_okay=False)],
     binsize: Annotated[int, typer.Option(help="Window size (bp)")] = 147,
     prob_name: Annotated[
         str, typer.Option(help="Key for storing methylation "
@@ -281,18 +279,32 @@ def compute_empirical_prob(
                                     "subsampling")] = None,
     mask_name: Annotated[
         Optional[str], typer.Option(help="Key of a prior filter_dropout "
-                                    "mask to apply")] = None):
+                                    "mask to apply")] = None,
+    out_file: Annotated[
+        Optional[Path], typer.Option(help="Output file (default: "
+                                     "overwrite source_file)",
+                                     file_okay=True, dir_okay=False)
+    ] = None,
+    overwrite: Annotated[
+        bool, typer.Option(help="Allow overwriting out_file if it is "
+                           "already backed by H5Array analysis data. "
+                           "Ignored (always allowed) when out_file is "
+                           "not given")] = False):
     """
     Compute methylation probabilities via empirical normalization.
     """
     exp = MethPrintExperiment.load(source_file)
     catella.compute_empirical_prob(
-        exp=exp, out_file=out_file, binsize=binsize, prob_name=prob_name,
+        exp=exp, binsize=binsize, prob_name=prob_name,
         clip_low=clip_low, clip_high=clip_high,
         norm_by_strand=norm_by_strand, fill_edge=fill_edge,
         batch_size=batch_size,
         percentile_sample_size=percentile_sample_size, seed=seed,
         mask_name=mask_name)
+    if out_file is not None:
+        exp.save(out_file, overwrite=overwrite)
+    else:
+        exp.save(overwrite=True)
 
 
 @app.command(name="compute_model_prob")
@@ -301,8 +313,6 @@ def compute_model_prob(
         Path, typer.Argument(help="Experiment HDF5 file", exists=True,
                              file_okay=True, dir_okay=False,
                              readable=True)],
-    out_file: Annotated[Path, typer.Argument(help="Path to save results",
-                                             file_okay=True, dir_okay=False)],
     prob_name: Annotated[
         str, typer.Option(help="Key for storing methylation "
                           "probabilities")] = "meth_prob",
@@ -359,18 +369,32 @@ def compute_model_prob(
         int, typer.Option(help="Molecules processed per batch")] = 20000,
     mask_name: Annotated[
         Optional[str], typer.Option(help="Key of a prior filter_dropout "
-                                    "mask to apply")] = None):
+                                    "mask to apply")] = None,
+    out_file: Annotated[
+        Optional[Path], typer.Option(help="Output file (default: "
+                                     "overwrite source_file)",
+                                     file_okay=True, dir_okay=False)
+    ] = None,
+    overwrite: Annotated[
+        bool, typer.Option(help="Allow overwriting out_file if it is "
+                           "already backed by H5Array analysis data. "
+                           "Ignored (always allowed) when out_file is "
+                           "not given")] = False):
     """
     Compute methylation probabilities via a calibrated log-odds model.
     """
     exp = MethPrintExperiment.load(source_file)
     catella.compute_model_prob(
-        exp=exp, out_file=out_file, prob_name=prob_name, pi0=pi0, eta=eta,
+        exp=exp, prob_name=prob_name, pi0=pi0, eta=eta,
         eta_max_lag=eta_max_lag, store_rho=store_rho, nu=nu,
         rho_leak=rho_leak, min_gap=min_gap, l_nuc=l_nuc, n_min=n_min,
         max_iters=max_iters, init_prot=init_prot, init_acc=init_acc,
         tol=tol, fill_edge=fill_edge, norm_by_strand=norm_by_strand,
         batch_size=batch_size, mask_name=mask_name)
+    if out_file is not None:
+        exp.save(out_file, overwrite=overwrite)
+    else:
+        exp.save(overwrite=True)
 
 
 @app.command()

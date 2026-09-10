@@ -270,8 +270,8 @@ class TestComputeEmpiricalProb:
 
         cli_out = tmp_path / "cli_exp.h5"
         result = runner.invoke(app, ["compute_empirical_prob",
-                                     str(raw_file), str(cli_out),
-                                     "--binsize", "5"])
+                                     str(raw_file), "--out-file",
+                                     str(cli_out), "--binsize", "5"])
         assert result.exit_code == 0, result.output
 
         expected = catella.load_raw(chromsize=chromsize, test_file=test_file,
@@ -282,6 +282,25 @@ class TestComputeEmpiricalProb:
         np.testing.assert_allclose(
             got.analysis["chr1"]["meth_prob"].to_numpy(),
             expected.analysis["chr1"]["meth_prob"].to_numpy())
+
+    def test_no_out_file_overwrites_source_file(self, tmp_path):
+        rows = _make_test_rows(nmol=5, nbp=30)
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 30})
+
+        raw_file = tmp_path / "raw_exp.h5"
+        load_result = runner.invoke(app, ["load_raw", str(chromsize),
+                                          str(test_file), str(raw_file)])
+        assert load_result.exit_code == 0, load_result.output
+
+        result = runner.invoke(app, ["compute_empirical_prob",
+                                     str(raw_file), "--binsize", "5"])
+        assert result.exit_code == 0, result.output
+
+        reloaded = MethPrintExperiment.load(raw_file)
+        assert "meth_prob" in reloaded.analysis["chr1"]
 
     def test_prob_name_renames_stored_probabilities(self, tmp_path):
         rows = _make_test_rows(nmol=5, nbp=30)
@@ -297,8 +316,8 @@ class TestComputeEmpiricalProb:
 
         cli_out = tmp_path / "cli_exp.h5"
         result = runner.invoke(app, ["compute_empirical_prob",
-                                     str(raw_file), str(cli_out),
-                                     "--binsize", "5",
+                                     str(raw_file), "--out-file",
+                                     str(cli_out), "--binsize", "5",
                                      "--prob-name", "custom_prob"])
         assert result.exit_code == 0, result.output
 
@@ -321,8 +340,8 @@ class TestComputeEmpiricalProb:
 
         cli_out = tmp_path / "cli_exp.h5"
         result = runner.invoke(app, ["compute_empirical_prob",
-                                     str(raw_file), str(cli_out),
-                                     "--binsize", "5",
+                                     str(raw_file), "--out-file",
+                                     str(cli_out), "--binsize", "5",
                                      "--fill-edge", "0.5",
                                      "--seed", "9"])
         assert result.exit_code == 0, result.output
@@ -361,8 +380,8 @@ class TestComputeModelProb:
 
         cli_out = tmp_path / "cli_exp.h5"
         result = runner.invoke(app, ["compute_model_prob", str(raw_file),
-                                     str(cli_out), "--l-nuc", "30",
-                                     "--n-min", "3"])
+                                     "--out-file", str(cli_out),
+                                     "--l-nuc", "30", "--n-min", "3"])
         assert result.exit_code == 0, result.output
 
         expected = catella.load_raw(chromsize=chromsize, test_file=test_file,
@@ -374,6 +393,29 @@ class TestComputeModelProb:
         np.testing.assert_allclose(
             got.analysis["chr1"]["meth_prob"].to_numpy(),
             expected.analysis["chr1"]["meth_prob"].to_numpy())
+
+    def test_no_out_file_overwrites_source_file(self, tmp_path):
+        rows = _make_test_rows(nmol=5, nbp=len(_MODEL_SEQ), step=1)
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": len(_MODEL_SEQ)})
+        fasta_file = tmp_path / "ref.fa"
+        _write_fasta(fasta_file, {"chr1": _MODEL_SEQ})
+
+        raw_file = tmp_path / "raw_exp.h5"
+        load_result = runner.invoke(app, ["load_raw", str(chromsize),
+                                          str(test_file), str(raw_file),
+                                          "--fasta-file", str(fasta_file),
+                                          "--max-nmol", "3", "--seed", "7"])
+        assert load_result.exit_code == 0, load_result.output
+
+        result = runner.invoke(app, ["compute_model_prob", str(raw_file),
+                                     "--l-nuc", "30", "--n-min", "3"])
+        assert result.exit_code == 0, result.output
+
+        reloaded = MethPrintExperiment.load(raw_file)
+        assert "meth_prob" in reloaded.analysis["chr1"]
 
     def test_store_rho_propagates(self, tmp_path):
         rows = _make_test_rows(nmol=5, nbp=len(_MODEL_SEQ), step=1, seed=11)
@@ -392,9 +434,9 @@ class TestComputeModelProb:
 
         cli_out = tmp_path / "cli_exp.h5"
         result = runner.invoke(app, ["compute_model_prob", str(raw_file),
-                                     str(cli_out), "--l-nuc", "30",
-                                     "--n-min", "3", "--eta-max-lag", "4",
-                                     "--store-rho"])
+                                     "--out-file", str(cli_out),
+                                     "--l-nuc", "30", "--n-min", "3",
+                                     "--eta-max-lag", "4", "--store-rho"])
         assert result.exit_code == 0, result.output
 
         expected = catella.load_raw(chromsize=chromsize, test_file=test_file,
@@ -428,8 +470,8 @@ class TestComputeModelProb:
 
         cli_out = tmp_path / "cli_exp.h5"
         result = runner.invoke(app, ["compute_model_prob", str(raw_file),
-                                     str(cli_out), "--l-nuc", "30",
-                                     "--n-min", "3",
+                                     "--out-file", str(cli_out),
+                                     "--l-nuc", "30", "--n-min", "3",
                                      "--prob-name", "custom_prob"])
         assert result.exit_code == 0, result.output
 
@@ -451,7 +493,7 @@ class TestComputeModelProb:
 
         cli_out = tmp_path / "cli_exp.h5"
         result = runner.invoke(app, ["compute_model_prob", str(raw_file),
-                                     str(cli_out)])
+                                     "--out-file", str(cli_out)])
         assert result.exit_code != 0
 
     def test_api_requires_fasta_file(self, tmp_path):

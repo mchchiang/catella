@@ -1,6 +1,7 @@
 # test_preprocessing.py
 
 import warnings
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -714,6 +715,31 @@ class TestSortByLinkage:
         assert "test_sorted" not in exp.analysis["chr2"]
         assert list(link_mats) == ["chr1"]
 
+    def test_raw_which_closes_transient_scratch_file(self):
+        exp = _make_experiment(nmol=6, nbp=10)
+        ana = MethPrintAnalysis()
+        tmp_dir = Path(exp.resolve_tmp_dir())
+        before = set(tmp_dir.glob("*.h5"))
+
+        ana.sort_by_linkage(exp=exp, raw_which="meth", batch_size=2)
+
+        # Only the persisted meth_sorted H5Array should remain; the
+        # transient to_dense() array feeding compute_linkage/
+        # reorder_rows must be closed.
+        new_files = set(tmp_dir.glob("*.h5")) - before
+        assert len(new_files) == 1
+
+    def test_default_fallback_closes_transient_scratch_file(self):
+        exp = _make_experiment(nmol=6, nbp=10)
+        ana = MethPrintAnalysis()
+        tmp_dir = Path(exp.resolve_tmp_dir())
+        before = set(tmp_dir.glob("*.h5"))
+
+        ana.sort_by_linkage(exp=exp, batch_size=2)
+
+        new_files = set(tmp_dir.glob("*.h5")) - before
+        assert len(new_files) == 1
+
 
 def _make_footprint_experiment(*, nmol=20, meth_nmol=30, unmeth_nmol=30,
                                with_controls=True, planted_edges=(30,),
@@ -886,6 +912,48 @@ class TestModelProb:
         ana = MethPrintAnalysis()
         with pytest.raises(KeyError):
             ana.model_prob(exp=exp, l_nuc=30, mask_name="nonexistent")
+
+    def test_closes_transient_scratch_files(self):
+        # with_controls=False also exercises the no-control EM
+        # calibration path (_streamed_call_count/_streamed_window_count),
+        # and the default eta calibration exercises
+        # _accumulate_eta_source -- both create transient to_dense()
+        # scratch arrays that must be closed, same as the main
+        # per-chromosome test_arr loop.
+        exp = _make_footprint_experiment(with_controls=False, nmol=120,
+                                         planted_edges=(30, 120, 200),
+                                         l_nuc=30)
+        ana = MethPrintAnalysis()
+        tmp_dir = Path(exp.resolve_tmp_dir())
+        before = set(tmp_dir.glob("*.h5"))
+
+        ana.model_prob(exp=exp, l_nuc=30, n_min=3, batch_size=17)
+
+        # Only the persisted meth_prob output (one H5Array per
+        # chromosome) should remain.
+        new_files = set(tmp_dir.glob("*.h5")) - before
+        assert len(new_files) == len(exp.chroms)
+
+    def test_closes_transient_scratch_file_on_early_raise(self):
+        # CPython GC already cleans up transient arrays on the success
+        # path, so that path cannot distinguish explicit close() from
+        # implicit refcounting. Keeping excinfo bound keeps its
+        # traceback, and thus the raising frame's locals, alive
+        # instead, so this path can.
+        exp = _make_footprint_experiment(with_controls=False, nmol=120,
+                                         planted_edges=(30, 120, 200),
+                                         l_nuc=30)
+        ana = MethPrintAnalysis()
+        tmp_dir = Path(exp.resolve_tmp_dir())
+        before = set(tmp_dir.glob("*.h5"))
+
+        with pytest.raises(ValueError) as excinfo:
+            # n_min impossibly high -> _streamed_window_count raises
+            # "too few windows" after its to_dense() array is created.
+            ana.model_prob(exp=exp, l_nuc=30, n_min=10**9, batch_size=17)
+
+        assert set(tmp_dir.glob("*.h5")) == before
+        del excinfo
 
     def test_missing_refseq_raises(self):
         exp = _make_experiment(nmol=6, nbp=10)

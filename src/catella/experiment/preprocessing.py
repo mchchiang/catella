@@ -195,36 +195,40 @@ def _streamed_call_count(exp, chrom, which, ctx, batch_size, mask_name,
     """
     arr = exp.to_dense(chrom, which=which, as_h5array=True,
                        batch_size=batch_size, mask_name=mask_name)
-    n_total, L = arr.shape
-    ctx_ok = ctx != NONE
+    try:
+        n_total, L = arr.shape
+        ctx_ok = ctx != NONE
 
-    if row_masks is None:
-        k = np.zeros(L, dtype=np.float64)
-        n_mol = 0
+        if row_masks is None:
+            k = np.zeros(L, dtype=np.float64)
+            n_mol = 0
+            for start in range(0, n_total, batch_size):
+                stop = min(start + batch_size, n_total)
+                batch = arr[start:stop, :]
+                # mask_name marks dropped molecules as all-nan rows
+                # (see _apply_keep_mask); exclude them so they don't
+                # inflate n_mol.
+                kept = ~np.isnan(batch).all(axis=1)
+                q = np.where(ctx_ok[None, :], batch[kept], np.nan)
+                k += np.nansum(q, axis=0)
+                n_mol += int(kept.sum())
+            return k, n_mol
+
+        acc = {key: {"k": np.zeros(L, dtype=np.float64), "n_mol": 0}
+              for key in row_masks}
         for start in range(0, n_total, batch_size):
             stop = min(start + batch_size, n_total)
             batch = arr[start:stop, :]
-            # mask_name marks dropped molecules as all-nan rows (see
-            # _apply_keep_mask); exclude them so they don't inflate
-            # n_mol.
             kept = ~np.isnan(batch).all(axis=1)
-            q = np.where(ctx_ok[None, :], batch[kept], np.nan)
-            k += np.nansum(q, axis=0)
-            n_mol += int(kept.sum())
-        return k, n_mol
-
-    acc = {key: {"k": np.zeros(L, dtype=np.float64), "n_mol": 0}
-          for key in row_masks}
-    for start in range(0, n_total, batch_size):
-        stop = min(start + batch_size, n_total)
-        batch = arr[start:stop, :]
-        kept = ~np.isnan(batch).all(axis=1)
-        for key, mask in row_masks.items():
-            sel = kept & mask[start:stop]
-            q = np.where(ctx_ok[None, :], batch[sel], np.nan)
-            acc[key]["k"] += np.nansum(q, axis=0)
-            acc[key]["n_mol"] += int(sel.sum())
-    return {key: (acc[key]["k"], acc[key]["n_mol"]) for key in row_masks}
+            for key, mask in row_masks.items():
+                sel = kept & mask[start:stop]
+                q = np.where(ctx_ok[None, :], batch[sel], np.nan)
+                acc[key]["k"] += np.nansum(q, axis=0)
+                acc[key]["n_mol"] += int(sel.sum())
+        return {key: (acc[key]["k"], acc[key]["n_mol"])
+               for key in row_masks}
+    finally:
+        arr.close()
 
 
 def _leak_interpolated_rate(theta_acc, fpr, rho_leak=0.1, eps=1e-4):
@@ -367,62 +371,67 @@ def _streamed_window_count(exp, chrom, ctx, l_nuc, n_min, batch_size,
         channels = _ALL_CHANNELS
     arr = exp.to_dense(chrom, which="test", as_h5array=True,
                        batch_size=batch_size, mask_name=mask_name)
-    n_total, L = arr.shape
-    starts = np.arange(0, L - l_nuc + 1, l_nuc)
-    codes = [c for c in channels if (ctx == c).any()]
-    if not codes:
-        raise ValueError("no assayable contexts in ctx")
+    try:
+        n_total, L = arr.shape
+        starts = np.arange(0, L - l_nuc + 1, l_nuc)
+        codes = [c for c in channels if (ctx == c).any()]
+        if not codes:
+            raise ValueError("no assayable contexts in ctx")
 
-    n_win = {c: np.array([(ctx[s:s + l_nuc] == c).sum() for s in starts])
-             for c in codes}
-    total_win = sum(n_win[c] for c in codes)
-    keep = total_win >= n_min
-    if not keep.any():
-        raise ValueError("too few windows with >= n_min context-eligible "
-                         "sites")
-    kept_starts = starts[keep]
+        n_win = {c: np.array(
+            [(ctx[s:s + l_nuc] == c).sum() for s in starts])
+                for c in codes}
+        total_win = sum(n_win[c] for c in codes)
+        keep = total_win >= n_min
+        if not keep.any():
+            raise ValueError(
+                "too few windows with >= n_min context-eligible sites")
+        kept_starts = starts[keep]
 
-    ctx_ok = ctx != NONE
-    keys = list(row_masks) if row_masks is not None else [None]
-    K_batches = {key: {c: [] for c in codes} for key in keys}
-    n_mol = {key: 0 for key in keys}
+        ctx_ok = ctx != NONE
+        keys = list(row_masks) if row_masks is not None else [None]
+        K_batches = {key: {c: [] for c in codes} for key in keys}
+        n_mol = {key: 0 for key in keys}
 
-    for start in range(0, n_total, batch_size):
-        stop = min(start + batch_size, n_total)
-        batch = arr[start:stop, :]
-        # mask_name marks dropped molecules as all-nan rows (see
-        # _apply_keep_mask); exclude them so they don't inflate n_mol.
-        kept_rows = ~np.isnan(batch).all(axis=1)
-        batch = batch[kept_rows]
-        q_full = np.where(ctx_ok[None, :], batch, np.nan)
-        for key in keys:
-            if key is None:
-                q = q_full
-            else:
-                strand_sel = row_masks[key][start:stop][kept_rows]
-                q = q_full[strand_sel]
-            n_mol[key] += q.shape[0]
-            for c in codes:
-                sel = ctx == c
-                k_c = np.stack(
-                    [np.nansum(q[:, s:s + l_nuc][:, sel[s:s + l_nuc]],
-                              axis=1) for s in kept_starts], axis=1)
-                K_batches[key][c].append(k_c)
+        for start in range(0, n_total, batch_size):
+            stop = min(start + batch_size, n_total)
+            batch = arr[start:stop, :]
+            # mask_name marks dropped molecules as all-nan rows (see
+            # _apply_keep_mask); exclude them so they don't inflate
+            # n_mol.
+            kept_rows = ~np.isnan(batch).all(axis=1)
+            batch = batch[kept_rows]
+            q_full = np.where(ctx_ok[None, :], batch, np.nan)
+            for key in keys:
+                if key is None:
+                    q = q_full
+                else:
+                    strand_sel = row_masks[key][start:stop][kept_rows]
+                    q = q_full[strand_sel]
+                n_mol[key] += q.shape[0]
+                for c in codes:
+                    sel = ctx == c
+                    k_c = np.stack(
+                        [np.nansum(q[:, s:s + l_nuc][:, sel[s:s + l_nuc]],
+                                  axis=1) for s in kept_starts], axis=1)
+                    K_batches[key][c].append(k_c)
 
-    def _build(key):
-        if n_mol[key] * keep.sum() < 10:
-            suffix = "" if key is None else f" for strand {key!r}"
-            raise ValueError("too few windows with >= n_min "
-                             f"context-eligible sites{suffix}")
-        K = np.array([np.concatenate(K_batches[key][c], axis=0).ravel()
-                     for c in codes]).astype(np.float64)
-        N = np.array([np.tile(n_win[c][keep], n_mol[key])
-                     for c in codes]).astype(np.float64)
-        return K, N, codes
+        def _build(key):
+            if n_mol[key] * keep.sum() < 10:
+                suffix = "" if key is None else f" for strand {key!r}"
+                raise ValueError("too few windows with >= n_min "
+                                 f"context-eligible sites{suffix}")
+            K = np.array([np.concatenate(K_batches[key][c], axis=0).ravel()
+                         for c in codes]).astype(np.float64)
+            N = np.array([np.tile(n_win[c][keep], n_mol[key])
+                         for c in codes]).astype(np.float64)
+            return K, N, codes
 
-    if row_masks is None:
-        return _build(None)
-    return {key: _build(key) for key in keys}
+        if row_masks is None:
+            return _build(None)
+        return {key: _build(key) for key in keys}
+    finally:
+        arr.close()
 
 
 def _calibrate_from_data(K, N, ctx, codes, max_iters=200, eps=1e-3,
@@ -824,30 +833,35 @@ def _accumulate_eta_source(exp, chrom, which, ctx, theta_prot, theta_acc,
     """
     arr = exp.to_dense(chrom, which=which, as_h5array=True,
                        batch_size=batch_size, mask_name=mask_name)
-    n_total, L = arr.shape
-    ctx_ok = ctx[None, :] != NONE
-    for start in range(0, n_total, batch_size):
-        stop = min(start + batch_size, n_total)
-        batch = arr[start:stop, :]
-        q = np.where(ctx_ok, batch, np.nan)
-        if norm_by_strand:
-            labels = strand_labels[start:stop]
-            for s in ("+", "-"):
-                sel = labels == s
-                if not sel.any():
-                    continue
-                log_odds = _per_base_log_odds(
-                    q[sel], theta_prot[s], theta_acc[s], informative[s],
-                    pi0=pi0, eta=1.0)
-                called = informative[s][None, :] & ~np.isnan(q[sel])
+    try:
+        n_total, L = arr.shape
+        ctx_ok = ctx[None, :] != NONE
+        for start in range(0, n_total, batch_size):
+            stop = min(start + batch_size, n_total)
+            batch = arr[start:stop, :]
+            q = np.where(ctx_ok, batch, np.nan)
+            if norm_by_strand:
+                labels = strand_labels[start:stop]
+                for s in ("+", "-"):
+                    sel = labels == s
+                    if not sel.any():
+                        continue
+                    log_odds = _per_base_log_odds(
+                        q[sel], theta_prot[s], theta_acc[s],
+                        informative[s], pi0=pi0, eta=1.0)
+                    called = informative[s][None, :] & ~np.isnan(q[sel])
+                    _accumulate_autocorr_stats(stats, log_odds, called,
+                                               ctx, max_lag,
+                                               channels=channels)
+            else:
+                log_odds = _per_base_log_odds(q, theta_prot, theta_acc,
+                                              informative, pi0=pi0,
+                                              eta=1.0)
+                called = informative[None, :] & ~np.isnan(q)
                 _accumulate_autocorr_stats(stats, log_odds, called, ctx,
                                            max_lag, channels=channels)
-        else:
-            log_odds = _per_base_log_odds(q, theta_prot, theta_acc,
-                                          informative, pi0=pi0, eta=1.0)
-            called = informative[None, :] & ~np.isnan(q)
-            _accumulate_autocorr_stats(stats, log_odds, called, ctx,
-                                       max_lag, channels=channels)
+    finally:
+        arr.close()
 
 
 def _frac_informative_by_context(ctx, informative, channels=None):
@@ -1835,36 +1849,40 @@ class MethPrintAnalysis:
             test_arr = exp.to_dense(chrom, which="test", as_h5array=True,
                                     batch_size=batch_size,
                                     mask_name=mask_name)
-            ctx_ok = ctx[None, :] != NONE
-            test_strand = None
-            if norm_by_strand:
-                test_strand = _strand_of_mol(raw.test_data, nmol)
-            for start in range(0, nmol, batch_size):
-                stop = min(start + batch_size, nmol)
-                batch = test_arr[start:stop, :]
-                # mask_name marks dropped molecules as all-nan rows (see
-                # _apply_keep_mask); propagate that to the output too.
-                masked = np.isnan(batch).all(axis=1)
-                q = np.where(ctx_ok, batch, np.nan)
+            try:
+                ctx_ok = ctx[None, :] != NONE
+                test_strand = None
                 if norm_by_strand:
-                    labels = test_strand[start:stop]
-                    pos, neg = labels == "+", labels == "-"
-                    log_odds = np.empty_like(q)
-                    log_odds[pos] = _per_base_log_odds(
-                        q[pos], theta_prot["+"], theta_acc["+"],
-                        informative["+"], pi0=pi0, eta=eta_by_pos)
-                    log_odds[neg] = _per_base_log_odds(
-                        q[neg], theta_prot["-"], theta_acc["-"],
-                        informative["-"], pi0=pi0, eta=eta_by_pos)
-                else:
-                    log_odds = _per_base_log_odds(q, theta_prot, theta_acc,
-                                                  informative, pi0=pi0,
-                                                  eta=eta_by_pos)
-                log_odds_win = _window_sum_log_odds(
-                    log_odds, l_nuc, fill_edge=log_odds_fill)
-                prob = expit(-log_odds_win)
-                prob[masked, :] = np.nan
-                out.write_batch(start, stop, prob)
+                    test_strand = _strand_of_mol(raw.test_data, nmol)
+                for start in range(0, nmol, batch_size):
+                    stop = min(start + batch_size, nmol)
+                    batch = test_arr[start:stop, :]
+                    # mask_name marks dropped molecules as all-nan rows
+                    # (see _apply_keep_mask); propagate that to the
+                    # output too.
+                    masked = np.isnan(batch).all(axis=1)
+                    q = np.where(ctx_ok, batch, np.nan)
+                    if norm_by_strand:
+                        labels = test_strand[start:stop]
+                        pos, neg = labels == "+", labels == "-"
+                        log_odds = np.empty_like(q)
+                        log_odds[pos] = _per_base_log_odds(
+                            q[pos], theta_prot["+"], theta_acc["+"],
+                            informative["+"], pi0=pi0, eta=eta_by_pos)
+                        log_odds[neg] = _per_base_log_odds(
+                            q[neg], theta_prot["-"], theta_acc["-"],
+                            informative["-"], pi0=pi0, eta=eta_by_pos)
+                    else:
+                        log_odds = _per_base_log_odds(
+                            q, theta_prot, theta_acc, informative,
+                            pi0=pi0, eta=eta_by_pos)
+                    log_odds_win = _window_sum_log_odds(
+                        log_odds, l_nuc, fill_edge=log_odds_fill)
+                    prob = expit(-log_odds_win)
+                    prob[masked, :] = np.nan
+                    out.write_batch(start, stop, prob)
+            finally:
+                test_arr.close()
             exp.analysis[chrom][prob_name] = out
 
         exp.global_analysis[f"{prob_name}_calib"] = pd.DataFrame(
@@ -1968,17 +1986,20 @@ class MethPrintAnalysis:
         link_mats = {}
         for chrom in chroms:
             ana = exp.analysis[chrom]
+            owns_data = False
             if raw_which is not None:
                 data = exp.to_dense(chrom, which=raw_which,
                                     as_h5array=True, batch_size=batch_size,
                                     mask_name=mask_name)
                 base_name = raw_which
+                owns_data = True
             elif data_name not in ana and data_name == "test_smoothed":
                 # Default target not computed yet -- fall back to the
                 # raw test signal rather than requiring smooth() first.
                 data = exp.to_dense(chrom, which="test",
                                     as_h5array=True, batch_size=batch_size)
                 base_name = "test"
+                owns_data = True
             else:
                 if data_name not in ana:
                     raise KeyError(
@@ -1992,14 +2013,18 @@ class MethPrintAnalysis:
             name = sorted_name if sorted_name is not None \
                 else f"{base_name}_sorted"
 
-            order, link_mat = utils.compute_linkage(
-                data, metric=metric, method=method, batch_size=batch_size,
-                dir=tmp_dir, fill_nan=fill_nan)
-            if isinstance(data, H5Array):
-                sorted_data = data.reorder_rows(order, dir=tmp_dir,
-                                                batch_size=batch_size)
-            else:
-                sorted_data = data.iloc[order]
+            try:
+                order, link_mat = utils.compute_linkage(
+                    data, metric=metric, method=method,
+                    batch_size=batch_size, dir=tmp_dir, fill_nan=fill_nan)
+                if isinstance(data, H5Array):
+                    sorted_data = data.reorder_rows(order, dir=tmp_dir,
+                                                    batch_size=batch_size)
+                else:
+                    sorted_data = data.iloc[order]
+            finally:
+                if owns_data:
+                    data.close()
             exp.analysis[chrom][name] = sorted_data
             if store_link_mat:
                 lname = link_mat_name if link_mat_name is not None \

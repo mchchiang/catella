@@ -3,7 +3,7 @@
 # A high-level interface for processing methylation footprinting data and
 # running simulations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -819,7 +819,14 @@ def plot_energy(dataset : SimDataset, *,
                         out_file=out_file, show=show)
 
 
-def plot_methmap(data : H5Array | pd.DataFrame | np.ndarray, *,
+def plot_methmap(data : H5Array | pd.DataFrame | np.ndarray | None = None, *,
+                 exp : MethPrintExperiment | None = None,
+                 chrom : str | None = None,
+                 raw_which : str | None = None,
+                 mols : int | Sequence[int] | None = None,
+                 mask_name : str | None = None,
+                 max_rows : int | None = None,
+                 downsample_how : str = "mean",
                  vmin : float | None = None,
                  vmax : float | None = None,
                  cmap : str | None = None,
@@ -830,17 +837,41 @@ def plot_methmap(data : H5Array | pd.DataFrame | np.ndarray, *,
     """
     Plot a methylation heatmap.
 
-    Plots `data` at full resolution -- for large data, downsample it
-    yourself first (`utils.downsample`, works uniformly for `H5Array`,
-    `pd.DataFrame`, or `np.ndarray`) and pass the reduced result.
+    Plots `data` at full resolution -- for large data, pass `max_rows`
+    to downsample first, or downsample it yourself (`utils.downsample`,
+    works uniformly for `H5Array`, `pd.DataFrame`, or `np.ndarray`) and
+    pass the reduced result.
 
     Parameters
     ----------
-    data : H5Array, pd.DataFrame, or np.ndarray
+    data : H5Array, pd.DataFrame, or np.ndarray, optional
         Dense signal matrix to plot (rows=molecules, columns=bp
         position), e.g. `exp.analysis[chrom]["meth_prob"]`,
         `exp.analysis[chrom]["test_smoothed"]`, or the result of
-        `MethPrintExperiment.to_dense()`.
+        `MethPrintExperiment.to_dense()`. Required unless `exp`,
+        `chrom`, and `raw_which` are given instead.
+    exp : MethPrintExperiment, optional
+        Experiment to pull raw data from. Must be given together with
+        `chrom` and `raw_which`, and not combined with `data`.
+    chrom : str, optional
+        Chromosome to plot, when using `exp`/`raw_which`.
+    raw_which : {"test", "unmeth", "meth"}, optional
+        Which raw table to plot, when using `exp`/`chrom`. Calls
+        `exp.to_dense(chrom, which=raw_which, mols=mols,
+        mask_name=mask_name)` internally.
+    mols : int or sequence of int, optional
+        Molecule index/indices to include, when using `exp`/`chrom`/
+        `raw_which`. See `MethPrintExperiment.to_dense`.
+    mask_name : str, optional
+        Dropout mask name to apply, when using `exp`/`chrom`/
+        `raw_which`. See `MethPrintExperiment.to_dense`.
+    max_rows : int, optional
+        If given, `data` is downsampled to at most this many rows (via
+        `utils.downsample`) before plotting.
+    downsample_how : {"mean", "sum", "min", "max", "stride"},
+        default "mean"
+        How to collapse rows when `max_rows` is given. See
+        `utils.downsample`.
     vmin : float, optional
         Lower bound for the color scale. If None, inferred from
         `data`.
@@ -863,9 +894,19 @@ def plot_methmap(data : H5Array | pd.DataFrame | np.ndarray, *,
     show : bool, default True
         Whether to display the figure using the active plotting
         backend.
+
+    Raises
+    ------
+    ValueError
+        If neither `data` nor all of `exp`/`chrom`/`raw_which` are
+        given, or if `data` is combined with any of `exp`/`chrom`/
+        `raw_which`/`mols`/`mask_name`.
     """
     methplot = MethPlot()
-    methplot.plot_methmap(data, vmin=vmin, vmax=vmax, cmap=cmap,
+    methplot.plot_methmap(data, exp=exp, chrom=chrom, raw_which=raw_which,
+                          mols=mols, mask_name=mask_name,
+                          max_rows=max_rows, downsample_how=downsample_how,
+                          vmin=vmin, vmax=vmax, cmap=cmap,
                           cbar_label=cbar_label, out_file=out_file,
                           link_mat=link_mat, show=show)
 

@@ -8,6 +8,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import scipy.cluster.hierarchy as sch
 from matplotlib.colors import Normalize
+from catella import utils
 
 # Row-count threshold above which plot_methmap() warns, since it plots
 # data at full resolution -- downsample first (utils.downsample) to
@@ -60,7 +61,14 @@ class MethPlot:
         return wrapper
 
     @_apply_style
-    def plot_methmap(self, data, *,
+    def plot_methmap(self, data=None, *,
+                     exp=None,
+                     chrom : str | None = None,
+                     raw_which : str | None = None,
+                     mols=None,
+                     mask_name : str | None = None,
+                     max_rows : int | None = None,
+                     downsample_how : str = "mean",
                      vmin : float | None = None,
                      vmax : float | None = None,
                      cmap : str | None = None,
@@ -71,18 +79,43 @@ class MethPlot:
         """
         Plot a methylation heatmap.
 
-        Plots `data` at full resolution -- for large data, downsample
-        it yourself first (`utils.downsample`, works uniformly for
-        `H5Array`, `pd.DataFrame`, or `np.ndarray`) and pass the
-        reduced result.
+        Plots `data` at full resolution -- for large data, pass
+        `max_rows` to downsample first, or downsample it yourself
+        (`utils.downsample`, works uniformly for `H5Array`,
+        `pd.DataFrame`, or `np.ndarray`) and pass the reduced result.
 
         Parameters
         ----------
-        data : H5Array, pd.DataFrame, or np.ndarray
+        data : H5Array, pd.DataFrame, or np.ndarray, optional
             Dense signal matrix to plot (rows=molecules, columns=bp
             position), e.g. `exp.analysis[chrom]["meth_prob"]`,
             `exp.analysis[chrom]["test_smoothed"]`, or the result of
-            `MethPrintExperiment.to_dense()`.
+            `MethPrintExperiment.to_dense()`. Required unless `exp`,
+            `chrom`, and `raw_which` are given instead.
+        exp : MethPrintExperiment, optional
+            Experiment to pull raw data from. Must be given together
+            with `chrom` and `raw_which`, and not combined with `data`.
+        chrom : str, optional
+            Chromosome to plot, when using `exp`/`raw_which`.
+        raw_which : {"test", "unmeth", "meth"}, optional
+            Which raw table to plot, when using `exp`/`chrom`. Calls
+            `exp.to_dense(chrom, which=raw_which, mols=mols,
+            mask_name=mask_name)` internally.
+        mols : int or sequence of int, optional
+            Molecule index/indices to include, when using `exp`/
+            `chrom`/`raw_which`. See `MethPrintExperiment.to_dense`.
+        mask_name : str, optional
+            Dropout mask name to apply, when using `exp`/`chrom`/
+            `raw_which`. See `MethPrintExperiment.to_dense`.
+        max_rows : int, optional
+            If given, `data` is downsampled to at most this many rows
+            (via `utils.downsample`) before plotting. Applied after
+            `data`/`raw_which` resolution and before the
+            `_PLOT_WARN_ROWS` check.
+        downsample_how : {"mean", "sum", "min", "max", "stride"},
+            default "mean"
+            How to collapse rows when `max_rows` is given. See
+            `utils.downsample`.
         vmin : float, optional
             Lower bound for the color scale. If None, inferred from
             `data`.
@@ -105,61 +138,95 @@ class MethPlot:
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
+        Raises
+        ------
+        ValueError
+            If neither `data` nor all of `exp`/`chrom`/`raw_which` are
+            given, or if `data` is combined with any of `exp`/`chrom`/
+            `raw_which`/`mols`/`mask_name`.
+
         Warns
         -----
         UserWarning
             If `data` has more than `_PLOT_WARN_ROWS` rows, since it is
-            plotted at full resolution. Downsample first (`utils.downsample`)
-            to avoid it.
+            plotted at full resolution. Pass `max_rows`, or downsample
+            first (`utils.downsample`), to avoid it.
         """
-        nrow = data.shape[0]
-        if nrow > _PLOT_WARN_ROWS:
-            warnings.warn(
-                f"Plotting {nrow} rows at full resolution; this may be "
-                "slow and memory-intensive. Consider downsampling first "
-                "(utils.downsample).", stacklevel=2)
+        raw_data = None
+        if data is None:
+            if exp is None or chrom is None or raw_which is None:
+                raise ValueError(
+                    "Provide either 'data', or all of 'exp', 'chrom', "
+                    "and 'raw_which'.")
+            data = exp.to_dense(chrom, which=raw_which, mols=mols,
+                                mask_name=mask_name)
+            raw_data = data
+        elif (exp is not None or chrom is not None
+              or raw_which is not None or mols is not None
+              or mask_name is not None):
+            raise ValueError(
+                "'exp'/'chrom'/'raw_which'/'mols'/'mask_name' cannot "
+                "be combined with 'data'.")
 
-        matrix = np.asarray(data)
-        nrow, ncol = matrix.shape
-        norm = Normalize(vmin=vmin, vmax=vmax)
-        cmap_obj = plt.get_cmap(cmap if cmap is not None else self.cmap)
-        cmap_obj = cmap_obj.copy()
-        cmap_obj.set_bad(self.nan_color)
+        try:
+            if max_rows is not None:
+                data = utils.downsample(data, max_rows,
+                                        how=downsample_how)
 
-        if link_mat is not None:
-            fig, ax = plt.subplots(
-                ncols=3, gridspec_kw={"width_ratios": [5, 1, 0.25]})
-            hm_ax, dend_ax, cbar_ax = ax
-        else:
-            fig, ax = plt.subplots(
-                ncols=2, gridspec_kw={"width_ratios": [20, 1]})
-            hm_ax, cbar_ax = ax
+            nrow = data.shape[0]
+            if nrow > _PLOT_WARN_ROWS:
+                warnings.warn(
+                    f"Plotting {nrow} rows at full resolution; this may "
+                    "be slow and memory-intensive. Consider passing "
+                    "'max_rows', or downsampling first "
+                    "(utils.downsample).", stacklevel=2)
 
-        im = hm_ax.imshow(matrix, cmap=cmap_obj, norm=norm, aspect="auto",
-                          origin="lower", interpolation="none",
-                          extent=[0, ncol, 0, nrow])
-        hm_ax.set_xlabel("Position [bp]")
-        hm_ax.set_ylabel("Molecule index")
+            matrix = np.asarray(data)
+            nrow, ncol = matrix.shape
+            norm = Normalize(vmin=vmin, vmax=vmax)
+            cmap_obj = plt.get_cmap(cmap if cmap is not None else self.cmap)
+            cmap_obj = cmap_obj.copy()
+            cmap_obj.set_bad(self.nan_color)
 
-        if link_mat is not None:
-            sch.dendrogram(link_mat, orientation="right", ax=dend_ax,
-                           no_labels=True, link_color_func=lambda x: "black")
-            dend_ax.axis("off")
+            if link_mat is not None:
+                fig, ax = plt.subplots(
+                    ncols=3, gridspec_kw={"width_ratios": [5, 1, 0.25]})
+                hm_ax, dend_ax, cbar_ax = ax
+            else:
+                fig, ax = plt.subplots(
+                    ncols=2, gridspec_kw={"width_ratios": [20, 1]})
+                hm_ax, cbar_ax = ax
 
-        # cbar_ax is always the rightmost column, so the colorbar
-        # appears to the right of the dendrogram when one is shown.
-        cbar = fig.colorbar(im, cax=cbar_ax)
-        cbar.set_label(cbar_label, rotation=270, labelpad=15)
+            im = hm_ax.imshow(matrix, cmap=cmap_obj, norm=norm,
+                              aspect="auto", origin="lower",
+                              interpolation="none",
+                              extent=[0, ncol, 0, nrow])
+            hm_ax.set_xlabel("Position [bp]")
+            hm_ax.set_ylabel("Molecule index")
 
-        fig.tight_layout()
+            if link_mat is not None:
+                sch.dendrogram(link_mat, orientation="right", ax=dend_ax,
+                               no_labels=True,
+                               link_color_func=lambda x: "black")
+                dend_ax.axis("off")
 
-        if show: plt.show()
+            # cbar_ax is always the rightmost column, so the colorbar
+            # appears to the right of the dendrogram when one is shown.
+            cbar = fig.colorbar(im, cax=cbar_ax)
+            cbar.set_label(cbar_label, rotation=270, labelpad=15)
 
-        if out_file is not None:
-            out_file = Path(out_file)
-            out_dir = out_file.parents[0]
-            out_dir.mkdir(exist_ok=True, parents=True)
-            fig.savefig(out_file)
+            fig.tight_layout()
+
+            if show: plt.show()
+
+            if out_file is not None:
+                out_file = Path(out_file)
+                out_dir = out_file.parents[0]
+                out_dir.mkdir(exist_ok=True, parents=True)
+                fig.savefig(out_file)
+        finally:
+            if raw_data is not None:
+                raw_data.close()
 
     @_apply_style
     def plot_dropout_ecdf(self, dropout_fractions, chrom, *,

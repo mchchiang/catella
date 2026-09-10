@@ -113,7 +113,7 @@ def load_raw(*, chromsize : str | Path,
 
 def compute_empirical_prob(exp : MethPrintExperiment, *,
                out_file : str | Path | None = None,
-               binsize : int = 147,
+               lnuc : int = 147,
                prob_name : str = "meth_prob",
                clip_low : float = 0.1,
                clip_high : float = 99.9,
@@ -140,9 +140,9 @@ def compute_empirical_prob(exp : MethPrintExperiment, *,
     out_file : str or Path, optional
         Path where the processed `exp` will be saved. If None, the
         result is only mutated in-memory.
-    binsize : int, default 147
-        The genomic window size (in base pairs) used for data aggregation. The
-        default value corresponds to the typical DNA footprint of a nucleosome.
+    lnuc : int, default 147
+        Nucleosome footprint size (bp): the rolling-average smoothing
+        window size.
     prob_name : str, default "meth_prob"
         The key used to store the resulting methylation probabilities
         in `exp.analysis`.
@@ -189,7 +189,7 @@ def compute_empirical_prob(exp : MethPrintExperiment, *,
 
     # Smooth and normalize the data - compute methylation probability
     ana = MethPrintAnalysis()
-    ana.empirical_prob(exp=exp, binsize=binsize, prob_name=prob_name,
+    ana.empirical_prob(exp=exp, lnuc=lnuc, prob_name=prob_name,
                        clip_low=clip_low, clip_high=clip_high,
                        norm_by_strand=norm_by_strand, fill_edge=fill_edge,
                        batch_size=batch_size,

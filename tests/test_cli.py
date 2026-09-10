@@ -271,12 +271,12 @@ class TestComputeEmpiricalProb:
         cli_out = tmp_path / "cli_exp.h5"
         result = runner.invoke(app, ["compute_empirical_prob",
                                      str(raw_file), "--out-file",
-                                     str(cli_out), "--binsize", "5"])
+                                     str(cli_out), "--lnuc", "5"])
         assert result.exit_code == 0, result.output
 
         expected = catella.load_raw(chromsize=chromsize, test_file=test_file,
                                     max_nmol=3, seed=7)
-        catella.compute_empirical_prob(exp=expected, binsize=5)
+        catella.compute_empirical_prob(exp=expected, lnuc=5)
 
         got = MethPrintExperiment.load(cli_out)
         np.testing.assert_allclose(
@@ -296,7 +296,7 @@ class TestComputeEmpiricalProb:
         assert load_result.exit_code == 0, load_result.output
 
         result = runner.invoke(app, ["compute_empirical_prob",
-                                     str(raw_file), "--binsize", "5"])
+                                     str(raw_file), "--lnuc", "5"])
         assert result.exit_code == 0, result.output
 
         reloaded = MethPrintExperiment.load(raw_file)
@@ -317,7 +317,7 @@ class TestComputeEmpiricalProb:
         cli_out = tmp_path / "cli_exp.h5"
         result = runner.invoke(app, ["compute_empirical_prob",
                                      str(raw_file), "--out-file",
-                                     str(cli_out), "--binsize", "5",
+                                     str(cli_out), "--lnuc", "5",
                                      "--prob-name", "custom_prob"])
         assert result.exit_code == 0, result.output
 
@@ -341,14 +341,14 @@ class TestComputeEmpiricalProb:
         cli_out = tmp_path / "cli_exp.h5"
         result = runner.invoke(app, ["compute_empirical_prob",
                                      str(raw_file), "--out-file",
-                                     str(cli_out), "--binsize", "5",
+                                     str(cli_out), "--lnuc", "5",
                                      "--fill-edge", "0.5",
                                      "--seed", "9"])
         assert result.exit_code == 0, result.output
 
         expected = catella.load_raw(chromsize=chromsize, test_file=test_file,
                                     max_nmol=3, seed=7)
-        catella.compute_empirical_prob(exp=expected, binsize=5,
+        catella.compute_empirical_prob(exp=expected, lnuc=5,
                                        fill_edge=0.5, seed=9)
 
         got = MethPrintExperiment.load(cli_out)
@@ -517,7 +517,7 @@ class TestRun:
         _write_chromsize(chromsize, {"chr1": 30})
         exp_file = tmp_path / "exp.h5"
         exp = catella.load_raw(chromsize=chromsize, test_file=test_file)
-        catella.compute_empirical_prob(exp=exp, out_file=exp_file, binsize=5)
+        catella.compute_empirical_prob(exp=exp, out_file=exp_file, lnuc=5)
 
         settings_file = tmp_path / "settings.json"
         _write_settings_json(settings_file)
@@ -605,7 +605,7 @@ class TestDownsample:
         _write_chromsize(chromsize, {"chr1": 20})
         exp_file = tmp_path / "exp.h5"
         exp = catella.load_raw(chromsize=chromsize, test_file=test_file)
-        catella.compute_empirical_prob(exp=exp, out_file=exp_file, binsize=5)
+        catella.compute_empirical_prob(exp=exp, out_file=exp_file, lnuc=5)
         exp = MethPrintExperiment.load(exp_file)
         expected = utils.downsample(
             exp.analysis["chr1"]["meth_prob"], 2, how="mean")
@@ -649,7 +649,7 @@ class TestSortByLinkage:
         _write_chromsize(chromsize, {"chr1": 20})
         exp_file = tmp_path / "exp.h5"
         exp = catella.load_raw(chromsize=chromsize, test_file=test_file)
-        catella.compute_empirical_prob(exp=exp, out_file=exp_file, binsize=5)
+        catella.compute_empirical_prob(exp=exp, out_file=exp_file, lnuc=5)
         exp = MethPrintExperiment.load(exp_file)
         meth_prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
         order, _ = utils.compute_linkage(meth_prob)
@@ -700,7 +700,7 @@ class TestSortByLinkage:
         _write_chromsize(chromsize, {"chr1": 20, "chr2": 20})
         exp_file = tmp_path / "exp.h5"
         exp = catella.load_raw(chromsize=chromsize, test_file=test_file)
-        catella.compute_empirical_prob(exp=exp, out_file=exp_file, binsize=5)
+        catella.compute_empirical_prob(exp=exp, out_file=exp_file, lnuc=5)
 
         result = runner.invoke(app, [
             "sort_by_linkage", str(exp_file), "--kind", "experiment",
@@ -860,7 +860,7 @@ class TestPlotMethmap:
         _write_chromsize(chromsize, {"chr1": 20})
         exp_file = tmp_path / "exp.h5"
         exp = catella.load_raw(chromsize=chromsize, test_file=test_file)
-        catella.compute_empirical_prob(exp=exp, out_file=exp_file, binsize=5)
+        catella.compute_empirical_prob(exp=exp, out_file=exp_file, lnuc=5)
         exp = MethPrintExperiment.load(exp_file)
         MethPrintAnalysis().sort_by_linkage(exp=exp, data_name="meth_prob")
         exp.save(overwrite=True)
@@ -882,7 +882,7 @@ class TestPlotMethmap:
         _write_chromsize(chromsize, {"chr1": 20})
         exp_file = tmp_path / "exp.h5"
         exp = catella.load_raw(chromsize=chromsize, test_file=test_file)
-        catella.compute_empirical_prob(exp=exp, out_file=exp_file, binsize=5)
+        catella.compute_empirical_prob(exp=exp, out_file=exp_file, lnuc=5)
         out_file = tmp_path / "methmap_cmap.png"
 
         result = runner.invoke(app, [
@@ -900,7 +900,7 @@ class TestPlotMethmap:
         _write_chromsize(chromsize, {"chr1": 20})
         exp_file = tmp_path / "exp.h5"
         exp = catella.load_raw(chromsize=chromsize, test_file=test_file)
-        catella.compute_empirical_prob(exp=exp, out_file=exp_file, binsize=5)
+        catella.compute_empirical_prob(exp=exp, out_file=exp_file, lnuc=5)
         out_file = tmp_path / "methmap_cbar_label.png"
 
         result = runner.invoke(app, [

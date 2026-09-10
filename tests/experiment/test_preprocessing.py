@@ -96,7 +96,7 @@ class TestSmooth:
     def test_output_shape(self):
         exp = _make_experiment(nmol=5, nbp=8)
         ana = MethPrintAnalysis()
-        ana.smooth(binsize=3, exp=exp, batch_size=100)
+        ana.smooth(lnuc=3, exp=exp, batch_size=100)
         arr = exp.analysis["chr1"]["test_smoothed"]
         assert isinstance(arr, H5Array)
         assert arr.shape == (5, 8)
@@ -105,8 +105,8 @@ class TestSmooth:
         exp_a = _make_experiment(nmol=7, nbp=12)
         exp_b = _make_experiment(nmol=7, nbp=12)
         ana = MethPrintAnalysis()
-        ana.smooth(binsize=3, exp=exp_a, batch_size=1000)
-        ana.smooth(binsize=3, exp=exp_b, batch_size=2)
+        ana.smooth(lnuc=3, exp=exp_a, batch_size=1000)
+        ana.smooth(lnuc=3, exp=exp_b, batch_size=2)
 
         for key in ("test_smoothed", "meth_smoothed", "unmeth_smoothed"):
             a = exp_a.analysis["chr1"][key].to_numpy()
@@ -116,16 +116,16 @@ class TestSmooth:
     def test_nan_method_interior_only(self):
         # Valid data at pos 1, 2, 5; interior gap at 3, 4 (bounded by
         # valid data on both sides); edge gaps at 0 (leading) and 6
-        # (trailing). binsize=1 keeps res identical to the raw pivot so
+        # (trailing). lnuc=1 keeps res identical to the raw pivot so
         # gap locations are exact.
         exp_mean = _make_single_mol_experiment(
             positions=[1, 2, 5], values=[0.0, 0.4, 1.0], nbp=7)
         exp_interp = _make_single_mol_experiment(
             positions=[1, 2, 5], values=[0.0, 0.4, 1.0], nbp=7)
         ana = MethPrintAnalysis()
-        ana.smooth(binsize=1, exp=exp_mean, nan_method="mean",
+        ana.smooth(lnuc=1, exp=exp_mean, nan_method="mean",
                   fill_edge=0.0, batch_size=100)
-        ana.smooth(binsize=1, exp=exp_interp, nan_method="interpolate",
+        ana.smooth(lnuc=1, exp=exp_interp, nan_method="interpolate",
                   fill_edge=0.0, batch_size=100)
         row_mean = exp_mean.analysis["chr1"]["test_smoothed"].to_numpy()[0]
         row_interp = exp_interp.analysis["chr1"]["test_smoothed"].to_numpy()[0]
@@ -146,7 +146,7 @@ class TestSmooth:
         exp = _make_single_mol_experiment(
             positions=[1, 2, 5], values=[0.0, 0.4, 1.0], nbp=7)
         ana = MethPrintAnalysis()
-        ana.smooth(binsize=1, exp=exp, nan_method="none", batch_size=100)
+        ana.smooth(lnuc=1, exp=exp, nan_method="none", batch_size=100)
         row = exp.analysis["chr1"]["test_smoothed"].to_numpy()[0]
         assert np.isnan(row[[0, 3, 4, 6]]).all()
         np.testing.assert_allclose(row[[1, 2, 5]], [0.0, 0.4, 1.0])
@@ -157,19 +157,19 @@ class TestSmooth:
         ana = MethPrintAnalysis()
 
         exp_nan = make()
-        ana.smooth(binsize=1, exp=exp_nan, nan_method="interpolate",
+        ana.smooth(lnuc=1, exp=exp_nan, nan_method="interpolate",
                   fill_edge=np.nan, batch_size=100)
         row_nan = exp_nan.analysis["chr1"]["test_smoothed"].to_numpy()[0]
         assert np.isnan(row_nan[0]) and np.isnan(row_nan[6])
 
         exp_lit = make()
-        ana.smooth(binsize=1, exp=exp_lit, nan_method="interpolate",
+        ana.smooth(lnuc=1, exp=exp_lit, nan_method="interpolate",
                   fill_edge=0.5, batch_size=100)
         row_lit = exp_lit.analysis["chr1"]["test_smoothed"].to_numpy()[0]
         np.testing.assert_allclose(row_lit[[0, 6]], [0.5, 0.5])
 
         exp_avg = make()
-        ana.smooth(binsize=1, exp=exp_avg, nan_method="interpolate",
+        ana.smooth(lnuc=1, exp=exp_avg, nan_method="interpolate",
                   fill_edge="mean", batch_size=100)
         row_avg = exp_avg.analysis["chr1"]["test_smoothed"].to_numpy()[0]
         # Mean of all non-edge values after interior interpolation
@@ -184,7 +184,7 @@ class TestSmooth:
         exp = _make_experiment(nmol=3, nbp=6)
         ana = MethPrintAnalysis()
         with pytest.raises(ValueError):
-            ana.smooth(binsize=2, exp=exp, nan_method="bogus",
+            ana.smooth(lnuc=2, exp=exp, nan_method="bogus",
                       batch_size=100)
 
     def test_fill_edge_out_of_range_raises(self):
@@ -192,14 +192,14 @@ class TestSmooth:
             positions=[1, 2, 5], values=[0.0, 0.4, 1.0], nbp=7)
         ana = MethPrintAnalysis()
         with pytest.raises(ValueError):
-            ana.smooth(binsize=1, exp=exp, fill_edge=1.5, batch_size=100)
+            ana.smooth(lnuc=1, exp=exp, fill_edge=1.5, batch_size=100)
 
     def test_exp_accepted_positionally(self):
         exp_kw = _make_experiment(nmol=5, nbp=8)
         exp_pos = _make_experiment(nmol=5, nbp=8)
         ana = MethPrintAnalysis()
-        ana.smooth(exp_kw, binsize=3, batch_size=100)
-        ana.smooth(exp_pos, binsize=3, batch_size=100)
+        ana.smooth(exp_kw, lnuc=3, batch_size=100)
+        ana.smooth(exp_pos, lnuc=3, batch_size=100)
         np.testing.assert_array_equal(
             exp_kw.analysis["chr1"]["test_smoothed"].to_numpy(),
             exp_pos.analysis["chr1"]["test_smoothed"].to_numpy())
@@ -209,7 +209,7 @@ class TestEmpiricalProb:
     def test_output_in_unit_range(self):
         exp = _make_experiment(nmol=6, nbp=10)
         ana = MethPrintAnalysis()
-        ana.empirical_prob(exp=exp, binsize=3, batch_size=100,
+        ana.empirical_prob(exp=exp, lnuc=3, batch_size=100,
                       percentile_sample_size=1000, fill_edge=0.5)
         prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
         assert prob.shape == (6, 10)
@@ -220,10 +220,10 @@ class TestEmpiricalProb:
         exp_a = _make_experiment(nmol=8, nbp=10)
         exp_b = _make_experiment(nmol=8, nbp=10)
         ana = MethPrintAnalysis()
-        ana.empirical_prob(exp=exp_a, binsize=3, batch_size=1000,
+        ana.empirical_prob(exp=exp_a, lnuc=3, batch_size=1000,
                       percentile_sample_size=1000,
                       norm_by_strand=norm_by_strand, seed=0)
-        ana.empirical_prob(exp=exp_b, binsize=3, batch_size=2,
+        ana.empirical_prob(exp=exp_b, lnuc=3, batch_size=2,
                       percentile_sample_size=1000,
                       norm_by_strand=norm_by_strand, seed=0)
         a = exp_a.analysis["chr1"]["meth_prob"].to_numpy()
@@ -233,7 +233,7 @@ class TestEmpiricalProb:
     def test_no_controls_skips_normalization(self):
         exp = _make_experiment(nmol=4, nbp=6, with_controls=False)
         ana = MethPrintAnalysis()
-        ana.empirical_prob(exp=exp, binsize=2, batch_size=100,
+        ana.empirical_prob(exp=exp, lnuc=2, batch_size=100,
                       percentile_sample_size=1000, fill_edge=0.5)
         prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
         assert prob.shape == (4, 6)
@@ -254,9 +254,9 @@ class TestEmpiricalProb:
         exp_wide = _make_comparability_experiment(test_values=wide_values)
 
         ana = MethPrintAnalysis()
-        ana.empirical_prob(exp=exp_narrow, binsize=1, batch_size=100,
+        ana.empirical_prob(exp=exp_narrow, lnuc=1, batch_size=100,
                       percentile_sample_size=1000)
-        ana.empirical_prob(exp=exp_wide, binsize=1, batch_size=100,
+        ana.empirical_prob(exp=exp_wide, lnuc=1, batch_size=100,
                       percentile_sample_size=1000)
 
         prob_narrow = exp_narrow.analysis["chr1"]["meth_prob"].to_numpy()
@@ -296,7 +296,7 @@ class TestEmpiricalProb:
         exp = MethPrintExperiment._create(_raw_data={"chr1": raw})
 
         ana = MethPrintAnalysis()
-        ana.empirical_prob(exp=exp, binsize=1, batch_size=100,
+        ana.empirical_prob(exp=exp, lnuc=1, batch_size=100,
                       percentile_sample_size=1000)
         prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
         # Positions 1 and 2 are fully covered by both control molecules
@@ -308,7 +308,7 @@ class TestEmpiricalProb:
                                unmapped_test_mol=0)
         ana = MethPrintAnalysis()
         with pytest.raises(ValueError):
-            ana.empirical_prob(exp=exp, binsize=2, batch_size=100,
+            ana.empirical_prob(exp=exp, lnuc=2, batch_size=100,
                           norm_by_strand=True)
 
     def test_missing_positions_become_neutral_probability(self):
@@ -319,32 +319,32 @@ class TestEmpiricalProb:
         exp = _make_single_mol_experiment(
             positions=[1, 2, 5], values=[0.0, 0.4, 1.0], nbp=7)
         ana = MethPrintAnalysis()
-        ana.empirical_prob(exp=exp, binsize=1, batch_size=100,
+        ana.empirical_prob(exp=exp, lnuc=1, batch_size=100,
                       percentile_sample_size=1000)
         prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
         missing = [0, 3, 4, 6]
         assert np.all(prob[0, missing] == 0.5)
 
-    def test_binsize_none_uses_cached_smooth_call(self):
+    def test_lnuc_none_uses_cached_smooth_call(self):
         exp = _make_experiment(nmol=6, nbp=10)
         ana = MethPrintAnalysis()
-        ana.smooth(binsize=3, exp=exp, nan_method="none", batch_size=100)
-        ana.empirical_prob(exp=exp, binsize=None, batch_size=100,
+        ana.smooth(lnuc=3, exp=exp, nan_method="none", batch_size=100)
+        ana.empirical_prob(exp=exp, lnuc=None, batch_size=100,
                       percentile_sample_size=1000)
         prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
         assert prob.shape == (6, 10)
 
-    def test_binsize_none_raises_without_cache(self):
+    def test_lnuc_none_raises_without_cache(self):
         exp = _make_experiment(nmol=6, nbp=10)
         ana = MethPrintAnalysis()
         with pytest.raises(ValueError):
-            ana.empirical_prob(exp=exp, binsize=None, batch_size=100,
+            ana.empirical_prob(exp=exp, lnuc=None, batch_size=100,
                           percentile_sample_size=1000)
 
     def test_exp_accepted_positionally(self):
         exp = _make_experiment(nmol=6, nbp=10)
         ana = MethPrintAnalysis()
-        ana.empirical_prob(exp, binsize=3, batch_size=100,
+        ana.empirical_prob(exp, lnuc=3, batch_size=100,
                       percentile_sample_size=1000)
         assert "meth_prob" in exp.analysis["chr1"]
 
@@ -353,17 +353,17 @@ class TestEmpiricalProbResmooth:
     def test_fill_edge_applies_to_trailing_probability_columns(self):
         exp = _make_experiment(nmol=6, nbp=10)
         ana = MethPrintAnalysis()
-        ana.empirical_prob(exp=exp, binsize=3, fill_edge=0.5,
+        ana.empirical_prob(exp=exp, lnuc=3, fill_edge=0.5,
                       batch_size=100, percentile_sample_size=1000)
         prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
         assert np.all(prob[:, -2:] == 0.5)
 
-    def test_mismatched_binsize_raises(self):
+    def test_mismatched_lnuc_raises(self):
         exp = _make_experiment(nmol=6, nbp=10)
         ana = MethPrintAnalysis()
-        ana.smooth(binsize=3, exp=exp, nan_method="none", batch_size=100)
+        ana.smooth(lnuc=3, exp=exp, nan_method="none", batch_size=100)
         with pytest.raises(ValueError):
-            ana.empirical_prob(exp=exp, binsize=5, batch_size=100,
+            ana.empirical_prob(exp=exp, lnuc=5, batch_size=100,
                           percentile_sample_size=1000)
 
     def test_reusing_smooth_not_run_with_nan_method_none_raises(self):
@@ -372,24 +372,24 @@ class TestEmpiricalProbResmooth:
         # caught as a mismatch.
         exp = _make_experiment(nmol=6, nbp=10)
         ana = MethPrintAnalysis()
-        ana.smooth(binsize=3, exp=exp, batch_size=100)
+        ana.smooth(lnuc=3, exp=exp, batch_size=100)
         with pytest.raises(ValueError):
-            ana.empirical_prob(exp=exp, binsize=3, batch_size=100,
+            ana.empirical_prob(exp=exp, lnuc=3, batch_size=100,
                           percentile_sample_size=1000)
 
     def test_resmooth_recomputes_and_updates_params(self):
         exp = _make_experiment(nmol=6, nbp=10)
         ana = MethPrintAnalysis()
-        ana.smooth(binsize=3, exp=exp, nan_method="none", batch_size=100)
-        ana.empirical_prob(exp=exp, binsize=5, resmooth=True,
+        ana.smooth(lnuc=3, exp=exp, nan_method="none", batch_size=100)
+        ana.empirical_prob(exp=exp, lnuc=5, resmooth=True,
                       batch_size=100, percentile_sample_size=1000)
         assert exp.global_analysis[
-            "smoothed_params"]["binsize"].iloc[0] == 5
+            "smoothed_params"]["lnuc"].iloc[0] == 5
 
     def test_reuse_smooth_called_with_nan_method_none(self):
         exp = _make_experiment(nmol=6, nbp=10)
         ana = MethPrintAnalysis()
-        ana.smooth(binsize=3, exp=exp, nan_method="none", batch_size=100)
+        ana.smooth(lnuc=3, exp=exp, nan_method="none", batch_size=100)
         ana.empirical_prob(exp=exp, batch_size=100,
                       percentile_sample_size=1000)
         prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
@@ -402,9 +402,9 @@ class TestEmpiricalProbResmooth:
         exp.analysis["chr1"]["test_dropout_mask"] = pd.DataFrame(
             {"keep": [True, False, True, True]})
         ana = MethPrintAnalysis()
-        ana.smooth(binsize=2, exp=exp, nan_method="none",
+        ana.smooth(lnuc=2, exp=exp, nan_method="none",
                   batch_size=100)  # no mask_name
-        ana.empirical_prob(exp=exp, binsize=2, batch_size=100,
+        ana.empirical_prob(exp=exp, lnuc=2, batch_size=100,
                       percentile_sample_size=1000,
                       mask_name="dropout_mask")
         prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
@@ -417,7 +417,7 @@ class TestMaskName:
         exp.analysis["chr1"]["test_dropout_mask"] = pd.DataFrame(
             {"keep": [True, False, True, False]})
         ana = MethPrintAnalysis()
-        ana.smooth(binsize=2, exp=exp, batch_size=100,
+        ana.smooth(lnuc=2, exp=exp, batch_size=100,
                   mask_name="dropout_mask")
         arr = exp.analysis["chr1"]["test_smoothed"].to_numpy()
         assert np.isnan(arr[1]).all()
@@ -430,7 +430,7 @@ class TestMaskName:
         exp.analysis["chr1"]["test_dropout_mask"] = pd.DataFrame(
             {"keep": [True, False, True, False]})
         ana = MethPrintAnalysis()
-        ana.smooth(binsize=2, exp=exp, batch_size=100)
+        ana.smooth(lnuc=2, exp=exp, batch_size=100)
         arr = exp.analysis["chr1"]["test_smoothed"].to_numpy()
         assert not np.isnan(arr[1]).all()
 
@@ -438,7 +438,7 @@ class TestMaskName:
         exp = _make_experiment(nmol=4, nbp=6, with_controls=False)
         ana = MethPrintAnalysis()
         with pytest.raises(KeyError):
-            ana.smooth(binsize=2, exp=exp, batch_size=100,
+            ana.smooth(lnuc=2, exp=exp, batch_size=100,
                       mask_name="nonexistent")
 
     def test_meth_prob_masks_test_output(self):
@@ -446,7 +446,7 @@ class TestMaskName:
         exp.analysis["chr1"]["test_dropout_mask"] = pd.DataFrame(
             {"keep": [True, False, True, False]})
         ana = MethPrintAnalysis()
-        ana.empirical_prob(exp=exp, binsize=2, batch_size=100,
+        ana.empirical_prob(exp=exp, lnuc=2, batch_size=100,
                       percentile_sample_size=1000,
                       mask_name="dropout_mask")
         prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
@@ -462,12 +462,12 @@ class TestMaskName:
         exp.analysis["chr1"]["test_dropout_mask"] = pd.DataFrame(
             {"keep": [True, False, True, True]})
         ana = MethPrintAnalysis()
-        ana.smooth(binsize=2, exp=exp, nan_method="none",
+        ana.smooth(lnuc=2, exp=exp, nan_method="none",
                   batch_size=100)  # no mask_name
         smoothed_before = exp.analysis["chr1"]["test_smoothed"].to_numpy()
         assert not np.isnan(smoothed_before[1]).all()
 
-        ana.empirical_prob(exp=exp, binsize=2, batch_size=100,
+        ana.empirical_prob(exp=exp, lnuc=2, batch_size=100,
                       percentile_sample_size=1000,
                       mask_name="dropout_mask")
         prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
@@ -517,10 +517,10 @@ class TestMaskName:
             _raw_data={"chr1": raw_ref})
 
         ana = MethPrintAnalysis()
-        ana.empirical_prob(exp=exp_masked, binsize=1, batch_size=100,
+        ana.empirical_prob(exp=exp_masked, lnuc=1, batch_size=100,
                       percentile_sample_size=1000,
                       mask_name="dropout_mask")
-        ana.empirical_prob(exp=exp_reference, binsize=1, batch_size=100,
+        ana.empirical_prob(exp=exp_reference, lnuc=1, batch_size=100,
                       percentile_sample_size=1000)
 
         prob_masked = exp_masked.analysis["chr1"]["meth_prob"].to_numpy()
@@ -532,8 +532,8 @@ class TestSaveLoadRoundTrip:
     def test_h5array_analysis_round_trips(self, tmp_path):
         exp = _make_experiment(nmol=5, nbp=8)
         ana = MethPrintAnalysis()
-        ana.smooth(binsize=2, exp=exp, nan_method="none", batch_size=2)
-        ana.empirical_prob(exp=exp, binsize=2, batch_size=2,
+        ana.smooth(lnuc=2, exp=exp, nan_method="none", batch_size=2)
+        ana.empirical_prob(exp=exp, lnuc=2, batch_size=2,
                       percentile_sample_size=1000)
 
         expected = exp.analysis["chr1"]["meth_prob"].to_numpy()
@@ -548,7 +548,7 @@ class TestSaveLoadRoundTrip:
     def test_save_rejects_same_path_as_backing_h5array(self, tmp_path):
         exp = _make_experiment(nmol=3, nbp=4)
         ana = MethPrintAnalysis()
-        ana.smooth(binsize=2, exp=exp, batch_size=2)
+        ana.smooth(lnuc=2, exp=exp, batch_size=2)
 
         out_file = tmp_path / "experiment.h5"
         exp.save(out_file)
@@ -577,7 +577,7 @@ class TestSortByLinkage:
     def test_default_prefers_smoothed_once_available(self):
         exp = _make_experiment(nmol=5, nbp=8)
         ana = MethPrintAnalysis()
-        ana.smooth(binsize=2, exp=exp, batch_size=2, fill_edge="mean")
+        ana.smooth(lnuc=2, exp=exp, batch_size=2, fill_edge="mean")
 
         ana.sort_by_linkage(exp=exp, batch_size=2)
         assert "test_smoothed_sorted" in exp.analysis["chr1"]
@@ -588,7 +588,7 @@ class TestSortByLinkage:
         # sort_by_linkage must not choke on it.
         exp = _make_experiment(nmol=5, nbp=8)
         ana = MethPrintAnalysis()
-        ana.smooth(binsize=3, exp=exp, batch_size=2)
+        ana.smooth(lnuc=3, exp=exp, batch_size=2)
 
         ana.sort_by_linkage(exp=exp, batch_size=2)
         assert "test_smoothed_sorted" in exp.analysis["chr1"]
@@ -596,8 +596,8 @@ class TestSortByLinkage:
     def test_meth_prob_data_name_works(self):
         exp = _make_experiment(nmol=5, nbp=8)
         ana = MethPrintAnalysis()
-        ana.smooth(binsize=2, exp=exp, nan_method="none", batch_size=2)
-        ana.empirical_prob(exp=exp, binsize=2, batch_size=2,
+        ana.smooth(lnuc=2, exp=exp, nan_method="none", batch_size=2)
+        ana.empirical_prob(exp=exp, lnuc=2, batch_size=2,
                       percentile_sample_size=1000)
 
         ana.sort_by_linkage(exp=exp, data_name="meth_prob", batch_size=2)
@@ -635,7 +635,7 @@ class TestSortByLinkage:
     def test_sorted_rows_are_a_permutation_of_original_rows(self):
         exp = _make_experiment(nmol=6, nbp=8)
         ana = MethPrintAnalysis()
-        ana.smooth(binsize=2, exp=exp, batch_size=2, fill_edge="mean")
+        ana.smooth(lnuc=2, exp=exp, batch_size=2, fill_edge="mean")
         original = exp.analysis["chr1"]["test_smoothed"].to_numpy()
 
         ana.sort_by_linkage(exp=exp, batch_size=2)
@@ -648,7 +648,7 @@ class TestSortByLinkage:
     def test_works_with_legacy_dataframe_source(self):
         exp = _make_experiment(nmol=5, nbp=6)
         ana = MethPrintAnalysis()
-        ana.smooth(binsize=2, exp=exp, batch_size=2, fill_edge="mean")
+        ana.smooth(lnuc=2, exp=exp, batch_size=2, fill_edge="mean")
         smoothed = exp.analysis["chr1"]["test_smoothed"].to_numpy()
         exp.analysis["chr1"]["test_df"] = pd.DataFrame(smoothed)
 
@@ -681,7 +681,7 @@ class TestSortByLinkage:
     def test_fill_nan_avoids_crash_on_all_nan_row(self):
         exp = _make_experiment(nmol=5, nbp=6)
         ana = MethPrintAnalysis()
-        ana.smooth(binsize=2, exp=exp, batch_size=2, fill_edge="mean")
+        ana.smooth(lnuc=2, exp=exp, batch_size=2, fill_edge="mean")
         smoothed = exp.analysis["chr1"]["test_smoothed"].to_numpy()
         smoothed[0, :] = np.nan
         exp.analysis["chr1"]["test_nan"] = pd.DataFrame(smoothed)

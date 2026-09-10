@@ -237,10 +237,10 @@ class TestComputeEmpiricalProb:
         exp = _make_experiment(nmol=6, nbp=10, seed=3)
         expected = _make_experiment(nmol=6, nbp=10, seed=3)
 
-        catella.compute_empirical_prob(exp=exp, binsize=3)
+        catella.compute_empirical_prob(exp=exp, lnuc=3)
 
         ana = MethPrintAnalysis()
-        ana.empirical_prob(exp=expected, binsize=3)
+        ana.empirical_prob(exp=expected, lnuc=3)
 
         np.testing.assert_allclose(
             exp.analysis["chr1"]["meth_prob"].to_numpy(),
@@ -248,7 +248,7 @@ class TestComputeEmpiricalProb:
 
     def test_exp_accepted_positionally(self):
         exp = _make_experiment(nmol=6, nbp=10, seed=3)
-        catella.compute_empirical_prob(exp, binsize=3)
+        catella.compute_empirical_prob(exp, lnuc=3)
         assert "meth_prob" in exp.analysis["chr1"]
 
     def test_mask_name_excludes_dropped_molecules(self):
@@ -257,10 +257,10 @@ class TestComputeEmpiricalProb:
         exp.analysis["chr1"]["test_dropout_mask"] = pd.DataFrame(
             {"keep": keep})
 
-        catella.compute_empirical_prob(exp=exp, binsize=3,
+        catella.compute_empirical_prob(exp=exp, lnuc=3,
                                        mask_name="dropout_mask")
 
-        # Last binsize-1 columns have no full window to summarize and
+        # Last lnuc-1 columns have no full window to summarize and
         # are NaN regardless of masking; only check the filled columns.
         prob = exp.analysis["chr1"]["meth_prob"].to_numpy()[:, :10 - 3 + 1]
         assert np.isnan(prob[keep == 0]).all()
@@ -270,11 +270,11 @@ class TestComputeEmpiricalProb:
         exp = _make_experiment(nmol=6, nbp=10, seed=3)
         expected = _make_experiment(nmol=6, nbp=10, seed=3)
 
-        catella.compute_empirical_prob(exp=exp, binsize=3,
+        catella.compute_empirical_prob(exp=exp, lnuc=3,
                                        fill_edge=0.5, seed=7)
 
         ana = MethPrintAnalysis()
-        ana.empirical_prob(exp=expected, binsize=3, fill_edge=0.5, seed=7)
+        ana.empirical_prob(exp=expected, lnuc=3, fill_edge=0.5, seed=7)
 
         np.testing.assert_allclose(
             exp.analysis["chr1"]["meth_prob"].to_numpy(),

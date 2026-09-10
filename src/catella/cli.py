@@ -256,7 +256,9 @@ def compute_empirical_prob(
         Path, typer.Argument(help="Experiment HDF5 file", exists=True,
                              file_okay=True, dir_okay=False,
                              readable=True)],
-    binsize: Annotated[int, typer.Option(help="Window size (bp)")] = 147,
+    lnuc: Annotated[
+        int, typer.Option(help="Nucleosome footprint / window size "
+                          "(bp)")] = 147,
     prob_name: Annotated[
         str, typer.Option(help="Key for storing methylation "
                           "probabilities")] = "meth_prob",
@@ -295,7 +297,7 @@ def compute_empirical_prob(
     """
     exp = MethPrintExperiment.load(source_file)
     catella.compute_empirical_prob(
-        exp=exp, binsize=binsize, prob_name=prob_name,
+        exp=exp, lnuc=lnuc, prob_name=prob_name,
         clip_low=clip_low, clip_high=clip_high,
         norm_by_strand=norm_by_strand, fill_edge=fill_edge,
         batch_size=batch_size,

@@ -1083,7 +1083,7 @@ class MethPrintAnalysis:
     _EPSILON = np.finfo(float).eps  # Smallest float to avoid DivByZero
 
     def smooth(self, exp : MethPrintExperiment, *,
-               binsize : int,
+               lnuc : int,
                name : str = "smoothed",
                nan_method : str = "mean",
                fill_edge : float | str = np.nan,
@@ -1103,7 +1103,7 @@ class MethPrintAnalysis:
         ----------
         exp : MethPrintExperiment
             The experiment object containing raw data and analysis maps.
-        binsize : int
+        lnuc : int
             Window size in base pairs for the rolling average smoothing.
         name : str, default "smoothed"
             The suffix used to store the resulting array in `exp.analysis`.
@@ -1148,7 +1148,7 @@ class MethPrintAnalysis:
                              f"or 'none', got {nan_method!r}.")
 
         exp.global_analysis[f"{name}_params"] = pd.DataFrame([{
-            "binsize": binsize, "nan_method": nan_method,
+            "lnuc": lnuc, "nan_method": nan_method,
             "fill_edge": fill_edge, "mask_name": mask_name or ""}])
         tmp_dir = exp.resolve_tmp_dir()
         
@@ -1180,8 +1180,8 @@ class MethPrintAnalysis:
                 # Rolling mean centered by shifting and store the results
                 # in a left-aligned manner
                 res = df_piv.rolling(
-                    window=binsize, min_periods=1).mean().shift(
-                        -(binsize-1))
+                    window=lnuc, min_periods=1).mean().shift(
+                        -(lnuc-1))
 
                 # Interior nans (bounded by valid data on both sides) are
                 # filled per nan_method; interpolate() with
@@ -1231,7 +1231,7 @@ class MethPrintAnalysis:
                 
             
     def empirical_prob(self, exp : MethPrintExperiment, *,
-                  binsize : int | None = None,
+                  lnuc : int | None = None,
                   smoothed_name : str = "smoothed",
                   prob_name : str = "meth_prob",
                   clip_low : float = 0.1,
@@ -1261,7 +1261,7 @@ class MethPrintAnalysis:
         ----------
         exp : MethPrintExperiment
             The experiment object containing raw data and analysis maps.
-        binsize : int, optional
+        lnuc : int, optional
             Window size in base pairs used for the rolling average smoothing.
             If None, looked up from `exp.global_analysis[f"{smoothed_
             name}_params"]`, set by a previous `smooth` call under the
@@ -1291,7 +1291,7 @@ class MethPrintAnalysis:
             name}` already exists in `exp.analysis`. Smoothing always
             runs with `nan_method="none"` here (see `fill_edge`).
         fill_edge : float, default np.nan
-            Probability used to fill the trailing `binsize - 1`
+            Probability used to fill the trailing `lnuc - 1`
             positions, which have no full window -- mirrors
             `model_prob`'s `fill_edge`. Interior gaps are always
             filled with 0.5 (`logit(0.5) == 0`), the same neutral,
@@ -1321,9 +1321,9 @@ class MethPrintAnalysis:
         Raises
         ------
         ValueError
-            If `binsize` is not provided and no cached `binsize` exists.
+            If `lnuc` is not provided and no cached `lnuc` exists.
             If `test_{smoothed_name}` already exists and an
-            explicitly-given `binsize` does not match what was used to
+            explicitly-given `lnuc` does not match what was used to
             produce it, or it was not smoothed with `nan_method="none"`.
             If `norm_by_strand` is True but molecules with unmapped strands
             ('.') exist.
@@ -1370,7 +1370,7 @@ class MethPrintAnalysis:
 
         tmp_dir = exp.resolve_tmp_dir()
 
-        # Check for cached binsize, or perform (or re-verify) smoothing.
+        # Check for cached lnuc, or perform (or re-verify) smoothing.
         # Smoothing always runs with nan_method="none" here: this
         # method's own fill_edge (applied to the final probabilities
         # below) is the only missing-data handling in effect.
@@ -1379,22 +1379,22 @@ class MethPrintAnalysis:
         cached_params = exp.global_analysis.get(f"{smoothed_name}_params")
 
         if resmooth or not already_smoothed:
-            if binsize is None and cached_params is not None:
-                binsize = int(cached_params["binsize"].iloc[0])
-            if binsize is None:
-                raise ValueError("'binsize' must be specified if data are not "
+            if lnuc is None and cached_params is not None:
+                lnuc = int(cached_params["lnuc"].iloc[0])
+            if lnuc is None:
+                raise ValueError("'lnuc' must be specified if data are not "
                                  "already smoothed.")
-            self.smooth(binsize=binsize, exp=exp, name=smoothed_name,
+            self.smooth(lnuc=lnuc, exp=exp, name=smoothed_name,
                        nan_method="none", batch_size=batch_size,
                        mask_name=mask_name)
         elif cached_params is not None:
             row = cached_params.iloc[0]
             mismatched = []
-            if binsize is not None and binsize != int(row["binsize"]):
-                mismatched.append("binsize")
+            if lnuc is not None and lnuc != int(row["lnuc"]):
+                mismatched.append("lnuc")
             if row["nan_method"] != "none":
                 mismatched.append("nan_method")
-            # mask_name is *not* compared here: unlike binsize/
+            # mask_name is *not* compared here: unlike lnuc/
             # nan_method, it's reapplied fresh to the output on every
             # call via _apply_keep_mask below, regardless of what (if
             # any) mask_name smooth() itself used.
@@ -1405,10 +1405,10 @@ class MethPrintAnalysis:
                     "resmooth=True to recompute, or use a "
                     "different 'smoothed_name'.")
 
-        # binsize may still be unset if smoothing was skipped and the
+        # lnuc may still be unset if smoothing was skipped and the
         # caller didn't pass it; downstream code needs the real value.
-        if binsize is None and cached_params is not None:
-            binsize = int(cached_params["binsize"].iloc[0])
+        if lnuc is None and cached_params is not None:
+            lnuc = int(cached_params["lnuc"].iloc[0])
 
         rng = np.random.default_rng(seed)
 
@@ -1482,7 +1482,7 @@ class MethPrintAnalysis:
 
             # Normalize the data so that all values are between 0 and 1
             # Exclude trailing edge created by rolling window
-            end_idx = -(binsize-1) if binsize > 1 else None
+            end_idx = -(lnuc-1) if lnuc > 1 else None
 
             def normalized_sample(arr, strand_labels):
                 # Random subsample of an array's molecules, normalized
@@ -1551,7 +1551,7 @@ class MethPrintAnalysis:
                 # Interior gaps carry no evidence either way, so they
                 # are filled with 0.5 (logit(0.5) == 0), the same
                 # neutral value model_prob gives uninformative
-                # positions. The trailing binsize-1 columns have no
+                # positions. The trailing lnuc-1 columns have no
                 # full window at all and are filled with fill_edge
                 # instead, mirroring model_prob's own edge handling.
                 interior = prob[:, :end_idx]

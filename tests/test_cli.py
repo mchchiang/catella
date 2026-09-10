@@ -887,7 +887,7 @@ class TestPlotMethmap:
 
         result = runner.invoke(app, [
             "plot_methmap", str(exp_file), "chr1",
-            "--cmap", "viridis",
+            "--key", "meth_prob", "--cmap", "viridis",
             "--out-file", str(out_file), "--no-show"])
         assert result.exit_code == 0, result.output
         assert out_file.exists()
@@ -905,7 +905,44 @@ class TestPlotMethmap:
 
         result = runner.invoke(app, [
             "plot_methmap", str(exp_file), "chr1",
-            "--cbar-label", "Custom label",
+            "--key", "meth_prob", "--cbar-label", "Custom label",
             "--out-file", str(out_file), "--no-show"])
         assert result.exit_code == 0, result.output
         assert out_file.exists()
+
+    def test_with_raw_which(self, tmp_path):
+        rows = _make_test_rows(nmol=6, nbp=20)
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 20})
+        exp_file = tmp_path / "exp.h5"
+        exp = catella.load_raw(chromsize=chromsize, test_file=test_file)
+        exp.save(exp_file)
+        out_file = tmp_path / "methmap_raw_which.png"
+
+        result = runner.invoke(app, [
+            "plot_methmap", str(exp_file), "chr1",
+            "--raw-which", "test",
+            "--out-file", str(out_file), "--no-show"])
+        assert result.exit_code == 0, result.output
+        assert out_file.exists()
+
+    def test_key_and_raw_which_are_mutually_exclusive(self, tmp_path):
+        rows = _make_test_rows(nmol=6, nbp=20)
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 20})
+        exp_file = tmp_path / "exp.h5"
+        exp = catella.load_raw(chromsize=chromsize, test_file=test_file)
+        exp.save(exp_file)
+
+        result = runner.invoke(app, ["plot_methmap", str(exp_file), "chr1",
+                                     "--no-show"])
+        assert result.exit_code != 0
+
+        result = runner.invoke(app, [
+            "plot_methmap", str(exp_file), "chr1",
+            "--key", "meth_prob", "--raw-which", "test", "--no-show"])
+        assert result.exit_code != 0

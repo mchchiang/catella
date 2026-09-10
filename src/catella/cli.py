@@ -736,7 +736,24 @@ def plot_methmap(
                              readable=True)],
     chrom: Annotated[str, typer.Argument(help="Chromosome identifier")],
     key: Annotated[
-        str, typer.Option(help="Analysis key to plot")] = "meth_prob",
+        Optional[str], typer.Option(help="Analysis key to plot. "
+                                    "Mutually exclusive with "
+                                    "--raw-which")] = None,
+    raw_which: Annotated[
+        Optional[str], typer.Option(help="Raw data source ('test', "
+                                    "'unmeth', or 'meth') to plot "
+                                    "directly via to_dense(). Mutually "
+                                    "exclusive with --key")] = None,
+    mask_name: Annotated[
+        Optional[str], typer.Option(help="Dropout mask name to apply "
+                                    "when plotting via --raw-which (see "
+                                    "to_dense)")] = None,
+    max_rows: Annotated[
+        Optional[int], typer.Option(help="Downsample to at most this "
+                                    "many rows before plotting")] = None,
+    downsample_how: Annotated[
+        str, typer.Option(help="How to collapse rows when --max-rows "
+                          "is given")] = "mean",
     vmin: Annotated[
         Optional[float], typer.Option(help="Lower color scale bound")
     ] = None,
@@ -759,13 +776,21 @@ def plot_methmap(
     """
     Plot a methylation heatmap.
     """
+    if (key is None) == (raw_which is None):
+        raise typer.BadParameter(
+            "Specify exactly one of --key or --raw-which")
     exp = MethPrintExperiment.load(exp_file)
-    data = exp.analysis[chrom][key]
+    data = exp.analysis[chrom][key] if key is not None else None
     link_mat = exp.analysis[chrom][link_mat_name].to_numpy() \
         if link_mat_name is not None else None
-    catella.plot_methmap(data=data, vmin=vmin, vmax=vmax, cmap=cmap,
-                       cbar_label=cbar_label, out_file=out_file,
-                       link_mat=link_mat, show=show)
+    catella.plot_methmap(
+        data=data, exp=exp if raw_which is not None else None,
+        chrom=chrom if raw_which is not None else None,
+        raw_which=raw_which,
+        mask_name=mask_name if raw_which is not None else None,
+        max_rows=max_rows, downsample_how=downsample_how,
+        vmin=vmin, vmax=vmax, cmap=cmap, cbar_label=cbar_label,
+        out_file=out_file, link_mat=link_mat, show=show)
 
 
 # Click adapter of `app`, used by sphinx-click for the CLI reference docs.

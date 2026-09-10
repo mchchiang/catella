@@ -4,6 +4,7 @@ import matplotlib
 matplotlib.use("Agg")
 
 import warnings
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -42,9 +43,8 @@ def test_plot_methmap_smoke_across_input_types(methplot, tmp_path, kind):
     assert out_file.exists()
 
 
-def test_plot_methmap_end_to_end_with_to_dense(tmp_path):
-    nbp, nmol = 5, 30
-    rng = np.random.default_rng(3)
+def _raw_test_exp(nbp=5, nmol=30, seed=3):
+    rng = np.random.default_rng(seed)
     rows = [(m, p, float(rng.random())) for m in range(nmol)
            for p in rng.choice(nbp, size=3, replace=False)]
     df = pd.DataFrame(rows, columns=["mol_index", "pos", "mod_qual"])
@@ -56,12 +56,80 @@ def test_plot_methmap_end_to_end_with_to_dense(tmp_path):
         chrom="chr1", nbp=nbp, test_mol_id=mol_id, test_data=df,
         meth_mol_id=None, meth_data=None,
         unmeth_mol_id=None, unmeth_data=None)
-    exp = MethPrintExperiment._create(_raw_data={"chr1": raw})
+    return MethPrintExperiment._create(_raw_data={"chr1": raw})
 
+
+def test_plot_methmap_end_to_end_with_to_dense(tmp_path):
+    exp = _raw_test_exp()
     dense = exp.to_dense("chr1")
     out_file = tmp_path / "methmap.png"
     MethPlot().plot_methmap(dense, out_file=out_file, show=False)
     assert out_file.exists()
+
+
+def test_plot_methmap_with_raw_which(tmp_path):
+    exp = _raw_test_exp()
+    out_file = tmp_path / "methmap_raw_which.png"
+    MethPlot().plot_methmap(exp=exp, chrom="chr1", raw_which="test",
+                            out_file=out_file, show=False)
+    assert out_file.exists()
+
+
+def test_plot_methmap_raises_without_data_or_raw_which(methplot):
+    with pytest.raises(ValueError):
+        methplot.plot_methmap(show=False)
+
+
+def test_plot_methmap_raises_when_data_and_exp_combined(methplot):
+    exp = _raw_test_exp()
+    values = np.random.default_rng(1).random((5, 4))
+    with pytest.raises(ValueError):
+        methplot.plot_methmap(values, exp=exp, chrom="chr1",
+                              raw_which="test", show=False)
+
+
+def test_plot_methmap_mask_name_forwarded(tmp_path):
+    nbp, nmol = 5, 6
+    exp = _raw_test_exp(nbp=nbp, nmol=nmol)
+    keep = np.ones(nmol, dtype=bool)
+    keep[0] = False
+    exp.analysis["chr1"]["test_qc"] = pd.DataFrame({"keep": keep})
+
+    out_file = tmp_path / "methmap_mask_name.png"
+    MethPlot().plot_methmap(exp=exp, chrom="chr1", raw_which="test",
+                            mask_name="qc", out_file=out_file, show=False)
+    assert out_file.exists()
+
+
+def test_plot_methmap_max_rows_downsamples(methplot, monkeypatch):
+    import catella.experiment.plot as plot_module
+    monkeypatch.setattr(plot_module, "_PLOT_WARN_ROWS", 5)
+    values = np.random.default_rng(2).random((20, 3))
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        methplot.plot_methmap(values, max_rows=4, show=False)
+    assert not any(issubclass(w.category, UserWarning) for w in caught)
+
+
+def test_plot_methmap_raw_which_closes_scratch_file(tmp_path, monkeypatch):
+    exp = _raw_test_exp()
+    orig_to_dense = MethPrintExperiment.to_dense
+    paths = []
+
+    def spy_to_dense(self, *args, **kwargs):
+        arr = orig_to_dense(self, *args, **kwargs)
+        paths.append(arr.path)
+        return arr
+
+    monkeypatch.setattr(MethPrintExperiment, "to_dense", spy_to_dense)
+
+    out_file = tmp_path / "methmap_scratch.png"
+    MethPlot().plot_methmap(exp=exp, chrom="chr1", raw_which="test",
+                            out_file=out_file, show=False)
+    assert out_file.exists()
+    assert len(paths) == 1
+    assert not Path(paths[0]).exists()
 
 
 @pytest.mark.parametrize("kind", ["h5array", "dataframe", "ndarray"])

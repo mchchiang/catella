@@ -7,6 +7,7 @@ import warnings
 import weakref
 from collections import OrderedDict
 from collections.abc import Mapping as ABCMapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 from types import MappingProxyType
@@ -47,6 +48,10 @@ _DENSE_WARN_ROWS = 5000
 # e.g., EcoGII), 'CG' (CpG, e.g., M.SssI), 'GC' (GpC, e.g., M.CviPI).
 _VALID_MTASE = {"A", "CG", "GC"}
 
+# File extension -> pyarrow compression codec, for _decompress_once.
+_COMPRESSION_EXTS = {".gz": "gzip", ".bz2": "bz2", ".xz": "lzma",
+                     ".zst": "zstd"}
+
 
 def _normalize_mtase(mtase):
     """
@@ -79,6 +84,44 @@ def _normalize_mtase(mtase):
     if len(set(values)) != len(values):
         raise ValueError("Duplicate mtase values given.")
     return values
+
+
+def _decompress_once(data_file, tmp_dir):
+    """
+    Inflate a compressed raw data file once to a local scratch copy, so
+    later streamed passes over it do not each re-decompress it.
+
+    Parameters
+    ----------
+    data_file : str or pathlib.Path
+        The raw data file to be parsed. Only recognized compressed
+        extensions (see `_COMPRESSION_EXTS`) trigger decompression;
+        any other extension is left alone.
+    tmp_dir : str or pathlib.Path
+        Directory to create the scratch copy in.
+
+    Returns
+    -------
+    str or None
+        Path of the scratch copy, to be read from (in place of
+        `data_file`) and removed once done with it. None if
+        `data_file` was not a recognized compressed extension, so no
+        copy was made and `data_file` should be read directly.
+    """
+    codec = _COMPRESSION_EXTS.get(Path(data_file).suffix)
+    if codec is None:
+        return None
+
+    fd, scratch_path = tempfile.mkstemp(suffix=".tsv", dir=tmp_dir)
+    os.close(fd)
+    with pa.input_stream(str(data_file), compression=codec) as src, \
+            open(scratch_path, "wb") as dst:
+        while True:
+            chunk = src.read(64 * 1024 * 1024)
+            if not chunk:
+                break
+            dst.write(chunk)
+    return scratch_path
 
 
 def _resolve_modkit_schema(data_file, sep, colidx):
@@ -383,6 +426,104 @@ def _stream_rows_to_staging(data_file, header_names, name_for, sep,
                 "mod_code": group["mod_code"].to_numpy(),
             })
             appenders[chrom].append(out)
+
+
+def _ensure_chrom_data_group(graw, chrom, nbp, refseq_by_chrom):
+    """
+    Create a chromosome's `metadata` and `data` groups under `graw`.
+
+    Each chromosome is created at most once per private staging file,
+    so no idempotency check is needed here (unlike a shared file).
+
+    Returns
+    -------
+    h5py.Group
+        The new `data` group.
+    """
+    gchrom = graw.create_group(chrom)
+    gmeta = gchrom.create_group("metadata")
+    gmeta.attrs["chrom"] = chrom
+    gmeta.attrs["nbp"] = int(nbp)
+    seq = refseq_by_chrom.get(chrom)
+    if seq is not None:
+        dt = h5py.string_dtype(encoding="utf-8")
+        gmeta.create_dataset("refseq", data=seq, dtype=dt)
+    return gchrom.create_group("data")
+
+
+def _ingest_file(name, data_file, *, sep, colidx, chunk_size, block_size,
+                 sizes, full_sizes, wrap, refseq_by_chrom, mtase,
+                 ignore_strand, max_nmol, rng, tmp_dir):
+    """
+    Resolve, scan, and stream one raw data file into its own private
+    staging HDF5 file, independent of any other source file.
+
+    Used when more than one of `test_file`/`unmeth_file`/`meth_file`
+    is given to `MethPrintExperiment.load_raw`, so each file's read
+    can proceed with zero shared mutable state, whether called
+    sequentially or concurrently from a thread pool.
+
+    Parameters
+    ----------
+    name : str
+        Source name: `"test"`, `"unmeth"`, or `"meth"`.
+    rng : numpy.random.Generator or None
+        Independent per file; see `MethPrintExperiment.load_raw`'s
+        `seed` parameter.
+    tmp_dir : str or pathlib.Path
+        Directory for the private staging file and any decompression
+        scratch copy.
+    Other parameters are as in `MethPrintExperiment.load_raw`.
+
+    Returns
+    -------
+    name : str
+        Echoes the `name` argument.
+    chroms : set of str
+        Chromosomes found in the file, already filtered to `sizes`.
+    private_path : str
+        Path to the private staging file, to be merged and removed by
+        the caller.
+    """
+    print(f"Reading {data_file} ...")
+    scratch_path = _decompress_once(data_file, tmp_dir)
+    read_path = scratch_path or str(data_file)
+    try:
+        header_names, name_for = _resolve_modkit_schema(
+            read_path, sep, colidx)
+        mol_maps = _scan_accepted_mols(
+            read_path, header_names, name_for, sep, chunk_size,
+            block_size, max_nmol, rng)
+        # Chromosomes not covered by the chromsize table are silently
+        # dropped, matching the legacy inner merge
+        mol_maps = {c: m for c, m in mol_maps.items() if c in sizes}
+
+        dt = h5py.string_dtype(encoding="utf-8")
+        fd, private_path = tempfile.mkstemp(
+            suffix=f".{name}.h5", dir=tmp_dir)
+        os.close(fd)
+        with h5py.File(private_path, "w") as h5stream:
+            graw = h5stream.create_group("raw_data")
+            appenders = {}
+            for chrom, m in mol_maps.items():
+                gdata = _ensure_chrom_data_group(
+                    graw, chrom, sizes[chrom], refseq_by_chrom)
+                gdata.create_dataset(f"{name}_mol_id", data=m["mol_id"],
+                                     dtype=dt)
+                appenders[chrom] = h5_utils.AppendableDF(
+                    gdata, f"{name}_data", columns=list(_RAW_COLUMN_SPEC),
+                    dtypes=_RAW_COLUMN_SPEC)
+
+            _stream_rows_to_staging(
+                read_path, header_names, name_for, sep, chunk_size,
+                block_size, full_sizes, wrap, mol_maps, appenders,
+                refseq_by_chrom=refseq_by_chrom, mtase=mtase,
+                ignore_strand=ignore_strand)
+    finally:
+        if scratch_path is not None:
+            os.remove(scratch_path)
+
+    return name, set(mol_maps.keys()), private_path
 
 
 @utils.add_frozen_properties
@@ -913,7 +1054,8 @@ class MethPrintExperiment:
                  seed : int | None = None,
                  chunk_size : int = 1000000,
                  tmp_dir : str | Path | None = None,
-                 max_cached_chroms : int = 1) -> Self:
+                 max_cached_chroms : int = 1,
+                 nworker : int = 1) -> Self:
         """
         Create an experiment by processing raw sequencing data files.
 
@@ -924,7 +1066,9 @@ class MethPrintExperiment:
         never held in memory at once; raw data ends up in a staging
         HDF5 file and the returned experiment lazily loads it (see
         `load`), so not all chromosomes need to be resident in memory
-        either.
+        either. If more than one of `test_file`/`unmeth_file`/
+        `meth_file` is given, each is read fully independently (see
+        `nworker`) and merged afterward.
 
         Parameters
         ----------
@@ -968,7 +1112,8 @@ class MethPrintExperiment:
             Maximum number of molecules to extract for each chromosome.
         seed : int or None
             The seed for the random number generator selecting the molecules
-            if `max_nmol` is specified.
+            if `max_nmol` is specified. Downsampling is independent per
+            data file when more than one is given.
         chunk_size : int, default 1000000
             Approximate number of rows read (and held in memory) per
             streamed chunk.
@@ -984,6 +1129,10 @@ class MethPrintExperiment:
         max_cached_chroms : int, default 1
             Maximum number of chromosomes' raw data kept in memory at
             once by the returned experiment (forwarded to `load`).
+        nworker : int, default 1
+            Maximum number of threads used to read test/unmeth/meth
+            files concurrently. Only relevant when more than one is
+            given; never changes the resulting data.
 
         Returns
         -------
@@ -1051,9 +1200,6 @@ class MethPrintExperiment:
                         f"{chrom!r} ({len(seq)}) does not match its "
                         f"chromsize length ({full_sizes[chrom]}).")
 
-        # Random generator for downsampling
-        rng = None if max_nmol is None else np.random.default_rng(seed)
-
         sep = "\t"
         block_size = 64 * 1024 * 1024
 
@@ -1063,16 +1209,11 @@ class MethPrintExperiment:
 
         dt = h5py.string_dtype(encoding="utf-8")
 
-        def ensure_chrom_data_group(graw, chrom, nbp):
-            gchrom = graw.require_group(chrom)
-            if "metadata" not in gchrom:
-                gmeta = gchrom.create_group("metadata")
-                gmeta.attrs["chrom"] = chrom
-                gmeta.attrs["nbp"] = int(nbp)
-                seq = refseq_by_chrom.get(chrom)
-                if seq is not None:
-                    gmeta.create_dataset("refseq", data=seq, dtype=dt)
-            return gchrom.require_group("data")
+        files = [("test", test_file)]
+        if unmeth_file is not None:
+            files.append(("unmeth", unmeth_file))
+        if meth_file is not None:
+            files.append(("meth", meth_file))
 
         try:
             with h5py.File(tmp_file, "w") as h5stream:
@@ -1084,48 +1225,107 @@ class MethPrintExperiment:
                 h5stream.attrs["wrap"] = bool(wrap)
                 h5stream.attrs["ignore_strand"] = bool(ignore_strand)
 
-                files = [("test", test_file)]
-                if unmeth_file is not None:
-                    files.append(("unmeth", unmeth_file))
-                if meth_file is not None:
-                    files.append(("meth", meth_file))
-
-                test_chroms = None
-                for name, data_file in files:
+                if len(files) == 1:
+                    # Single source: write directly into h5stream.
+                    name, data_file = files[0]
+                    rng = (None if max_nmol is None
+                          else np.random.default_rng(seed))
                     print(f"Reading {data_file} ...")
-                    header_names, name_for = _resolve_modkit_schema(
-                        data_file, sep, colidx)
-                    mol_maps = _scan_accepted_mols(
-                        data_file, header_names, name_for, sep, chunk_size,
-                        block_size, max_nmol, rng)
-                    # Chromosomes not covered by the chromsize table are
-                    # silently dropped, matching the legacy inner merge
-                    mol_maps = {c: m for c, m in mol_maps.items()
-                               if c in sizes}
+                    scratch_path = _decompress_once(data_file, tmp_dir)
+                    read_path = scratch_path or str(data_file)
+                    try:
+                        header_names, name_for = _resolve_modkit_schema(
+                            read_path, sep, colidx)
+                        mol_maps = _scan_accepted_mols(
+                            read_path, header_names, name_for, sep,
+                            chunk_size, block_size, max_nmol, rng)
+                        mol_maps = {c: m for c, m in mol_maps.items()
+                                   if c in sizes}
 
-                    if name == "test":
-                        test_chroms = set(mol_maps.keys())
-                    elif set(mol_maps.keys()) != test_chroms:
-                        raise ValueError(
-                            "Different number of chromosomes in test and "
-                            f"{name} datasets")
+                        appenders = {}
+                        for chrom, m in mol_maps.items():
+                            gdata = _ensure_chrom_data_group(
+                                graw, chrom, sizes[chrom], refseq_by_chrom)
+                            gdata.create_dataset(
+                                f"{name}_mol_id", data=m["mol_id"],
+                                dtype=dt)
+                            appenders[chrom] = h5_utils.AppendableDF(
+                                gdata, f"{name}_data",
+                                columns=list(_RAW_COLUMN_SPEC),
+                                dtypes=_RAW_COLUMN_SPEC)
 
-                    appenders = {}
-                    for chrom, m in mol_maps.items():
-                        gdata = ensure_chrom_data_group(
-                            graw, chrom, sizes[chrom])
-                        gdata.create_dataset(f"{name}_mol_id",
-                                             data=m["mol_id"], dtype=dt)
-                        appenders[chrom] = h5_utils.AppendableDF(
-                            gdata, f"{name}_data",
-                            columns=list(_RAW_COLUMN_SPEC),
-                            dtypes=_RAW_COLUMN_SPEC)
+                        _stream_rows_to_staging(
+                            read_path, header_names, name_for, sep,
+                            chunk_size, block_size, full_sizes, wrap,
+                            mol_maps, appenders,
+                            refseq_by_chrom=refseq_by_chrom, mtase=mtase,
+                            ignore_strand=ignore_strand)
+                    finally:
+                        if scratch_path is not None:
+                            os.remove(scratch_path)
+                else:
+                    # Multiple sources: ingest each independently
+                    # (optionally concurrently) into its own private
+                    # staging file, then merge.
+                    if max_nmol is None:
+                        rngs = [None] * len(files)
+                    else:
+                        rngs = [np.random.default_rng(child) for child in
+                                np.random.SeedSequence(seed).spawn(
+                                    len(files))]
 
-                    _stream_rows_to_staging(
-                        data_file, header_names, name_for, sep, chunk_size,
-                        block_size, full_sizes, wrap, mol_maps, appenders,
+                    ingest_kwargs = dict(
+                        sep=sep, colidx=colidx, chunk_size=chunk_size,
+                        block_size=block_size, sizes=sizes,
+                        full_sizes=full_sizes, wrap=wrap,
                         refseq_by_chrom=refseq_by_chrom, mtase=mtase,
-                        ignore_strand=ignore_strand)
+                        ignore_strand=ignore_strand, max_nmol=max_nmol,
+                        tmp_dir=tmp_dir)
+                    tasks = [(name, data_file, rngs[i])
+                            for i, (name, data_file) in enumerate(files)]
+
+                    if nworker > 1:
+                        with ThreadPoolExecutor(
+                                max_workers=min(nworker,
+                                                len(tasks))) as executor:
+                            ingested = list(executor.map(
+                                lambda t: _ingest_file(
+                                    t[0], t[1], rng=t[2], **ingest_kwargs),
+                                tasks))
+                    else:
+                        ingested = [
+                            _ingest_file(name, data_file, rng=rng,
+                                        **ingest_kwargs)
+                            for name, data_file, rng in tasks]
+
+                    test_chroms = ingested[0][1]
+                    for name, chroms_found, _ in ingested[1:]:
+                        if chroms_found != test_chroms:
+                            raise ValueError(
+                                "Different number of chromosomes in test "
+                                f"and {name} datasets")
+
+                    handles = {name: h5py.File(path, "r")
+                              for name, _, path in ingested}
+                    try:
+                        for chrom in sorted(test_chroms):
+                            gchrom = graw.create_group(chrom)
+                            handles["test"].copy(
+                                f"raw_data/{chrom}/metadata", gchrom,
+                                name="metadata")
+                            gdata = gchrom.create_group("data")
+                            for name, _, _ in ingested:
+                                src = handles[name][
+                                    f"raw_data/{chrom}/data"]
+                                src.copy(f"{name}_mol_id", gdata,
+                                        name=f"{name}_mol_id")
+                                src.copy(f"{name}_data", gdata,
+                                        name=f"{name}_data")
+                    finally:
+                        for h in handles.values():
+                            h.close()
+                    for _, _, path in ingested:
+                        os.remove(path)
         except BaseException:
             shutil.rmtree(tmp_dir, ignore_errors=True)
             raise

@@ -823,21 +823,21 @@ def plot_energy(dataset : SimDataset, *,
                         out_file=out_file, show=show)
 
 
-def plot_methmap(data : H5Array | pd.DataFrame | np.ndarray | None = None, *,
-                 exp : MethPrintExperiment | None = None,
-                 chrom : str | None = None,
-                 raw_which : str | None = None,
-                 mols : int | Sequence[int] | None = None,
-                 mask_name : str | None = None,
-                 max_rows : int | None = None,
-                 downsample_how : str = "mean",
-                 vmin : float | None = None,
-                 vmax : float | None = None,
-                 cmap : str | None = None,
-                 cbar_label : str = "Methylation prob.",
-                 out_file : str | Path | None = None,
-                 link_mat : np.ndarray | None = None,
-                 show : bool = True):
+def plot_meth_prob(data : H5Array | pd.DataFrame | np.ndarray | None = None, *,
+                   exp : MethPrintExperiment | None = None,
+                   chrom : str | None = None,
+                   raw_which : str | None = None,
+                   mols : int | Sequence[int] | None = None,
+                   mask_name : str | None = None,
+                   max_rows : int | None = None,
+                   downsample_how : str = "mean",
+                   vmin : float | None = None,
+                   vmax : float | None = None,
+                   cmap : str | None = None,
+                   cbar_label : str = "Methylation prob.",
+                   out_file : str | Path | None = None,
+                   link_mat : np.ndarray | None = None,
+                   show : bool = True):
     """
     Plot a methylation heatmap.
 
@@ -907,12 +907,12 @@ def plot_methmap(data : H5Array | pd.DataFrame | np.ndarray | None = None, *,
         `raw_which`/`mols`/`mask_name`.
     """
     methplot = MethPlot()
-    methplot.plot_methmap(data, exp=exp, chrom=chrom, raw_which=raw_which,
-                          mols=mols, mask_name=mask_name,
-                          max_rows=max_rows, downsample_how=downsample_how,
-                          vmin=vmin, vmax=vmax, cmap=cmap,
-                          cbar_label=cbar_label, out_file=out_file,
-                          link_mat=link_mat, show=show)
+    methplot.plot_meth_prob(data, exp=exp, chrom=chrom, raw_which=raw_which,
+                            mols=mols, mask_name=mask_name,
+                            max_rows=max_rows, downsample_how=downsample_how,
+                            vmin=vmin, vmax=vmax, cmap=cmap,
+                            cbar_label=cbar_label, out_file=out_file,
+                            link_mat=link_mat, show=show)
 
 
 def downsample(*, data : H5Array | pd.DataFrame | np.ndarray,
@@ -923,7 +923,7 @@ def downsample(*, data : H5Array | pd.DataFrame | np.ndarray,
     Collapse rows of a dense array to at most `max_rows`.
 
     Public wrapper around `utils.downsample`, for reducing plot data
-    ahead of `plot_occup`/`plot_methmap`.
+    ahead of `plot_occup`/`plot_meth_prob`.
 
     Parameters
     ----------

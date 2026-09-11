@@ -1965,7 +1965,7 @@ class MethPrintAnalysis:
         dict of str to np.ndarray
             A mapping from chromosome name to that chromosome's
             linkage matrix, for optional immediate use (e.g. passing
-            straight to `MethPlot.plot_methmap`'s `link_mat` argument).
+            straight to `MethPlot.plot_meth_prob`'s `link_mat` argument).
             Also persisted into `exp.analysis[chrom][link_mat_name]` if
             `store_link_mat` is True.
 

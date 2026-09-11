@@ -733,8 +733,8 @@ def plot_energy(
                       out_file=out_file, show=show)
 
 
-@app.command(name="plot_methmap")
-def plot_methmap(
+@app.command(name="plot_meth_prob")
+def plot_meth_prob(
     exp_file: Annotated[
         Path, typer.Argument(help="Experiment HDF5 file", exists=True,
                              file_okay=True, dir_okay=False,
@@ -788,7 +788,7 @@ def plot_methmap(
     data = exp.analysis[chrom][key] if key is not None else None
     link_mat = exp.analysis[chrom][link_mat_name].to_numpy() \
         if link_mat_name is not None else None
-    catella.plot_methmap(
+    catella.plot_meth_prob(
         data=data, exp=exp if raw_which is not None else None,
         chrom=chrom if raw_which is not None else None,
         raw_which=raw_which,

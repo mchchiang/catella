@@ -29,7 +29,7 @@ def methplot():
 
 
 @pytest.mark.parametrize("kind", ["h5array", "dataframe", "ndarray"])
-def test_plot_methmap_smoke_across_input_types(methplot, tmp_path, kind):
+def test_plot_meth_prob_smoke_across_input_types(methplot, tmp_path, kind):
     values = np.random.default_rng(0).random((5, 4))
     if kind == "h5array":
         data = _h5array(values)
@@ -39,7 +39,7 @@ def test_plot_methmap_smoke_across_input_types(methplot, tmp_path, kind):
         data = values
 
     out_file = tmp_path / "plot.png"
-    methplot.plot_methmap(data, out_file=out_file, show=False)
+    methplot.plot_meth_prob(data, out_file=out_file, show=False)
     assert out_file.exists()
 
 
@@ -59,36 +59,36 @@ def _raw_test_exp(nbp=5, nmol=30, seed=3):
     return MethPrintExperiment._create(_raw_data={"chr1": raw})
 
 
-def test_plot_methmap_end_to_end_with_to_dense(tmp_path):
+def test_plot_meth_prob_end_to_end_with_to_dense(tmp_path):
     exp = _raw_test_exp()
     dense = exp.to_dense("chr1")
     out_file = tmp_path / "methmap.png"
-    MethPlot().plot_methmap(dense, out_file=out_file, show=False)
+    MethPlot().plot_meth_prob(dense, out_file=out_file, show=False)
     assert out_file.exists()
 
 
-def test_plot_methmap_with_raw_which(tmp_path):
+def test_plot_meth_prob_with_raw_which(tmp_path):
     exp = _raw_test_exp()
     out_file = tmp_path / "methmap_raw_which.png"
-    MethPlot().plot_methmap(exp=exp, chrom="chr1", raw_which="test",
+    MethPlot().plot_meth_prob(exp=exp, chrom="chr1", raw_which="test",
                             out_file=out_file, show=False)
     assert out_file.exists()
 
 
-def test_plot_methmap_raises_without_data_or_raw_which(methplot):
+def test_plot_meth_prob_raises_without_data_or_raw_which(methplot):
     with pytest.raises(ValueError):
-        methplot.plot_methmap(show=False)
+        methplot.plot_meth_prob(show=False)
 
 
-def test_plot_methmap_raises_when_data_and_exp_combined(methplot):
+def test_plot_meth_prob_raises_when_data_and_exp_combined(methplot):
     exp = _raw_test_exp()
     values = np.random.default_rng(1).random((5, 4))
     with pytest.raises(ValueError):
-        methplot.plot_methmap(values, exp=exp, chrom="chr1",
+        methplot.plot_meth_prob(values, exp=exp, chrom="chr1",
                               raw_which="test", show=False)
 
 
-def test_plot_methmap_mask_name_forwarded(tmp_path):
+def test_plot_meth_prob_mask_name_forwarded(tmp_path):
     nbp, nmol = 5, 6
     exp = _raw_test_exp(nbp=nbp, nmol=nmol)
     keep = np.ones(nmol, dtype=bool)
@@ -96,23 +96,23 @@ def test_plot_methmap_mask_name_forwarded(tmp_path):
     exp.analysis["chr1"]["test_qc"] = pd.DataFrame({"keep": keep})
 
     out_file = tmp_path / "methmap_mask_name.png"
-    MethPlot().plot_methmap(exp=exp, chrom="chr1", raw_which="test",
+    MethPlot().plot_meth_prob(exp=exp, chrom="chr1", raw_which="test",
                             mask_name="qc", out_file=out_file, show=False)
     assert out_file.exists()
 
 
-def test_plot_methmap_max_rows_downsamples(methplot, monkeypatch):
+def test_plot_meth_prob_max_rows_downsamples(methplot, monkeypatch):
     import catella.experiment.plot as plot_module
     monkeypatch.setattr(plot_module, "_PLOT_WARN_ROWS", 5)
     values = np.random.default_rng(2).random((20, 3))
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        methplot.plot_methmap(values, max_rows=4, show=False)
+        methplot.plot_meth_prob(values, max_rows=4, show=False)
     assert not any(issubclass(w.category, UserWarning) for w in caught)
 
 
-def test_plot_methmap_raw_which_closes_scratch_file(tmp_path, monkeypatch):
+def test_plot_meth_prob_raw_which_closes_scratch_file(tmp_path, monkeypatch):
     exp = _raw_test_exp()
     orig_to_dense = MethPrintExperiment.to_dense
     paths = []
@@ -125,7 +125,7 @@ def test_plot_methmap_raw_which_closes_scratch_file(tmp_path, monkeypatch):
     monkeypatch.setattr(MethPrintExperiment, "to_dense", spy_to_dense)
 
     out_file = tmp_path / "methmap_scratch.png"
-    MethPlot().plot_methmap(exp=exp, chrom="chr1", raw_which="test",
+    MethPlot().plot_meth_prob(exp=exp, chrom="chr1", raw_which="test",
                             out_file=out_file, show=False)
     assert out_file.exists()
     assert len(paths) == 1
@@ -133,7 +133,7 @@ def test_plot_methmap_raw_which_closes_scratch_file(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("kind", ["h5array", "dataframe", "ndarray"])
-def test_plot_methmap_with_link_mat_draws_dendrogram(
+def test_plot_meth_prob_with_link_mat_draws_dendrogram(
         methplot, tmp_path, kind):
     values = np.random.default_rng(4).random((8, 3))
     if kind == "h5array":
@@ -147,12 +147,12 @@ def test_plot_methmap_with_link_mat_draws_dendrogram(
     sorted_values = values[order]
 
     out_file = tmp_path / "dendro.png"
-    methplot.plot_methmap(sorted_values, link_mat=link_mat,
+    methplot.plot_meth_prob(sorted_values, link_mat=link_mat,
                           out_file=out_file, show=False)
     assert out_file.exists()
 
 
-def test_plot_methmap_end_to_end_with_sort_by_linkage(tmp_path):
+def test_plot_meth_prob_end_to_end_with_sort_by_linkage(tmp_path):
     # size > nbp/2 guarantees any two molecules' covered positions
     # overlap (pigeonhole), avoiding the zero-overlap nan-distance
     # edge case for this smoke test.
@@ -176,42 +176,42 @@ def test_plot_methmap_end_to_end_with_sort_by_linkage(tmp_path):
     sorted_arr = exp.analysis["chr1"]["test_sorted"]
 
     out_file = tmp_path / "sorted_methmap.png"
-    MethPlot().plot_methmap(sorted_arr, link_mat=link_mats["chr1"],
+    MethPlot().plot_meth_prob(sorted_arr, link_mat=link_mats["chr1"],
                             out_file=out_file, show=False)
     assert out_file.exists()
 
 
-def test_plot_methmap_with_nan_values(methplot, tmp_path):
+def test_plot_meth_prob_with_nan_values(methplot, tmp_path):
     values = np.random.default_rng(8).random((5, 4))
     values[0, 0] = np.nan
     values[2, :] = np.nan
 
     out_file = tmp_path / "nan_methmap.png"
-    methplot.plot_methmap(values, out_file=out_file, show=False)
+    methplot.plot_meth_prob(values, out_file=out_file, show=False)
     assert out_file.exists()
 
 
-def test_plot_methmap_cmap_override_does_not_mutate_instance(
+def test_plot_meth_prob_cmap_override_does_not_mutate_instance(
         methplot, tmp_path):
     values = np.random.default_rng(9).random((5, 4))
 
     out_file = tmp_path / "override_methmap.png"
-    methplot.plot_methmap(values, cmap="viridis", out_file=out_file,
+    methplot.plot_meth_prob(values, cmap="viridis", out_file=out_file,
                           show=False)
     assert out_file.exists()
     assert methplot.cmap == "OrRd"
 
 
-def test_plot_methmap_warns_above_plot_warn_rows(methplot, monkeypatch):
+def test_plot_meth_prob_warns_above_plot_warn_rows(methplot, monkeypatch):
     import catella.experiment.plot as plot_module
     monkeypatch.setattr(plot_module, "_PLOT_WARN_ROWS", 5)
     values = np.random.default_rng(6).random((8, 3))
 
     with pytest.warns(UserWarning):
-        methplot.plot_methmap(values, show=False)
+        methplot.plot_meth_prob(values, show=False)
 
 
-def test_plot_methmap_no_warning_below_plot_warn_rows(methplot,
+def test_plot_meth_prob_no_warning_below_plot_warn_rows(methplot,
                                                        monkeypatch):
     import catella.experiment.plot as plot_module
     monkeypatch.setattr(plot_module, "_PLOT_WARN_ROWS", 100)
@@ -219,7 +219,7 @@ def test_plot_methmap_no_warning_below_plot_warn_rows(methplot,
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        methplot.plot_methmap(values, show=False)
+        methplot.plot_meth_prob(values, show=False)
     assert not any(issubclass(w.category, UserWarning) for w in caught)
 
 

@@ -10,7 +10,7 @@ import scipy.cluster.hierarchy as sch
 from matplotlib.colors import Normalize
 from catella import utils
 
-# Row-count threshold above which plot_methmap() warns, since it plots
+# Row-count threshold above which plot_meth_prob() warns, since it plots
 # data at full resolution -- downsample first (utils.downsample) to
 # avoid materializing/plotting more than this many rows.
 _PLOT_WARN_ROWS = 5000
@@ -61,21 +61,21 @@ class MethPlot:
         return wrapper
 
     @_apply_style
-    def plot_methmap(self, data=None, *,
-                     exp=None,
-                     chrom : str | None = None,
-                     raw_which : str | None = None,
-                     mols=None,
-                     mask_name : str | None = None,
-                     max_rows : int | None = None,
-                     downsample_how : str = "mean",
-                     vmin : float | None = None,
-                     vmax : float | None = None,
-                     cmap : str | None = None,
-                     cbar_label : str = "Methylation prob.",
-                     out_file : str | Path | None = None,
-                     link_mat : np.ndarray | None = None,
-                     show : bool = True):
+    def plot_meth_prob(self, data=None, *,
+                       exp=None,
+                       chrom : str | None = None,
+                       raw_which : str | None = None,
+                       mols=None,
+                       mask_name : str | None = None,
+                       max_rows : int | None = None,
+                       downsample_how : str = "mean",
+                       vmin : float | None = None,
+                       vmax : float | None = None,
+                       cmap : str | None = None,
+                       cbar_label : str = "Methylation prob.",
+                       out_file : str | Path | None = None,
+                       link_mat : np.ndarray | None = None,
+                       show : bool = True):
         """
         Plot a methylation heatmap.
 

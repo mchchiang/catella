@@ -867,7 +867,7 @@ class TestPlotMethmap:
         out_file = tmp_path / "methmap_sorted.png"
 
         result = runner.invoke(app, [
-            "plot_methmap", str(exp_file), "chr1",
+            "plot_meth_prob", str(exp_file), "chr1",
             "--key", "meth_prob_sorted",
             "--link-mat-name", "meth_prob_linkage",
             "--out-file", str(out_file), "--no-show"])
@@ -886,7 +886,7 @@ class TestPlotMethmap:
         out_file = tmp_path / "methmap_cmap.png"
 
         result = runner.invoke(app, [
-            "plot_methmap", str(exp_file), "chr1",
+            "plot_meth_prob", str(exp_file), "chr1",
             "--key", "meth_prob", "--cmap", "viridis",
             "--out-file", str(out_file), "--no-show"])
         assert result.exit_code == 0, result.output
@@ -904,7 +904,7 @@ class TestPlotMethmap:
         out_file = tmp_path / "methmap_cbar_label.png"
 
         result = runner.invoke(app, [
-            "plot_methmap", str(exp_file), "chr1",
+            "plot_meth_prob", str(exp_file), "chr1",
             "--key", "meth_prob", "--cbar-label", "Custom label",
             "--out-file", str(out_file), "--no-show"])
         assert result.exit_code == 0, result.output
@@ -922,7 +922,7 @@ class TestPlotMethmap:
         out_file = tmp_path / "methmap_raw_which.png"
 
         result = runner.invoke(app, [
-            "plot_methmap", str(exp_file), "chr1",
+            "plot_meth_prob", str(exp_file), "chr1",
             "--raw-which", "test",
             "--out-file", str(out_file), "--no-show"])
         assert result.exit_code == 0, result.output
@@ -938,11 +938,11 @@ class TestPlotMethmap:
         exp = catella.load_raw(chromsize=chromsize, test_file=test_file)
         exp.save(exp_file)
 
-        result = runner.invoke(app, ["plot_methmap", str(exp_file), "chr1",
+        result = runner.invoke(app, ["plot_meth_prob", str(exp_file), "chr1",
                                      "--no-show"])
         assert result.exit_code != 0
 
         result = runner.invoke(app, [
-            "plot_methmap", str(exp_file), "chr1",
+            "plot_meth_prob", str(exp_file), "chr1",
             "--key", "meth_prob", "--raw-which", "test", "--no-show"])
         assert result.exit_code != 0

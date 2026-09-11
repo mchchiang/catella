@@ -15,4 +15,4 @@ __all__ = ["load_raw", "filter_dropout", "summarize_dropout",
            "compute_empirical_prob", "compute_model_prob", "run",
            "analyze", "downsample", "sort_by_linkage", "plot_occup",
            "plot_nuc_pos", "plot_energy", "plot_meth_prob",
-           "plot_dropout_ecdf"]
+           "plot_meth_energy", "plot_dropout_ecdf"]

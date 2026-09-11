@@ -798,6 +798,58 @@ def plot_meth_prob(
         out_file=out_file, link_mat=link_mat, show=show)
 
 
+@app.command(name="plot_meth_energy")
+def plot_meth_energy(
+    exp_file: Annotated[
+        Path, typer.Argument(help="Experiment HDF5 file", exists=True,
+                             file_okay=True, dir_okay=False,
+                             readable=True)],
+    chrom: Annotated[str, typer.Argument(help="Chromosome identifier")],
+    key: Annotated[
+        str, typer.Option(help="Analysis key to plot")] = "meth_prob",
+    emax: Annotated[
+        Optional[float], typer.Option(help="Clamp energy to "
+                                      "[-emax, emax] and use it as "
+                                      "the default color scale "
+                                      "range")] = None,
+    max_rows: Annotated[
+        Optional[int], typer.Option(help="Downsample to at most this "
+                                    "many rows before plotting")] = None,
+    downsample_how: Annotated[
+        str, typer.Option(help="How to collapse rows when --max-rows "
+                          "is given")] = "mean",
+    vmin: Annotated[
+        Optional[float], typer.Option(help="Combined with --vmax into "
+                                      "a symmetric half-range centered "
+                                      "at zero")] = None,
+    vmax: Annotated[
+        Optional[float], typer.Option(help="See --vmin")] = None,
+    cmap: Annotated[
+        Optional[str], typer.Option(help="Matplotlib colormap name")
+    ] = None,
+    cbar_label: Annotated[
+        str, typer.Option(help="Colorbar label")] = "Energy [$k_BT$]",
+    out_file: Annotated[
+        Optional[Path], typer.Option(help="Path to save the figure",
+                                     file_okay=True, dir_okay=False)] = None,
+    link_mat_name: Annotated[
+        Optional[str], typer.Option(help="Key of a linkage matrix (e.g. "
+                                    "from sort_by_linkage) to draw as a "
+                                    "dendrogram")] = None,
+    show: Annotated[bool, typer.Option(help="Display the figure")] = True):
+    """
+    Plot a methylation heatmap on an energy scale.
+    """
+    exp = MethPrintExperiment.load(exp_file)
+    link_mat = exp.analysis[chrom][link_mat_name].to_numpy() \
+        if link_mat_name is not None else None
+    catella.plot_meth_energy(
+        data=exp.analysis[chrom][key], emax=emax,
+        max_rows=max_rows, downsample_how=downsample_how,
+        vmin=vmin, vmax=vmax, cmap=cmap, cbar_label=cbar_label,
+        out_file=out_file, link_mat=link_mat, show=show)
+
+
 # Click adapter of `app`, used by sphinx-click for the CLI reference docs.
 click_app = typer.main.get_command(app)
 

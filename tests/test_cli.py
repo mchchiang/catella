@@ -851,7 +851,7 @@ class TestPlotEnergy:
         assert out_file.exists()
 
 
-class TestPlotMethmap:
+class TestPlotMethProb:
     def test_with_link_mat_name(self, tmp_path):
         rows = _make_test_rows(nmol=6, nbp=20)
         test_file = tmp_path / "test.tsv"
@@ -946,3 +946,50 @@ class TestPlotMethmap:
             "plot_meth_prob", str(exp_file), "chr1",
             "--key", "meth_prob", "--raw-which", "test", "--no-show"])
         assert result.exit_code != 0
+
+
+class TestPlotMethEnergy:
+    def _make_exp_file(self, tmp_path):
+        rows = _make_test_rows(nmol=6, nbp=20)
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 20})
+        exp_file = tmp_path / "exp.h5"
+        exp = catella.load_raw(chromsize=chromsize, test_file=test_file)
+        catella.compute_empirical_prob(exp=exp, out_file=exp_file, lnuc=5)
+        return exp_file
+
+    def test_writes_figure_file(self, tmp_path):
+        exp_file = self._make_exp_file(tmp_path)
+        out_file = tmp_path / "energymap.png"
+
+        result = runner.invoke(app, [
+            "plot_meth_energy", str(exp_file), "chr1",
+            "--key", "meth_prob",
+            "--out-file", str(out_file), "--no-show"])
+        assert result.exit_code == 0, result.output
+        assert out_file.exists()
+
+    def test_with_emax(self, tmp_path):
+        exp_file = self._make_exp_file(tmp_path)
+        out_file = tmp_path / "energymap_emax.png"
+
+        result = runner.invoke(app, [
+            "plot_meth_energy", str(exp_file), "chr1",
+            "--key", "meth_prob", "--emax", "30",
+            "--out-file", str(out_file), "--no-show"])
+        assert result.exit_code == 0, result.output
+        assert out_file.exists()
+
+    def test_with_cmap_and_cbar_label(self, tmp_path):
+        exp_file = self._make_exp_file(tmp_path)
+        out_file = tmp_path / "energymap_cmap.png"
+
+        result = runner.invoke(app, [
+            "plot_meth_energy", str(exp_file), "chr1",
+            "--key", "meth_prob", "--cmap", "viridis",
+            "--cbar-label", "Custom label",
+            "--out-file", str(out_file), "--no-show"])
+        assert result.exit_code == 0, result.output
+        assert out_file.exists()

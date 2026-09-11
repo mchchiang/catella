@@ -915,6 +915,67 @@ def plot_meth_prob(data : H5Array | pd.DataFrame | np.ndarray | None = None, *,
                             link_mat=link_mat, show=show)
 
 
+def plot_meth_energy(data : H5Array | pd.DataFrame | np.ndarray, *,
+                     emax : float | None = None,
+                     max_rows : int | None = None,
+                     downsample_how : str = "mean",
+                     vmin : float | None = None,
+                     vmax : float | None = None,
+                     cmap : str | None = None,
+                     cbar_label : str = r"Energy [$k_BT$]",
+                     out_file : str | Path | None = None,
+                     link_mat : np.ndarray | None = None,
+                     show : bool = True):
+    """
+    Plot a methylation heatmap on an energy scale.
+
+    Thin wrapper around `plot_meth_prob` showing `logit(data)`
+    instead of the raw probability, the same quantity
+    `catella.simulation.engine` treats as physical energy.
+
+    Parameters
+    ----------
+    data : H5Array, pd.DataFrame, or np.ndarray
+        Dense probability matrix in [0, 1], e.g.
+        `exp.analysis[chrom]["meth_prob"]`.
+    emax : float, optional
+        If given, clamp energy to [-emax, emax] (matching
+        `SimSettings.emax`'s clamping in `NucPosModel.setEnergy`)
+        and use it as the default `vmin`/`vmax`. If None, energy is
+        unclamped and the default color-scale range is inferred
+        from the finite values in `data`.
+    max_rows : int, optional
+        If given, downsample to at most this many rows (via
+        `utils.downsample`) before plotting.
+    downsample_how : {"mean", "sum", "min", "max", "stride"},
+        default "mean"
+        How to collapse rows when `max_rows` is given.
+    vmin : float, optional
+        Combined with `vmax` into a symmetric half-range so the
+        colormap stays centered at zero.
+    vmax : float, optional
+        See `vmin`.
+    cmap : str, optional
+        Matplotlib colormap name. Defaults to "RdBu_r".
+    cbar_label : str, default "Energy [$k_BT$]"
+        Label drawn next to the colorbar.
+    out_file : str or pathlib.Path, optional
+        Path to save the generated figure.
+    link_mat : np.ndarray, optional
+        Linkage matrix to draw as a dendrogram alongside the
+        heatmap. `data` should already be sorted to match.
+    show : bool, default True
+        Whether to display the figure using the active plotting
+        backend.
+    """
+    methplot = MethPlot()
+    methplot.plot_meth_energy(data, emax=emax, max_rows=max_rows,
+                              downsample_how=downsample_how,
+                              vmin=vmin, vmax=vmax, cmap=cmap,
+                              cbar_label=cbar_label, out_file=out_file,
+                              link_mat=link_mat, show=show)
+
+
 def downsample(*, data : H5Array | pd.DataFrame | np.ndarray,
                max_rows : int,
                how : str = "mean",

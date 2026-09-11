@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
+from scipy.special import logit
 
 from catella.h5_array import H5Array
 from catella.experiment.plot import MethPlot
@@ -221,6 +222,135 @@ def test_plot_meth_prob_no_warning_below_plot_warn_rows(methplot,
         warnings.simplefilter("always")
         methplot.plot_meth_prob(values, show=False)
     assert not any(issubclass(w.category, UserWarning) for w in caught)
+
+
+@pytest.mark.parametrize("kind", ["h5array", "dataframe", "ndarray"])
+def test_plot_meth_energy_smoke_across_input_types(methplot, tmp_path, kind):
+    values = np.random.default_rng(10).random((5, 4))
+    if kind == "h5array":
+        data = _h5array(values)
+    elif kind == "dataframe":
+        data = pd.DataFrame(values)
+    else:
+        data = values
+
+    out_file = tmp_path / "energymap.png"
+    methplot.plot_meth_energy(data, out_file=out_file, show=False)
+    assert out_file.exists()
+
+
+def test_plot_meth_energy_transforms_to_logit(methplot, monkeypatch):
+    values = np.random.default_rng(11).random((4, 3))
+    captured = {}
+
+    def spy_plot_meth_prob(self, data, **kwargs):
+        captured["data"] = np.asarray(data)
+
+    monkeypatch.setattr(MethPlot, "plot_meth_prob", spy_plot_meth_prob)
+    methplot.plot_meth_energy(values, show=False)
+    np.testing.assert_allclose(captured["data"], logit(values))
+
+
+def test_plot_meth_energy_default_vmin_vmax_symmetric(methplot, monkeypatch):
+    values = np.random.default_rng(12).random((4, 3))
+    captured = {}
+
+    def spy_plot_meth_prob(self, data, **kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(MethPlot, "plot_meth_prob", spy_plot_meth_prob)
+    methplot.plot_meth_energy(values, show=False)
+    assert captured["vmin"] == -captured["vmax"]
+    assert captured["vmax"] == np.nanmax(np.abs(logit(values)))
+
+
+def test_plot_meth_energy_explicit_vmin_vmax_passthrough(methplot,
+                                                         monkeypatch):
+    values = np.random.default_rng(13).random((4, 3))
+    captured = {}
+
+    def spy_plot_meth_prob(self, data, **kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(MethPlot, "plot_meth_prob", spy_plot_meth_prob)
+    methplot.plot_meth_energy(values, vmin=-5, vmax=5, show=False)
+    assert (captured["vmin"], captured["vmax"]) == (-5, 5)
+
+
+def test_plot_meth_energy_asymmetric_vmin_vmax_centered_at_zero(
+        methplot, monkeypatch):
+    values = np.random.default_rng(17).random((4, 3))
+    captured = {}
+
+    def spy_plot_meth_prob(self, data, **kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(MethPlot, "plot_meth_prob", spy_plot_meth_prob)
+    methplot.plot_meth_energy(values, vmin=-3, vmax=10, show=False)
+    assert captured["vmin"] == -captured["vmax"]
+    assert (captured["vmin"], captured["vmax"]) == (-10, 10)
+
+    methplot.plot_meth_energy(values, vmax=7, show=False)
+    assert (captured["vmin"], captured["vmax"]) == (-7, 7)
+
+
+def test_plot_meth_energy_emax_clamps_and_sets_default_range(
+        methplot, monkeypatch):
+    values = np.random.default_rng(14).random((4, 3))
+    captured = {}
+
+    def spy_plot_meth_prob(self, data, **kwargs):
+        captured["data"] = np.asarray(data)
+        captured.update(kwargs)
+
+    monkeypatch.setattr(MethPlot, "plot_meth_prob", spy_plot_meth_prob)
+    methplot.plot_meth_energy(values, emax=1.0, show=False)
+    assert (captured["vmin"], captured["vmax"]) == (-1.0, 1.0)
+    assert np.all(captured["data"] >= -1.0) and np.all(captured["data"] <= 1.0)
+
+
+def test_plot_meth_energy_extreme_probabilities_do_not_break_range(
+        methplot, monkeypatch):
+    values = np.array([[0.0, 0.5], [1.0, 0.5]])
+    captured = {}
+
+    def spy_plot_meth_prob(self, data, **kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(MethPlot, "plot_meth_prob", spy_plot_meth_prob)
+    methplot.plot_meth_energy(values, show=False)
+    assert np.isfinite(captured["vmin"]) and np.isfinite(captured["vmax"])
+
+
+def test_plot_meth_energy_nan_passthrough(methplot, monkeypatch):
+    values = np.random.default_rng(15).random((4, 3))
+    values[0, 0] = np.nan
+    captured = {}
+
+    def spy_plot_meth_prob(self, data, **kwargs):
+        captured["data"] = np.asarray(data)
+
+    monkeypatch.setattr(MethPlot, "plot_meth_prob", spy_plot_meth_prob)
+    methplot.plot_meth_energy(values, show=False)
+    assert np.isnan(captured["data"][0, 0])
+
+
+def test_plot_meth_energy_default_cmap_and_label(methplot, monkeypatch):
+    values = np.random.default_rng(16).random((4, 3))
+    captured = {}
+
+    def spy_plot_meth_prob(self, data, **kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(MethPlot, "plot_meth_prob", spy_plot_meth_prob)
+    methplot.plot_meth_energy(values, show=False)
+    assert captured["cmap"] == "RdBu_r"
+    assert captured["cbar_label"] == r"Energy [$k_BT$]"
+
+    methplot.plot_meth_energy(values, cmap="viridis",
+                              cbar_label="custom", show=False)
+    assert captured["cmap"] == "viridis"
+    assert captured["cbar_label"] == "custom"
 
 
 def _write_tsv(path, rows):

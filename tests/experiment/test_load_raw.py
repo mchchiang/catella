@@ -748,3 +748,126 @@ class TestLazyAndScratchLifecycle:
         leaked = [d for d in after - before if d.startswith("catella_")]
         assert not leaked
 
+
+def _raw_snapshot(exp, chroms):
+    # Comparable snapshot of an experiment's raw data across sources
+    # actually present (test, and unmeth/meth if given).
+    snapshot = {}
+    for chrom in chroms:
+        raw = exp.raw[chrom]
+        snapshot[chrom] = {}
+        for src in ("test", "unmeth", "meth"):
+            mol_id = getattr(raw, f"{src}_mol_id")
+            if mol_id is None:
+                continue
+            data = getattr(raw, f"{src}_data").sort_values(
+                ["mol_index", "pos"]).reset_index(drop=True)
+            snapshot[chrom][src] = (sorted(mol_id), data)
+    return snapshot
+
+
+def _assert_snapshots_equal(a, b):
+    assert a.keys() == b.keys()
+    for chrom in a:
+        assert a[chrom].keys() == b[chrom].keys()
+        for src in a[chrom]:
+            ids_a, df_a = a[chrom][src]
+            ids_b, df_b = b[chrom][src]
+            assert ids_a == ids_b
+            pd.testing.assert_frame_equal(df_a, df_b)
+
+
+class TestParallelReading:
+    def test_nworker_matches_sequential(self, tmp_path):
+        test_rows = (_make_rows("chr1", [f"t{i}" for i in range(6)],
+                                [1, 2, 3], seed=0)
+                    + _make_rows("chr2", [f"t{i}" for i in range(4)],
+                                [1, 2], seed=1))
+        unmeth_rows = (_make_rows("chr1", [f"u{i}" for i in range(6)],
+                                  [1, 2, 3], seed=2)
+                      + _make_rows("chr2", [f"u{i}" for i in range(4)],
+                                  [1, 2], seed=3))
+        meth_rows = (_make_rows("chr1", [f"m{i}" for i in range(6)],
+                                [1, 2, 3], seed=4)
+                    + _make_rows("chr2", [f"m{i}" for i in range(4)],
+                                [1, 2], seed=5))
+        test_file = tmp_path / "test.tsv"
+        unmeth_file = tmp_path / "unmeth.tsv"
+        meth_file = tmp_path / "meth.tsv"
+        _write_tsv(test_file, test_rows)
+        _write_tsv(unmeth_file, unmeth_rows)
+        _write_tsv(meth_file, meth_rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 100, "chr2": 50})
+
+        exp1 = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file,
+            unmeth_file=unmeth_file, meth_file=meth_file, chunk_size=3,
+            nworker=1)
+        snap1 = _raw_snapshot(exp1, ["chr1", "chr2"])
+        exp1.close()
+
+        exp3 = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file,
+            unmeth_file=unmeth_file, meth_file=meth_file, chunk_size=3,
+            nworker=3)
+        snap3 = _raw_snapshot(exp3, ["chr1", "chr2"])
+        exp3.close()
+
+        _assert_snapshots_equal(snap1, snap3)
+
+    def test_seeded_downsampling_deterministic_across_nworker(
+            self, tmp_path):
+        test_rows = _make_rows("chr1", [f"t{i}" for i in range(20)],
+                               [1, 2], seed=0)
+        unmeth_rows = _make_rows("chr1", [f"u{i}" for i in range(20)],
+                                 [1, 2], seed=1)
+        test_file = tmp_path / "test.tsv"
+        unmeth_file = tmp_path / "unmeth.tsv"
+        _write_tsv(test_file, test_rows)
+        _write_tsv(unmeth_file, unmeth_rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 100})
+
+        def run(nworker):
+            exp = MethPrintExperiment.load_raw(
+                chromsize=chromsize, test_file=test_file,
+                unmeth_file=unmeth_file, max_nmol=5, seed=7, chunk_size=3,
+                nworker=nworker)
+            snapshot = _raw_snapshot(exp, ["chr1"])
+            exp.close()
+            return snapshot
+
+        snap_1a = run(1)
+        snap_1b = run(1)
+        snap_3 = run(3)
+        _assert_snapshots_equal(snap_1a, snap_1b)
+        _assert_snapshots_equal(snap_1a, snap_3)
+
+    def test_gzip_input_matches_plain(self, tmp_path):
+        import gzip
+
+        rows = (_make_rows("chr1", ["t0", "t1", "t2"], [1, 2, 3], seed=0)
+               + _make_rows("chr2", ["t0", "t1"], [5, 15], seed=1))
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 100, "chr2": 50})
+
+        plain_file = tmp_path / "test.tsv"
+        _write_tsv(plain_file, rows)
+        exp_plain = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=plain_file, chunk_size=3)
+        snap_plain = _raw_snapshot(exp_plain, ["chr1", "chr2"])
+        exp_plain.close()
+
+        gz_file = tmp_path / "test.tsv.gz"
+        with gzip.open(gz_file, "wt") as f:
+            f.write(_HEADER)
+            for r in rows:
+                f.write("\t".join(str(x) for x in r) + "\n")
+        exp_gz = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=gz_file, chunk_size=3)
+        snap_gz = _raw_snapshot(exp_gz, ["chr1", "chr2"])
+        exp_gz.close()
+
+        _assert_snapshots_equal(snap_plain, snap_gz)
+

@@ -33,7 +33,8 @@ def load_raw(*, chromsize : str | Path,
              seed : int | None = None,
              chunk_size : int = 1000000,
              tmp_dir : str | Path | None = None,
-             max_cached_chroms : int = 1) -> MethPrintExperiment:
+             max_cached_chroms : int = 1,
+             nworker : int = 1) -> MethPrintExperiment:
     """
     Load raw methylation footprinting data into a MethPrintExperiment.
 
@@ -94,6 +95,9 @@ def load_raw(*, chromsize : str | Path,
         once the returned experiment is closed or garbage-collected.
     max_cached_chroms : int, default 1
         Maximum number of chromosomes' raw data kept in memory at once.
+    nworker : int, default 1
+        Maximum number of threads used to read test/unmeth/meth files
+        concurrently. Only relevant when more than one is given.
 
     Returns
     -------
@@ -108,7 +112,7 @@ def load_raw(*, chromsize : str | Path,
         fasta_file=fasta_file, mtase=mtase, chroms=chroms, wrap=wrap,
         ignore_strand=ignore_strand, colidx=colidx, max_nmol=max_nmol,
         seed=seed, chunk_size=chunk_size, tmp_dir=tmp_dir,
-        max_cached_chroms=max_cached_chroms)
+        max_cached_chroms=max_cached_chroms, nworker=nworker)
 
 
 def compute_empirical_prob(exp : MethPrintExperiment, *,

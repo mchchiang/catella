@@ -116,7 +116,9 @@ def load_raw(
         int, typer.Option(help="Rows read per streamed chunk")] = 1000000,
     max_cached_chroms: Annotated[
         int, typer.Option(help="Max chromosomes' raw data kept in "
-                          "memory")] = 1):
+                          "memory")] = 1,
+    nworker: Annotated[
+        int, typer.Option(help="Threads for parallel file reading")] = 1):
     """
     Load raw methylation footprinting data into a MethPrintExperiment.
     """
@@ -125,7 +127,8 @@ def load_raw(
         meth_file=meth_file, fasta_file=fasta_file, mtase=mtase,
         chroms=chroms, wrap=wrap, ignore_strand=ignore_strand,
         colidx=colidx, max_nmol=max_nmol, seed=seed, chunk_size=chunk_size,
-        tmp_dir=tmp_dir, max_cached_chroms=max_cached_chroms)
+        tmp_dir=tmp_dir, max_cached_chroms=max_cached_chroms,
+        nworker=nworker)
     exp.save(out_file)
 
 

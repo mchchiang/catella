@@ -21,9 +21,9 @@ using std::vector;
 
 PYBIND11_MODULE(catella_cpp, m) {
   py::class_<NucPosModel> modelcls(m, "NucPosModel");
-  modelcls.def(py::init<int,int,int,double,ulint>(),
+  modelcls.def(py::init<int,int,int,double,double,ulint>(),
 	       py::arg("nucbp"), py::arg("nbp"), py::arg("llink"),
-	       py::arg("mu"), py::arg("seed"));
+	       py::arg("elink"), py::arg("mu"), py::arg("seed"));
   modelcls.def("run", &NucPosModel::run);
   modelcls.def("reset", &NucPosModel::reset);
   modelcls.def("addTracker", &NucPosModel::addTracker);

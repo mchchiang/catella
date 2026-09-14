@@ -128,6 +128,7 @@ void DumpH5::initialize(lint time, const NucPosModel& model) {
   writeAttribute("nucbp", params.nucbp, h5params);
   writeAttribute("nbp", params.nbp, h5params);
   writeAttribute("llink", params.llink, h5params);
+  writeAttribute("elink", params.elink, h5params);
   writeAttribute("mu", params.mu, h5params);
   writeAttribute("seed", params.seed, h5params);
 }

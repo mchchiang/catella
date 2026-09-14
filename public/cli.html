@@ -1,0 +1,1793 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CLI Reference &mdash; catella 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="_static/custom.css?v=57874f38" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=01f34227"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+      <script src="https://cdn.jsdelivr.net/npm/@jupyter-widgets/html-manager@^1.0.1/dist/embed-amd.js"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="API Reference" href="api.html" />
+    <link rel="prev" title="Tutorial 2: From Methylation Probability to Nucleosome Positioning Prediction" href="tutorials/tut02_run_sim.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            catella
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="install.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model.html">Nucleosome Occupancy Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="data_format.html">Input and Output Data Formats</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/tut00_data_prep.html">Tutorial 0: Data Preparation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/tut01_meth_prob.html">Tutorial 1: From Raw Data to Normalized Methylation Probability</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/tut02_run_sim.html">Tutorial 2: From Methylation Probability to Nucleosome Positioning Prediction</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">CLI Reference</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#catella">catella</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#catella-analyze">analyze</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#catella-compute-empirical-prob">compute_empirical_prob</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#catella-compute-model-prob">compute_model_prob</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#catella-downsample">downsample</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#catella-filter-dropout">filter_dropout</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#catella-load-raw">load_raw</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#catella-plot-dropout-ecdf">plot_dropout_ecdf</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#catella-plot-energy">plot_energy</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#catella-plot-meth-energy">plot_meth_energy</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#catella-plot-meth-prob">plot_meth_prob</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#catella-plot-nuc-pos">plot_nuc_pos</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#catella-plot-occup">plot_occup</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#catella-run">run</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#catella-sort-by-linkage">sort_by_linkage</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#catella-summarize-dropout">summarize_dropout</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="citation.html">Citation and License</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">catella</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">CLI Reference</li>
+      <li class="wy-breadcrumbs-aside">
+              <a href="https://github.com/mchchiang/catella/blob/main/docs/source/cli.rst" class="fa fa-github"> Edit on GitHub</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="cli-reference">
+<h1>CLI Reference<a class="headerlink" href="#cli-reference" title="Link to this heading"></a></h1>
+<section id="catella">
+<h2>catella<a class="headerlink" href="#catella" title="Link to this heading"></a></h2>
+<p>Nucleosome Positioning Monte Carlo Simulation Suite</p>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>catella<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>COMMAND<span class="w"> </span><span class="o">[</span>ARGS<span class="o">]</span>...
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-install-completion">
+<span class="sig-name descname"><span class="pre">--install-completion</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-install-completion" title="Link to this definition"></a></dt>
+<dd><p>Install completion for the current shell.</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-show-completion">
+<span class="sig-name descname"><span class="pre">--show-completion</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-show-completion" title="Link to this definition"></a></dt>
+<dd><p>Show completion for the current shell, to copy it or customize the installation.</p>
+</dd></dl>
+
+<section id="catella-analyze">
+<h3>analyze<a class="headerlink" href="#catella-analyze" title="Link to this heading"></a></h3>
+<p>Compute post-simulation occupancy and nucleosome count statistics.</p>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>catella<span class="w"> </span>analyze<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>DATASET_FILE
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-analyze-time">
+<span class="sig-name descname"><span class="pre">--time</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;time&gt;</span></span><a class="headerlink" href="#cmdoption-catella-analyze-time" title="Link to this definition"></a></dt>
+<dd><p>Simulation time point</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-analyze-occup-name">
+<span class="sig-name descname"><span class="pre">--occup-name</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;occup_name&gt;</span></span><a class="headerlink" href="#cmdoption-catella-analyze-occup-name" title="Link to this definition"></a></dt>
+<dd><p>Key to store occupancy</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">'occup'</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-analyze-mean-nnuc-name">
+<span class="sig-name descname"><span class="pre">--mean-nnuc-name</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;mean_nnuc_name&gt;</span></span><a class="headerlink" href="#cmdoption-catella-analyze-mean-nnuc-name" title="Link to this definition"></a></dt>
+<dd><p>Key to store mean nucleosome count</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">'mean_nnuc'</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-analyze-out-file">
+<span class="sig-name descname"><span class="pre">--out-file</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;out_file&gt;</span></span><a class="headerlink" href="#cmdoption-catella-analyze-out-file" title="Link to this definition"></a></dt>
+<dd><p>Output file (default: overwrite dataset_file)</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-analyze-overwrite">
+<span class="sig-name descname"><span class="pre">--overwrite</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--no-overwrite</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-analyze-overwrite" title="Link to this definition"></a></dt>
+<dd><p>Allow overwriting out_file if it is already backed by H5Array analysis data. Ignored (always allowed) when out_file is not given</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">False</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<p class="rubric">Arguments</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-analyze-arg-DATASET_FILE">
+<span class="sig-name descname"><span class="pre">DATASET_FILE</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-analyze-arg-DATASET_FILE" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+<p>Simulation dataset HDF5 file</p>
+</dd></dl>
+
+</section>
+<section id="catella-compute-empirical-prob">
+<h3>compute_empirical_prob<a class="headerlink" href="#catella-compute-empirical-prob" title="Link to this heading"></a></h3>
+<p>Compute methylation probabilities via empirical normalization.</p>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>catella<span class="w"> </span>compute_empirical_prob<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>SOURCE_FILE
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_empirical_prob-lnuc">
+<span class="sig-name descname"><span class="pre">--lnuc</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;lnuc&gt;</span></span><a class="headerlink" href="#cmdoption-catella-compute_empirical_prob-lnuc" title="Link to this definition"></a></dt>
+<dd><p>Nucleosome footprint / window size (bp)</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">147</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_empirical_prob-prob-name">
+<span class="sig-name descname"><span class="pre">--prob-name</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;prob_name&gt;</span></span><a class="headerlink" href="#cmdoption-catella-compute_empirical_prob-prob-name" title="Link to this definition"></a></dt>
+<dd><p>Key for storing methylation probabilities</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">'meth_prob'</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_empirical_prob-clip-low">
+<span class="sig-name descname"><span class="pre">--clip-low</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;clip_low&gt;</span></span><a class="headerlink" href="#cmdoption-catella-compute_empirical_prob-clip-low" title="Link to this definition"></a></dt>
+<dd><p>Lower clip percentile</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">0.1</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_empirical_prob-clip-high">
+<span class="sig-name descname"><span class="pre">--clip-high</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;clip_high&gt;</span></span><a class="headerlink" href="#cmdoption-catella-compute_empirical_prob-clip-high" title="Link to this definition"></a></dt>
+<dd><p>Upper clip percentile</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">99.9</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_empirical_prob-norm-by-strand">
+<span class="sig-name descname"><span class="pre">--norm-by-strand</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--no-norm-by-strand</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-compute_empirical_prob-norm-by-strand" title="Link to this definition"></a></dt>
+<dd><p>Normalize by strand</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">False</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_empirical_prob-fill-edge">
+<span class="sig-name descname"><span class="pre">--fill-edge</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;fill_edge&gt;</span></span><a class="headerlink" href="#cmdoption-catella-compute_empirical_prob-fill-edge" title="Link to this definition"></a></dt>
+<dd><p>Probability for the unfilled trailing edge</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">nan</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_empirical_prob-batch-size">
+<span class="sig-name descname"><span class="pre">--batch-size</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;batch_size&gt;</span></span><a class="headerlink" href="#cmdoption-catella-compute_empirical_prob-batch-size" title="Link to this definition"></a></dt>
+<dd><p>Molecules processed per batch</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">20000</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_empirical_prob-percentile-sample-size">
+<span class="sig-name descname"><span class="pre">--percentile-sample-size</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;percentile_sample_size&gt;</span></span><a class="headerlink" href="#cmdoption-catella-compute_empirical_prob-percentile-sample-size" title="Link to this definition"></a></dt>
+<dd><p>Sample size for percentile estimation</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">100000</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_empirical_prob-seed">
+<span class="sig-name descname"><span class="pre">--seed</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;seed&gt;</span></span><a class="headerlink" href="#cmdoption-catella-compute_empirical_prob-seed" title="Link to this definition"></a></dt>
+<dd><p>Seed for percentile subsampling</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_empirical_prob-mask-name">
+<span class="sig-name descname"><span class="pre">--mask-name</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;mask_name&gt;</span></span><a class="headerlink" href="#cmdoption-catella-compute_empirical_prob-mask-name" title="Link to this definition"></a></dt>
+<dd><p>Key of a prior filter_dropout mask to apply</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_empirical_prob-out-file">
+<span class="sig-name descname"><span class="pre">--out-file</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;out_file&gt;</span></span><a class="headerlink" href="#cmdoption-catella-compute_empirical_prob-out-file" title="Link to this definition"></a></dt>
+<dd><p>Output file (default: overwrite source_file)</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_empirical_prob-overwrite">
+<span class="sig-name descname"><span class="pre">--overwrite</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--no-overwrite</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-compute_empirical_prob-overwrite" title="Link to this definition"></a></dt>
+<dd><p>Allow overwriting out_file if it is already backed by H5Array analysis data. Ignored (always allowed) when out_file is not given</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">False</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<p class="rubric">Arguments</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_empirical_prob-arg-SOURCE_FILE">
+<span class="sig-name descname"><span class="pre">SOURCE_FILE</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-compute_empirical_prob-arg-SOURCE_FILE" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+<p>Experiment HDF5 file</p>
+</dd></dl>
+
+</section>
+<section id="catella-compute-model-prob">
+<h3>compute_model_prob<a class="headerlink" href="#catella-compute-model-prob" title="Link to this heading"></a></h3>
+<p>Compute methylation probabilities via a calibrated log-odds model.</p>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>catella<span class="w"> </span>compute_model_prob<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>SOURCE_FILE
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_model_prob-prob-name">
+<span class="sig-name descname"><span class="pre">--prob-name</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;prob_name&gt;</span></span><a class="headerlink" href="#cmdoption-catella-compute_model_prob-prob-name" title="Link to this definition"></a></dt>
+<dd><p>Key for storing methylation probabilities</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">'meth_prob'</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_model_prob-pi0">
+<span class="sig-name descname"><span class="pre">--pi0</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;pi0&gt;</span></span><a class="headerlink" href="#cmdoption-catella-compute_model_prob-pi0" title="Link to this definition"></a></dt>
+<dd><p>Prior probability a site is methylated</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">0.5</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_model_prob-eta">
+<span class="sig-name descname"><span class="pre">--eta</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;eta&gt;</span></span><a class="headerlink" href="#cmdoption-catella-compute_model_prob-eta" title="Link to this definition"></a></dt>
+<dd><p>Log-odds correction for correlated sites. A number applies to every channel; a JSON object pins only the named channels, e.g. ‘{“M6A”: 0.9, “HCG”: 0.7}’. Omit to auto-estimate every channel (default).</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_model_prob-eta-max-lag">
+<span class="sig-name descname"><span class="pre">--eta-max-lag</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;eta_max_lag&gt;</span></span><a class="headerlink" href="#cmdoption-catella-compute_model_prob-eta-max-lag" title="Link to this definition"></a></dt>
+<dd><p>Max lag (bp) for eta auto-estimation</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">10</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_model_prob-store-rho">
+<span class="sig-name descname"><span class="pre">--store-rho</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--no-store-rho</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-compute_model_prob-store-rho" title="Link to this definition"></a></dt>
+<dd><p>Store the lag-k autocorrelation rho(k) used in eta estimation</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">False</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_model_prob-nu">
+<span class="sig-name descname"><span class="pre">--nu</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;nu&gt;</span></span><a class="headerlink" href="#cmdoption-catella-compute_model_prob-nu" title="Link to this definition"></a></dt>
+<dd><p>Pseudo-count shrinkage strength</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">10.0</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_model_prob-rho-leak">
+<span class="sig-name descname"><span class="pre">--rho-leak</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;rho_leak&gt;</span></span><a class="headerlink" href="#cmdoption-catella-compute_model_prob-rho-leak" title="Link to this definition"></a></dt>
+<dd><p>Leak fraction toward accessible-state rate</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">0.1</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_model_prob-min-gap">
+<span class="sig-name descname"><span class="pre">--min-gap</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;min_gap&gt;</span></span><a class="headerlink" href="#cmdoption-catella-compute_model_prob-min-gap" title="Link to this definition"></a></dt>
+<dd><p>Min accessible/protected rate gap to be informative</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">0.05</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_model_prob-lnuc">
+<span class="sig-name descname"><span class="pre">--lnuc</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;lnuc&gt;</span></span><a class="headerlink" href="#cmdoption-catella-compute_model_prob-lnuc" title="Link to this definition"></a></dt>
+<dd><p>Nucleosome footprint / window size (bp)</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">147</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_model_prob-n-min">
+<span class="sig-name descname"><span class="pre">--n-min</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;n_min&gt;</span></span><a class="headerlink" href="#cmdoption-catella-compute_model_prob-n-min" title="Link to this definition"></a></dt>
+<dd><p>Min context-eligible sites per window (no-controls fit)</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">10</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_model_prob-max-iters">
+<span class="sig-name descname"><span class="pre">--max-iters</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;max_iters&gt;</span></span><a class="headerlink" href="#cmdoption-catella-compute_model_prob-max-iters" title="Link to this definition"></a></dt>
+<dd><p>Max EM iterations (no-controls fit)</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">200</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_model_prob-init-prot">
+<span class="sig-name descname"><span class="pre">--init-prot</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;init_prot&gt;</span></span><a class="headerlink" href="#cmdoption-catella-compute_model_prob-init-prot" title="Link to this definition"></a></dt>
+<dd><p>Initial protected-state rate (no-controls fit)</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">0.05</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_model_prob-init-acc">
+<span class="sig-name descname"><span class="pre">--init-acc</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;init_acc&gt;</span></span><a class="headerlink" href="#cmdoption-catella-compute_model_prob-init-acc" title="Link to this definition"></a></dt>
+<dd><p>Initial accessible-state rate (no-controls fit)</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">0.95</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_model_prob-tol">
+<span class="sig-name descname"><span class="pre">--tol</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;tol&gt;</span></span><a class="headerlink" href="#cmdoption-catella-compute_model_prob-tol" title="Link to this definition"></a></dt>
+<dd><p>EM log-likelihood convergence tolerance</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">1e-08</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_model_prob-fill-edge">
+<span class="sig-name descname"><span class="pre">--fill-edge</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;fill_edge&gt;</span></span><a class="headerlink" href="#cmdoption-catella-compute_model_prob-fill-edge" title="Link to this definition"></a></dt>
+<dd><p>Probability for the unfilled trailing edge</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">nan</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_model_prob-norm-by-strand">
+<span class="sig-name descname"><span class="pre">--norm-by-strand</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--no-norm-by-strand</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-compute_model_prob-norm-by-strand" title="Link to this definition"></a></dt>
+<dd><p>Normalize by strand</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">False</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_model_prob-batch-size">
+<span class="sig-name descname"><span class="pre">--batch-size</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;batch_size&gt;</span></span><a class="headerlink" href="#cmdoption-catella-compute_model_prob-batch-size" title="Link to this definition"></a></dt>
+<dd><p>Molecules processed per batch</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">20000</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_model_prob-mask-name">
+<span class="sig-name descname"><span class="pre">--mask-name</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;mask_name&gt;</span></span><a class="headerlink" href="#cmdoption-catella-compute_model_prob-mask-name" title="Link to this definition"></a></dt>
+<dd><p>Key of a prior filter_dropout mask to apply</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_model_prob-out-file">
+<span class="sig-name descname"><span class="pre">--out-file</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;out_file&gt;</span></span><a class="headerlink" href="#cmdoption-catella-compute_model_prob-out-file" title="Link to this definition"></a></dt>
+<dd><p>Output file (default: overwrite source_file)</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_model_prob-overwrite">
+<span class="sig-name descname"><span class="pre">--overwrite</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--no-overwrite</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-compute_model_prob-overwrite" title="Link to this definition"></a></dt>
+<dd><p>Allow overwriting out_file if it is already backed by H5Array analysis data. Ignored (always allowed) when out_file is not given</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">False</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<p class="rubric">Arguments</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-compute_model_prob-arg-SOURCE_FILE">
+<span class="sig-name descname"><span class="pre">SOURCE_FILE</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-compute_model_prob-arg-SOURCE_FILE" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+<p>Experiment HDF5 file</p>
+</dd></dl>
+
+</section>
+<section id="catella-downsample">
+<h3>downsample<a class="headerlink" href="#catella-downsample" title="Link to this heading"></a></h3>
+<p>Downsample an analysis array and store the result under a new key.</p>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>catella<span class="w"> </span>downsample<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>SOURCE_FILE<span class="w"> </span>CHROM<span class="w"> </span>KEY<span class="w"> </span>MAX_ROWS
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-downsample-kind">
+<span class="sig-name descname"><span class="pre">--kind</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;kind&gt;</span></span><a class="headerlink" href="#cmdoption-catella-downsample-kind" title="Link to this definition"></a></dt>
+<dd><p><strong>Required</strong> Whether source_file holds a MethPrintExperiment or a SimDataset</p>
+<dl class="field-list simple">
+<dt class="field-odd">Options<span class="colon">:</span></dt>
+<dd class="field-odd"><p>experiment | dataset</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-downsample-how">
+<span class="sig-name descname"><span class="pre">--how</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;how&gt;</span></span><a class="headerlink" href="#cmdoption-catella-downsample-how" title="Link to this definition"></a></dt>
+<dd><p>mean, sum, min, max, or stride</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">'mean'</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-downsample-batch-size">
+<span class="sig-name descname"><span class="pre">--batch-size</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;batch_size&gt;</span></span><a class="headerlink" href="#cmdoption-catella-downsample-batch-size" title="Link to this definition"></a></dt>
+<dd><p>Rows read per streamed chunk</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">20000</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-downsample-out-key">
+<span class="sig-name descname"><span class="pre">--out-key</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;out_key&gt;</span></span><a class="headerlink" href="#cmdoption-catella-downsample-out-key" title="Link to this definition"></a></dt>
+<dd><p>Key to store the result (default: ‘&lt;key&gt;_downsampled’)</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-downsample-out-file">
+<span class="sig-name descname"><span class="pre">--out-file</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;out_file&gt;</span></span><a class="headerlink" href="#cmdoption-catella-downsample-out-file" title="Link to this definition"></a></dt>
+<dd><p>Output file (default: overwrite source_file)</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-downsample-overwrite">
+<span class="sig-name descname"><span class="pre">--overwrite</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--no-overwrite</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-downsample-overwrite" title="Link to this definition"></a></dt>
+<dd><p>Allow overwriting out_file if it is already backed by H5Array analysis data. Ignored (always allowed) when out_file is not given</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">False</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<p class="rubric">Arguments</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-downsample-arg-SOURCE_FILE">
+<span class="sig-name descname"><span class="pre">SOURCE_FILE</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-downsample-arg-SOURCE_FILE" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+<p>Experiment or dataset HDF5 file</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-downsample-arg-CHROM">
+<span class="sig-name descname"><span class="pre">CHROM</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-downsample-arg-CHROM" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+<p>Chromosome name</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-downsample-arg-KEY">
+<span class="sig-name descname"><span class="pre">KEY</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-downsample-arg-KEY" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+<p>Analysis key to downsample</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-downsample-arg-MAX_ROWS">
+<span class="sig-name descname"><span class="pre">MAX_ROWS</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-downsample-arg-MAX_ROWS" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+<p>Target number of rows</p>
+</dd></dl>
+
+</section>
+<section id="catella-filter-dropout">
+<h3>filter_dropout<a class="headerlink" href="#catella-filter-dropout" title="Link to this heading"></a></h3>
+<p>Flag molecules with poor coverage at methylatable positions.</p>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>catella<span class="w"> </span>filter_dropout<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>SOURCE_FILE
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-filter_dropout-which">
+<span class="sig-name descname"><span class="pre">--which</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;which&gt;</span></span><a class="headerlink" href="#cmdoption-catella-filter_dropout-which" title="Link to this definition"></a></dt>
+<dd><p>test, meth, or unmeth; default evaluates every source</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-filter_dropout-mtase">
+<span class="sig-name descname"><span class="pre">--mtase</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;mtase&gt;</span></span><a class="headerlink" href="#cmdoption-catella-filter_dropout-mtase" title="Link to this definition"></a></dt>
+<dd><p>Subset of mtase labels to evaluate</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-filter_dropout-chroms">
+<span class="sig-name descname"><span class="pre">--chroms</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;chroms&gt;</span></span><a class="headerlink" href="#cmdoption-catella-filter_dropout-chroms" title="Link to this definition"></a></dt>
+<dd><p>Subset of chromosomes to evaluate</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-filter_dropout-thres-min">
+<span class="sig-name descname"><span class="pre">--thres-min</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;thres_min&gt;</span></span><a class="headerlink" href="#cmdoption-catella-filter_dropout-thres-min" title="Link to this definition"></a></dt>
+<dd><p>Min allowed no-signal fraction</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">0.0</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-filter_dropout-thres-max">
+<span class="sig-name descname"><span class="pre">--thres-max</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;thres_max&gt;</span></span><a class="headerlink" href="#cmdoption-catella-filter_dropout-thres-max" title="Link to this definition"></a></dt>
+<dd><p>Max allowed no-signal fraction</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">1.0</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-filter_dropout-unmapped-strand">
+<span class="sig-name descname"><span class="pre">--unmapped-strand</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;unmapped_strand&gt;</span></span><a class="headerlink" href="#cmdoption-catella-filter_dropout-unmapped-strand" title="Link to this definition"></a></dt>
+<dd><p>union, drop, +, or -</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">'union'</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-filter_dropout-method">
+<span class="sig-name descname"><span class="pre">--method</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;method&gt;</span></span><a class="headerlink" href="#cmdoption-catella-filter_dropout-method" title="Link to this definition"></a></dt>
+<dd><p>separate or aggregate</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">'separate'</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-filter_dropout-mask-name">
+<span class="sig-name descname"><span class="pre">--mask-name</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;mask_name&gt;</span></span><a class="headerlink" href="#cmdoption-catella-filter_dropout-mask-name" title="Link to this definition"></a></dt>
+<dd><p>Key for the stored mask</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">'dropout_mask'</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-filter_dropout-out-file">
+<span class="sig-name descname"><span class="pre">--out-file</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;out_file&gt;</span></span><a class="headerlink" href="#cmdoption-catella-filter_dropout-out-file" title="Link to this definition"></a></dt>
+<dd><p>Output file (default: overwrite source_file)</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-filter_dropout-overwrite">
+<span class="sig-name descname"><span class="pre">--overwrite</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--no-overwrite</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-filter_dropout-overwrite" title="Link to this definition"></a></dt>
+<dd><p>Allow overwriting out_file if it is already backed by H5Array analysis data. Ignored (always allowed) when out_file is not given</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">False</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<p class="rubric">Arguments</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-filter_dropout-arg-SOURCE_FILE">
+<span class="sig-name descname"><span class="pre">SOURCE_FILE</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-filter_dropout-arg-SOURCE_FILE" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+<p>Experiment HDF5 file</p>
+</dd></dl>
+
+</section>
+<section id="catella-load-raw">
+<h3>load_raw<a class="headerlink" href="#catella-load-raw" title="Link to this heading"></a></h3>
+<p>Load raw methylation footprinting data into a MethPrintExperiment.</p>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>catella<span class="w"> </span>load_raw<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>CHROMSIZE<span class="w"> </span>TEST_FILE<span class="w"> </span>OUT_FILE
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-load_raw-unmeth-file">
+<span class="sig-name descname"><span class="pre">--unmeth-file</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;unmeth_file&gt;</span></span><a class="headerlink" href="#cmdoption-catella-load_raw-unmeth-file" title="Link to this definition"></a></dt>
+<dd><p>Unmethylated control file</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-load_raw-meth-file">
+<span class="sig-name descname"><span class="pre">--meth-file</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;meth_file&gt;</span></span><a class="headerlink" href="#cmdoption-catella-load_raw-meth-file" title="Link to this definition"></a></dt>
+<dd><p>Methylated control file</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-load_raw-fasta-file">
+<span class="sig-name descname"><span class="pre">--fasta-file</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;fasta_file&gt;</span></span><a class="headerlink" href="#cmdoption-catella-load_raw-fasta-file" title="Link to this definition"></a></dt>
+<dd><p>Reference FASTA file (required by compute_model_prob)</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-load_raw-mtase">
+<span class="sig-name descname"><span class="pre">--mtase</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;mtase&gt;</span></span><a class="headerlink" href="#cmdoption-catella-load_raw-mtase" title="Link to this definition"></a></dt>
+<dd><p>Methyltransferase(s): A, CG, GC</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-load_raw-chroms">
+<span class="sig-name descname"><span class="pre">--chroms</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;chroms&gt;</span></span><a class="headerlink" href="#cmdoption-catella-load_raw-chroms" title="Link to this definition"></a></dt>
+<dd><p>Subset of chromosomes to load</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-load_raw-wrap">
+<span class="sig-name descname"><span class="pre">--wrap</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--no-wrap</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-load_raw-wrap" title="Link to this definition"></a></dt>
+<dd><p>Wrap relative to center</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">False</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-load_raw-ignore-strand">
+<span class="sig-name descname"><span class="pre">--ignore-strand</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--no-ignore-strand</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-load_raw-ignore-strand" title="Link to this definition"></a></dt>
+<dd><p>Ignore recorded strand for mtase context filtering</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">False</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-load_raw-colidx">
+<span class="sig-name descname"><span class="pre">--colidx</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;colidx&gt;</span></span><a class="headerlink" href="#cmdoption-catella-load_raw-colidx" title="Link to this definition"></a></dt>
+<dd><p>ModKit column indices</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-load_raw-max-nmol">
+<span class="sig-name descname"><span class="pre">--max-nmol</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;max_nmol&gt;</span></span><a class="headerlink" href="#cmdoption-catella-load_raw-max-nmol" title="Link to this definition"></a></dt>
+<dd><p>Max molecules per chromosome</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-load_raw-seed">
+<span class="sig-name descname"><span class="pre">--seed</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;seed&gt;</span></span><a class="headerlink" href="#cmdoption-catella-load_raw-seed" title="Link to this definition"></a></dt>
+<dd><p>Seed for molecule sampling</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-load_raw-tmp-dir">
+<span class="sig-name descname"><span class="pre">--tmp-dir</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;tmp_dir&gt;</span></span><a class="headerlink" href="#cmdoption-catella-load_raw-tmp-dir" title="Link to this definition"></a></dt>
+<dd><p>Scratch directory</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-load_raw-chunk-size">
+<span class="sig-name descname"><span class="pre">--chunk-size</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;chunk_size&gt;</span></span><a class="headerlink" href="#cmdoption-catella-load_raw-chunk-size" title="Link to this definition"></a></dt>
+<dd><p>Rows read per streamed chunk</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">1000000</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-load_raw-max-cached-chroms">
+<span class="sig-name descname"><span class="pre">--max-cached-chroms</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;max_cached_chroms&gt;</span></span><a class="headerlink" href="#cmdoption-catella-load_raw-max-cached-chroms" title="Link to this definition"></a></dt>
+<dd><p>Max chromosomes’ raw data kept in memory</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">1</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-load_raw-nworker">
+<span class="sig-name descname"><span class="pre">--nworker</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;nworker&gt;</span></span><a class="headerlink" href="#cmdoption-catella-load_raw-nworker" title="Link to this definition"></a></dt>
+<dd><p>Threads for parallel file reading</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">1</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<p class="rubric">Arguments</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-load_raw-arg-CHROMSIZE">
+<span class="sig-name descname"><span class="pre">CHROMSIZE</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-load_raw-arg-CHROMSIZE" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+<p>Chromosome sizes file</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-load_raw-arg-TEST_FILE">
+<span class="sig-name descname"><span class="pre">TEST_FILE</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-load_raw-arg-TEST_FILE" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+<p>Primary methylation file</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-load_raw-arg-OUT_FILE">
+<span class="sig-name descname"><span class="pre">OUT_FILE</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-load_raw-arg-OUT_FILE" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+<p>Path to save results</p>
+</dd></dl>
+
+</section>
+<section id="catella-plot-dropout-ecdf">
+<h3>plot_dropout_ecdf<a class="headerlink" href="#catella-plot-dropout-ecdf" title="Link to this heading"></a></h3>
+<p>Plot the empirical CDF of dropout rate per group.</p>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>catella<span class="w"> </span>plot_dropout_ecdf<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>SOURCE_FILE<span class="w"> </span>CHROM
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_dropout_ecdf-which">
+<span class="sig-name descname"><span class="pre">--which</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;which&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_dropout_ecdf-which" title="Link to this definition"></a></dt>
+<dd><p>test, meth, or unmeth</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_dropout_ecdf-mtase">
+<span class="sig-name descname"><span class="pre">--mtase</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;mtase&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_dropout_ecdf-mtase" title="Link to this definition"></a></dt>
+<dd><p>Subset of mtase labels to evaluate</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_dropout_ecdf-unmapped-strand">
+<span class="sig-name descname"><span class="pre">--unmapped-strand</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;unmapped_strand&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_dropout_ecdf-unmapped-strand" title="Link to this definition"></a></dt>
+<dd><p>union, drop, +, or -</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">'union'</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_dropout_ecdf-source">
+<span class="sig-name descname"><span class="pre">--source</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;source&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_dropout_ecdf-source" title="Link to this definition"></a></dt>
+<dd><p>Restrict the plot to this source</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_dropout_ecdf-out-file">
+<span class="sig-name descname"><span class="pre">--out-file</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;out_file&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_dropout_ecdf-out-file" title="Link to this definition"></a></dt>
+<dd><p>Path to save the figure</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_dropout_ecdf-show">
+<span class="sig-name descname"><span class="pre">--show</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--no-show</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-plot_dropout_ecdf-show" title="Link to this definition"></a></dt>
+<dd><p>Display the figure</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">True</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<p class="rubric">Arguments</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_dropout_ecdf-arg-SOURCE_FILE">
+<span class="sig-name descname"><span class="pre">SOURCE_FILE</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-plot_dropout_ecdf-arg-SOURCE_FILE" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+<p>Experiment HDF5 file</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_dropout_ecdf-arg-CHROM">
+<span class="sig-name descname"><span class="pre">CHROM</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-plot_dropout_ecdf-arg-CHROM" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+<p>Chromosome identifier</p>
+</dd></dl>
+
+</section>
+<section id="catella-plot-energy">
+<h3>plot_energy<a class="headerlink" href="#catella-plot-energy" title="Link to this heading"></a></h3>
+<p>Plot total system energy over time for one simulation run.</p>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>catella<span class="w"> </span>plot_energy<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>CHROM<span class="w"> </span>MOL<span class="w"> </span>RUN<span class="w"> </span>DATASET_FILE
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_energy-tstart">
+<span class="sig-name descname"><span class="pre">--tstart</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;tstart&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_energy-tstart" title="Link to this definition"></a></dt>
+<dd><p>Starting time step</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_energy-tend">
+<span class="sig-name descname"><span class="pre">--tend</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;tend&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_energy-tend" title="Link to this definition"></a></dt>
+<dd><p>Ending time step</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_energy-tscale">
+<span class="sig-name descname"><span class="pre">--tscale</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;tscale&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_energy-tscale" title="Link to this definition"></a></dt>
+<dd><p>Time scale factor (power of 10) for the y-axis</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">1000</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_energy-out-file">
+<span class="sig-name descname"><span class="pre">--out-file</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;out_file&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_energy-out-file" title="Link to this definition"></a></dt>
+<dd><p>Path to save the figure</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_energy-show">
+<span class="sig-name descname"><span class="pre">--show</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--no-show</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-plot_energy-show" title="Link to this definition"></a></dt>
+<dd><p>Display the figure</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">True</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<p class="rubric">Arguments</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_energy-arg-CHROM">
+<span class="sig-name descname"><span class="pre">CHROM</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-plot_energy-arg-CHROM" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+<p>Chromosome identifier</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_energy-arg-MOL">
+<span class="sig-name descname"><span class="pre">MOL</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-plot_energy-arg-MOL" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+<p>Molecule index</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_energy-arg-RUN">
+<span class="sig-name descname"><span class="pre">RUN</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-plot_energy-arg-RUN" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+<p>Simulation run index</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_energy-arg-DATASET_FILE">
+<span class="sig-name descname"><span class="pre">DATASET_FILE</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-plot_energy-arg-DATASET_FILE" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+<p>Simulation dataset HDF5 file</p>
+</dd></dl>
+
+</section>
+<section id="catella-plot-meth-energy">
+<h3>plot_meth_energy<a class="headerlink" href="#catella-plot-meth-energy" title="Link to this heading"></a></h3>
+<p>Plot a methylation heatmap on an energy scale.</p>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>catella<span class="w"> </span>plot_meth_energy<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>EXP_FILE<span class="w"> </span>CHROM
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_meth_energy-key">
+<span class="sig-name descname"><span class="pre">--key</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;key&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_meth_energy-key" title="Link to this definition"></a></dt>
+<dd><p>Analysis key to plot</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">'meth_prob'</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_meth_energy-emax">
+<span class="sig-name descname"><span class="pre">--emax</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;emax&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_meth_energy-emax" title="Link to this definition"></a></dt>
+<dd><p>Clamp energy to [-emax, emax] and use it as the default color scale range</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_meth_energy-max-rows">
+<span class="sig-name descname"><span class="pre">--max-rows</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;max_rows&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_meth_energy-max-rows" title="Link to this definition"></a></dt>
+<dd><p>Downsample to at most this many rows before plotting</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_meth_energy-downsample-how">
+<span class="sig-name descname"><span class="pre">--downsample-how</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;downsample_how&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_meth_energy-downsample-how" title="Link to this definition"></a></dt>
+<dd><p>How to collapse rows when –max-rows is given</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">'mean'</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_meth_energy-vmin">
+<span class="sig-name descname"><span class="pre">--vmin</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;vmin&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_meth_energy-vmin" title="Link to this definition"></a></dt>
+<dd><p>Combined with –vmax into a symmetric half-range centered at zero</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_meth_energy-vmax">
+<span class="sig-name descname"><span class="pre">--vmax</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;vmax&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_meth_energy-vmax" title="Link to this definition"></a></dt>
+<dd><p>See –vmin</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_meth_energy-cmap">
+<span class="sig-name descname"><span class="pre">--cmap</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;cmap&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_meth_energy-cmap" title="Link to this definition"></a></dt>
+<dd><p>Matplotlib colormap name</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_meth_energy-cbar-label">
+<span class="sig-name descname"><span class="pre">--cbar-label</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;cbar_label&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_meth_energy-cbar-label" title="Link to this definition"></a></dt>
+<dd><p>Colorbar label</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">'Energy</span> <span class="pre">[$k_BT$]'</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_meth_energy-out-file">
+<span class="sig-name descname"><span class="pre">--out-file</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;out_file&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_meth_energy-out-file" title="Link to this definition"></a></dt>
+<dd><p>Path to save the figure</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_meth_energy-link-mat-name">
+<span class="sig-name descname"><span class="pre">--link-mat-name</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;link_mat_name&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_meth_energy-link-mat-name" title="Link to this definition"></a></dt>
+<dd><p>Key of a linkage matrix (e.g. from sort_by_linkage) to draw as a dendrogram</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_meth_energy-show">
+<span class="sig-name descname"><span class="pre">--show</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--no-show</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-plot_meth_energy-show" title="Link to this definition"></a></dt>
+<dd><p>Display the figure</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">True</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<p class="rubric">Arguments</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_meth_energy-arg-EXP_FILE">
+<span class="sig-name descname"><span class="pre">EXP_FILE</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-plot_meth_energy-arg-EXP_FILE" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+<p>Experiment HDF5 file</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_meth_energy-arg-CHROM">
+<span class="sig-name descname"><span class="pre">CHROM</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-plot_meth_energy-arg-CHROM" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+<p>Chromosome identifier</p>
+</dd></dl>
+
+</section>
+<section id="catella-plot-meth-prob">
+<h3>plot_meth_prob<a class="headerlink" href="#catella-plot-meth-prob" title="Link to this heading"></a></h3>
+<p>Plot a methylation heatmap.</p>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>catella<span class="w"> </span>plot_meth_prob<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>EXP_FILE<span class="w"> </span>CHROM
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_meth_prob-key">
+<span class="sig-name descname"><span class="pre">--key</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;key&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_meth_prob-key" title="Link to this definition"></a></dt>
+<dd><p>Analysis key to plot. Mutually exclusive with –raw-which</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_meth_prob-raw-which">
+<span class="sig-name descname"><span class="pre">--raw-which</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;raw_which&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_meth_prob-raw-which" title="Link to this definition"></a></dt>
+<dd><p>Raw data source (‘test’, ‘unmeth’, or ‘meth’) to plot directly via to_dense(). Mutually exclusive with –key</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_meth_prob-mask-name">
+<span class="sig-name descname"><span class="pre">--mask-name</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;mask_name&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_meth_prob-mask-name" title="Link to this definition"></a></dt>
+<dd><p>Dropout mask name to apply when plotting via –raw-which (see to_dense)</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_meth_prob-max-rows">
+<span class="sig-name descname"><span class="pre">--max-rows</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;max_rows&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_meth_prob-max-rows" title="Link to this definition"></a></dt>
+<dd><p>Downsample to at most this many rows before plotting</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_meth_prob-downsample-how">
+<span class="sig-name descname"><span class="pre">--downsample-how</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;downsample_how&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_meth_prob-downsample-how" title="Link to this definition"></a></dt>
+<dd><p>How to collapse rows when –max-rows is given</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">'mean'</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_meth_prob-vmin">
+<span class="sig-name descname"><span class="pre">--vmin</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;vmin&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_meth_prob-vmin" title="Link to this definition"></a></dt>
+<dd><p>Lower color scale bound</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_meth_prob-vmax">
+<span class="sig-name descname"><span class="pre">--vmax</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;vmax&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_meth_prob-vmax" title="Link to this definition"></a></dt>
+<dd><p>Upper color scale bound</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_meth_prob-cmap">
+<span class="sig-name descname"><span class="pre">--cmap</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;cmap&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_meth_prob-cmap" title="Link to this definition"></a></dt>
+<dd><p>Matplotlib colormap name</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_meth_prob-cbar-label">
+<span class="sig-name descname"><span class="pre">--cbar-label</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;cbar_label&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_meth_prob-cbar-label" title="Link to this definition"></a></dt>
+<dd><p>Colorbar label</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">'Methylation</span> <span class="pre">prob.'</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_meth_prob-out-file">
+<span class="sig-name descname"><span class="pre">--out-file</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;out_file&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_meth_prob-out-file" title="Link to this definition"></a></dt>
+<dd><p>Path to save the figure</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_meth_prob-link-mat-name">
+<span class="sig-name descname"><span class="pre">--link-mat-name</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;link_mat_name&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_meth_prob-link-mat-name" title="Link to this definition"></a></dt>
+<dd><p>Key of a linkage matrix (e.g. from sort_by_linkage) to draw as a dendrogram</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_meth_prob-show">
+<span class="sig-name descname"><span class="pre">--show</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--no-show</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-plot_meth_prob-show" title="Link to this definition"></a></dt>
+<dd><p>Display the figure</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">True</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<p class="rubric">Arguments</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_meth_prob-arg-EXP_FILE">
+<span class="sig-name descname"><span class="pre">EXP_FILE</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-plot_meth_prob-arg-EXP_FILE" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+<p>Experiment HDF5 file</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_meth_prob-arg-CHROM">
+<span class="sig-name descname"><span class="pre">CHROM</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-plot_meth_prob-arg-CHROM" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+<p>Chromosome identifier</p>
+</dd></dl>
+
+</section>
+<section id="catella-plot-nuc-pos">
+<h3>plot_nuc_pos<a class="headerlink" href="#catella-plot-nuc-pos" title="Link to this heading"></a></h3>
+<p>Plot nucleosome positions over time for one simulation run.</p>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>catella<span class="w"> </span>plot_nuc_pos<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>CHROM<span class="w"> </span>MOL<span class="w"> </span>RUN<span class="w"> </span>DATASET_FILE
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_nuc_pos-tstart">
+<span class="sig-name descname"><span class="pre">--tstart</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;tstart&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_nuc_pos-tstart" title="Link to this definition"></a></dt>
+<dd><p>Starting time step</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_nuc_pos-tend">
+<span class="sig-name descname"><span class="pre">--tend</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;tend&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_nuc_pos-tend" title="Link to this definition"></a></dt>
+<dd><p>Ending time step</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_nuc_pos-tscale">
+<span class="sig-name descname"><span class="pre">--tscale</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;tscale&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_nuc_pos-tscale" title="Link to this definition"></a></dt>
+<dd><p>Time scale factor (power of 10) for the y-axis</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">1000</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_nuc_pos-xscale">
+<span class="sig-name descname"><span class="pre">--xscale</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;xscale&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_nuc_pos-xscale" title="Link to this definition"></a></dt>
+<dd><p>Spatial scale factor (power of 10) for the x-axis</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">1000</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_nuc_pos-cmap">
+<span class="sig-name descname"><span class="pre">--cmap</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;cmap&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_nuc_pos-cmap" title="Link to this definition"></a></dt>
+<dd><p>Matplotlib colormap name</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_nuc_pos-out-file">
+<span class="sig-name descname"><span class="pre">--out-file</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;out_file&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_nuc_pos-out-file" title="Link to this definition"></a></dt>
+<dd><p>Path to save the figure</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_nuc_pos-plot-eseq">
+<span class="sig-name descname"><span class="pre">--plot-eseq</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--no-plot-eseq</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-plot_nuc_pos-plot-eseq" title="Link to this definition"></a></dt>
+<dd><p>Plot the sequence-specific binding energy</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">False</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_nuc_pos-show">
+<span class="sig-name descname"><span class="pre">--show</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--no-show</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-plot_nuc_pos-show" title="Link to this definition"></a></dt>
+<dd><p>Display the figure</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">True</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<p class="rubric">Arguments</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_nuc_pos-arg-CHROM">
+<span class="sig-name descname"><span class="pre">CHROM</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-plot_nuc_pos-arg-CHROM" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+<p>Chromosome identifier</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_nuc_pos-arg-MOL">
+<span class="sig-name descname"><span class="pre">MOL</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-plot_nuc_pos-arg-MOL" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+<p>Molecule index</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_nuc_pos-arg-RUN">
+<span class="sig-name descname"><span class="pre">RUN</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-plot_nuc_pos-arg-RUN" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+<p>Simulation run index</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_nuc_pos-arg-DATASET_FILE">
+<span class="sig-name descname"><span class="pre">DATASET_FILE</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-plot_nuc_pos-arg-DATASET_FILE" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+<p>Simulation dataset HDF5 file</p>
+</dd></dl>
+
+</section>
+<section id="catella-plot-occup">
+<h3>plot_occup<a class="headerlink" href="#catella-plot-occup" title="Link to this heading"></a></h3>
+<p>Visualize nucleosome occupancy for a chromosome.</p>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>catella<span class="w"> </span>plot_occup<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>CHROM<span class="w"> </span>DATASET_FILE
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_occup-time">
+<span class="sig-name descname"><span class="pre">--time</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;time&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_occup-time" title="Link to this definition"></a></dt>
+<dd><p>Time step to compute occupancy at, if not already present</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_occup-out-file">
+<span class="sig-name descname"><span class="pre">--out-file</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;out_file&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_occup-out-file" title="Link to this definition"></a></dt>
+<dd><p>Path to save the figure</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_occup-occup-name">
+<span class="sig-name descname"><span class="pre">--occup-name</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;occup_name&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_occup-occup-name" title="Link to this definition"></a></dt>
+<dd><p>Key of the occupancy data</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">'occup'</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_occup-mols">
+<span class="sig-name descname"><span class="pre">--mols</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;mols&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_occup-mols" title="Link to this definition"></a></dt>
+<dd><p>Molecule index to display (repeatable)</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_occup-xscale">
+<span class="sig-name descname"><span class="pre">--xscale</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;xscale&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_occup-xscale" title="Link to this definition"></a></dt>
+<dd><p>Spatial scale factor (power of 10) for the x-axis</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">1000</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_occup-cmap">
+<span class="sig-name descname"><span class="pre">--cmap</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;cmap&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_occup-cmap" title="Link to this definition"></a></dt>
+<dd><p>Matplotlib colormap name</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_occup-plot-eseq">
+<span class="sig-name descname"><span class="pre">--plot-eseq</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--no-plot-eseq</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-plot_occup-plot-eseq" title="Link to this definition"></a></dt>
+<dd><p>Plot the sequence-specific binding energy</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">False</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_occup-link-mat-name">
+<span class="sig-name descname"><span class="pre">--link-mat-name</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;link_mat_name&gt;</span></span><a class="headerlink" href="#cmdoption-catella-plot_occup-link-mat-name" title="Link to this definition"></a></dt>
+<dd><p>Key of a linkage matrix (e.g. from sort_by_linkage) to draw as a dendrogram</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_occup-show">
+<span class="sig-name descname"><span class="pre">--show</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--no-show</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-plot_occup-show" title="Link to this definition"></a></dt>
+<dd><p>Display the figure</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">True</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<p class="rubric">Arguments</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_occup-arg-CHROM">
+<span class="sig-name descname"><span class="pre">CHROM</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-plot_occup-arg-CHROM" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+<p>Chromosome identifier</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-plot_occup-arg-DATASET_FILE">
+<span class="sig-name descname"><span class="pre">DATASET_FILE</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-plot_occup-arg-DATASET_FILE" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+<p>Simulation dataset HDF5 file</p>
+</dd></dl>
+
+</section>
+<section id="catella-run">
+<h3>run<a class="headerlink" href="#catella-run" title="Link to this heading"></a></h3>
+<p>Execute a parallelized methylation simulation.</p>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>catella<span class="w"> </span>run<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-run-chroms">
+<span class="sig-name descname"><span class="pre">--chroms</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;chroms&gt;</span></span><a class="headerlink" href="#cmdoption-catella-run-chroms" title="Link to this definition"></a></dt>
+<dd><p><strong>Required</strong> Chromosome names</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-run-nsim">
+<span class="sig-name descname"><span class="pre">--nsim</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;nsim&gt;</span></span><a class="headerlink" href="#cmdoption-catella-run-nsim" title="Link to this definition"></a></dt>
+<dd><p><strong>Required</strong> Simulations per molecule</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-run-settings">
+<span class="sig-name descname"><span class="pre">--settings</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;settings&gt;</span></span><a class="headerlink" href="#cmdoption-catella-run-settings" title="Link to this definition"></a></dt>
+<dd><p><strong>Required</strong> Simulation configuration file directory</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-run-exp-file">
+<span class="sig-name descname"><span class="pre">--exp-file</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;exp_file&gt;</span></span><a class="headerlink" href="#cmdoption-catella-run-exp-file" title="Link to this definition"></a></dt>
+<dd><p><strong>Required</strong> Experiment HDF5 file directory</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-run-out-dir">
+<span class="sig-name descname"><span class="pre">--out-dir</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;out_dir&gt;</span></span><a class="headerlink" href="#cmdoption-catella-run-out-dir" title="Link to this definition"></a></dt>
+<dd><p><strong>Required</strong> Output directory</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-run-dataset-name">
+<span class="sig-name descname"><span class="pre">--dataset-name</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;dataset_name&gt;</span></span><a class="headerlink" href="#cmdoption-catella-run-dataset-name" title="Link to this definition"></a></dt>
+<dd><p>Dataset file name (no extension)</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">'results'</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-run-out-types">
+<span class="sig-name descname"><span class="pre">--out-types</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;out_types&gt;</span></span><a class="headerlink" href="#cmdoption-catella-run-out-types" title="Link to this definition"></a></dt>
+<dd><p>energy,position…</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">'all'</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-run-seed">
+<span class="sig-name descname"><span class="pre">--seed</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;seed&gt;</span></span><a class="headerlink" href="#cmdoption-catella-run-seed" title="Link to this definition"></a></dt>
+<dd><p>Random seed</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-run-mols">
+<span class="sig-name descname"><span class="pre">--mols</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;mols&gt;</span></span><a class="headerlink" href="#cmdoption-catella-run-mols" title="Link to this definition"></a></dt>
+<dd><p>Molecule indices to simulate (all if omitted)</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-run-nworker">
+<span class="sig-name descname"><span class="pre">--nworker</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;nworker&gt;</span></span><a class="headerlink" href="#cmdoption-catella-run-nworker" title="Link to this definition"></a></dt>
+<dd><p>Number of processes</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">1</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-run-store-eseq">
+<span class="sig-name descname"><span class="pre">--store-eseq</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--no-store-eseq</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-run-store-eseq" title="Link to this definition"></a></dt>
+<dd><p>Store sequence-specific energy landscape</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">True</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-run-use-median-eseq-mu">
+<span class="sig-name descname"><span class="pre">--use-median-eseq-mu</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--no-use-median-eseq-mu</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-run-use-median-eseq-mu" title="Link to this definition"></a></dt>
+<dd><p>Shift mu to median of sequence-specific energy</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">False</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-run-verbose">
+<span class="sig-name descname"><span class="pre">--verbose</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--no-verbose</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-run-verbose" title="Link to this definition"></a></dt>
+<dd><p>Print progress</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">True</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="catella-sort-by-linkage">
+<h3>sort_by_linkage<a class="headerlink" href="#catella-sort-by-linkage" title="Link to this heading"></a></h3>
+<p>Sort molecules by hierarchical-clustering similarity.</p>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>catella<span class="w"> </span>sort_by_linkage<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>SOURCE_FILE
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-sort_by_linkage-kind">
+<span class="sig-name descname"><span class="pre">--kind</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;kind&gt;</span></span><a class="headerlink" href="#cmdoption-catella-sort_by_linkage-kind" title="Link to this definition"></a></dt>
+<dd><p><strong>Required</strong> Whether source_file holds a MethPrintExperiment or a SimDataset</p>
+<dl class="field-list simple">
+<dt class="field-odd">Options<span class="colon">:</span></dt>
+<dd class="field-odd"><p>experiment | dataset</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-sort_by_linkage-chroms">
+<span class="sig-name descname"><span class="pre">--chroms</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;chroms&gt;</span></span><a class="headerlink" href="#cmdoption-catella-sort_by_linkage-chroms" title="Link to this definition"></a></dt>
+<dd><p>Chromosome(s) to process</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-sort_by_linkage-data-name">
+<span class="sig-name descname"><span class="pre">--data-name</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;data_name&gt;</span></span><a class="headerlink" href="#cmdoption-catella-sort_by_linkage-data-name" title="Link to this definition"></a></dt>
+<dd><p>Analysis key to sort</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-sort_by_linkage-raw-which">
+<span class="sig-name descname"><span class="pre">--raw-which</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;raw_which&gt;</span></span><a class="headerlink" href="#cmdoption-catella-sort_by_linkage-raw-which" title="Link to this definition"></a></dt>
+<dd><p>test, meth, or unmeth; ‘experiment’ kind only</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-sort_by_linkage-mask-name">
+<span class="sig-name descname"><span class="pre">--mask-name</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;mask_name&gt;</span></span><a class="headerlink" href="#cmdoption-catella-sort_by_linkage-mask-name" title="Link to this definition"></a></dt>
+<dd><p>Dropout mask key from filter_dropout to apply; requires raw_which, ‘experiment’ kind only</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-sort_by_linkage-sorted-name">
+<span class="sig-name descname"><span class="pre">--sorted-name</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;sorted_name&gt;</span></span><a class="headerlink" href="#cmdoption-catella-sort_by_linkage-sorted-name" title="Link to this definition"></a></dt>
+<dd><p>Key to store the sorted result</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-sort_by_linkage-store-link-mat">
+<span class="sig-name descname"><span class="pre">--store-link-mat</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--no-store-link-mat</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-sort_by_linkage-store-link-mat" title="Link to this definition"></a></dt>
+<dd><p>Persist the linkage matrix</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">True</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-sort_by_linkage-link-mat-name">
+<span class="sig-name descname"><span class="pre">--link-mat-name</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;link_mat_name&gt;</span></span><a class="headerlink" href="#cmdoption-catella-sort_by_linkage-link-mat-name" title="Link to this definition"></a></dt>
+<dd><p>Key to store the linkage matrix</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-sort_by_linkage-metric">
+<span class="sig-name descname"><span class="pre">--metric</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;metric&gt;</span></span><a class="headerlink" href="#cmdoption-catella-sort_by_linkage-metric" title="Link to this definition"></a></dt>
+<dd><p>Distance metric</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">'euclidean'</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-sort_by_linkage-method">
+<span class="sig-name descname"><span class="pre">--method</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;method&gt;</span></span><a class="headerlink" href="#cmdoption-catella-sort_by_linkage-method" title="Link to this definition"></a></dt>
+<dd><p>Linkage method</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">'ward'</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-sort_by_linkage-batch-size">
+<span class="sig-name descname"><span class="pre">--batch-size</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;batch_size&gt;</span></span><a class="headerlink" href="#cmdoption-catella-sort_by_linkage-batch-size" title="Link to this definition"></a></dt>
+<dd><p>Rows processed per batch</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">20000</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-sort_by_linkage-fill-nan">
+<span class="sig-name descname"><span class="pre">--fill-nan</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;fill_nan&gt;</span></span><a class="headerlink" href="#cmdoption-catella-sort_by_linkage-fill-nan" title="Link to this definition"></a></dt>
+<dd><p>‘mean’ or a number; how to handle nan values before clustering</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-sort_by_linkage-out-file">
+<span class="sig-name descname"><span class="pre">--out-file</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;out_file&gt;</span></span><a class="headerlink" href="#cmdoption-catella-sort_by_linkage-out-file" title="Link to this definition"></a></dt>
+<dd><p>Output file (default: overwrite source_file)</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-sort_by_linkage-overwrite">
+<span class="sig-name descname"><span class="pre">--overwrite</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--no-overwrite</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-sort_by_linkage-overwrite" title="Link to this definition"></a></dt>
+<dd><p>Allow overwriting out_file if it is already backed by H5Array analysis data. Ignored (always allowed) when out_file is not given</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">False</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<p class="rubric">Arguments</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-sort_by_linkage-arg-SOURCE_FILE">
+<span class="sig-name descname"><span class="pre">SOURCE_FILE</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-sort_by_linkage-arg-SOURCE_FILE" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+<p>Experiment or dataset HDF5 file</p>
+</dd></dl>
+
+</section>
+<section id="catella-summarize-dropout">
+<h3>summarize_dropout<a class="headerlink" href="#catella-summarize-dropout" title="Link to this heading"></a></h3>
+<p>Print a per-label dropout fraction summary (QC check).</p>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>catella<span class="w"> </span>summarize_dropout<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>SOURCE_FILE
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-summarize_dropout-which">
+<span class="sig-name descname"><span class="pre">--which</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;which&gt;</span></span><a class="headerlink" href="#cmdoption-catella-summarize_dropout-which" title="Link to this definition"></a></dt>
+<dd><p>test, meth, or unmeth</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-summarize_dropout-mtase">
+<span class="sig-name descname"><span class="pre">--mtase</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;mtase&gt;</span></span><a class="headerlink" href="#cmdoption-catella-summarize_dropout-mtase" title="Link to this definition"></a></dt>
+<dd><p>Subset of mtase labels to summarize</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-summarize_dropout-chroms">
+<span class="sig-name descname"><span class="pre">--chroms</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;chroms&gt;</span></span><a class="headerlink" href="#cmdoption-catella-summarize_dropout-chroms" title="Link to this definition"></a></dt>
+<dd><p>Subset of chromosomes to summarize</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-summarize_dropout-unmapped-strand">
+<span class="sig-name descname"><span class="pre">--unmapped-strand</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;unmapped_strand&gt;</span></span><a class="headerlink" href="#cmdoption-catella-summarize_dropout-unmapped-strand" title="Link to this definition"></a></dt>
+<dd><p>union, drop, +, or -</p>
+<dl class="field-list simple">
+<dt class="field-odd">Default<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">'union'</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-summarize_dropout-out-file">
+<span class="sig-name descname"><span class="pre">--out-file</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;out_file&gt;</span></span><a class="headerlink" href="#cmdoption-catella-summarize_dropout-out-file" title="Link to this definition"></a></dt>
+<dd><p>Optional path to also save the summary as CSV</p>
+</dd></dl>
+
+<p class="rubric">Arguments</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-catella-summarize_dropout-arg-SOURCE_FILE">
+<span class="sig-name descname"><span class="pre">SOURCE_FILE</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-catella-summarize_dropout-arg-SOURCE_FILE" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+<p>Experiment HDF5 file</p>
+</dd></dl>
+
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="tutorials/tut02_run_sim.html" class="btn btn-neutral float-left" title="Tutorial 2: From Methylation Probability to Nucleosome Positioning Prediction" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="api.html" class="btn btn-neutral float-right" title="API Reference" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Michael Chiang.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

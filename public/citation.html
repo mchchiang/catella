@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Installation &mdash; catella 0.1.0 documentation</title>
+  <title>Citation and License &mdash; catella 0.1.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
       <link rel="stylesheet" type="text/css" href="_static/custom.css?v=57874f38" />
@@ -22,8 +22,7 @@
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Nucleosome Occupancy Model" href="model.html" />
-    <link rel="prev" title="Welcome to catella’s documentation!" href="index.html" /> 
+    <link rel="prev" title="API Reference" href="api.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -47,14 +46,7 @@
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul class="current">
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Installation</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#step-1-clone-the-repository">Step 1: Clone the Repository</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#step-2-create-the-environment">Step 2: Create the Environment</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#step-3-activate-the-environment">Step 3: Activate the Environment</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#step-4-verify-installation">Step 4: Verify Installation</a></li>
-</ul>
-</li>
+<li class="toctree-l1"><a class="reference internal" href="install.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="model.html">Nucleosome Occupancy Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="data_format.html">Input and Output Data Formats</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/tut00_data_prep.html">Tutorial 0: Data Preparation</a></li>
@@ -62,7 +54,11 @@
 <li class="toctree-l1"><a class="reference internal" href="tutorials/tut02_run_sim.html">Tutorial 2: From Methylation Probability to Nucleosome Positioning Prediction</a></li>
 <li class="toctree-l1"><a class="reference internal" href="cli.html">CLI Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="citation.html">Citation and License</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Citation and License</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#citing-catella">Citing catella</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#license">License</a></li>
+</ul>
+</li>
 </ul>
 
         </div>
@@ -79,9 +75,9 @@
           <div role="navigation" aria-label="Page navigation">
   <ul class="wy-breadcrumbs">
       <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
-      <li class="breadcrumb-item active">Installation</li>
+      <li class="breadcrumb-item active">Citation and License</li>
       <li class="wy-breadcrumbs-aside">
-              <a href="https://github.com/mchchiang/catella/blob/main/docs/source/install.rst" class="fa fa-github"> Edit on GitHub</a>
+              <a href="https://github.com/mchchiang/catella/blob/main/docs/source/citation.rst" class="fa fa-github"> Edit on GitHub</a>
       </li>
   </ul>
   <hr/>
@@ -89,43 +85,47 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <section id="installation">
-<h1>Installation<a class="headerlink" href="#installation" title="Link to this heading"></a></h1>
-<p>Follow these steps to set up the project on your local machine.</p>
-<section id="prerequisites">
-<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading"></a></h2>
-<p>Before you begin, ensure you have <cite>Conda &lt;https://docs.anaconda.com&gt;</cite>
-installed on your system.</p>
-</section>
-<section id="step-1-clone-the-repository">
-<h2>Step 1: Clone the Repository<a class="headerlink" href="#step-1-clone-the-repository" title="Link to this heading"></a></h2>
-<p>First, clone the project to your local machine:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/mchchiang/catella.git
+  <section id="citation-and-license">
+<h1>Citation and License<a class="headerlink" href="#citation-and-license" title="Link to this heading"></a></h1>
+<section id="citing-catella">
+<h2>Citing catella<a class="headerlink" href="#citing-catella" title="Link to this heading"></a></h2>
+<p>If you use catella in your research, please cite it.</p>
+<div class="highlight-bibtex notranslate"><div class="highlight"><pre><span></span><span class="nc">@software</span><span class="p">{</span><span class="nl">catella</span><span class="p">,</span>
+<span class="w">  </span><span class="na">author</span><span class="w">  </span><span class="p">=</span><span class="w"> </span><span class="s">{Chiang, Michael}</span><span class="p">,</span>
+<span class="w">  </span><span class="na">title</span><span class="w">   </span><span class="p">=</span><span class="w"> </span><span class="s">{catella}</span><span class="p">,</span>
+<span class="w">  </span><span class="na">url</span><span class="w">     </span><span class="p">=</span><span class="w"> </span><span class="s">{https://github.com/mchchiang/catella}</span><span class="p">,</span>
+<span class="w">  </span><span class="na">version</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">{0.1.0}</span>
+<span class="p">}</span>
 </pre></div>
 </div>
+<p>Machine-readable citation metadata is also available in
+<a class="reference external" href="https://github.com/mchchiang/catella/blob/main/CITATION.cff">CITATION.cff</a>
+at the repository root.</p>
 </section>
-<section id="step-2-create-the-environment">
-<h2>Step 2: Create the Environment<a class="headerlink" href="#step-2-create-the-environment" title="Link to this heading"></a></h2>
-<p>Use the provided <cite>environment.yml</cite> file to create a dedicated Conda
-environment. This ensures all dependencies are correctly managed. The default
-name of the environment is <cite>catella</cite>, but you can change this within the
-file.
-file.</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>conda<span class="w"> </span>env<span class="w"> </span>create<span class="w"> </span>-f<span class="w"> </span>environment.yml
-</pre></div>
-</div>
-</section>
-<section id="step-3-activate-the-environment">
-<h2>Step 3: Activate the Environment<a class="headerlink" href="#step-3-activate-the-environment" title="Link to this heading"></a></h2>
-<p>Once the environment is created, activate it using:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>conda<span class="w"> </span>activate<span class="w"> </span>catella
-</pre></div>
-</div>
-</section>
-<section id="step-4-verify-installation">
-<h2>Step 4: Verify Installation<a class="headerlink" href="#step-4-verify-installation" title="Link to this heading"></a></h2>
-<p>Check that the program is working correctly by running the help command:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>catella<span class="w"> </span>--help
+<section id="license">
+<h2>License<a class="headerlink" href="#license" title="Link to this heading"></a></h2>
+<p>catella is distributed under the MIT License.</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>MIT License
+
+Copyright (c) 2026 Michael Chiang
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the &quot;Software&quot;), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 </pre></div>
 </div>
 </section>
@@ -135,8 +135,7 @@ file.</p>
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="index.html" class="btn btn-neutral float-left" title="Welcome to catella’s documentation!" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="model.html" class="btn btn-neutral float-right" title="Nucleosome Occupancy Model" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="api.html" class="btn btn-neutral float-left" title="API Reference" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
     </div>
 
   <hr/>

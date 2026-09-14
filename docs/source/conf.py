@@ -111,6 +111,10 @@ exclude_patterns = [
     "Thumbs.db",
     ".DS_Store",
     "**.ipynb_checkpoints",
+    # Not ready to publish yet; remove once wired into index.rst's toctree.
+    "tutorials/tut03_promoters.ipynb",
+    "changelog.md",
+    "contributing.md",
 ]
 
 autosummary_generate = True

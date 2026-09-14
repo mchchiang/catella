@@ -47,10 +47,14 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="install.html">Installation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="model.html">Simulation Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model.html">Nucleosome Occupancy Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="data_format.html">Input and Output Data Formats</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/tut00_data_prep.html">Tutorial 0: Data Preparation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/tut01_meth_prob.html">Tutorial 1: From Raw Data to Normalized Methylation Probability</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/tut02_run_sim.html">Tutorial 2: From Methylation Probability to Nucleosome Positioning Prediction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="cli.html">CLI Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/tut00_data_prep/data_prep.html">Tutorial 0: Data Preparation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/tut01_quick_start/quick_start.html">Tutorial 1: Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="citation.html">Citation and License</a></li>
 </ul>
 
         </div>
@@ -90,9 +94,38 @@
 <li class="toctree-l2"><a class="reference internal" href="install.html#step-4-verify-installation">Step 4: Verify Installation</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="model.html">Simulation Model</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="model.html#the-energy-of-the-system">The Energy of the System</a></li>
-<li class="toctree-l2"><a class="reference internal" href="model.html#monte-carlo-sampling-moves">Monte Carlo Sampling Moves</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model.html">Nucleosome Occupancy Model</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="model.html#introduction">Introduction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="model.html#model">Model</a></li>
+<li class="toctree-l2"><a class="reference internal" href="model.html#sampling-dynamics-markov-chain-monte-carlo">Sampling dynamics – Markov Chain Monte Carlo</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="data_format.html">Input and Output Data Formats</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="data_format.html#input-data">Input data</a></li>
+<li class="toctree-l2"><a class="reference internal" href="data_format.html#output-data">Output data</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/tut00_data_prep.html">Tutorial 0: Data Preparation</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/tut00_data_prep.html#Software-prerequisites">Software prerequisites</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/tut00_data_prep.html#Upstream-preprocesing-assumptions">Upstream preprocesing assumptions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/tut00_data_prep.html#Generating-a-segment-size-file">Generating a segment size file</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/tut00_data_prep.html#Processing-the-bam-file-after-alignment">Processing the bam file after alignment</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/tut01_meth_prob.html">Tutorial 1: From Raw Data to Normalized Methylation Probability</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/tut01_meth_prob.html#Prerequisite-data-files">Prerequisite data files</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/tut01_meth_prob.html#Loading-the-data-files">Loading the data files</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/tut01_meth_prob.html#Performing-QC">Performing QC</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/tut01_meth_prob.html#Computing-normalized-methylation-probabilities">Computing normalized methylation probabilities</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/tut01_meth_prob.html#Obtaining-the-methylation-probability-using-an-empirical-approach">Obtaining the methylation probability using an empirical approach</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/tut02_run_sim.html">Tutorial 2: From Methylation Probability to Nucleosome Positioning Prediction</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/tut02_run_sim.html#Analyzing-the-simulation-results">Analyzing the simulation results</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="cli.html">CLI Reference</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="cli.html#catella">catella</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a><ul>
@@ -101,18 +134,9 @@
 <li class="toctree-l2"><a class="reference internal" href="api.html#module-catella.simulation.results">Simulation classes</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/tut00_data_prep/data_prep.html">Tutorial 0: Data Preparation</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/tut00_data_prep/data_prep.html#Software-prerequisites">Software prerequisites</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/tut00_data_prep/data_prep.html#Upstream-preprocesing-assumptions">Upstream preprocesing assumptions</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/tut00_data_prep/data_prep.html#Generating-a-segment-size-file">Generating a segment size file</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/tut00_data_prep/data_prep.html#Processing-the-bam-file-after-alignment">Processing the bam file after alignment</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/tut01_quick_start/quick_start.html">Tutorial 1: Quick Start</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/tut01_quick_start/quick_start.html#Prerequisite-data-files">Prerequisite data files</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/tut01_quick_start/quick_start.html#Loading-the-data-files-and-performing-normalization">Loading the data files and performing normalization</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/tut01_quick_start/quick_start.html#Performing-nucleosome-positioning-sampling-simulations">Performing nucleosome positioning sampling simulations</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/tut01_quick_start/quick_start.html#Analyzing-the-simulation-results">Analyzing the simulation results</a></li>
+<li class="toctree-l1"><a class="reference internal" href="citation.html">Citation and License</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="citation.html#citing-catella">Citing catella</a></li>
+<li class="toctree-l2"><a class="reference internal" href="citation.html#license">License</a></li>
 </ul>
 </li>
 </ul>

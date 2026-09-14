@@ -1,31 +1,31 @@
 
 
 <!DOCTYPE html>
-<html class="writer-html5" lang="en" data-content_root="../../">
+<html class="writer-html5" lang="en" data-content_root="../">
 <head>
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Tutorial 0: Data Preparation &mdash; catella 0.1.0 documentation</title>
-      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
-      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
-      <link rel="stylesheet" type="text/css" href="../../_static/custom.css?v=57874f38" />
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=57874f38" />
 
   
-      <script src="../../_static/jquery.js?v=5d32c60e"></script>
-      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="../../_static/documentation_options.js?v=01f34227"></script>
-      <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
-      <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
       <script src="https://cdn.jsdelivr.net/npm/@jupyter-widgets/html-manager@^1.0.1/dist/embed-amd.js"></script>
       <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true, "displayMath": [["$$", "$$"], ["\\[", "\\]"]], "tags": "ams", "tagSide": "right", "tagAlign": "center"}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
       <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
-    <script src="../../_static/js/theme.js"></script>
-    <link rel="index" title="Index" href="../../genindex.html" />
-    <link rel="search" title="Search" href="../../search.html" />
-    <link rel="next" title="Tutorial 1: Quick Start" href="../tut01_quick_start/quick_start.html" />
-    <link rel="prev" title="API Reference" href="../../api.html" /> 
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Tutorial 1: From Raw Data to Normalized Methylation Probability" href="tut01_meth_prob.html" />
+    <link rel="prev" title="Input and Output Data Formats" href="../data_format.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -36,11 +36,11 @@
 
           
           
-          <a href="../../index.html" class="icon icon-home">
+          <a href="../index.html" class="icon icon-home">
             catella
           </a>
 <div role="search">
-  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
     <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
     <input type="hidden" name="check_keywords" value="yes" />
     <input type="hidden" name="area" value="default" />
@@ -49,9 +49,9 @@
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul class="current">
-<li class="toctree-l1"><a class="reference internal" href="../../install.html">Installation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../model.html">Simulation Model</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../api.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../install.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../model.html">Nucleosome Occupancy Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../data_format.html">Input and Output Data Formats</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Tutorial 0: Data Preparation</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#Software-prerequisites">Software prerequisites</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#Upstream-preprocesing-assumptions">Upstream preprocesing assumptions</a></li>
@@ -63,7 +63,11 @@
 </li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="../tut01_quick_start/quick_start.html">Tutorial 1: Quick Start</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tut01_meth_prob.html">Tutorial 1: From Raw Data to Normalized Methylation Probability</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tut02_run_sim.html">Tutorial 2: From Methylation Probability to Nucleosome Positioning Prediction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../cli.html">CLI Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../api.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../citation.html">Citation and License</a></li>
 </ul>
 
         </div>
@@ -72,17 +76,17 @@
 
     <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
           <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-          <a href="../../index.html">catella</a>
+          <a href="../index.html">catella</a>
       </nav>
 
       <div class="wy-nav-content">
         <div class="rst-content">
           <div role="navigation" aria-label="Page navigation">
   <ul class="wy-breadcrumbs">
-      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
       <li class="breadcrumb-item active">Tutorial 0: Data Preparation</li>
       <li class="wy-breadcrumbs-aside">
-              <a href="https://github.com/mchchiang/catella/blob/main/docs/source/tutorials/tut00_data_prep/data_prep.ipynb" class="fa fa-github"> Edit on GitHub</a>
+              <a href="https://github.com/mchchiang/catella/blob/main/docs/source/tutorials/tut00_data_prep.ipynb" class="fa fa-github"> Edit on GitHub</a>
       </li>
   </ul>
   <hr/>
@@ -144,16 +148,16 @@ before passing the data to <code class="docutils literal notranslate"><span clas
 <h3>Artificial constructs<a class="headerlink" href="#Artificial-constructs" title="Link to this heading"></a></h3>
 <p>For artificial constructs, individual molecules belonging to the same construct typically have the same size covering the full length of the construct or ‘chromosome’. As such, we do not need to perform additional steps to standardize the molecules.</p>
 <p>Let us consider the case where the methylation footprinting experiments utilize methyltransferases to modify CpG, GpC, and A. We use the command <code class="docutils literal notranslate"><span class="pre">modkit</span> <span class="pre">extract</span> <span class="pre">full</span></code> to extract the table of methylation probabilities:</p>
-<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>modkit extract full --motif A 0 --motif CG 0 --motif GC 1 --mapped --ignore-implicit --ref genome.fa input.bam - | \
-awk &#39;$14 != &quot;h&quot;&#39; | bgzip &gt; output.tsv.gz
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>modkit extract full --motif A 0 --motif CG 0 --motif GC 1 --mapped --ref genome.fa input.bam - | \
+awk &#39;$14 != &quot;h&quot; &amp;&amp; $14 != &quot;-&quot;&#39; | bgzip &gt; output.tsv.gz
 </pre></div>
 </div>
 <p>Some points to note about this chain of commands:</p>
 <ul class="simple">
 <li><p>By default, this command outputs both the probabilities of 5-methylcytosine (5mC, or those with <code class="docutils literal notranslate"><span class="pre">m</span></code> in the <code class="docutils literal notranslate"><span class="pre">mod_code</span></code> column of the table) and 5-hydroxymethylcytosine (5hmC, or those with <code class="docutils literal notranslate"><span class="pre">h</span></code>), generating two entries for the same cytosine base. Since <code class="docutils literal notranslate"><span class="pre">catella</span></code> only allows one probability score per base, we must resolve this conflict. If we are certain that within the experiments only one form of methylation is done (e.g., 5mC or <code class="docutils literal notranslate"><span class="pre">m</span></code>), we can safely filter out the other form of
-methylation (e.g., 5hmC or <code class="docutils literal notranslate"><span class="pre">h</span></code>). The filtering <code class="docutils literal notranslate"><span class="pre">awk</span> <span class="pre">'$14</span> <span class="pre">!=</span> <span class="pre">&quot;h&quot;'</span></code> removes any <code class="docutils literal notranslate"><span class="pre">5hmC</span></code> probabilities.</p></li>
+methylation (e.g., 5hmC or <code class="docutils literal notranslate"><span class="pre">h</span></code>). The filtering <code class="docutils literal notranslate"><span class="pre">$14</span> <span class="pre">!=</span> <span class="pre">&quot;h&quot;</span></code> in <code class="docutils literal notranslate"><span class="pre">awk</span></code> removes any <code class="docutils literal notranslate"><span class="pre">5hmC</span></code> probabilities.</p></li>
 <li><p>We explicitly specify the motifs where methylation can occur in the experiments (i.e., <code class="docutils literal notranslate"><span class="pre">--motif</span> <span class="pre">A</span> <span class="pre">0</span> <span class="pre">--motif</span> <span class="pre">CG</span> <span class="pre">0</span> <span class="pre">--motif</span> <span class="pre">GC</span> <span class="pre">1</span></code>) to help remove any background random methylation, particularly on cytosine.</p></li>
-<li><p>We use the option <code class="docutils literal notranslate"><span class="pre">--ignore-implicit</span></code> to output modified bases only and ignore canonical (unmodified) ones (those with <code class="docutils literal notranslate"><span class="pre">-</span></code> in the <code class="docutils literal notranslate"><span class="pre">mod_code</span></code> column). This reduces the overall file size of the resulting <code class="docutils literal notranslate"><span class="pre">tsv</span></code> file. In the same spirit, we use the option <code class="docutils literal notranslate"><span class="pre">--mapped</span></code> to only consider molecules that have been successfully aligned.</p></li>
+<li><p>We filter out canonical bases (those with <code class="docutils literal notranslate"><span class="pre">-</span></code> in the <code class="docutils literal notranslate"><span class="pre">mod_code</span></code> column) using <code class="docutils literal notranslate"><span class="pre">$14</span> <span class="pre">!=</span> <span class="pre">&quot;-&quot;</span></code> in <code class="docutils literal notranslate"><span class="pre">awk</span></code>. This reduces the overall file size of the resulting <code class="docutils literal notranslate"><span class="pre">tsv</span></code> file. In the same spirit, we use the option <code class="docutils literal notranslate"><span class="pre">--mapped</span></code> to only consider molecules that have been successfully aligned.</p></li>
 <li><p>We recommend using <code class="docutils literal notranslate"><span class="pre">bgzip</span></code> to compress the <code class="docutils literal notranslate"><span class="pre">tsv</span></code> file to reduce its file size. <code class="docutils literal notranslate"><span class="pre">catella</span></code> supports direct reading of <code class="docutils literal notranslate"><span class="pre">gzip</span></code> file.</p></li>
 </ul>
 <p>The resulting <code class="docutils literal notranslate"><span class="pre">output.tsv.gz</span></code> file is now ready to be read by <code class="docutils literal notranslate"><span class="pre">catella</span></code>. The specific columns of this table read by <code class="docutils literal notranslate"><span class="pre">catella</span></code> are as follows:</p>
@@ -189,9 +193,6 @@ methylation (e.g., 5hmC or <code class="docutils literal notranslate"><span clas
 <p><strong>Note:</strong> Remember to keep the header line of the table containing the column names (i.e., do not use the <code class="docutils literal notranslate"><span class="pre">--no-header</span></code> option in <code class="docutils literal notranslate"><span class="pre">modkit</span> <span class="pre">extract</span> <span class="pre">full</span></code>). <code class="docutils literal notranslate"><span class="pre">catella</span></code> relies on the header to extract data from the relevant columns.</p>
 </div>
 <div class="admonition note">
-<p><strong>Note:</strong> <code class="docutils literal notranslate"><span class="pre">catella</span></code> ignores the probability values of canonical bases (i.e., those with <code class="docutils literal notranslate"><span class="pre">-</span></code> in the <code class="docutils literal notranslate"><span class="pre">mod_code</span></code> column). The methylation probability score at these bases is set to zero.</p>
-</div>
-<div class="admonition note">
 <p><strong>Note:</strong> Control samples - from our in-house methylation footprinting experiments, we find that the methylation readout based on Oxford Nanopore sequencing tend to be noisier than that from PacBio sequencing. As such, it is useful to also prepare control samples of DNA fibers that are either fully methylated or unmethylated. These can then be used to normalize the signal. See the section Simulation Model which discusses this more in detail.</p>
 </div>
 </section>
@@ -211,8 +212,8 @@ EOF
 </pre></div>
 </div>
 <p>Now we can proceed in the same way as above for the artificial constructs:</p>
-<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>modkit extract full --motif A 0 --motif CG 0 --motif GC 1 --mapped --ignore-implicit --ref genome.fa intersect.bam - | \
-awk &#39;$14 != &quot;h&quot;&#39; | bgzip &gt; output.tsv.gz
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>modkit extract full --motif A 0 --motif CG 0 --motif GC 1 --mapped --ref genome.fa intersect.bam - | \
+awk &#39;$14 != &quot;h&quot; &amp;&amp; $14 != &quot;-&quot;&#39; | bgzip &gt; output.tsv.gz
 </pre></div>
 </div>
 <script type="application/vnd.jupyter.widget-state+json">
@@ -225,8 +226,8 @@ awk &#39;$14 != &quot;h&quot;&#39; | bgzip &gt; output.tsv.gz
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="../../api.html" class="btn btn-neutral float-left" title="API Reference" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="../tut01_quick_start/quick_start.html" class="btn btn-neutral float-right" title="Tutorial 1: Quick Start" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="../data_format.html" class="btn btn-neutral float-left" title="Input and Output Data Formats" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="tut01_meth_prob.html" class="btn btn-neutral float-right" title="Tutorial 1: From Raw Data to Normalized Methylation Probability" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>

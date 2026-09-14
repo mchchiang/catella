@@ -1,0 +1,483 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tutorial 2: From Methylation Probability to Nucleosome Positioning Prediction &mdash; catella 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=57874f38" />
+      <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+      <script src="https://cdn.jsdelivr.net/npm/@jupyter-widgets/html-manager@^1.0.1/dist/embed-amd.js"></script>
+      <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true, "displayMath": [["$$", "$$"], ["\\[", "\\]"]], "tags": "ams", "tagSide": "right", "tagAlign": "center"}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+      <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="CLI Reference" href="../cli.html" />
+    <link rel="prev" title="Tutorial 1: From Raw Data to Normalized Methylation Probability" href="tut01_meth_prob.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            catella
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../install.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../model.html">Nucleosome Occupancy Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../data_format.html">Input and Output Data Formats</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tut00_data_prep.html">Tutorial 0: Data Preparation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tut01_meth_prob.html">Tutorial 1: From Raw Data to Normalized Methylation Probability</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Tutorial 2: From Methylation Probability to Nucleosome Positioning Prediction</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#Analyzing-the-simulation-results">Analyzing the simulation results</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../cli.html">CLI Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../api.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../citation.html">Citation and License</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">catella</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Tutorial 2: From Methylation Probability to Nucleosome Positioning Prediction</li>
+      <li class="wy-breadcrumbs-aside">
+              <a href="https://github.com/mchchiang/catella/blob/main/docs/source/tutorials/tut02_run_sim.ipynb" class="fa fa-github"> Edit on GitHub</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="Tutorial-2:-From-Methylation-Probability-to-Nucleosome-Positioning-Prediction">
+<h1>Tutorial 2: From Methylation Probability to Nucleosome Positioning Prediction<a class="headerlink" href="#Tutorial-2:-From-Methylation-Probability-to-Nucleosome-Positioning-Prediction" title="Link to this heading"></a></h1>
+<p>With the normalized methylation probabilities computed in the last tutorial (<a class="reference internal" href="tut01_meth_prob.html"><span class="doc">Tutorial 1</span></a>), we are now ready to perform simulations to sample the nucleosome positions. As in Tutorial 1, we focus on the 601 fibers for illustration and brevity, and one can process R1 and R2 fibers with the exact same steps. Let us first reload the processed experimental HDF5 file:</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">catella.experiment.methdata</span><span class="w"> </span><span class="kn">import</span> <span class="n">MethPrintExperiment</span>
+
+<span class="n">exp_h5</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;example/tut01_meth_prob/experiment/analysis.h5&quot;</span><span class="p">)</span>
+<span class="n">exp_data</span> <span class="o">=</span> <span class="n">MethPrintExperiment</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">exp_h5</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<p>To start the simulations, we need to create a configuration file specifying the parameter values. The list of parameters required is as follows:</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Name</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>nucbp</p></td>
+<td><p>The amount of DNA (in bp) occupied by a bound nucleosome (e.g., 147 bp)</p></td>
+</tr>
+<tr class="row-odd"><td><p>llink</p></td>
+<td><p>Length (in bp) of the linker DNA</p></td>
+</tr>
+<tr class="row-even"><td><p>elink</p></td>
+<td><p>Energy scale (in <span class="math notranslate nohighlight">\(k_BT\)</span>) of the linker DNA potential.</p></td>
+</tr>
+<tr class="row-odd"><td><p>mu</p></td>
+<td><p>Chemical potential (in units of <span class="math notranslate nohighlight">\(k_BT\)</span>). The energy associated with non-specific binding of nucleosome to DNA</p></td>
+</tr>
+<tr class="row-even"><td><p>start_temp</p></td>
+<td><p>Start temperature</p></td>
+</tr>
+<tr class="row-odd"><td><p>end_temp</p></td>
+<td><p>End temperature</p></td>
+</tr>
+<tr class="row-even"><td><p>cool_option</p></td>
+<td><p>How to adjust temperature over time. Options are “linear”, “geometric”, or “constant”</p></td>
+</tr>
+<tr class="row-odd"><td><p>nsweep</p></td>
+<td><p>Number of “sweeps” or timesteps in the simulation</p></td>
+</tr>
+<tr class="row-even"><td><p>print_freq</p></td>
+<td><p>Frequency (in sweeps) at which to record simulation data</p></td>
+</tr>
+<tr class="row-odd"><td><p>emax</p></td>
+<td><p>The maximum energy cost allowed (in <span class="math notranslate nohighlight">\(k_BT\)</span>) from the methylation footprinting data</p></td>
+</tr>
+</tbody>
+</table>
+<p>It may be difficult to determine an appropriate value for some of these parameters <em>a priori</em>. One of which is the starting temperature (<code class="docutils literal notranslate"><span class="pre">start_temp</span></code>). Setting it too low may prevent the system from exploring the full energy landscape and sampling space initially. <code class="docutils literal notranslate"><span class="pre">catella</span></code> provides a method <code class="docutils literal notranslate"><span class="pre">estimate_start_temp</span></code> to help with this estimation. This method returns a given percentile (default the 90th) of the magnitude of the sequence-specific energy landscape <span class="math notranslate nohighlight">\(|E_{\text{seq}}|\)</span>,
+estimated from a random subsample of molecules. Setting <code class="docutils literal notranslate"><span class="pre">start_temp</span></code> to approximately this value ensures that even large energy barriers in the data are readily crossable early in the annealing schedule, so the simulation does not freeze into its initial nucleosome configuration. Here we use a higher-than-default percentile (99th) for a firmer guarantee that even the rarest, most extreme barriers are crossable, at the cost of a hotter and slightly slower-to-mix start:</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">catella</span>
+<span class="n">start_temp</span> <span class="o">=</span> <span class="n">catella</span><span class="o">.</span><span class="n">estimate_start_temp</span><span class="p">(</span><span class="n">exp_data</span><span class="p">,</span> <span class="n">prob_name</span><span class="o">=</span><span class="s2">&quot;meth_prob_model&quot;</span><span class="p">,</span> <span class="n">percentile</span><span class="o">=</span><span class="mf">99.0</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Estimated start temperature: </span><span class="si">{</span><span class="n">start_temp</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Estimated start temperature: 22.060434403162414
+</pre></div></div>
+</div>
+<p>Given this, we will set <code class="docutils literal notranslate"><span class="pre">start_temp</span> <span class="pre">=</span> <span class="pre">22.0</span></code>. We pair this with <code class="docutils literal notranslate"><span class="pre">end_temp</span> <span class="pre">=</span> <span class="pre">1.0</span></code>, the same <span class="math notranslate nohighlight">\(k_BT\)</span> unit that <code class="docutils literal notranslate"><span class="pre">mu</span></code>, <code class="docutils literal notranslate"><span class="pre">elink</span></code>, and <code class="docutils literal notranslate"><span class="pre">emax</span></code> are already expressed in, so that the coldest state of the annealing schedule represents the model’s actual equilibrium distribution rather than an artificially sharpened or flattened one. <code class="docutils literal notranslate"><span class="pre">start_temp</span></code> only needs to be high enough for the schedule to mix well early on, and it does not change what that final, converged distribution is, so it is
+fine (and expected) for different experiments or loci to need different <code class="docutils literal notranslate"><span class="pre">start_temp</span></code> values. Cooling below <code class="docutils literal notranslate"><span class="pre">end_temp</span> <span class="pre">=</span> <span class="pre">1.0</span></code> (i.e., <span class="math notranslate nohighlight">\(\beta &gt; 1\)</span>) would instead sample an artificially sharpened, over-confident version of the posterior, understating the true heterogeneity between simulation replicates; cooling only to a temperature above 1.0 would conversely flatten the posterior and overstate that heterogeneity. Since we want the replicate ensemble to reflect the model’s actual
+uncertainty in nucleosome position, <code class="docutils literal notranslate"><span class="pre">end_temp</span> <span class="pre">=</span> <span class="pre">1.0</span></code> is the correct choice rather than a free parameter to tune lower for a sharper-looking answer.</p>
+<p>Another parameter that is difficult to estimate is the chemical potential <span class="math notranslate nohighlight">\(\mu\)</span>. Since the energy landscape can take both negative and positive values, a neutral starting choice for <code class="docutils literal notranslate"><span class="pre">mu</span></code> is 0. Alternatively, one could set <span class="math notranslate nohighlight">\(\mu\)</span> so that it is equal to the median of the data energy landscape, i.e., <span class="math notranslate nohighlight">\(\mu = \text{median}(E_{\text{data}})\)</span>. This can be done by setting <span class="math notranslate nohighlight">\(\mu\)</span> to an arbitrary number (say 0) in the parameter list, and then using the option <code class="docutils literal notranslate"><span class="pre">use_median_eseq_mu</span></code>
+in <code class="docutils literal notranslate"><span class="pre">catella.run</span></code>. We use <code class="docutils literal notranslate"><span class="pre">mu</span> <span class="pre">=</span> <span class="pre">0.0</span></code> directly for this tutorial.</p>
+<p>Additionally, we set <code class="docutils literal notranslate"><span class="pre">emax</span> <span class="pre">=</span> <span class="pre">25.0</span></code>, chosen to sit just above our estimated <code class="docutils literal notranslate"><span class="pre">start_temp</span> <span class="pre">=</span> <span class="pre">22.0</span></code>. If <code class="docutils literal notranslate"><span class="pre">emax</span></code> were set well below <code class="docutils literal notranslate"><span class="pre">start_temp</span></code>, the clamp would truncate the same large energy barriers that <code class="docutils literal notranslate"><span class="pre">start_temp</span></code> was calibrated to make crossable, undoing that calibration. We set <code class="docutils literal notranslate"><span class="pre">elink</span> <span class="pre">=</span> <span class="pre">25.0</span></code> to match <code class="docutils literal notranslate"><span class="pre">emax</span></code>, so the steric repulsion is energetically comparable to the sequence-derived energy scale over a meaningful range as nucleosomes approach the <code class="docutils literal notranslate"><span class="pre">llink</span></code> boundary, not only in
+the last fraction of a bp before contact (which is already forbidden even at a much smaller <code class="docutils literal notranslate"><span class="pre">elink</span></code>, since the repulsion grows steeply at short range regardless). This keeps the physical packing preference and the data-driven preference on a similar energy footing.</p>
+<p>We specify all the simulation parameters utilizing the <code class="docutils literal notranslate"><span class="pre">SimSettings</span></code> object:</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">catella.simulation.engine</span><span class="w"> </span><span class="kn">import</span> <span class="n">SimSettings</span>
+
+<span class="n">settings</span> <span class="o">=</span> <span class="n">SimSettings</span><span class="p">(</span>
+    <span class="n">nucbp</span><span class="o">=</span><span class="mi">147</span><span class="p">,</span>
+    <span class="n">llink</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span>
+    <span class="n">elink</span><span class="o">=</span><span class="mf">25.0</span><span class="p">,</span>
+    <span class="n">mu</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">start_temp</span><span class="o">=</span><span class="mf">22.0</span><span class="p">,</span>
+    <span class="n">end_temp</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+    <span class="n">cool_option</span><span class="o">=</span><span class="s2">&quot;geometric&quot;</span><span class="p">,</span>
+    <span class="n">nsweep</span><span class="o">=</span><span class="mi">20000</span><span class="p">,</span>
+    <span class="n">print_freq</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span>
+    <span class="n">emax</span><span class="o">=</span><span class="mf">25.0</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<p>One can also specify the parameters in a <code class="docutils literal notranslate"><span class="pre">json</span></code> or <code class="docutils literal notranslate"><span class="pre">yml</span></code> file. For example, in <code class="docutils literal notranslate"><span class="pre">.yml</span></code> format the file looks as follows:</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="o">!</span>cat<span class="w"> </span>example/tut02_run_sim/simulation/sim_params.yml
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+nucbp:       147
+llink:       50
+elink:       25.0
+mu:          1.0
+start_temp:  22.0
+end_temp:    1.0
+cool_option: &#34;geometric&#34;
+nsweep:      20000
+print_freq:  100
+emax:        25.0
+</pre></div></div>
+</div>
+<p>Next, we need to extract the methylation probabilities <span class="math notranslate nohighlight">\(p_M\)</span> from the processed data and store them in a dictionary:</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">meth_prob</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;601&quot;</span><span class="p">:</span> <span class="n">exp_data</span><span class="o">.</span><span class="n">analysis</span><span class="p">[</span><span class="s2">&quot;601&quot;</span><span class="p">][</span><span class="s2">&quot;meth_prob_model&quot;</span><span class="p">]}</span>
+</pre></div>
+</div>
+</div>
+<p>We now use the <code class="docutils literal notranslate"><span class="pre">catella.run</span></code> method to run the simulations. This method requires specifying the chromosomes (DNA segments) on which we would like to perform the sampling, the number of simulations to conduct per molecule (<code class="docutils literal notranslate"><span class="pre">nsim</span></code>), the simulation parameters (<code class="docutils literal notranslate"><span class="pre">settings</span></code>), and the methylation probability profile for each molecule in each chromosome (<code class="docutils literal notranslate"><span class="pre">meth_prob</span></code>). We also need to specify the output directory (<code class="docutils literal notranslate"><span class="pre">out_dir</span></code>) where the simulation results will be stored. The simulations can be
+run in parallel using multiple processes, and this is set via <code class="docutils literal notranslate"><span class="pre">nworker</span></code> (default is 1). By default, the <code class="docutils literal notranslate"><span class="pre">verbose</span></code> option is set to <code class="docutils literal notranslate"><span class="pre">True</span></code>, allowing a progress bar to be displayed in the terminal that provides an estimation of the time remaining before all jobs are complete.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">sim_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;example/tut02_run_sim/simulation/result/&quot;</span><span class="p">)</span> <span class="c1"># Note that this dir must not exist beforehand</span>
+<span class="n">sim_data</span> <span class="o">=</span> <span class="n">catella</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">chroms</span><span class="o">=</span><span class="s2">&quot;601&quot;</span><span class="p">,</span>
+                       <span class="n">nsim</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>
+                       <span class="n">seed</span><span class="o">=</span><span class="mi">2346</span><span class="p">,</span>
+                       <span class="n">meth_prob</span><span class="o">=</span><span class="n">meth_prob</span><span class="p">,</span>
+                       <span class="n">settings</span><span class="o">=</span><span class="n">settings</span><span class="p">,</span>
+                       <span class="n">out_dir</span><span class="o">=</span><span class="n">sim_dir</span><span class="p">,</span>
+                       <span class="n">nworker</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<script type="application/vnd.jupyter.widget-view+json">{"model_id": "dcb848ed80f54a6997ccd8749e4b6571", "version_major": 2, "version_minor": 0}</script></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area rendered_html docutils container">
+<pre style="white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"></pre></div>
+</div>
+<p>With <code class="docutils literal notranslate"><span class="pre">nworker=20</span></code>, the simulations should take around ten minutes to complete (on a modern MacBook Pro with an M4 chip). Each simulation generates an HDF5 file containing the output data as specified by the <code class="docutils literal notranslate"><span class="pre">out_types</span></code> option in <code class="docutils literal notranslate"><span class="pre">run</span></code>. The default value for this option is <code class="docutils literal notranslate"><span class="pre">all</span></code>, including all information about the system such as its energy and temperature over time as well as the nucleosome positions. All simulation HDF5 files are located within the sub-directory <code class="docutils literal notranslate"><span class="pre">raw_data</span></code> in
+<code class="docutils literal notranslate"><span class="pre">out_dir</span></code>. Additionally, an overall dataset HDF5 file containing the metadata of the simulations and the downstream analysis is created and stored in <code class="docutils literal notranslate"><span class="pre">out_dir/results.h5</span></code> by default. The name of this file can be changed via the <code class="docutils literal notranslate"><span class="pre">dataset_name</span></code> option in <code class="docutils literal notranslate"><span class="pre">run</span></code>.</p>
+<div class="admonition note">
+<p><strong>Note:</strong> Sub-directories within <code class="docutils literal notranslate"><span class="pre">raw_data</span></code> should not be touched, as <code class="docutils literal notranslate"><span class="pre">catella</span></code> relies on the file structure there to access the raw simulation data.</p>
+</div>
+<section id="Analyzing-the-simulation-results">
+<h2>Analyzing the simulation results<a class="headerlink" href="#Analyzing-the-simulation-results" title="Link to this heading"></a></h2>
+<p>We first inspect the raw simulation data to check that the results are reasonable before conducting any downstream analysis. To access the raw data from a specific simulation run (say run 0 for molecule 0), we use the <code class="docutils literal notranslate"><span class="pre">raw</span></code> property, which returns a <code class="docutils literal notranslate"><span class="pre">SimData</span></code> object:</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">sim_data</span><span class="o">.</span><span class="n">raw</span><span class="p">[</span><span class="s2">&quot;601&quot;</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">]</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:
+</pre></div>
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+SimData(nucbp, nbp, llink, elink, mu, seed, time, energy, position, temp)
+</pre></div></div>
+</div>
+<div class="admonition note">
+<p><strong>Note:</strong> All molecules and simulation runs are labelled using zero-based indexing.</p>
+</div>
+<div class="admonition note">
+<p><strong>Note:</strong> Accessing simulation properties such as <code class="docutils literal notranslate"><span class="pre">energy</span></code> and <code class="docutils literal notranslate"><span class="pre">temp</span></code> (for the system’s temperature) always returns a view of the underlying <code class="docutils literal notranslate"><span class="pre">numpy</span></code> array that is non-writeable to preserve data integrity. The same applies to the property <code class="docutils literal notranslate"><span class="pre">position</span></code>, which returns a <code class="docutils literal notranslate"><span class="pre">Tuple</span></code> of non-writeable <code class="docutils literal notranslate"><span class="pre">numpy</span></code> arrays of the nucleosome positions over time.</p>
+</div>
+<p>A good sanity check that we have run the simulation for long enough and that the system has reached a steady state is to see whether the total energy has stabilized. We can plot the time series of the energy values as follows:</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[8]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">catella</span><span class="o">.</span><span class="n">plot_energy</span><span class="p">(</span><span class="n">sim_data</span><span class="p">,</span> <span class="n">chrom</span><span class="o">=</span><span class="s2">&quot;601&quot;</span><span class="p">,</span> <span class="n">mol</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">run</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/tutorials_tut02_run_sim_16_0.png" src="../_images/tutorials_tut02_run_sim_16_0.png" />
+</div>
+</div>
+<p>We can see that the energy dropped significantly at the beginning and then gradually decreased and stabilized at around <span class="math notranslate nohighlight">\(-350 k_BT\)</span> over time (reported in units of MCS, or number of Monte Carlo sweeps).</p>
+<p>Another way to see whether the system has stabilized is to plot the nucleosome positions over time as a heatmap. This can be done using the <code class="docutils literal notranslate"><span class="pre">catella.plot_nuc_pos</span></code> method, and it is useful to enable the <code class="docutils literal notranslate"><span class="pre">plot_eseq</span></code> option to show within the same plot the sequence-specific energy landscape <span class="math notranslate nohighlight">\(E_{\text{seq}}\)</span> for the molecule derived from its methylation footprinting data.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[9]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">catella</span><span class="o">.</span><span class="n">plot_nuc_pos</span><span class="p">(</span><span class="n">sim_data</span><span class="p">,</span> <span class="n">chrom</span><span class="o">=</span><span class="s2">&quot;601&quot;</span><span class="p">,</span> <span class="n">mol</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">run</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">plot_eseq</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/tutorials_tut02_run_sim_18_0.png" src="../_images/tutorials_tut02_run_sim_18_0.png" />
+</div>
+</div>
+<p>The nucleosome locations are shown in yellow in this plot, and they behave as one would expect: as the temperature decreases, the extent of repositioning and shuffling reduces, and the nucleosomes freeze into a final set of positions. Also, comparing with the energy landscape <span class="math notranslate nohighlight">\(E_{\text{seq}}\)</span>, we see that the nucleosomes tend to avoid the maxima and sit near the minima as expected.</p>
+<p>To get a sense of the overall picture of nucleosome positioning across all molecules, we use <code class="docutils literal notranslate"><span class="pre">catella.analyze</span></code> to perform some basic quantification of the simulated nucleosome positions:</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">catella</span><span class="o">.</span><span class="n">analyze</span><span class="p">(</span><span class="n">sim_data</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<p>This method computes the average number of nucleosomes (<code class="docutils literal notranslate"><span class="pre">mean_nnuc</span></code>) and the average nucleosome occupancy (<code class="docutils literal notranslate"><span class="pre">occup</span></code>) for each molecule. The latter is defined as</p>
+<div class="math notranslate nohighlight" id="equation-tutorials-tut02-run-sim-0">
+<span class="eqno">(1)<a class="headerlink" href="#equation-tutorials-tut02-run-sim-0" title="Link to this equation"></a></span>\[O_i(x) = \frac{1}{N_{\text{sim}}}\sum_{n=1}^{N_{\text{sim}}}s_i^{(n)}(x) \;,\]</div>
+<p>where <span class="math notranslate nohighlight">\(s_i^{(n)} = 1\)</span> if, in the <span class="math notranslate nohighlight">\(n\)</span>th simulation, a nucleosome occupies base-pair <span class="math notranslate nohighlight">\(x\)</span> and <span class="math notranslate nohighlight">\(0\)</span> otherwise.</p>
+<p>These results are stored in <code class="docutils literal notranslate"><span class="pre">sim_data.analysis</span></code>. For instance, to retrieve the average number of nucleosomes in each 601 array fiber, we do the following:</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[11]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">sim_data</span><span class="o">.</span><span class="n">analysis</span><span class="p">[</span><span class="s2">&quot;601&quot;</span><span class="p">][</span><span class="s2">&quot;mean_nnuc&quot;</span><span class="p">]</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[11]:
+</pre></div>
+</div>
+<div class="output_area rendered_html docutils container">
+<div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>0</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>27.0</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>22.6</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>25.2</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>27.4</td>
+    </tr>
+    <tr>
+      <th>4</th>
+      <td>13.6</td>
+    </tr>
+    <tr>
+      <th>...</th>
+      <td>...</td>
+    </tr>
+    <tr>
+      <th>95</th>
+      <td>25.8</td>
+    </tr>
+    <tr>
+      <th>96</th>
+      <td>28.0</td>
+    </tr>
+    <tr>
+      <th>97</th>
+      <td>27.4</td>
+    </tr>
+    <tr>
+      <th>98</th>
+      <td>28.0</td>
+    </tr>
+    <tr>
+      <th>99</th>
+      <td>27.4</td>
+    </tr>
+  </tbody>
+</table>
+<p>100 rows × 1 columns</p>
+</div></div>
+</div>
+<p>To visualize the averaged nucleosome occupancy across all molecules, we sort the molecules by the similarity of their occupancy profiles, and then use the <code class="docutils literal notranslate"><span class="pre">catella.plot_occup</span></code> method to plot the heatmap. We again enable the <code class="docutils literal notranslate"><span class="pre">plot_eseq</span></code> option to see the correspondence between the nucleosome positions and the underlying energy landscape:</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[12]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">sorted_mat</span> <span class="o">=</span> <span class="n">catella</span><span class="o">.</span><span class="n">sort_by_linkage</span><span class="p">(</span><span class="n">dataset</span><span class="o">=</span><span class="n">sim_data</span><span class="p">,</span> <span class="n">data_name</span><span class="o">=</span><span class="s2">&quot;occup&quot;</span><span class="p">)</span>
+<span class="n">catella</span><span class="o">.</span><span class="n">plot_occup</span><span class="p">(</span><span class="n">sim_data</span><span class="p">,</span> <span class="n">chrom</span><span class="o">=</span><span class="s2">&quot;601&quot;</span><span class="p">,</span> <span class="n">occup_name</span><span class="o">=</span><span class="s2">&quot;occup_sorted&quot;</span><span class="p">,</span> <span class="n">plot_eseq</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/tutorials_tut02_run_sim_24_0.png" src="../_images/tutorials_tut02_run_sim_24_0.png" />
+</div>
+</div>
+<p>This heatmap agrees with our expectation that 601 arrays have highly regular nucleosome positions. The simulations again highlight a few molecules with low nucleosome occupancy, likely because histone octamer transfer was less successful for this subset of fibers. Finally, we can save our analyses of the simulation results (in the HDF5 file <code class="docutils literal notranslate"><span class="pre">out_dir/results.h5</span></code>) that can be retrieved later for further post-processing:</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[13]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">sim_data</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<script type="application/vnd.jupyter.widget-state+json">
+{"state": {"7338a466d4a14196920950e373eb68a6": {"model_module": "@jupyter-widgets/base", "model_module_version": "2.0.0", "model_name": "LayoutModel", "state": {}}, "dcb848ed80f54a6997ccd8749e4b6571": {"model_module": "@jupyter-widgets/output", "model_module_version": "1.0.0", "model_name": "OutputModel", "state": {"layout": "IPY_MODEL_7338a466d4a14196920950e373eb68a6", "outputs": [{"data": {"text/html": "<pre style=\"white-space:pre;overflow-x:auto;line-height:normal;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace\">  <span style=\"color: #008080; text-decoration-color: #008080\">Running simulations ...</span> <span style=\"color: #729c1f; text-decoration-color: #729c1f\">\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501</span> <span style=\"color: #800080; text-decoration-color: #800080\">100%</span> <span style=\"color: #008080; text-decoration-color: #008080\">0:00:00</span>\n</pre>\n", "text/plain": "  \u001b[36mRunning simulations ...\u001b[0m \u001b[38;2;114;156;31m\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u001b[0m \u001b[35m100%\u001b[0m \u001b[36m0:00:00\u001b[0m\n"}, "metadata": {}, "output_type": "display_data"}]}}}, "version_major": 2, "version_minor": 0}
+</script></section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="tut01_meth_prob.html" class="btn btn-neutral float-left" title="Tutorial 1: From Raw Data to Normalized Methylation Probability" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="../cli.html" class="btn btn-neutral float-right" title="CLI Reference" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Michael Chiang.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

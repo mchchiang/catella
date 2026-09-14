@@ -20,7 +20,10 @@ class SimSettings:
     
     llink : int
     """The DNA linker length between nucleosomes."""
-    
+
+    elink : float
+    """The energy scale of the linker repulsion potential."""
+
     mu : float
     """The chemical potential; energy gained by adding a nucleosome."""    
 

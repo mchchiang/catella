@@ -50,6 +50,9 @@ class SimData:
     llink : int
     """The DNA linker length between nucleosomes."""
 
+    elink : float
+    """The energy scale of the linker repulsion potential."""
+
     mu : float
     """The chemical potential (energy gained by adding a nucleosome)."""
 
@@ -169,6 +172,7 @@ class SimData:
             nucbp = g.attrs["nucbp"]
             nbp = g.attrs["nbp"]
             llink = g.attrs["llink"]
+            elink = g.attrs["elink"]
             mu = g.attrs["mu"]
             seed = g.attrs["seed"]
             
@@ -189,9 +193,9 @@ class SimData:
             energy = load_data(g, "energy")
             position = load_data(g, "position")
             temp = load_data(g, "temp")
-            return cls._create(nucbp=nucbp, nbp=nbp, llink=llink, mu=mu,
-                               seed=seed, time=time, energy=energy,
-                               position=position, temp=temp)
+            return cls._create(nucbp=nucbp, nbp=nbp, llink=llink,
+                               elink=elink, mu=mu, seed=seed, time=time,
+                               energy=energy, position=position, temp=temp)
 
     # Extract the data for a specific obesrvable for a single time point
     @classmethod

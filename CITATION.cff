@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: >-
+  If you use catella in your research, please cite it.
+title: catella
+version: 0.1.0
+# TODO: set date-released once a version is tagged, e.g. 2026-09-08
+abstract: >-
+  A Monte Carlo simulator for predicting nucleosome positions based on
+  DNA methylation footprinting data.
+authors:
+  - family-names: Chiang
+    given-names: Michael
+    email: michael.chiang@ed.ac.uk
+license: MIT
+repository-code: https://github.com/mchchiang/catella
+url: https://github.com/mchchiang/catella

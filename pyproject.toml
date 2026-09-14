@@ -25,7 +25,7 @@ dependencies = [
     "pandas>=3.0",
     "h5py",
     "scipy",
-    "typer",
+    "typer<=0.25.1",
     "rich",
     "matplotlib",
     "pyfaidx",
@@ -43,7 +43,7 @@ test = ["pytest"]
 doc = [
     "numpy",
     "pandas>=3.0",
-    "typer",
+    "typer<=0.25.1",
     "jupyterlab",
     "ipywidgets",
     "nbsphinx",

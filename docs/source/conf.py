@@ -36,8 +36,10 @@ with open(ROOT / "pyproject.toml", "rb") as f:
     pyproject = tomllib.load(f)
 
 # numpy and pandas are installed in the docs env so their types resolve
-# correctly in Napoleon-parsed docstrings; only mock the rest.
-_no_mock = {"numpy", "pandas"}
+# correctly in Napoleon-parsed docstrings. typer must not be mocked either,
+# since sphinx-click imports catella.cli for real to build the CLI
+# reference and needs an actual click.Group, not a mock object.
+_no_mock = {"numpy", "pandas", "typer"}
 deps = pyproject.get("project", {}).get("dependencies", [])
 autodoc_mock_imports = [
     dep.split(">")[0].split("=")[0].split("<")[0].strip()
@@ -100,6 +102,7 @@ extensions = [
     "sphinx.ext.linkcode",
     "sphinx_rtd_theme",
     "myst_parser",
+    "sphinx_click",
 ]
 
 templates_path = ["_templates"]

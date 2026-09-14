@@ -19,8 +19,9 @@ class NucPosModel {
 public:
   struct Params {
     int nucbp;
-    int nbp;  
+    int nbp;
     int llink;
+    double elink;
     double mu;
     ulint seed;
   };
@@ -36,8 +37,9 @@ private:
   // Required parameters
   Params params;
   int nucbp;
-  int nbp;  
+  int nbp;
   int llink;
+  double elink;
   double mu;
   ulint seed;
   
@@ -58,7 +60,8 @@ private:
   std::vector<std::shared_ptr<Tracker> > trackers;
 
 public:
-  NucPosModel(int nucbp, int nbp, int llink, double mu, ulint seed);
+  NucPosModel(int nucbp, int nbp, int llink, double elink, double mu,
+	      ulint seed);
   NucPosModel(const Params& params);
   ~NucPosModel();
   void setEnergy(std::string dataFile, double emax);

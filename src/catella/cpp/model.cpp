@@ -27,20 +27,21 @@ using std::shared_ptr;
 // Helper functions
 double min(double a, double b);
 
-NucPosModel::NucPosModel(int _nucbp, int _nbp, int _llink, double _mu,
-			 ulint _seed) :
-  nucbp(_nucbp), nbp(_nbp), llink(_llink), mu(_mu), seed(_seed) {
+NucPosModel::NucPosModel(int _nucbp, int _nbp, int _llink, double _elink,
+			 double _mu, ulint _seed) :
+  nucbp(_nucbp), nbp(_nbp), llink(_llink), elink(_elink), mu(_mu),
+  seed(_seed) {
   params.nucbp = nucbp;
   params.nbp = nbp;
   params.llink = llink;
+  params.elink = elink;
   params.mu = mu;
   params.seed = seed;
-  // Precompute repulsion strengths - WCA repulsion
+  // Precompute repulsion strengths for the linker potential
   erep = vector<double>(llink, 0.0);
-  double sigma = llink/(pow(2.0,(1.0/6.0)));
   for (int i = 0; i < llink; i++) {
-    double sr6 = pow(sigma/(i+1.0),6.0);
-    erep[i] = 4*(sr6*sr6-sr6+0.25);
+    double sr6 = pow(llink/(i+1.0),6.0) - 1.0;
+    erep[i] = elink*sr6*sr6;
   }
   npos = nbp-nucbp;
   eseq = vector<double>(nbp);
@@ -48,14 +49,13 @@ NucPosModel::NucPosModel(int _nucbp, int _nbp, int _llink, double _mu,
 }
 
 NucPosModel::NucPosModel(const Params& p) :
-  params(p), nucbp(p.nucbp), nbp(p.nbp), llink(p.llink), mu(p.mu),
-  seed(p.seed) {
-  // Precompute repulsion strengths - WCA repulsion
+  params(p), nucbp(p.nucbp), nbp(p.nbp), llink(p.llink), elink(p.elink),
+  mu(p.mu), seed(p.seed) {
+  // Precompute repulsion strengths for the linker potential
   erep = vector<double>(llink, 0.0);
-  double sigma = llink/(pow(2.0,(1.0/6.0)));
   for (int i = 0; i < llink; i++) {
-    double sr6 = pow(sigma/(i+1.0),6.0);
-    erep[i] = 4*(sr6*sr6-sr6+0.25);
+    double sr6 = pow(llink/(i+1.0),6.0) - 1.0;
+    erep[i] = elink*sr6*sr6;
   }
   npos = nbp-nucbp;
   eseq = vector<double>(nbp);

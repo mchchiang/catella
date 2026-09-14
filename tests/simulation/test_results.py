@@ -15,7 +15,7 @@ from catella.simulation.results import SimDataset
 
 
 def _make_settings(**overrides):
-    defaults = dict(nucbp=147, llink=20, mu=-1.0, start_temp=1.0,
+    defaults = dict(nucbp=147, llink=20, elink=1.0, mu=-1.0, start_temp=1.0,
                      end_temp=0.1, cool_option="linear", nsweep=5,
                      print_freq=1, emax=5.0)
     defaults.update(overrides)

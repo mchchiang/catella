@@ -46,7 +46,7 @@ def _write_fasta(path, records):
 
 
 def _settings_dict(**overrides):
-    defaults = dict(nucbp=5, llink=2, mu=-1.0, start_temp=1.0,
+    defaults = dict(nucbp=5, llink=2, elink=1.0, mu=-1.0, start_temp=1.0,
                     end_temp=0.1, cool_option="linear", nsweep=2,
                     print_freq=1, emax=5.0)
     defaults.update(overrides)

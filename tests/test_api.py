@@ -3,6 +3,7 @@
 import numpy as np
 import pandas as pd
 import pytest
+from scipy.special import logit
 
 import catella
 from catella import utils
@@ -342,6 +343,112 @@ class TestComputeModelProb:
             pd.testing.assert_frame_equal(
                 exp.global_analysis["meth_prob_rho"],
                 expected.global_analysis["meth_prob_rho"])
+
+
+class TestEstimateStartTemp:
+    def test_returns_percentile_of_abs_logit(self):
+        exp = _make_experiment(nmol=20, nbp=4, seed=5)
+        rng = np.random.default_rng(9)
+        known = rng.uniform(0.01, 0.99, size=(20, 4))
+        exp.analysis["chr1"]["meth_prob"] = pd.DataFrame(known)
+
+        got = catella.estimate_start_temp(exp, percentile=90.0,
+                                          percentile_sample_size=100,
+                                          seed=1)
+
+        expected = np.nanpercentile(np.abs(logit(known)), 90.0)
+        assert got == pytest.approx(expected)
+
+    def test_batching_matches_single_batch(self):
+        exp_a = _make_experiment(nmol=20, nbp=4, seed=5)
+        exp_b = _make_experiment(nmol=20, nbp=4, seed=5)
+        rng = np.random.default_rng(2)
+        known = rng.uniform(0.01, 0.99, size=(20, 4))
+        exp_a.analysis["chr1"]["meth_prob"] = pd.DataFrame(known)
+        exp_b.analysis["chr1"]["meth_prob"] = pd.DataFrame(known)
+
+        a = catella.estimate_start_temp(exp_a, batch_size=1000,
+                                        percentile_sample_size=100, seed=0)
+        b = catella.estimate_start_temp(exp_b, batch_size=3,
+                                        percentile_sample_size=100, seed=0)
+        assert a == pytest.approx(b)
+
+    def test_mask_name_excludes_dropped_molecules(self):
+        exp = _make_experiment(nmol=6, nbp=4, seed=5)
+        rng = np.random.default_rng(3)
+        known = rng.uniform(0.4, 0.6, size=(6, 4))
+        known[0] = 0.001  # extreme outlier molecule
+        exp.analysis["chr1"]["meth_prob"] = pd.DataFrame(known)
+        keep = np.array([0, 1, 1, 1, 1, 1], dtype=np.int8)
+        exp.analysis["chr1"]["test_dropout_mask"] = pd.DataFrame(
+            {"keep": keep})
+
+        masked = catella.estimate_start_temp(
+            exp, percentile=90.0, percentile_sample_size=100, seed=0,
+            mask_name="dropout_mask")
+        unmasked = catella.estimate_start_temp(
+            exp, percentile=90.0, percentile_sample_size=100, seed=0)
+
+        expected = np.nanpercentile(np.abs(logit(known[keep == 1])), 90.0)
+        assert masked == pytest.approx(expected)
+        assert masked < unmasked
+
+    def test_missing_mask_raises_key_error(self):
+        exp = _make_experiment(nmol=6, nbp=4, seed=5)
+        exp.analysis["chr1"]["meth_prob"] = pd.DataFrame(
+            np.full((6, 4), 0.5))
+        with pytest.raises(KeyError):
+            catella.estimate_start_temp(exp, mask_name="missing")
+
+    def test_nan_and_inf_logit_values_do_not_raise(self):
+        exp = _make_experiment(nmol=4, nbp=3, seed=5)
+        known = np.array([[0.0, 0.5, 1.0],
+                          [np.nan, 0.5, 0.5],
+                          [0.2, 0.3, 0.4],
+                          [0.6, 0.7, 0.8]])
+        exp.analysis["chr1"]["meth_prob"] = pd.DataFrame(known)
+
+        got = catella.estimate_start_temp(exp, percentile=50.0,
+                                          percentile_sample_size=100,
+                                          seed=0)
+        assert np.isfinite(got)
+
+    def test_chroms_restricts_to_selected_chromosomes(self):
+        raw1 = MethPrintData._create(
+            chrom="chr1", nbp=3, test_mol_id=np.array(["m0"], dtype=object),
+            test_data=pd.DataFrame(
+                [(0, 0, "+", 0.5, 0)],
+                columns=["mol_index", "pos", "strand", "mod_qual",
+                        "mod_code"]),
+            meth_mol_id=None, meth_data=None, unmeth_mol_id=None,
+            unmeth_data=None)
+        raw2 = MethPrintData._create(
+            chrom="chr2", nbp=3, test_mol_id=np.array(["m0"], dtype=object),
+            test_data=pd.DataFrame(
+                [(0, 0, "+", 0.5, 0)],
+                columns=["mol_index", "pos", "strand", "mod_qual",
+                        "mod_code"]),
+            meth_mol_id=None, meth_data=None, unmeth_mol_id=None,
+            unmeth_data=None)
+        exp = MethPrintExperiment._create(
+            _raw_data={"chr1": raw1, "chr2": raw2})
+        exp.analysis["chr1"]["meth_prob"] = pd.DataFrame(
+            np.full((5, 3), 0.5))
+        exp.analysis["chr2"]["meth_prob"] = pd.DataFrame(
+            np.full((5, 3), 0.99))
+
+        got = catella.estimate_start_temp(exp, chroms="chr1",
+                                          percentile_sample_size=100,
+                                          seed=0)
+        expected = np.nanpercentile(np.abs(logit(np.full((5, 3), 0.5))), 90.0)
+        assert got == pytest.approx(expected)
+
+    def test_exp_accepted_positionally(self):
+        exp = _make_experiment(nmol=6, nbp=4, seed=5)
+        exp.analysis["chr1"]["meth_prob"] = pd.DataFrame(
+            np.full((6, 4), 0.5))
+        got = catella.estimate_start_temp(exp)
+        assert np.isfinite(got)
 
 
 class TestAnalyze:

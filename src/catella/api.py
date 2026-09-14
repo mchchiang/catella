@@ -7,7 +7,8 @@ from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 import numpy as np
 import pandas as pd
-from catella.experiment.preprocessing import MethPrintAnalysis
+from scipy.special import logit
+from catella.experiment.preprocessing import MethPrintAnalysis, _lookup_mask
 from catella.experiment.methdata import MethPrintExperiment
 from catella.experiment.plot import MethPlot
 from catella.h5_array import H5Array
@@ -367,6 +368,96 @@ def compute_model_prob(exp : MethPrintExperiment, *,
         exp.save(out_file)
 
     return exp
+
+
+def estimate_start_temp(exp : MethPrintExperiment, *,
+               prob_name : str = "meth_prob",
+               chroms : str | Iterable[str] | None = None,
+               percentile : float = 90.0,
+               batch_size : int = 20000,
+               percentile_sample_size : int = 100000,
+               seed : int | None = None,
+               mask_name : str | None = None) -> float:
+    """
+    Estimate a data-driven `SimSettings.start_temp` value.
+
+    Returns the `percentile`-th percentile of abs(logit(meth_prob))
+    across `chroms`, via batched random subsampling, so sequence-
+    energy barriers of that size are crossable early in the
+    annealing schedule.
+
+    Parameters
+    ----------
+    exp : MethPrintExperiment
+        The experiment to estimate a temperature from. `prob_name`
+        must already be in `exp.analysis[chrom]` for each chromosome.
+    prob_name : str, default "meth_prob"
+        The key to read from `exp.analysis[chrom]`.
+    chroms : str or iterable of str, optional
+        Chromosome(s) to include. If None (default), all of
+        `exp.chroms` are used.
+    percentile : float, default 90.0
+        Percentile (0 to 100, exclusive of 100) of
+        abs(logit(meth_prob)) to return.
+    batch_size : int, default 20000
+        Number of molecules read (and held in memory) per batch.
+    percentile_sample_size : int, default 100000
+        Approximate total number of molecules, split evenly across
+        `chroms`, used to estimate the percentile.
+    seed : int, optional
+        Seed for the random number generator used for subsampling.
+    mask_name : str, optional
+        If given, excludes molecules dropped by
+        `filter_dropout(mask_name=mask_name)` on the "test" source,
+        without modifying `exp`.
+
+    Returns
+    -------
+    float
+        The suggested `start_temp` value.
+
+    Raises
+    ------
+    KeyError
+        If `mask_name` is given but no matching mask is found for a
+        chromosome's "test" source.
+    """
+    if isinstance(chroms, str):
+        resolved_chroms = (chroms,)
+    elif chroms is not None:
+        resolved_chroms = tuple(chroms)
+    else:
+        resolved_chroms = exp.chroms
+
+    rng = np.random.default_rng(seed)
+    target_per_chrom = max(1, percentile_sample_size // len(resolved_chroms))
+    chunks = []
+    for chrom in resolved_chroms:
+        arr = exp.analysis[chrom][prob_name]
+        if isinstance(arr, pd.DataFrame):
+            arr = arr.to_numpy()
+        keep = None
+        if mask_name is not None:
+            keep = np.asarray(
+                _lookup_mask(exp, chrom, "test", mask_name), dtype=bool)
+        n_total = arr.shape[0]
+        if n_total == 0:
+            continue
+        sample_frac = min(1.0, target_per_chrom / n_total)
+        for start in range(0, n_total, batch_size):
+            stop = min(start + batch_size, n_total)
+            batch = arr[start:stop, :]
+            if keep is not None:
+                batch = batch[keep[start:stop]]
+            if batch.shape[0] == 0:
+                continue
+            n_take = min(batch.shape[0],
+                        max(1, round(batch.shape[0] * sample_frac)))
+            rows = rng.choice(batch.shape[0], size=n_take, replace=False)
+            chunks.append(np.abs(logit(batch[rows, :])))
+
+    sample = np.concatenate([c.ravel() for c in chunks])
+    return float(np.nanpercentile(sample, percentile))
 
 
 def filter_dropout(exp : MethPrintExperiment, *,

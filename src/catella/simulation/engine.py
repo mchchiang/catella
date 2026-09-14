@@ -290,7 +290,7 @@ class SimManager:
             eseq = {}
             for chrom in chroms:
                 model = NucPosModel(settings.nucbp, nbp[chrom], settings.llink,
-                                    settings.mu, 0)
+                                    settings.elink, settings.mu, 0)
                 eseq[chrom] = np.empty(meth_prob[chrom].shape)
                 for i in range(meth_prob[chrom].shape[0]):
                     model.setEnergy(logit(meth_prob[chrom][i]), settings.emax)
@@ -557,7 +557,7 @@ class SimManager:
             nbp = len(eseq_list)
             # Create the cpp backend Monte Carlo simulation model
             model = NucPosModel(settings.nucbp, nbp, settings.llink,
-                                settings.mu, p.seed)
+                                settings.elink, settings.mu, p.seed)
             model.setEnergy(eseq_list, settings.emax)
             # For tracking all simulation data
             model.addTracker(

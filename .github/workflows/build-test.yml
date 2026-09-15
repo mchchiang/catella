@@ -30,12 +30,12 @@ jobs:
 
       - name: Install conda-only build tools
         run: |
-          echo "=== DEBUG: step started ==="
-          which mamba
-          mamba --version
-          echo "=== DEBUG: running mamba install ==="
-          mamba install -y hdf5 pybind11 cxx-compiler cmake ninja pkg-config "pip>=25.1"
-          echo "=== DEBUG: mamba install exit code $? ==="
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            MAMBA="$CONDA/condabin/mamba.bat"
+          else
+            MAMBA="mamba"
+          fi
+          "$MAMBA" install -y hdf5 pybind11 cxx-compiler cmake ninja pkg-config "pip>=25.1"
 
       - name: Build and install package
         run: pip install -e . --group test -v

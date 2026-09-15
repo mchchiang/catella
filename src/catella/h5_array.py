@@ -267,6 +267,11 @@ class H5Array:
                    owns_file=False)
 
     @property
+    def dataset_path(self) -> str:
+        """str: Path of the dataset within the backing HDF5 file."""
+        return self._dataset.name
+
+    @property
     def path(self) -> str:
         """str: Path to the backing HDF5 file."""
         return self._path

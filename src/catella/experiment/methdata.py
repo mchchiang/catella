@@ -1384,14 +1384,33 @@ class MethPrintExperiment:
                     "existing H5Array analysis entry; save to a "
                     "different path, or pass overwrite=True to safely "
                     "replace it in place.")
+            colliding = [
+                (data, name, entry.dataset_path)
+                for data in list(self._analysis.values())
+                + [self._global_analysis]
+                for name, entry in data.items()
+                if isinstance(entry, H5Array)
+                and str(Path(entry.path).resolve()) == dest]
             tmp_path = dest_path.with_name(
                 dest_path.name + f".tmp{os.getpid()}")
+            closed = False
             try:
                 self.save(tmp_path)
+                # Release the OS-level handles on dest before
+                # replacing it: unlike POSIX, Windows refuses to
+                # rename over a file that is still open.
+                for data, name, _ in colliding:
+                    data[name].close()
+                closed = True
                 os.replace(tmp_path, dest_path)
             except BaseException:
                 tmp_path.unlink(missing_ok=True)
                 raise
+            finally:
+                if closed:
+                    for data, name, dataset_path in colliding:
+                        data[name] = H5Array.load_from(
+                            dest_path, dataset_path)
             self._exp_file = dest
             return
 

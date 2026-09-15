@@ -3,14 +3,14 @@
 import numpy as np
 import pandas as pd
 import pytest
-
 from catella.h5_array import H5Array
 from catella.mapping import CoordsTransform
 
 
 def _h5_from(values, index=None, columns=None):
-    arr = H5Array.create(values.shape, dtype=values.dtype, index=index,
-                         columns=columns)
+    arr = H5Array.create(
+        values.shape, dtype=values.dtype, index=index, columns=columns
+    )
     arr.write_batch(0, values.shape[0], values)
     return arr
 
@@ -71,8 +71,7 @@ def test_left_to_center_aligned_h5array_trim_matches_ndarray():
     values = np.arange(30, dtype=np.float64).reshape(6, 5)
     trans = CoordsTransform(lnuc=4)
 
-    expected = trans.left_to_center_aligned(values.copy(), axis=1,
-                                            trim=True)
+    expected = trans.left_to_center_aligned(values.copy(), axis=1, trim=True)
     h5 = _h5_from(values)
     got = trans.left_to_center_aligned(h5, axis=1, trim=True)
 
@@ -99,5 +98,4 @@ def test_h5array_uses_fill_edge_value():
 
     got = trans.left_to_center_aligned(h5, axis=1)
 
-    np.testing.assert_array_equal(got.to_numpy()[:, :2],
-                                  np.full((4, 2), -1.0))
+    np.testing.assert_array_equal(got.to_numpy()[:, :2], np.full((4, 2), -1.0))

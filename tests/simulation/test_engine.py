@@ -5,17 +5,25 @@ from pathlib import Path
 import h5py
 import numpy as np
 import pytest
-from catella_cpp import Dump
-
 from catella.simulation.config import SimSettings
 from catella.simulation.engine import SimManager, SimRun
 from catella.simulation.results import SimDataset
+from catella_cpp import Dump
 
 
 def _make_settings(**overrides):
-    defaults = dict(nucbp=147, llink=20, elink=1.0, mu=-1.0, start_temp=1.0,
-                     end_temp=0.1, cool_option="linear", nsweep=5,
-                     print_freq=1, emax=5.0)
+    defaults = {
+        "nucbp": 147,
+        "llink": 20,
+        "elink": 1.0,
+        "mu": -1.0,
+        "start_temp": 1.0,
+        "end_temp": 0.1,
+        "cool_option": "linear",
+        "nsweep": 5,
+        "print_freq": 1,
+        "emax": 5.0,
+    }
     defaults.update(overrides)
     return SimSettings(**defaults)
 
@@ -26,12 +34,19 @@ def _make_meth_prob(nmol=3, nbp=400, seed=0):
 
 
 def _make_sim_run(out_file, **overrides):
-    seq_energy = np.asarray(_make_meth_prob(nmol=1)[0],
-                            dtype=np.float64).tobytes()
-    defaults = dict(chrom="chr1", mol=0, run=0, seed=1,
-                    seq_energy=seq_energy,
-                    out_type=Dump.OutputType.All, out_file=out_file,
-                    settings=_make_settings())
+    seq_energy = np.asarray(
+        _make_meth_prob(nmol=1)[0], dtype=np.float64
+    ).tobytes()
+    defaults = {
+        "chrom": "chr1",
+        "mol": 0,
+        "run": 0,
+        "seed": 1,
+        "seq_energy": seq_energy,
+        "out_type": Dump.OutputType.All,
+        "out_file": out_file,
+        "settings": _make_settings(),
+    }
     defaults.update(overrides)
     return SimRun(**defaults)
 
@@ -74,9 +89,14 @@ class TestSimManagerRun:
     def test_serial_run_produces_dataset(self, tmp_path):
         meth_prob = _make_meth_prob(nmol=3, nbp=200)
         manager = SimManager(nworker=1, verbose=False)
-        dataset = manager.run(chroms="chr1", nsim=1, settings=_make_settings(),
-                              meth_prob=meth_prob, out_dir=tmp_path / "serial",
-                              seed=1)
+        dataset = manager.run(
+            chroms="chr1",
+            nsim=1,
+            settings=_make_settings(),
+            meth_prob=meth_prob,
+            out_dir=tmp_path / "serial",
+            seed=1,
+        )
         assert dataset.nmol["chr1"] == 3
 
     def test_multiple_out_types_combine_correctly(self, tmp_path):
@@ -87,9 +107,15 @@ class TestSimManagerRun:
         # that pybind11 doesn't bind '|' for directly.
         meth_prob = _make_meth_prob(nmol=1, nbp=50)
         manager = SimManager(nworker=1, verbose=False)
-        dataset = manager.run(chroms="chr1", nsim=1, settings=_make_settings(),
-                              meth_prob=meth_prob, out_dir=tmp_path / "multi",
-                              seed=1, out_types=["energy", "position"])
+        dataset = manager.run(
+            chroms="chr1",
+            nsim=1,
+            settings=_make_settings(),
+            meth_prob=meth_prob,
+            out_dir=tmp_path / "multi",
+            seed=1,
+            out_types=["energy", "position"],
+        )
         sim_file = dataset.sim_file("chr1", 0, 0)
         with h5py.File(sim_file, "r") as f:
             keys = set(f["data"].keys())
@@ -104,13 +130,19 @@ class TestSimManagerRun:
         # 'spawn' via the stdlib multiprocessing module.
         meth_prob = _make_meth_prob(nmol=3, nbp=200)
         manager = SimManager(nworker=2, verbose=False)
-        dataset = manager.run(chroms="chr1", nsim=1, settings=_make_settings(),
-                              meth_prob=meth_prob,
-                              out_dir=tmp_path / "parallel", seed=1)
+        dataset = manager.run(
+            chroms="chr1",
+            nsim=1,
+            settings=_make_settings(),
+            meth_prob=meth_prob,
+            out_dir=tmp_path / "parallel",
+            seed=1,
+        )
         assert dataset.nmol["chr1"] == 3
 
-    def test_failed_job_does_not_abort_the_batch(self, tmp_path, monkeypatch,
-                                                 capsys):
+    def test_failed_job_does_not_abort_the_batch(
+        self, tmp_path, monkeypatch, capsys
+    ):
         # Regression test: `if not result:` on the always-truthy result
         # tuple used to make failed jobs silently disappear. A failure
         # should now (a) be reported to the console and (b) not stop the
@@ -130,9 +162,14 @@ class TestSimManagerRun:
 
         meth_prob = _make_meth_prob(nmol=2, nbp=200)
         manager = SimManager(nworker=1, verbose=True)
-        dataset = manager.run(chroms="chr1", nsim=1, settings=_make_settings(),
-                              meth_prob=meth_prob, out_dir=tmp_path / "fail",
-                              seed=1)
+        dataset = manager.run(
+            chroms="chr1",
+            nsim=1,
+            settings=_make_settings(),
+            meth_prob=meth_prob,
+            out_dir=tmp_path / "fail",
+            seed=1,
+        )
 
         assert len(calls) == 2
         assert dataset.nmol["chr1"] == 2
@@ -142,9 +179,14 @@ class TestSimManagerRun:
     def test_persists_out_type_seed_and_seed_table(self, tmp_path):
         meth_prob = _make_meth_prob(nmol=2, nbp=50)
         manager = SimManager(nworker=1, verbose=False)
-        dataset = manager.run(chroms="chr1", nsim=2, settings=_make_settings(),
-                              meth_prob=meth_prob, out_dir=tmp_path / "persist",
-                              seed=7)
+        dataset = manager.run(
+            chroms="chr1",
+            nsim=2,
+            settings=_make_settings(),
+            meth_prob=meth_prob,
+            out_dir=tmp_path / "persist",
+            seed=7,
+        )
 
         assert dataset.out_type == Dump.OutputType.All
         assert dataset.seed == 7
@@ -163,10 +205,15 @@ class TestSimManagerRun:
         # persisted settings reflect the mu actually used.
         meth_prob = _make_meth_prob(nmol=2, nbp=50)
         manager = SimManager(nworker=1, verbose=False)
-        dataset = manager.run(chroms="chr1", nsim=1, settings=_make_settings(),
-                              meth_prob=meth_prob,
-                              out_dir=tmp_path / "medianmu", seed=1,
-                              use_median_eseq_mu=True)
+        dataset = manager.run(
+            chroms="chr1",
+            nsim=1,
+            settings=_make_settings(),
+            meth_prob=meth_prob,
+            out_dir=tmp_path / "medianmu",
+            seed=1,
+            use_median_eseq_mu=True,
+        )
         assert dataset.settings["mu"] == np.median(dataset.eseq["chr1"])
 
     def test_median_eseq_mu_ignores_nan(self, tmp_path):
@@ -177,24 +224,42 @@ class TestSimManagerRun:
         meth_prob = _make_meth_prob(nmol=2, nbp=50)
         meth_prob[:, -5:] = np.nan
         manager = SimManager(nworker=1, verbose=False)
-        dataset = manager.run(chroms="chr1", nsim=1, settings=_make_settings(),
-                              meth_prob=meth_prob,
-                              out_dir=tmp_path / "mediannan", seed=1,
-                              use_median_eseq_mu=True)
+        dataset = manager.run(
+            chroms="chr1",
+            nsim=1,
+            settings=_make_settings(),
+            meth_prob=meth_prob,
+            out_dir=tmp_path / "mediannan",
+            seed=1,
+            use_median_eseq_mu=True,
+        )
         assert not np.isnan(dataset.settings["mu"])
         assert dataset.settings["mu"] == np.nanmedian(dataset.eseq["chr1"])
 
-    def test_same_seed_gives_same_seed_table_regardless_of_mols(self, tmp_path):
+    def test_same_seed_gives_same_seed_table_regardless_of_mols(
+        self, tmp_path
+    ):
         # The seed table is order-independent: a triplet's seed doesn't
         # depend on which other molecules were selected via 'mols'.
         meth_prob = _make_meth_prob(nmol=3, nbp=50)
         manager = SimManager(nworker=1, verbose=False)
-        full = manager.run(chroms="chr1", nsim=1, settings=_make_settings(),
-                           meth_prob=meth_prob, out_dir=tmp_path / "full",
-                           seed=3)
-        subset = manager.run(chroms="chr1", nsim=1, settings=_make_settings(),
-                             meth_prob=meth_prob, out_dir=tmp_path / "subset",
-                             seed=3, mols=slice(2, 3))
+        full = manager.run(
+            chroms="chr1",
+            nsim=1,
+            settings=_make_settings(),
+            meth_prob=meth_prob,
+            out_dir=tmp_path / "full",
+            seed=3,
+        )
+        subset = manager.run(
+            chroms="chr1",
+            nsim=1,
+            settings=_make_settings(),
+            meth_prob=meth_prob,
+            out_dir=tmp_path / "subset",
+            seed=3,
+            mols=slice(2, 3),
+        )
         assert (full.seed_table["chr1"] == subset.seed_table["chr1"]).all()
 
     def test_broken_pool_is_reported_and_reraised(self, tmp_path, capsys):
@@ -215,12 +280,18 @@ class TestSimManagerRun:
                 raise TypeError("cannot pickle this")
 
         dataset = SimDataset.create(
-            chroms=["chr1"], nmol={"chr1": 1}, nsim=1, nbp={"chr1": 10},
-            settings=_make_settings(), out_dir=tmp_path / "broken",
-            out_type=Dump.OutputType.All)
+            chroms=["chr1"],
+            nmol={"chr1": 1},
+            nsim=1,
+            nbp={"chr1": 10},
+            settings=_make_settings(),
+            out_dir=tmp_path / "broken",
+            out_type=Dump.OutputType.All,
+        )
 
-        bad_run = _make_sim_run(dataset.sim_file("chr1", 0, 0),
-                                settings=Unpicklable())
+        bad_run = _make_sim_run(
+            dataset.sim_file("chr1", 0, 0), settings=Unpicklable()
+        )
         manager = SimManager(nworker=2, verbose=False)
 
         with pytest.raises(TypeError, match="cannot pickle"):
@@ -236,9 +307,14 @@ class TestSimManagerRerun:
     def test_only_none_fixes_missing_run(self, tmp_path):
         meth_prob = _make_meth_prob(nmol=2, nbp=50)
         manager = SimManager(nworker=1, verbose=False)
-        dataset = manager.run(chroms="chr1", nsim=1, settings=_make_settings(),
-                              meth_prob=meth_prob, out_dir=tmp_path / "rr1",
-                              seed=5)
+        dataset = manager.run(
+            chroms="chr1",
+            nsim=1,
+            settings=_make_settings(),
+            meth_prob=meth_prob,
+            out_dir=tmp_path / "rr1",
+            seed=5,
+        )
 
         target_file = dataset.sim_file("chr1", 1, 0)
         original_seed = int(dataset.seed_table["chr1"][1, 0])
@@ -255,9 +331,14 @@ class TestSimManagerRerun:
     def test_dataset_accepted_positionally(self, tmp_path):
         meth_prob = _make_meth_prob(nmol=2, nbp=50)
         manager = SimManager(nworker=1, verbose=False)
-        dataset = manager.run(chroms="chr1", nsim=1, settings=_make_settings(),
-                              meth_prob=meth_prob, out_dir=tmp_path / "rr_pos",
-                              seed=5)
+        dataset = manager.run(
+            chroms="chr1",
+            nsim=1,
+            settings=_make_settings(),
+            meth_prob=meth_prob,
+            out_dir=tmp_path / "rr_pos",
+            seed=5,
+        )
         dataset.sim_file("chr1", 1, 0).unlink()
 
         manager.rerun(dataset, meth_prob=meth_prob)
@@ -265,13 +346,19 @@ class TestSimManagerRerun:
         incomplete = dataset.find_incomplete_runs()
         assert incomplete == {"missing": [], "corrupted": [], "truncated": []}
 
-    def test_explicit_only_reruns_exactly_that_target(self, tmp_path,
-                                                       monkeypatch):
+    def test_explicit_only_reruns_exactly_that_target(
+        self, tmp_path, monkeypatch
+    ):
         meth_prob = _make_meth_prob(nmol=2, nbp=50)
         manager = SimManager(nworker=1, verbose=False)
-        dataset = manager.run(chroms="chr1", nsim=1, settings=_make_settings(),
-                              meth_prob=meth_prob, out_dir=tmp_path / "rr2",
-                              seed=5)
+        dataset = manager.run(
+            chroms="chr1",
+            nsim=1,
+            settings=_make_settings(),
+            meth_prob=meth_prob,
+            out_dir=tmp_path / "rr2",
+            seed=5,
+        )
 
         calls = []
         real_run_job = SimManager._run_job
@@ -282,38 +369,58 @@ class TestSimManagerRerun:
 
         monkeypatch.setattr(SimManager, "_run_job", staticmethod(spy_run_job))
 
-        manager.rerun(dataset=dataset, meth_prob=meth_prob,
-                     only=[("chr1", 0, 0)])
+        manager.rerun(
+            dataset=dataset, meth_prob=meth_prob, only=[("chr1", 0, 0)]
+        )
         assert calls == [("chr1", 0, 0)]
 
-    def test_legacy_dataset_requires_explicit_out_type_and_seed(self,
-                                                                 tmp_path):
+    def test_legacy_dataset_requires_explicit_out_type_and_seed(
+        self, tmp_path
+    ):
         dataset = SimDataset.create(
-            chroms=["chr1"], nmol={"chr1": 1}, nsim=1, nbp={"chr1": 50},
-            settings=_make_settings(), out_dir=tmp_path / "legacy")
+            chroms=["chr1"],
+            nmol={"chr1": 1},
+            nsim=1,
+            nbp={"chr1": 50},
+            settings=_make_settings(),
+            out_dir=tmp_path / "legacy",
+        )
         meth_prob = _make_meth_prob(nmol=1, nbp=50)
         manager = SimManager(nworker=1, verbose=False)
 
         with pytest.raises(ValueError, match="out_type"):
-            manager.rerun(dataset=dataset, meth_prob=meth_prob,
-                         only=[("chr1", 0, 0)])
+            manager.rerun(
+                dataset=dataset, meth_prob=meth_prob, only=[("chr1", 0, 0)]
+            )
 
         with pytest.raises(ValueError, match="seed"):
-            manager.rerun(dataset=dataset, meth_prob=meth_prob,
-                         only=[("chr1", 0, 0)], out_type=Dump.OutputType.All)
+            manager.rerun(
+                dataset=dataset,
+                meth_prob=meth_prob,
+                only=[("chr1", 0, 0)],
+                out_type=Dump.OutputType.All,
+            )
 
-    def test_explicit_seed_override_differs_from_reproduction(self,
-                                                               tmp_path):
+    def test_explicit_seed_override_differs_from_reproduction(self, tmp_path):
         meth_prob = _make_meth_prob(nmol=1, nbp=50)
         manager = SimManager(nworker=1, verbose=False)
-        dataset = manager.run(chroms="chr1", nsim=1, settings=_make_settings(),
-                              meth_prob=meth_prob, out_dir=tmp_path / "rr3",
-                              seed=5)
+        dataset = manager.run(
+            chroms="chr1",
+            nsim=1,
+            settings=_make_settings(),
+            meth_prob=meth_prob,
+            out_dir=tmp_path / "rr3",
+            seed=5,
+        )
         original_seed = int(dataset.seed_table["chr1"][0, 0])
         target_file = dataset.sim_file("chr1", 0, 0)
 
-        manager.rerun(dataset=dataset, meth_prob=meth_prob,
-                     only=[("chr1", 0, 0)], seed=999)
+        manager.rerun(
+            dataset=dataset,
+            meth_prob=meth_prob,
+            only=[("chr1", 0, 0)],
+            seed=999,
+        )
 
         with h5py.File(target_file, "r") as f:
             reran_seed = int(f["params"].attrs["seed"])
@@ -322,15 +429,22 @@ class TestSimManagerRerun:
     def test_rerun_overwrites_corrupted_file(self, tmp_path):
         meth_prob = _make_meth_prob(nmol=1, nbp=50)
         manager = SimManager(nworker=1, verbose=False)
-        dataset = manager.run(chroms="chr1", nsim=1,
-                              settings=_make_settings(nsweep=10),
-                              meth_prob=meth_prob, out_dir=tmp_path / "rr4",
-                              seed=5)
+        dataset = manager.run(
+            chroms="chr1",
+            nsim=1,
+            settings=_make_settings(nsweep=10),
+            meth_prob=meth_prob,
+            out_dir=tmp_path / "rr4",
+            seed=5,
+        )
         target_file = dataset.sim_file("chr1", 0, 0)
         target_file.write_bytes(b"not a valid hdf5 file")
         assert dataset.find_incomplete_runs()["corrupted"] == [("chr1", 0, 0)]
 
         manager.rerun(dataset=dataset, meth_prob=meth_prob)
 
-        assert dataset.find_incomplete_runs() == \
-            {"missing": [], "corrupted": [], "truncated": []}
+        assert dataset.find_incomplete_runs() == {
+            "missing": [],
+            "corrupted": [],
+            "truncated": [],
+        }

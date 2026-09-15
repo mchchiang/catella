@@ -7,9 +7,11 @@ import h5py
 import numpy as np
 import pandas as pd
 import pytest
-
 from catella.experiment.methdata import (
-    LazyRawDataMap, MethPrintData, MethPrintExperiment)
+    LazyRawDataMap,
+    MethPrintData,
+    MethPrintExperiment,
+)
 from catella.h5_array import H5Array
 
 
@@ -21,19 +23,25 @@ def _make_raw(chrom, nmol, nbp, seed, refseq=None):
         positions = rng.choice(nbp, size=npos, replace=False)
         for p in positions:
             rows.append((m, int(p), "+", float(rng.random()), 0))
-    df = pd.DataFrame(rows, columns=["mol_index", "pos", "strand",
-                                     "mod_qual", "mod_code"])
+    df = pd.DataFrame(
+        rows, columns=["mol_index", "pos", "strand", "mod_qual", "mod_code"]
+    )
     mol_id = np.array([f"mol{m}" for m in range(nmol)], dtype=object)
     return MethPrintData._create(
-        chrom=chrom, nbp=nbp, refseq=refseq,
-        test_mol_id=mol_id, test_data=df,
-        meth_mol_id=None, meth_data=None,
-        unmeth_mol_id=None, unmeth_data=None)
+        chrom=chrom,
+        nbp=nbp,
+        refseq=refseq,
+        test_mol_id=mol_id,
+        test_data=df,
+        meth_mol_id=None,
+        meth_data=None,
+        unmeth_mol_id=None,
+        unmeth_data=None,
+    )
 
 
 def _make_multi_chrom_experiment_file(tmp_path, chroms, nmol=3, nbp=6):
-    raw = {c: _make_raw(c, nmol, nbp, seed=i)
-          for i, c in enumerate(chroms)}
+    raw = {c: _make_raw(c, nmol, nbp, seed=i) for i, c in enumerate(chroms)}
     exp = MethPrintExperiment._create(_raw_data=raw)
     path = tmp_path / "experiment.h5"
     exp.save(path)
@@ -43,19 +51,21 @@ def _make_multi_chrom_experiment_file(tmp_path, chroms, nmol=3, nbp=6):
 class TestLazyRawDataMap:
     def test_load_does_not_read_any_chromosome_eagerly(self, tmp_path):
         path = _make_multi_chrom_experiment_file(
-            tmp_path, ["chr1", "chr2", "chr3"])
-        with patch.object(MethPrintData, "_load",
-                          wraps=MethPrintData._load) as spy:
+            tmp_path, ["chr1", "chr2", "chr3"]
+        )
+        with patch.object(
+            MethPrintData, "_load", wraps=MethPrintData._load
+        ) as spy:
             exp = MethPrintExperiment.load(path)
             assert spy.call_count == 0
             assert set(exp.chroms) == {"chr1", "chr2", "chr3"}
             assert spy.call_count == 0
 
-    def test_access_triggers_exactly_one_load_per_chromosome(
-            self, tmp_path):
+    def test_access_triggers_exactly_one_load_per_chromosome(self, tmp_path):
         path = _make_multi_chrom_experiment_file(tmp_path, ["chr1", "chr2"])
-        with patch.object(MethPrintData, "_load",
-                          wraps=MethPrintData._load) as spy:
+        with patch.object(
+            MethPrintData, "_load", wraps=MethPrintData._load
+        ) as spy:
             exp = MethPrintExperiment.load(path, max_cached_chroms=2)
             raw1 = exp.raw["chr1"]
             assert spy.call_count == 1
@@ -70,9 +80,11 @@ class TestLazyRawDataMap:
 
     def test_lru_eviction_bounds_cached_chromosomes(self, tmp_path):
         path = _make_multi_chrom_experiment_file(
-            tmp_path, ["chr1", "chr2", "chr3"])
-        with patch.object(MethPrintData, "_load",
-                          wraps=MethPrintData._load) as spy:
+            tmp_path, ["chr1", "chr2", "chr3"]
+        )
+        with patch.object(
+            MethPrintData, "_load", wraps=MethPrintData._load
+        ) as spy:
             exp = MethPrintExperiment.load(path, max_cached_chroms=1)
             exp.raw["chr1"]
             exp.raw["chr2"]
@@ -96,8 +108,10 @@ class TestLazyRawDataMap:
 class TestChromSelection:
     def test_selects_subset_of_chromosomes(self, tmp_path):
         chroms = ["chr1", "chr2", "chr3"]
-        raw = {c: _make_raw(c, nmol=2, nbp=6, seed=i)
-              for i, c in enumerate(chroms)}
+        raw = {
+            c: _make_raw(c, nmol=2, nbp=6, seed=i)
+            for i, c in enumerate(chroms)
+        }
         exp = MethPrintExperiment._create(_raw_data=raw)
         exp.analysis["chr2"]["stat"] = pd.DataFrame({"x": [1, 2]})
         path = tmp_path / "experiment.h5"
@@ -119,44 +133,55 @@ class TestSaveToExistingFile:
         # the destination already had *a* raw_data group, even from
         # an unrelated experiment.
         old = MethPrintExperiment._create(
-            _raw_data={"chr1": _make_raw("chr1", nmol=2, nbp=6, seed=0)})
+            _raw_data={"chr1": _make_raw("chr1", nmol=2, nbp=6, seed=0)}
+        )
         path = tmp_path / "experiment.h5"
         old.save(path)
 
         new = MethPrintExperiment._create(
-            _raw_data={"chr1": _make_raw("chr1", nmol=3, nbp=6, seed=1)})
+            _raw_data={"chr1": _make_raw("chr1", nmol=3, nbp=6, seed=1)}
+        )
         assert new._exp_file is None
         new.save(path)
 
         loaded = MethPrintExperiment.load(path)
-        assert list(loaded.raw["chr1"].test_mol_id) == \
-            list(new._raw_data["chr1"].test_mol_id)
+        assert list(loaded.raw["chr1"].test_mol_id) == list(
+            new._raw_data["chr1"].test_mol_id
+        )
 
     def test_resaving_same_file_skips_rewriting_raw_data(self, tmp_path):
         exp = MethPrintExperiment._create(
-            _raw_data={"chr1": _make_raw("chr1", nmol=2, nbp=6, seed=0)})
+            _raw_data={"chr1": _make_raw("chr1", nmol=2, nbp=6, seed=0)}
+        )
         path = tmp_path / "experiment.h5"
         exp.save(path)
 
-        with patch.object(MethPrintData, "_save",
-                          wraps=MethPrintData._save) as spy:
+        with patch.object(
+            MethPrintData, "_save", wraps=MethPrintData._save
+        ) as spy:
             exp.save(path)
             assert spy.call_count == 0
 
     def test_tmp_file_removed_on_keyboard_interrupt_during_overwrite(
-            self, tmp_path):
+        self, tmp_path
+    ):
         exp = MethPrintExperiment._create(
-            _raw_data={"chr1": _make_raw("chr1", nmol=2, nbp=6, seed=0)})
+            _raw_data={"chr1": _make_raw("chr1", nmol=2, nbp=6, seed=0)}
+        )
         path = tmp_path / "experiment.h5"
         exp.save(path)
         # An analysis entry backed by the destination file itself
         # forces save() onto its tmp-then-replace overwrite path.
         exp._global_analysis["dummy"] = H5Array.create((2, 2), path=path)
 
-        with patch("catella.experiment.methdata.os.replace",
-                   side_effect=KeyboardInterrupt):
-            with pytest.raises(KeyboardInterrupt):
-                exp.save(path, overwrite=True)
+        with (
+            patch(
+                "catella.experiment.methdata.os.replace",
+                side_effect=KeyboardInterrupt,
+            ),
+            pytest.raises(KeyboardInterrupt),
+        ):
+            exp.save(path, overwrite=True)
 
         leaked = list(tmp_path.glob(f"{path.name}.tmp*"))
         assert not leaked
@@ -164,8 +189,9 @@ class TestSaveToExistingFile:
 
 class TestRefseq:
     def test_refseq_roundtrips_through_save_load(self, tmp_path):
-        raw = {"chr1": _make_raw("chr1", nmol=2, nbp=6, seed=0,
-                                 refseq="ACGTAC")}
+        raw = {
+            "chr1": _make_raw("chr1", nmol=2, nbp=6, seed=0, refseq="ACGTAC")
+        }
         exp = MethPrintExperiment._create(_raw_data=raw)
         path = tmp_path / "experiment.h5"
         exp.save(path)
@@ -195,10 +221,16 @@ def _make_raw_exact(chrom, nbp, nmol, rows, which="test"):
     df["strand"] = "+"
     df["mod_code"] = 0
     mol_id = np.array([f"mol{m}" for m in range(nmol)], dtype=object)
-    kwargs = dict(chrom=chrom, nbp=nbp,
-                 test_mol_id=None, test_data=None,
-                 meth_mol_id=None, meth_data=None,
-                 unmeth_mol_id=None, unmeth_data=None)
+    kwargs = {
+        "chrom": chrom,
+        "nbp": nbp,
+        "test_mol_id": None,
+        "test_data": None,
+        "meth_mol_id": None,
+        "meth_data": None,
+        "unmeth_mol_id": None,
+        "unmeth_data": None,
+    }
     kwargs[f"{which}_mol_id"] = mol_id
     kwargs[f"{which}_data"] = df
     return MethPrintData._create(**kwargs)
@@ -221,16 +253,20 @@ def _manual_pivot(rows, mol_ids, nbp):
 _TO_DENSE_NBP = 3
 _TO_DENSE_NMOL = 4
 _TO_DENSE_ROWS = [
-    (0, 0, 0.1), (0, 2, 0.3),
-    (1, 0, 0.4), (1, 1, 0.5), (1, 2, 0.6),
+    (0, 0, 0.1),
+    (0, 2, 0.3),
+    (1, 0, 0.4),
+    (1, 1, 0.5),
+    (1, 2, 0.6),
     (3, 1, 0.9),
 ]
 
 
 class TestToDense:
     def _experiment(self, which="test"):
-        raw = _make_raw_exact("chr1", _TO_DENSE_NBP, _TO_DENSE_NMOL,
-                              _TO_DENSE_ROWS, which=which)
+        raw = _make_raw_exact(
+            "chr1", _TO_DENSE_NBP, _TO_DENSE_NMOL, _TO_DENSE_ROWS, which=which
+        )
         return MethPrintExperiment._create(_raw_data={"chr1": raw})
 
     @pytest.mark.parametrize("as_h5array", [True, False])
@@ -256,8 +292,9 @@ class TestToDense:
         exp = self._experiment()
         out = exp.to_dense("chr1", batch_size=batch_size)
         assert isinstance(out, H5Array)
-        expected = _manual_pivot(_TO_DENSE_ROWS, range(_TO_DENSE_NMOL),
-                                 _TO_DENSE_NBP)
+        expected = _manual_pivot(
+            _TO_DENSE_ROWS, range(_TO_DENSE_NMOL), _TO_DENSE_NBP
+        )
         np.testing.assert_array_equal(out.to_numpy(), expected)
         assert isinstance(out.index, pd.RangeIndex)
 
@@ -299,8 +336,9 @@ class TestToDense:
         exp = self._experiment()
         out = exp.to_dense("chr1", as_h5array=False)
         assert isinstance(out, pd.DataFrame)
-        expected = _manual_pivot(_TO_DENSE_ROWS, range(_TO_DENSE_NMOL),
-                                 _TO_DENSE_NBP)
+        expected = _manual_pivot(
+            _TO_DENSE_ROWS, range(_TO_DENSE_NMOL), _TO_DENSE_NBP
+        )
         np.testing.assert_array_equal(out.to_numpy(), expected)
 
     def test_dtype_is_honored_for_dataframe(self):
@@ -312,12 +350,14 @@ class TestToDense:
     def test_which_selects_right_table(self, which):
         exp = self._experiment(which=which)
         out = exp.to_dense("chr1", which=which)
-        expected = _manual_pivot(_TO_DENSE_ROWS, range(_TO_DENSE_NMOL),
-                                 _TO_DENSE_NBP)
+        expected = _manual_pivot(
+            _TO_DENSE_ROWS, range(_TO_DENSE_NMOL), _TO_DENSE_NBP
+        )
         np.testing.assert_array_equal(out.to_numpy(), expected)
 
     def test_warns_when_dataframe_exceeds_threshold(self, monkeypatch):
         import catella.experiment.methdata as methdata_mod
+
         monkeypatch.setattr(methdata_mod, "_DENSE_WARN_ROWS", 2)
         exp = self._experiment()
         with pytest.warns(UserWarning):
@@ -325,6 +365,7 @@ class TestToDense:
 
     def test_no_warning_below_threshold(self, monkeypatch):
         import catella.experiment.methdata as methdata_mod
+
         monkeypatch.setattr(methdata_mod, "_DENSE_WARN_ROWS", 100)
         exp = self._experiment()
         with warnings.catch_warnings():
@@ -333,6 +374,7 @@ class TestToDense:
 
     def test_no_warning_for_h5array_regardless_of_size(self, monkeypatch):
         import catella.experiment.methdata as methdata_mod
+
         monkeypatch.setattr(methdata_mod, "_DENSE_WARN_ROWS", 1)
         exp = self._experiment()
         with warnings.catch_warnings():
@@ -344,9 +386,11 @@ class TestToDense:
         exp = self._experiment()
         # Molecules 1 and 3 dropped; 0 and 2 kept.
         exp.analysis["chr1"]["test_dropout_mask"] = pd.DataFrame(
-            {"keep": [True, False, True, False]})
-        out = exp.to_dense("chr1", as_h5array=as_h5array,
-                          mask_name="dropout_mask")
+            {"keep": [True, False, True, False]}
+        )
+        out = exp.to_dense(
+            "chr1", as_h5array=as_h5array, mask_name="dropout_mask"
+        )
         arr = out.to_numpy()
         assert np.isnan(arr[1]).all()
         assert np.isnan(arr[3]).all()
@@ -356,8 +400,10 @@ class TestToDense:
     def test_no_mask_name_unaffected(self):
         exp = self._experiment()
         exp.analysis["chr1"]["test_dropout_mask"] = pd.DataFrame(
-            {"keep": [True, False, True, False]})
+            {"keep": [True, False, True, False]}
+        )
         out = exp.to_dense("chr1", as_h5array=False)
-        expected = _manual_pivot(_TO_DENSE_ROWS, range(_TO_DENSE_NMOL),
-                                 _TO_DENSE_NBP)
+        expected = _manual_pivot(
+            _TO_DENSE_ROWS, range(_TO_DENSE_NMOL), _TO_DENSE_NBP
+        )
         np.testing.assert_array_equal(out.to_numpy(), expected)

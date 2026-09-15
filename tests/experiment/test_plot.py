@@ -1,6 +1,7 @@
 # test_plot.py
 
 import matplotlib
+
 matplotlib.use("Agg")
 
 import warnings
@@ -9,13 +10,12 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-from scipy.special import logit
-
-from catella.h5_array import H5Array
-from catella.experiment.plot import MethPlot
-from catella.experiment.methdata import MethPrintData, MethPrintExperiment
-from catella.experiment.preprocessing import MethPrintAnalysis
 from catella import utils
+from catella.experiment.methdata import MethPrintData, MethPrintExperiment
+from catella.experiment.plot import MethPlot
+from catella.experiment.preprocessing import MethPrintAnalysis
+from catella.h5_array import H5Array
+from scipy.special import logit
 
 
 def _h5array(values):
@@ -46,17 +46,26 @@ def test_plot_meth_prob_smoke_across_input_types(methplot, tmp_path, kind):
 
 def _raw_test_exp(nbp=5, nmol=30, seed=3):
     rng = np.random.default_rng(seed)
-    rows = [(m, p, float(rng.random())) for m in range(nmol)
-           for p in rng.choice(nbp, size=3, replace=False)]
+    rows = [
+        (m, p, float(rng.random()))
+        for m in range(nmol)
+        for p in rng.choice(nbp, size=3, replace=False)
+    ]
     df = pd.DataFrame(rows, columns=["mol_index", "pos", "mod_qual"])
     df["strand"] = "+"
     df["mod_code"] = 0
     mol_id = np.array([f"mol{m}" for m in range(nmol)], dtype=object)
 
     raw = MethPrintData._create(
-        chrom="chr1", nbp=nbp, test_mol_id=mol_id, test_data=df,
-        meth_mol_id=None, meth_data=None,
-        unmeth_mol_id=None, unmeth_data=None)
+        chrom="chr1",
+        nbp=nbp,
+        test_mol_id=mol_id,
+        test_data=df,
+        meth_mol_id=None,
+        meth_data=None,
+        unmeth_mol_id=None,
+        unmeth_data=None,
+    )
     return MethPrintExperiment._create(_raw_data={"chr1": raw})
 
 
@@ -71,8 +80,9 @@ def test_plot_meth_prob_end_to_end_with_to_dense(tmp_path):
 def test_plot_meth_prob_with_raw_which(tmp_path):
     exp = _raw_test_exp()
     out_file = tmp_path / "methmap_raw_which.png"
-    MethPlot().plot_meth_prob(exp=exp, chrom="chr1", raw_which="test",
-                            out_file=out_file, show=False)
+    MethPlot().plot_meth_prob(
+        exp=exp, chrom="chr1", raw_which="test", out_file=out_file, show=False
+    )
     assert out_file.exists()
 
 
@@ -85,8 +95,9 @@ def test_plot_meth_prob_raises_when_data_and_exp_combined(methplot):
     exp = _raw_test_exp()
     values = np.random.default_rng(1).random((5, 4))
     with pytest.raises(ValueError):
-        methplot.plot_meth_prob(values, exp=exp, chrom="chr1",
-                              raw_which="test", show=False)
+        methplot.plot_meth_prob(
+            values, exp=exp, chrom="chr1", raw_which="test", show=False
+        )
 
 
 def test_plot_meth_prob_mask_name_forwarded(tmp_path):
@@ -97,13 +108,20 @@ def test_plot_meth_prob_mask_name_forwarded(tmp_path):
     exp.analysis["chr1"]["test_qc"] = pd.DataFrame({"keep": keep})
 
     out_file = tmp_path / "methmap_mask_name.png"
-    MethPlot().plot_meth_prob(exp=exp, chrom="chr1", raw_which="test",
-                            mask_name="qc", out_file=out_file, show=False)
+    MethPlot().plot_meth_prob(
+        exp=exp,
+        chrom="chr1",
+        raw_which="test",
+        mask_name="qc",
+        out_file=out_file,
+        show=False,
+    )
     assert out_file.exists()
 
 
 def test_plot_meth_prob_max_rows_downsamples(methplot, monkeypatch):
     import catella.experiment.plot as plot_module
+
     monkeypatch.setattr(plot_module, "_PLOT_WARN_ROWS", 5)
     values = np.random.default_rng(2).random((20, 3))
 
@@ -126,8 +144,9 @@ def test_plot_meth_prob_raw_which_closes_scratch_file(tmp_path, monkeypatch):
     monkeypatch.setattr(MethPrintExperiment, "to_dense", spy_to_dense)
 
     out_file = tmp_path / "methmap_scratch.png"
-    MethPlot().plot_meth_prob(exp=exp, chrom="chr1", raw_which="test",
-                            out_file=out_file, show=False)
+    MethPlot().plot_meth_prob(
+        exp=exp, chrom="chr1", raw_which="test", out_file=out_file, show=False
+    )
     assert out_file.exists()
     assert len(paths) == 1
     assert not Path(paths[0]).exists()
@@ -135,21 +154,22 @@ def test_plot_meth_prob_raw_which_closes_scratch_file(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("kind", ["h5array", "dataframe", "ndarray"])
 def test_plot_meth_prob_with_link_mat_draws_dendrogram(
-        methplot, tmp_path, kind):
+    methplot, tmp_path, kind
+):
     values = np.random.default_rng(4).random((8, 3))
-    if kind == "h5array":
-        data = _h5array(values)
-    elif kind == "dataframe":
-        data = pd.DataFrame(values)
-    else:
-        data = values
-
     order, link_mat = utils.compute_linkage(values)
     sorted_values = values[order]
+    if kind == "h5array":
+        data = _h5array(sorted_values)
+    elif kind == "dataframe":
+        data = pd.DataFrame(sorted_values)
+    else:
+        data = sorted_values
 
     out_file = tmp_path / "dendro.png"
-    methplot.plot_meth_prob(sorted_values, link_mat=link_mat,
-                          out_file=out_file, show=False)
+    methplot.plot_meth_prob(
+        data, link_mat=link_mat, out_file=out_file, show=False
+    )
     assert out_file.exists()
 
 
@@ -159,26 +179,36 @@ def test_plot_meth_prob_end_to_end_with_sort_by_linkage(tmp_path):
     # edge case for this smoke test.
     nbp, nmol = 10, 10
     rng = np.random.default_rng(5)
-    rows = [(m, p, "+", float(rng.random()), 0) for m in range(nmol)
-           for p in rng.choice(nbp, size=7, replace=False)]
-    df = pd.DataFrame(rows, columns=["mol_index", "pos", "strand",
-                                     "mod_qual", "mod_code"])
+    rows = [
+        (m, p, "+", float(rng.random()), 0)
+        for m in range(nmol)
+        for p in rng.choice(nbp, size=7, replace=False)
+    ]
+    df = pd.DataFrame(
+        rows, columns=["mol_index", "pos", "strand", "mod_qual", "mod_code"]
+    )
     mol_id = np.array([f"mol{m}" for m in range(nmol)], dtype=object)
 
     raw = MethPrintData._create(
-        chrom="chr1", nbp=nbp, test_mol_id=mol_id, test_data=df,
-        meth_mol_id=None, meth_data=None,
-        unmeth_mol_id=None, unmeth_data=None)
+        chrom="chr1",
+        nbp=nbp,
+        test_mol_id=mol_id,
+        test_data=df,
+        meth_mol_id=None,
+        meth_data=None,
+        unmeth_mol_id=None,
+        unmeth_data=None,
+    )
     exp = MethPrintExperiment._create(_raw_data={"chr1": raw})
 
     ana = MethPrintAnalysis()
-    link_mats = ana.sort_by_linkage(exp=exp, raw_which="test",
-                                    batch_size=4)
+    link_mats = ana.sort_by_linkage(exp=exp, raw_which="test", batch_size=4)
     sorted_arr = exp.analysis["chr1"]["test_sorted"]
 
     out_file = tmp_path / "sorted_methmap.png"
-    MethPlot().plot_meth_prob(sorted_arr, link_mat=link_mats["chr1"],
-                            out_file=out_file, show=False)
+    MethPlot().plot_meth_prob(
+        sorted_arr, link_mat=link_mats["chr1"], out_file=out_file, show=False
+    )
     assert out_file.exists()
 
 
@@ -193,18 +223,21 @@ def test_plot_meth_prob_with_nan_values(methplot, tmp_path):
 
 
 def test_plot_meth_prob_cmap_override_does_not_mutate_instance(
-        methplot, tmp_path):
+    methplot, tmp_path
+):
     values = np.random.default_rng(9).random((5, 4))
 
     out_file = tmp_path / "override_methmap.png"
-    methplot.plot_meth_prob(values, cmap="viridis", out_file=out_file,
-                          show=False)
+    methplot.plot_meth_prob(
+        values, cmap="viridis", out_file=out_file, show=False
+    )
     assert out_file.exists()
     assert methplot.cmap == "OrRd"
 
 
 def test_plot_meth_prob_warns_above_plot_warn_rows(methplot, monkeypatch):
     import catella.experiment.plot as plot_module
+
     monkeypatch.setattr(plot_module, "_PLOT_WARN_ROWS", 5)
     values = np.random.default_rng(6).random((8, 3))
 
@@ -212,9 +245,9 @@ def test_plot_meth_prob_warns_above_plot_warn_rows(methplot, monkeypatch):
         methplot.plot_meth_prob(values, show=False)
 
 
-def test_plot_meth_prob_no_warning_below_plot_warn_rows(methplot,
-                                                       monkeypatch):
+def test_plot_meth_prob_no_warning_below_plot_warn_rows(methplot, monkeypatch):
     import catella.experiment.plot as plot_module
+
     monkeypatch.setattr(plot_module, "_PLOT_WARN_ROWS", 100)
     values = np.random.default_rng(7).random((8, 3))
 
@@ -264,8 +297,9 @@ def test_plot_meth_energy_default_vmin_vmax_symmetric(methplot, monkeypatch):
     assert captured["vmax"] == np.nanmax(np.abs(logit(values)))
 
 
-def test_plot_meth_energy_explicit_vmin_vmax_passthrough(methplot,
-                                                         monkeypatch):
+def test_plot_meth_energy_explicit_vmin_vmax_passthrough(
+    methplot, monkeypatch
+):
     values = np.random.default_rng(13).random((4, 3))
     captured = {}
 
@@ -278,7 +312,8 @@ def test_plot_meth_energy_explicit_vmin_vmax_passthrough(methplot,
 
 
 def test_plot_meth_energy_asymmetric_vmin_vmax_centered_at_zero(
-        methplot, monkeypatch):
+    methplot, monkeypatch
+):
     values = np.random.default_rng(17).random((4, 3))
     captured = {}
 
@@ -295,7 +330,8 @@ def test_plot_meth_energy_asymmetric_vmin_vmax_centered_at_zero(
 
 
 def test_plot_meth_energy_emax_clamps_and_sets_default_range(
-        methplot, monkeypatch):
+    methplot, monkeypatch
+):
     values = np.random.default_rng(14).random((4, 3))
     captured = {}
 
@@ -310,7 +346,8 @@ def test_plot_meth_energy_emax_clamps_and_sets_default_range(
 
 
 def test_plot_meth_energy_extreme_probabilities_do_not_break_range(
-        methplot, monkeypatch):
+    methplot, monkeypatch
+):
     values = np.array([[0.0, 0.5], [1.0, 0.5]])
     captured = {}
 
@@ -347,31 +384,30 @@ def test_plot_meth_energy_default_cmap_and_label(methplot, monkeypatch):
     assert captured["cmap"] == "RdBu_r"
     assert captured["cbar_label"] == r"Energy [$k_BT$]"
 
-    methplot.plot_meth_energy(values, cmap="viridis",
-                              cbar_label="custom", show=False)
+    methplot.plot_meth_energy(
+        values, cmap="viridis", cbar_label="custom", show=False
+    )
     assert captured["cmap"] == "viridis"
     assert captured["cbar_label"] == "custom"
 
 
 def _write_tsv(path, rows):
     with open(path, "w") as f:
-        f.write("read_id\tref_position\tchrom\tref_strand\tmod_qual\t"
-                "mod_code\n")
-        for r in rows:
-            f.write("\t".join(str(x) for x in r) + "\n")
+        f.write(
+            "read_id\tref_position\tchrom\tref_strand\tmod_qual\tmod_code\n"
+        )
+        f.writelines("\t".join(str(x) for x in r) + "\n" for r in rows)
 
 
 def _write_chromsize(path, sizes):
     with open(path, "w") as f:
         f.write("chrom\tlength\n")
-        for chrom, length in sizes.items():
-            f.write(f"{chrom}\t{length}\n")
+        f.writelines(f"{chrom}\t{length}\n" for chrom, length in sizes.items())
 
 
 def _write_fasta(path, records):
     with open(path, "w") as f:
-        for chrom, seq in records.items():
-            f.write(f">{chrom}\n{seq}\n")
+        f.writelines(f">{chrom}\n{seq}\n" for chrom, seq in records.items())
 
 
 def _dropout_fractions_exp(tmp_path):
@@ -383,12 +419,16 @@ def _dropout_fractions_exp(tmp_path):
     fasta = tmp_path / "ref.fa"
     _write_fasta(fasta, {chrom: refseq})
     test_file = tmp_path / "test.tsv"
-    rows = ([("m0", i, chrom, "+", 0.5, "a") for i in range(9)] +
-           [("m1", i, chrom, "+", 0.5, "a") for i in range(5)])
+    rows = [("m0", i, chrom, "+", 0.5, "a") for i in range(9)] + [
+        ("m1", i, chrom, "+", 0.5, "a") for i in range(5)
+    ]
     _write_tsv(test_file, rows)
     return MethPrintExperiment.load_raw(
-        chromsize=chromsize, test_file=test_file, fasta_file=fasta,
-        mtase=["A", "CG"])
+        chromsize=chromsize,
+        test_file=test_file,
+        fasta_file=fasta,
+        mtase=["A", "CG"],
+    )
 
 
 class TestPlotDropoutEcdf:
@@ -398,7 +438,8 @@ class TestPlotDropoutEcdf:
 
         out_file = tmp_path / "dropout_ecdf.png"
         MethPlot().plot_dropout_ecdf(
-            fracs, "chr1", out_file=out_file, show=False)
+            fracs, "chr1", out_file=out_file, show=False
+        )
         assert out_file.exists()
         exp.close()
 
@@ -408,7 +449,8 @@ class TestPlotDropoutEcdf:
 
         out_file = tmp_path / "dropout_ecdf_source.png"
         MethPlot().plot_dropout_ecdf(
-            fracs, "chr1", source="test", out_file=out_file, show=False)
+            fracs, "chr1", source="test", out_file=out_file, show=False
+        )
         assert out_file.exists()
         exp.close()
 
@@ -426,7 +468,8 @@ class TestPlotDropoutEcdf:
 
         with pytest.raises(ValueError):
             MethPlot().plot_dropout_ecdf(
-                fracs, "chr1", source="meth", show=False)
+                fracs, "chr1", source="meth", show=False
+            )
         exp.close()
 
     def test_curve_is_monotonic_and_bounded(self, tmp_path):

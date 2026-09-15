@@ -4,7 +4,6 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-
 from catella.h5_array import H5Array
 
 
@@ -60,9 +59,11 @@ def test_scratch_dir_removed_on_keyboard_interrupt():
     from unittest.mock import patch
 
     before = set(os.listdir(tempfile.gettempdir()))
-    with patch("h5py.File.create_dataset", side_effect=KeyboardInterrupt):
-        with pytest.raises(KeyboardInterrupt):
-            H5Array.create((3, 3))
+    with (
+        patch("h5py.File.create_dataset", side_effect=KeyboardInterrupt),
+        pytest.raises(KeyboardInterrupt),
+    ):
+        H5Array.create((3, 3))
     after = set(os.listdir(tempfile.gettempdir()))
     leaked = [d for d in after - before if d.startswith("catella_")]
     assert not leaked
@@ -155,8 +156,7 @@ def test_to_pandas_default_range_index():
 
 def test_to_pandas_uses_explicit_labels():
     values = np.arange(6, dtype=np.float64).reshape(3, 2)
-    arr = H5Array.create((3, 2), index=["m0", "m1", "m2"],
-                         columns=["x", "y"])
+    arr = H5Array.create((3, 2), index=["m0", "m1", "m2"], columns=["x", "y"])
     arr.write_batch(0, 3, values)
     df = arr.to_pandas()
     assert list(df.index) == ["m0", "m1", "m2"]
@@ -212,8 +212,12 @@ def test_downsample_aggregate_matches_manual_bins(op, batch_size):
 
     edges = np.linspace(0, nrow, max_rows + 1).astype(int)
     numpy_op = getattr(np, op)
-    expected = np.stack([numpy_op(values[edges[i]:edges[i+1]], axis=0)
-                         for i in range(max_rows)])
+    expected = np.stack(
+        [
+            numpy_op(values[edges[i] : edges[i + 1]], axis=0)
+            for i in range(max_rows)
+        ]
+    )
     np.testing.assert_allclose(result, expected)
 
 
@@ -236,25 +240,22 @@ def test_downsample_invalid_how_raises():
 
 def test_downsample_nan_aware_within_a_bin():
     nrow, ncol, max_rows = 4, 2, 2
-    values = np.array([[1.0, np.nan],
-                       [3.0, 4.0],
-                       [5.0, 6.0],
-                       [7.0, 8.0]])
+    values = np.array([[1.0, np.nan], [3.0, 4.0], [5.0, 6.0], [7.0, 8.0]])
     arr = H5Array.create((nrow, ncol))
     arr.write_batch(0, nrow, values)
 
     result = arr.downsample(max_rows, how="mean")
-    expected = np.stack([np.nanmean(values[0:2], axis=0),
-                         np.nanmean(values[2:4], axis=0)])
+    expected = np.stack(
+        [np.nanmean(values[0:2], axis=0), np.nanmean(values[2:4], axis=0)]
+    )
     np.testing.assert_allclose(result, expected)
 
 
 def test_downsample_all_nan_bin_produces_nan_without_raising():
     nrow, ncol, max_rows = 4, 2, 2
-    values = np.array([[np.nan, np.nan],
-                       [np.nan, np.nan],
-                       [7.0, 8.0],
-                       [9.0, 10.0]])
+    values = np.array(
+        [[np.nan, np.nan], [np.nan, np.nan], [7.0, 8.0], [9.0, 10.0]]
+    )
     arr = H5Array.create((nrow, ncol))
     arr.write_batch(0, nrow, values)
 
@@ -324,14 +325,14 @@ def test_shuffle_reduces_size_for_dense_correlated_array(tmp_path):
     values = _dense_correlated_array(2000, 300)
 
     shuffled_path = tmp_path / "shuffled.h5"
-    shuffled = H5Array.create(values.shape, path=shuffled_path,
-                              shuffle=True)
+    shuffled = H5Array.create(values.shape, path=shuffled_path, shuffle=True)
     shuffled.write_batch(0, values.shape[0], values)
     shuffled.close()
 
     unshuffled_path = tmp_path / "unshuffled.h5"
-    unshuffled = H5Array.create(values.shape, path=unshuffled_path,
-                                shuffle=False)
+    unshuffled = H5Array.create(
+        values.shape, path=unshuffled_path, shuffle=False
+    )
     unshuffled.write_batch(0, values.shape[0], values)
     unshuffled.close()
 
@@ -408,8 +409,9 @@ def test_reorder_rows_result_is_new_independent_array():
 
 def test_reorder_rows_preserves_column_labels_and_permutes_index_labels():
     values = np.arange(8, dtype=np.float64).reshape(4, 2)
-    arr = H5Array.create((4, 2), index=["a", "b", "c", "d"],
-                         columns=["x", "y"])
+    arr = H5Array.create(
+        (4, 2), index=["a", "b", "c", "d"], columns=["x", "y"]
+    )
     arr.write_batch(0, 4, values)
     result = arr.reorder_rows([3, 1, 0])
     assert list(result.index) == ["d", "b", "a"]

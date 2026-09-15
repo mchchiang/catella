@@ -3,19 +3,27 @@
 import numpy as np
 import pandas as pd
 import pytest
-
+from catella import utils
+from catella.h5_array import H5Array
+from catella.simulation.analysis import SimAnalysis
 from catella.simulation.config import SimSettings
 from catella.simulation.engine import SimManager
-from catella.simulation.analysis import SimAnalysis
 from catella.simulation.results import SimDataset
-from catella.h5_array import H5Array
-from catella import utils
 
 
 def _make_settings(**overrides):
-    defaults = dict(nucbp=147, llink=20, elink=1.0, mu=-1.0, start_temp=1.0,
-                     end_temp=0.1, cool_option="linear", nsweep=5,
-                     print_freq=1, emax=5.0)
+    defaults = {
+        "nucbp": 147,
+        "llink": 20,
+        "elink": 1.0,
+        "mu": -1.0,
+        "start_temp": 1.0,
+        "end_temp": 0.1,
+        "cool_option": "linear",
+        "nsweep": 5,
+        "print_freq": 1,
+        "emax": 5.0,
+    }
     defaults.update(overrides)
     return SimSettings(**defaults)
 
@@ -24,9 +32,14 @@ def _make_dataset(tmp_path, *, nmol=6, nbp=40, nsim=2, seed=1):
     rng = np.random.default_rng(seed)
     meth_prob = rng.random((nmol, nbp))
     manager = SimManager(nworker=1, verbose=False)
-    return manager.run(chroms="chr1", nsim=nsim, settings=_make_settings(),
-                       meth_prob=meth_prob, out_dir=tmp_path / "dataset",
-                       seed=seed)
+    return manager.run(
+        chroms="chr1",
+        nsim=nsim,
+        settings=_make_settings(),
+        meth_prob=meth_prob,
+        out_dir=tmp_path / "dataset",
+        seed=seed,
+    )
 
 
 class TestComputeOccup:
@@ -43,10 +56,8 @@ class TestComputeOccup:
     def test_batching_matches_single_batch(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=7, nbp=30)
         ana = SimAnalysis()
-        ana.compute_occup(dataset=dataset, name="occup_batched",
-                          batch_size=2)
-        ana.compute_occup(dataset=dataset, name="occup_full",
-                          batch_size=1000)
+        ana.compute_occup(dataset=dataset, name="occup_batched", batch_size=2)
+        ana.compute_occup(dataset=dataset, name="occup_full", batch_size=1000)
 
         batched = dataset.analysis["chr1"]["occup_batched"].to_numpy()
         full = dataset.analysis["chr1"]["occup_full"].to_numpy()
@@ -97,10 +108,12 @@ class TestComputeAccess:
     def test_batching_matches_single_batch(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=6, nbp=18)
         ana = SimAnalysis()
-        ana.compute_access(dataset=dataset, access_name="access_batched",
-                           batch_size=2)
-        ana.compute_access(dataset=dataset, access_name="access_full",
-                           batch_size=1000)
+        ana.compute_access(
+            dataset=dataset, access_name="access_batched", batch_size=2
+        )
+        ana.compute_access(
+            dataset=dataset, access_name="access_full", batch_size=1000
+        )
 
         batched = dataset.analysis["chr1"]["access_batched"].to_numpy()
         full = dataset.analysis["chr1"]["access_full"].to_numpy()
@@ -163,8 +176,9 @@ class TestSaveLoadRoundTrip:
         assert isinstance(occup, H5Array)
         assert isinstance(access, H5Array)
         assert isinstance(mean_nnuc, pd.DataFrame)
-        assert np.allclose(occup.to_numpy(),
-                           dataset.analysis["chr1"]["occup"].to_numpy())
+        assert np.allclose(
+            occup.to_numpy(), dataset.analysis["chr1"]["occup"].to_numpy()
+        )
         assert np.allclose(access.to_numpy(), 1.0 - occup.to_numpy())
 
     def test_save_rejects_same_path_as_backing_h5array(self, tmp_path):
@@ -222,18 +236,23 @@ class TestSortByLinkage:
         ana.sort_by_linkage(dataset=dataset, batch_size=2)
         assert "occup_sorted" in dataset.analysis["chr1"]
 
-        ana.sort_by_linkage(dataset=dataset, sorted_name="my_sorted",
-                            batch_size=2)
+        ana.sort_by_linkage(
+            dataset=dataset, sorted_name="my_sorted", batch_size=2
+        )
         assert "my_sorted" in dataset.analysis["chr1"]
 
-    def test_chroms_filter_only_processes_selected_chromosome(self,
-                                                               tmp_path):
+    def test_chroms_filter_only_processes_selected_chromosome(self, tmp_path):
         rng = np.random.default_rng(2)
         meth_prob = {"chr1": rng.random((4, 10)), "chr2": rng.random((4, 10))}
         manager = SimManager(nworker=1, verbose=False)
-        dataset = manager.run(chroms=["chr1", "chr2"], nsim=2,
-                              settings=_make_settings(), meth_prob=meth_prob,
-                              out_dir=tmp_path / "dataset", seed=2)
+        dataset = manager.run(
+            chroms=["chr1", "chr2"],
+            nsim=2,
+            settings=_make_settings(),
+            meth_prob=meth_prob,
+            out_dir=tmp_path / "dataset",
+            seed=2,
+        )
         ana = SimAnalysis()
         ana.compute_occup(dataset=dataset, batch_size=2)
 
@@ -254,8 +273,9 @@ class TestSortByLinkage:
         occup = dataset.analysis["chr1"]["occup"].to_numpy()
         dataset.analysis["chr1"]["occup_df"] = pd.DataFrame(occup)
 
-        ana.sort_by_linkage(dataset=dataset, data_name="occup_df",
-                            batch_size=2)
+        ana.sort_by_linkage(
+            dataset=dataset, data_name="occup_df", batch_size=2
+        )
         sorted_df = dataset.analysis["chr1"]["occup_df_sorted"]
         order, _ = utils.compute_linkage(occup)
         assert isinstance(sorted_df, pd.DataFrame)
@@ -270,12 +290,16 @@ class TestSortByLinkage:
         dataset.analysis["chr1"]["occup_nan"] = pd.DataFrame(occup)
 
         with pytest.raises(ValueError):
-            ana.sort_by_linkage(dataset=dataset, data_name="occup_nan",
-                                batch_size=2)
+            ana.sort_by_linkage(
+                dataset=dataset, data_name="occup_nan", batch_size=2
+            )
 
-        link_mats = ana.sort_by_linkage(dataset=dataset,
-                                        data_name="occup_nan",
-                                        batch_size=2, fill_nan="mean")
+        link_mats = ana.sort_by_linkage(
+            dataset=dataset,
+            data_name="occup_nan",
+            batch_size=2,
+            fill_nan="mean",
+        )
         assert np.isfinite(link_mats["chr1"]).all()
         sorted_arr = dataset.analysis["chr1"]["occup_nan_sorted"].to_numpy()
         orig_rows = sorted(map(tuple, np.nan_to_num(occup).tolist()))

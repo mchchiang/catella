@@ -7,11 +7,10 @@ import warnings
 import numpy as np
 import pandas as pd
 import pytest
-from scipy.spatial.distance import pdist, squareform
 import scipy.cluster.hierarchy as sch
-
 from catella import utils
 from catella.h5_array import H5Array
+from scipy.spatial.distance import pdist, squareform
 
 
 def _reference_linkage(data, *, metric="euclidean", method="ward"):
@@ -176,8 +175,9 @@ def test_fill_nan_matches_reference(as_h5array, fill_nan):
         source = H5Array.create(data.shape)
         source.write_batch(0, data.shape[0], data)
 
-    order, link_mat = utils.compute_linkage(source, batch_size=3,
-                                            fill_nan=fill_nan)
+    order, link_mat = utils.compute_linkage(
+        source, batch_size=3, fill_nan=fill_nan
+    )
     ref_order, ref_link = _reference_linkage(_filled(data, fill_nan))
     np.testing.assert_array_equal(order, ref_order)
     np.testing.assert_allclose(link_mat, ref_link)
@@ -186,11 +186,13 @@ def test_fill_nan_matches_reference(as_h5array, fill_nan):
 @pytest.mark.parametrize("as_h5array", [False, True])
 @pytest.mark.parametrize("fill_nan", ["mean", 0.0])
 def test_fill_nan_handles_zero_overlap_row(as_h5array, fill_nan):
-    data = np.array([
-        [1.0, 2.0, np.nan],
-        [np.nan, np.nan, np.nan],
-        [3.0, 4.0, 5.0],
-    ])
+    data = np.array(
+        [
+            [1.0, 2.0, np.nan],
+            [np.nan, np.nan, np.nan],
+            [3.0, 4.0, 5.0],
+        ]
+    )
 
     source = data
     if as_h5array:
@@ -200,8 +202,9 @@ def test_fill_nan_handles_zero_overlap_row(as_h5array, fill_nan):
     with pytest.raises(ValueError):
         utils.compute_linkage(source, batch_size=1)
 
-    order, link_mat = utils.compute_linkage(source, batch_size=1,
-                                            fill_nan=fill_nan)
+    order, link_mat = utils.compute_linkage(
+        source, batch_size=1, fill_nan=fill_nan
+    )
     ref_order, ref_link = _reference_linkage(_filled(data, fill_nan))
     np.testing.assert_array_equal(order, ref_order)
     np.testing.assert_allclose(link_mat, ref_link)
@@ -259,9 +262,11 @@ def test_downsample_noop_when_nrow_within_max_rows():
 @pytest.mark.parametrize("kind", ["h5array", "dataframe", "ndarray"])
 def test_downsample_invalid_how_raises(kind):
     values = np.random.default_rng(12).random((5, 3))
-    data = {"h5array": lambda: _filled_h5array(values),
-           "dataframe": lambda: pd.DataFrame(values),
-           "ndarray": lambda: values}[kind]()
+    data = {
+        "h5array": lambda: _filled_h5array(values),
+        "dataframe": lambda: pd.DataFrame(values),
+        "ndarray": lambda: values,
+    }[kind]()
     with pytest.raises(ValueError):
         utils.downsample(data, 2, how="bogus")
 

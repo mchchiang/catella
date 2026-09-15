@@ -1,45 +1,69 @@
 # test_api.py
 
+import catella
 import numpy as np
 import pandas as pd
 import pytest
-from scipy.special import logit
-
-import catella
 from catella import utils
 from catella.experiment.methdata import MethPrintData, MethPrintExperiment
 from catella.experiment.preprocessing import MethPrintAnalysis
 from catella.simulation.analysis import SimAnalysis
 from catella.simulation.config import SimSettings
 from catella.simulation.engine import SimManager
+from scipy.special import logit
 
 
 def _settings():
-    return SimSettings(nucbp=5, llink=2, elink=1.0, mu=-1.0, start_temp=1.0,
-                       end_temp=0.1, cool_option="linear", nsweep=2,
-                       print_freq=1, emax=5.0)
+    return SimSettings(
+        nucbp=5,
+        llink=2,
+        elink=1.0,
+        mu=-1.0,
+        start_temp=1.0,
+        end_temp=0.1,
+        cool_option="linear",
+        nsweep=2,
+        print_freq=1,
+        emax=5.0,
+    )
 
 
 def _make_dataset(tmp_path, nmol=6, nbp=10, seed=1):
     rng = np.random.default_rng(seed)
     meth_prob = rng.random((nmol, nbp))
     manager = SimManager(nworker=1, verbose=False)
-    return manager.run(chroms="chr1", nsim=2, settings=_settings(),
-                       meth_prob=meth_prob, out_dir=tmp_path / "sim",
-                       seed=seed)
+    return manager.run(
+        chroms="chr1",
+        nsim=2,
+        settings=_settings(),
+        meth_prob=meth_prob,
+        out_dir=tmp_path / "sim",
+        seed=seed,
+    )
 
 
 def _make_experiment(nmol=6, nbp=10, seed=3, refseq=None, mtase=None):
     rng = np.random.default_rng(seed)
-    rows = [(m, p, "+", float(rng.random()), 0) for m in range(nmol)
-           for p in rng.choice(nbp, size=min(6, nbp), replace=False)]
-    df = pd.DataFrame(rows, columns=["mol_index", "pos", "strand",
-                                     "mod_qual", "mod_code"])
+    rows = [
+        (m, p, "+", float(rng.random()), 0)
+        for m in range(nmol)
+        for p in rng.choice(nbp, size=min(6, nbp), replace=False)
+    ]
+    df = pd.DataFrame(
+        rows, columns=["mol_index", "pos", "strand", "mod_qual", "mod_code"]
+    )
     mol_id = np.array([f"m{m}" for m in range(nmol)], dtype=object)
     raw = MethPrintData._create(
-        chrom="chr1", nbp=nbp, refseq=refseq, test_mol_id=mol_id,
-        test_data=df, meth_mol_id=None, meth_data=None, unmeth_mol_id=None,
-        unmeth_data=None)
+        chrom="chr1",
+        nbp=nbp,
+        refseq=refseq,
+        test_mol_id=mol_id,
+        test_data=df,
+        meth_mol_id=None,
+        meth_data=None,
+        unmeth_mol_id=None,
+        unmeth_data=None,
+    )
     kwargs = {"_raw_data": {"chr1": raw}}
     if mtase is not None:
         kwargs["_mtase"] = mtase
@@ -48,23 +72,21 @@ def _make_experiment(nmol=6, nbp=10, seed=3, refseq=None, mtase=None):
 
 def _write_tsv(path, rows):
     with open(path, "w") as f:
-        f.write("read_id\tref_position\tchrom\tref_strand\tmod_qual\t"
-                "mod_code\n")
-        for r in rows:
-            f.write("\t".join(str(x) for x in r) + "\n")
+        f.write(
+            "read_id\tref_position\tchrom\tref_strand\tmod_qual\tmod_code\n"
+        )
+        f.writelines("\t".join(str(x) for x in r) + "\n" for r in rows)
 
 
 def _write_chromsize(path, sizes):
     with open(path, "w") as f:
         f.write("chrom\tlength\n")
-        for chrom, length in sizes.items():
-            f.write(f"{chrom}\t{length}\n")
+        f.writelines(f"{chrom}\t{length}\n" for chrom, length in sizes.items())
 
 
 def _write_fasta(path, records):
     with open(path, "w") as f:
-        for chrom, seq in records.items():
-            f.write(f">{chrom}\n{seq}\n")
+        f.writelines(f">{chrom}\n{seq}\n" for chrom, seq in records.items())
 
 
 _MODEL_SEQ = "AATTGCGTTAAGCTTTAACGTTAAGCGCAATT" * 8
@@ -116,8 +138,9 @@ class TestSortByLinkage:
         keep[0] = True
         exp.analysis["chr1"]["test_drop"] = pd.DataFrame({"keep": keep})
 
-        catella.sort_by_linkage(exp=exp, raw_which="test", mask_name="drop",
-                              fill_nan="mean")
+        catella.sort_by_linkage(
+            exp=exp, raw_which="test", mask_name="drop", fill_nan="mean"
+        )
 
         sorted_arr = exp.analysis["chr1"]["test_sorted"].to_numpy()
         nan_rows = np.isnan(sorted_arr).all(axis=1)
@@ -147,8 +170,9 @@ class TestSortByLinkage:
         with pytest.raises(ValueError):
             catella.sort_by_linkage(dataset=dataset, data_name="occup_nan")
 
-        catella.sort_by_linkage(dataset=dataset, data_name="occup_nan",
-                              fill_nan="mean")
+        catella.sort_by_linkage(
+            dataset=dataset, data_name="occup_nan", fill_nan="mean"
+        )
         link_mat = dataset.analysis["chr1"]["occup_nan_linkage"].to_numpy()
         assert np.isfinite(link_mat).all()
 
@@ -156,8 +180,13 @@ class TestSortByLinkage:
 class TestLoadRaw:
     def test_returns_experiment_with_raw_data(self, tmp_path):
         test_file = tmp_path / "test.tsv"
-        _write_tsv(test_file, [("m0", 0, "chr1", "+", 0.5, "a"),
-                               ("m1", 1, "chr1", "+", 0.7, "a")])
+        _write_tsv(
+            test_file,
+            [
+                ("m0", 0, "chr1", "+", 0.5, "a"),
+                ("m1", 1, "chr1", "+", 0.7, "a"),
+            ],
+        )
         chromsize = tmp_path / "sizes.tsv"
         _write_chromsize(chromsize, {"chr1": 5})
 
@@ -168,48 +197,59 @@ class TestLoadRaw:
 
     def test_chroms_forwarded(self, tmp_path):
         test_file = tmp_path / "test.tsv"
-        _write_tsv(test_file, [("m0", 0, "chr1", "+", 0.5, "a"),
-                               ("m1", 0, "chr2", "+", 0.5, "a")])
+        _write_tsv(
+            test_file,
+            [
+                ("m0", 0, "chr1", "+", 0.5, "a"),
+                ("m1", 0, "chr2", "+", 0.5, "a"),
+            ],
+        )
         chromsize = tmp_path / "sizes.tsv"
         _write_chromsize(chromsize, {"chr1": 5, "chr2": 5})
 
-        exp = catella.load_raw(chromsize=chromsize, test_file=test_file,
-                               chroms=["chr1"])
+        exp = catella.load_raw(
+            chromsize=chromsize, test_file=test_file, chroms=["chr1"]
+        )
 
         assert exp.chroms == ("chr1",)
 
         with pytest.raises(ValueError):
-            catella.load_raw(chromsize=chromsize, test_file=test_file,
-                             chroms=["bogus"])
+            catella.load_raw(
+                chromsize=chromsize, test_file=test_file, chroms=["bogus"]
+            )
 
 
 class TestFilterDropout:
     def test_matches_direct_method_call(self):
         nbp = 10
-        exp = _make_experiment(nmol=6, nbp=nbp, seed=3, refseq="A" * nbp,
-                               mtase=("A",))
-        expected = _make_experiment(nmol=6, nbp=nbp, seed=3,
-                                    refseq="A" * nbp, mtase=("A",))
+        exp = _make_experiment(
+            nmol=6, nbp=nbp, seed=3, refseq="A" * nbp, mtase=("A",)
+        )
+        expected = _make_experiment(
+            nmol=6, nbp=nbp, seed=3, refseq="A" * nbp, mtase=("A",)
+        )
 
         catella.filter_dropout(exp=exp, thres_max=0.5)
         expected.filter_dropout(thres_max=0.5)
 
         np.testing.assert_array_equal(
             exp.analysis["chr1"]["test_dropout_mask"]["keep"].to_numpy(),
-            expected.analysis["chr1"]["test_dropout_mask"]["keep"]
-            .to_numpy())
+            expected.analysis["chr1"]["test_dropout_mask"]["keep"].to_numpy(),
+        )
 
     def test_chroms_forwarded(self):
         nbp = 10
-        exp = _make_experiment(nmol=6, nbp=nbp, seed=3, refseq="A" * nbp,
-                               mtase=("A",))
+        exp = _make_experiment(
+            nmol=6, nbp=nbp, seed=3, refseq="A" * nbp, mtase=("A",)
+        )
         with pytest.raises(ValueError):
             catella.filter_dropout(exp=exp, chroms=["bogus"])
 
     def test_exp_accepted_positionally(self):
         nbp = 10
-        exp = _make_experiment(nmol=6, nbp=nbp, seed=3, refseq="A" * nbp,
-                               mtase=("A",))
+        exp = _make_experiment(
+            nmol=6, nbp=nbp, seed=3, refseq="A" * nbp, mtase=("A",)
+        )
         catella.filter_dropout(exp, thres_max=0.5)
         assert "test_dropout_mask" in exp.analysis["chr1"]
 
@@ -217,8 +257,9 @@ class TestFilterDropout:
 class TestSummarizeDropout:
     def test_matches_direct_method_call(self):
         nbp = 10
-        exp = _make_experiment(nmol=6, nbp=nbp, seed=3, refseq="A" * nbp,
-                               mtase=("A",))
+        exp = _make_experiment(
+            nmol=6, nbp=nbp, seed=3, refseq="A" * nbp, mtase=("A",)
+        )
 
         got = catella.summarize_dropout(exp=exp)
         expected = exp.summarize_dropout()
@@ -227,8 +268,9 @@ class TestSummarizeDropout:
 
     def test_chroms_forwarded(self):
         nbp = 10
-        exp = _make_experiment(nmol=6, nbp=nbp, seed=3, refseq="A" * nbp,
-                               mtase=("A",))
+        exp = _make_experiment(
+            nmol=6, nbp=nbp, seed=3, refseq="A" * nbp, mtase=("A",)
+        )
         with pytest.raises(ValueError):
             catella.summarize_dropout(exp=exp, chroms=["bogus"])
 
@@ -245,7 +287,8 @@ class TestComputeEmpiricalProb:
 
         np.testing.assert_allclose(
             exp.analysis["chr1"]["meth_prob"].to_numpy(),
-            expected.analysis["chr1"]["meth_prob"].to_numpy())
+            expected.analysis["chr1"]["meth_prob"].to_numpy(),
+        )
 
     def test_exp_accepted_positionally(self):
         exp = _make_experiment(nmol=6, nbp=10, seed=3)
@@ -256,14 +299,16 @@ class TestComputeEmpiricalProb:
         exp = _make_experiment(nmol=6, nbp=10, seed=3)
         keep = np.array([1, 0, 1, 0, 1, 0], dtype=np.int8)
         exp.analysis["chr1"]["test_dropout_mask"] = pd.DataFrame(
-            {"keep": keep})
+            {"keep": keep}
+        )
 
-        catella.compute_empirical_prob(exp=exp, lnuc=3,
-                                       mask_name="dropout_mask")
+        catella.compute_empirical_prob(
+            exp=exp, lnuc=3, mask_name="dropout_mask"
+        )
 
         # Last lnuc-1 columns have no full window to summarize and
         # are NaN regardless of masking; only check the filled columns.
-        prob = exp.analysis["chr1"]["meth_prob"].to_numpy()[:, :10 - 3 + 1]
+        prob = exp.analysis["chr1"]["meth_prob"].to_numpy()[:, : 10 - 3 + 1]
         assert np.isnan(prob[keep == 0]).all()
         assert not np.isnan(prob[keep == 1]).any()
 
@@ -271,8 +316,7 @@ class TestComputeEmpiricalProb:
         exp = _make_experiment(nmol=6, nbp=10, seed=3)
         expected = _make_experiment(nmol=6, nbp=10, seed=3)
 
-        catella.compute_empirical_prob(exp=exp, lnuc=3,
-                                       fill_edge=0.5, seed=7)
+        catella.compute_empirical_prob(exp=exp, lnuc=3, fill_edge=0.5, seed=7)
 
         ana = MethPrintAnalysis()
         ana.empirical_prob(exp=expected, lnuc=3, fill_edge=0.5, seed=7)
@@ -280,13 +324,17 @@ class TestComputeEmpiricalProb:
         np.testing.assert_allclose(
             exp.analysis["chr1"]["meth_prob"].to_numpy(),
             expected.analysis["chr1"]["meth_prob"].to_numpy(),
-            equal_nan=True)
+            equal_nan=True,
+        )
 
 
 class TestComputeModelProb:
     def test_matches_direct_api_call(self, tmp_path):
-        rows = [(f"m{m}", p, "chr1", "+", 0.5, "a") for m in range(5)
-               for p in range(len(_MODEL_SEQ))]
+        rows = [
+            (f"m{m}", p, "chr1", "+", 0.5, "a")
+            for m in range(5)
+            for p in range(len(_MODEL_SEQ))
+        ]
         test_file = tmp_path / "test.tsv"
         _write_tsv(test_file, rows)
         chromsize = tmp_path / "sizes.tsv"
@@ -294,10 +342,12 @@ class TestComputeModelProb:
         fasta_file = tmp_path / "ref.fa"
         _write_fasta(fasta_file, {"chr1": _MODEL_SEQ})
 
-        exp = catella.load_raw(chromsize=chromsize, test_file=test_file,
-                               fasta_file=fasta_file)
-        expected = catella.load_raw(chromsize=chromsize, test_file=test_file,
-                                    fasta_file=fasta_file)
+        exp = catella.load_raw(
+            chromsize=chromsize, test_file=test_file, fasta_file=fasta_file
+        )
+        expected = catella.load_raw(
+            chromsize=chromsize, test_file=test_file, fasta_file=fasta_file
+        )
 
         catella.compute_model_prob(exp=exp, lnuc=30, n_min=3)
 
@@ -307,7 +357,8 @@ class TestComputeModelProb:
         np.testing.assert_allclose(
             exp.analysis["chr1"]["meth_prob"].to_numpy(),
             expected.analysis["chr1"]["meth_prob"].to_numpy(),
-            equal_nan=True)
+            equal_nan=True,
+        )
 
     def test_missing_refseq_raises(self):
         exp = _make_experiment(nmol=6, nbp=10, seed=3)
@@ -316,8 +367,11 @@ class TestComputeModelProb:
 
     def test_store_rho_propagates(self, tmp_path):
         rng = np.random.default_rng(11)
-        rows = [(f"m{m}", p, "chr1", "+", float(rng.random()), "a")
-               for m in range(5) for p in range(len(_MODEL_SEQ))]
+        rows = [
+            (f"m{m}", p, "chr1", "+", float(rng.random()), "a")
+            for m in range(5)
+            for p in range(len(_MODEL_SEQ))
+        ]
         test_file = tmp_path / "test.tsv"
         _write_tsv(test_file, rows)
         chromsize = tmp_path / "sizes.tsv"
@@ -325,24 +379,30 @@ class TestComputeModelProb:
         fasta_file = tmp_path / "ref.fa"
         _write_fasta(fasta_file, {"chr1": _MODEL_SEQ})
 
-        exp = catella.load_raw(chromsize=chromsize, test_file=test_file,
-                               fasta_file=fasta_file)
-        expected = catella.load_raw(chromsize=chromsize, test_file=test_file,
-                                    fasta_file=fasta_file)
+        exp = catella.load_raw(
+            chromsize=chromsize, test_file=test_file, fasta_file=fasta_file
+        )
+        expected = catella.load_raw(
+            chromsize=chromsize, test_file=test_file, fasta_file=fasta_file
+        )
 
-        catella.compute_model_prob(exp=exp, lnuc=30, n_min=3,
-                                   eta_max_lag=4, store_rho=True)
+        catella.compute_model_prob(
+            exp=exp, lnuc=30, n_min=3, eta_max_lag=4, store_rho=True
+        )
 
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=expected, lnuc=30, n_min=3, eta_max_lag=4,
-                       store_rho=True)
+        ana.model_prob(
+            exp=expected, lnuc=30, n_min=3, eta_max_lag=4, store_rho=True
+        )
 
         assert ("meth_prob_rho" in exp.global_analysis) == (
-            "meth_prob_rho" in expected.global_analysis)
+            "meth_prob_rho" in expected.global_analysis
+        )
         if "meth_prob_rho" in exp.global_analysis:
             pd.testing.assert_frame_equal(
                 exp.global_analysis["meth_prob_rho"],
-                expected.global_analysis["meth_prob_rho"])
+                expected.global_analysis["meth_prob_rho"],
+            )
 
 
 class TestEstimateStartTemp:
@@ -352,9 +412,9 @@ class TestEstimateStartTemp:
         known = rng.uniform(0.01, 0.99, size=(20, 4))
         exp.analysis["chr1"]["meth_prob"] = pd.DataFrame(known)
 
-        got = catella.estimate_start_temp(exp, percentile=90.0,
-                                          percentile_sample_size=100,
-                                          seed=1)
+        got = catella.estimate_start_temp(
+            exp, percentile=90.0, percentile_sample_size=100, seed=1
+        )
 
         expected = np.nanpercentile(np.abs(logit(known)), 90.0)
         assert got == pytest.approx(expected)
@@ -367,10 +427,12 @@ class TestEstimateStartTemp:
         exp_a.analysis["chr1"]["meth_prob"] = pd.DataFrame(known)
         exp_b.analysis["chr1"]["meth_prob"] = pd.DataFrame(known)
 
-        a = catella.estimate_start_temp(exp_a, batch_size=1000,
-                                        percentile_sample_size=100, seed=0)
-        b = catella.estimate_start_temp(exp_b, batch_size=3,
-                                        percentile_sample_size=100, seed=0)
+        a = catella.estimate_start_temp(
+            exp_a, batch_size=1000, percentile_sample_size=100, seed=0
+        )
+        b = catella.estimate_start_temp(
+            exp_b, batch_size=3, percentile_sample_size=100, seed=0
+        )
         assert a == pytest.approx(b)
 
     def test_mask_name_excludes_dropped_molecules(self):
@@ -381,13 +443,19 @@ class TestEstimateStartTemp:
         exp.analysis["chr1"]["meth_prob"] = pd.DataFrame(known)
         keep = np.array([0, 1, 1, 1, 1, 1], dtype=np.int8)
         exp.analysis["chr1"]["test_dropout_mask"] = pd.DataFrame(
-            {"keep": keep})
+            {"keep": keep}
+        )
 
         masked = catella.estimate_start_temp(
-            exp, percentile=90.0, percentile_sample_size=100, seed=0,
-            mask_name="dropout_mask")
+            exp,
+            percentile=90.0,
+            percentile_sample_size=100,
+            seed=0,
+            mask_name="dropout_mask",
+        )
         unmasked = catella.estimate_start_temp(
-            exp, percentile=90.0, percentile_sample_size=100, seed=0)
+            exp, percentile=90.0, percentile_sample_size=100, seed=0
+        )
 
         expected = np.nanpercentile(np.abs(logit(known[keep == 1])), 90.0)
         assert masked == pytest.approx(expected)
@@ -395,58 +463,69 @@ class TestEstimateStartTemp:
 
     def test_missing_mask_raises_key_error(self):
         exp = _make_experiment(nmol=6, nbp=4, seed=5)
-        exp.analysis["chr1"]["meth_prob"] = pd.DataFrame(
-            np.full((6, 4), 0.5))
+        exp.analysis["chr1"]["meth_prob"] = pd.DataFrame(np.full((6, 4), 0.5))
         with pytest.raises(KeyError):
             catella.estimate_start_temp(exp, mask_name="missing")
 
     def test_nan_and_inf_logit_values_do_not_raise(self):
         exp = _make_experiment(nmol=4, nbp=3, seed=5)
-        known = np.array([[0.0, 0.5, 1.0],
-                          [np.nan, 0.5, 0.5],
-                          [0.2, 0.3, 0.4],
-                          [0.6, 0.7, 0.8]])
+        known = np.array(
+            [
+                [0.0, 0.5, 1.0],
+                [np.nan, 0.5, 0.5],
+                [0.2, 0.3, 0.4],
+                [0.6, 0.7, 0.8],
+            ]
+        )
         exp.analysis["chr1"]["meth_prob"] = pd.DataFrame(known)
 
-        got = catella.estimate_start_temp(exp, percentile=50.0,
-                                          percentile_sample_size=100,
-                                          seed=0)
+        got = catella.estimate_start_temp(
+            exp, percentile=50.0, percentile_sample_size=100, seed=0
+        )
         assert np.isfinite(got)
 
     def test_chroms_restricts_to_selected_chromosomes(self):
         raw1 = MethPrintData._create(
-            chrom="chr1", nbp=3, test_mol_id=np.array(["m0"], dtype=object),
+            chrom="chr1",
+            nbp=3,
+            test_mol_id=np.array(["m0"], dtype=object),
             test_data=pd.DataFrame(
                 [(0, 0, "+", 0.5, 0)],
-                columns=["mol_index", "pos", "strand", "mod_qual",
-                        "mod_code"]),
-            meth_mol_id=None, meth_data=None, unmeth_mol_id=None,
-            unmeth_data=None)
+                columns=["mol_index", "pos", "strand", "mod_qual", "mod_code"],
+            ),
+            meth_mol_id=None,
+            meth_data=None,
+            unmeth_mol_id=None,
+            unmeth_data=None,
+        )
         raw2 = MethPrintData._create(
-            chrom="chr2", nbp=3, test_mol_id=np.array(["m0"], dtype=object),
+            chrom="chr2",
+            nbp=3,
+            test_mol_id=np.array(["m0"], dtype=object),
             test_data=pd.DataFrame(
                 [(0, 0, "+", 0.5, 0)],
-                columns=["mol_index", "pos", "strand", "mod_qual",
-                        "mod_code"]),
-            meth_mol_id=None, meth_data=None, unmeth_mol_id=None,
-            unmeth_data=None)
+                columns=["mol_index", "pos", "strand", "mod_qual", "mod_code"],
+            ),
+            meth_mol_id=None,
+            meth_data=None,
+            unmeth_mol_id=None,
+            unmeth_data=None,
+        )
         exp = MethPrintExperiment._create(
-            _raw_data={"chr1": raw1, "chr2": raw2})
-        exp.analysis["chr1"]["meth_prob"] = pd.DataFrame(
-            np.full((5, 3), 0.5))
-        exp.analysis["chr2"]["meth_prob"] = pd.DataFrame(
-            np.full((5, 3), 0.99))
+            _raw_data={"chr1": raw1, "chr2": raw2}
+        )
+        exp.analysis["chr1"]["meth_prob"] = pd.DataFrame(np.full((5, 3), 0.5))
+        exp.analysis["chr2"]["meth_prob"] = pd.DataFrame(np.full((5, 3), 0.99))
 
-        got = catella.estimate_start_temp(exp, chroms="chr1",
-                                          percentile_sample_size=100,
-                                          seed=0)
+        got = catella.estimate_start_temp(
+            exp, chroms="chr1", percentile_sample_size=100, seed=0
+        )
         expected = np.nanpercentile(np.abs(logit(np.full((5, 3), 0.5))), 90.0)
         assert got == pytest.approx(expected)
 
     def test_exp_accepted_positionally(self):
         exp = _make_experiment(nmol=6, nbp=4, seed=5)
-        exp.analysis["chr1"]["meth_prob"] = pd.DataFrame(
-            np.full((6, 4), 0.5))
+        exp.analysis["chr1"]["meth_prob"] = pd.DataFrame(np.full((6, 4), 0.5))
         got = catella.estimate_start_temp(exp)
         assert np.isfinite(got)
 

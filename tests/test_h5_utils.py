@@ -7,7 +7,6 @@ from unittest.mock import patch
 import h5py
 import numpy as np
 import pandas as pd
-
 from catella import h5_utils
 
 
@@ -57,6 +56,7 @@ class TestFreshTmpDir:
         try:
             assert os.path.isdir(path)
             mock_register.assert_called_once_with(
-                shutil.rmtree, path, ignore_errors=True)
+                shutil.rmtree, path, ignore_errors=True
+            )
         finally:
             shutil.rmtree(path, ignore_errors=True)

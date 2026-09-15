@@ -712,7 +712,7 @@ class SimDataset:
                 for data, name, _ in colliding:
                     data[name].close()
                 closed = True
-                h5_utils.replace_retrying(tmp_path, dest_path)
+                os.replace(tmp_path, dest_path)
             except BaseException:
                 tmp_path.unlink(missing_ok=True)
                 raise

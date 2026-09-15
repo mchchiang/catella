@@ -29,9 +29,13 @@ jobs:
           use-mamba: true
 
       - name: Install conda-only build tools
-        run: >
-          mamba install -y hdf5 pybind11 cxx-compiler cmake ninja pkg-config
-          "pip>=25.1"
+        run: |
+          echo "=== DEBUG: step started ==="
+          which mamba
+          mamba --version
+          echo "=== DEBUG: running mamba install ==="
+          mamba install -y hdf5 pybind11 cxx-compiler cmake ninja pkg-config "pip>=25.1"
+          echo "=== DEBUG: mamba install exit code $? ==="
 
       - name: Build and install package
         run: pip install -e . --group test -v

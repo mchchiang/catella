@@ -38,8 +38,10 @@ with open(ROOT / "pyproject.toml", "rb") as f:
 # numpy and pandas are installed in the docs env so their types resolve
 # correctly in Napoleon-parsed docstrings. typer must not be mocked either,
 # since sphinx-click imports catella.cli for real to build the CLI
-# reference and needs an actual click.Group, not a mock object.
-_no_mock = {"numpy", "pandas", "typer"}
+# reference and needs an actual click.Group, not a mock object. pyarrow
+# must not be mocked either, since pandas imports it for real at import
+# time and chokes on a mocked pyarrow.__version__.
+_no_mock = {"numpy", "pandas", "typer", "pyarrow"}
 deps = pyproject.get("project", {}).get("dependencies", [])
 autodoc_mock_imports = [
     dep.split(">")[0].split("=")[0].split("<")[0].strip()

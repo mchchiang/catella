@@ -609,6 +609,7 @@ class TestDownsample:
         exp = MethPrintExperiment.load(exp_file)
         expected = utils.downsample(
             exp.analysis["chr1"]["meth_prob"], 2, how="mean")
+        exp.analysis["chr1"]["meth_prob"].close()
 
         result = runner.invoke(app, [
             "downsample", str(exp_file), "chr1", "meth_prob", "2",
@@ -653,6 +654,7 @@ class TestSortByLinkage:
         exp = MethPrintExperiment.load(exp_file)
         meth_prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
         order, _ = utils.compute_linkage(meth_prob)
+        exp.analysis["chr1"]["meth_prob"].close()
 
         result = runner.invoke(app, [
             "sort_by_linkage", str(exp_file), "--kind", "experiment",

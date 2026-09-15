@@ -127,7 +127,7 @@ Methyltransferase (``mtase``) channels
 ``mtase`` is not a file but a parameter constraining how calls are
 parsed: one or more of ``"A"`` (any-context adenine, e.g. EcoGII m6A),
 ``"CG"`` (CpG, e.g. M.SssI), or ``"GC"`` (GpC, e.g. M.CviPI). These
-correspond to the assayable-site channels A/HCG/GCH/GCG described in
+correspond to the assayable-site channels M6A/HCG/GCH/GCG described in
 the :doc:`model` page.
 
 Simulation settings file
@@ -150,6 +150,9 @@ fields exactly (unknown keys raise ``TypeError``):
    * - ``llink``
      - int
      - Linker DNA length (bp) between nucleosomes.
+   * - ``elink``
+     - float
+     - Energy scale of the linker repulsion potential.
    * - ``mu``
      - float
      - Chemical potential (:math:`k_BT`); energy gained per bound
@@ -193,27 +196,28 @@ All HDF5 output builds on two primitives:
 
 ``H5Array``
    A dense 2D numeric matrix (default dtype ``float64``, gzip+shuffle
-   compressed), stored as a dataset ``data`` with optional sibling
-   datasets ``<name>__index`` and ``<name>__columns`` for row/column
-   labels (defaulting to a plain range index if absent). Used for
-   large per-molecule, per-position matrices such as ``meth_prob`` and
-   ``occup``.
+   compressed), stored directly as a dataset at its key's path (not a
+   sub-group), with optional sibling datasets ``<name>__index`` and
+   ``<name>__columns`` for row/column labels (defaulting to a plain
+   range index if absent). Used for large per-molecule, per-position
+   matrices such as ``meth_prob`` and ``occup``.
 
 ``DataFrameMap`` / ``save_df``
    A small tabular result, stored under its own HDF5 sub-group with
    ``_column_order`` (the original column order), a ``num_values``
-   dataset (numeric columns stacked, float64) with parallel
-   ``num_names``, and one ``str_<colname>`` dataset per non-numeric
-   column. Used for one-row-per-position or one-row-per-molecule
-   summaries such as ``<name>_theta`` or ``mean_nnuc``.
+   dataset (numeric columns stacked, using whatever dtype they share,
+   e.g. ``float64`` or ``int8``) with parallel ``num_names``, and one
+   ``str_<colname>`` dataset per non-numeric column. Used for
+   one-row-per-position or one-row-per-molecule summaries such as
+   ``<name>_theta`` or ``mean_nnuc``.
 
 Experiment HDF5 file (``analysis.h5``)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Written by ``MethPrintExperiment.save()`` (or the ``catella
-load_raw``/``compute_*_prob`` CLI commands via ``--out_file``). Two
-top-level attributes, ``mtase`` (comma-joined channel labels) and
-``wrap`` (bool), plus:
+load_raw``/``compute_*_prob`` CLI commands via ``--out_file``). Three
+top-level attributes, ``mtase`` (comma-joined channel labels), ``wrap``
+(bool), and ``ignore_strand`` (bool), plus:
 
 .. code-block:: text
 
@@ -227,8 +231,8 @@ top-level attributes, ``mtase`` (comma-joined channel labels) and
                                     mod_code
        unmeth_mol_id, unmeth_data   same shape, optional
        meth_mol_id, meth_data       same shape, optional
-   /analysis/<chrom>/<key>          H5Array or save_df sub-group
-   /global_analysis/<key>           H5Array or save_df sub-group
+   /analysis/<chrom>/<key>          H5Array dataset or save_df sub-group
+   /global_analysis/<key>           H5Array dataset or save_df sub-group
 
 Raw per-source tables (``test_data``/``meth_data``/``unmeth_data``)
 have columns ``mol_index`` (row position in ``*_mol_id``), ``pos``
@@ -258,8 +262,8 @@ Common ``analysis[chrom]`` keys produced by the processing pipeline:
        ``_pos``/``_neg`` variants) — the calibrated per-position
        protected/accessible call rates used by ``compute_model_prob``.
    * - ``<source>_<mask_name>`` (default ``dropout_mask``)
-     - DataFrame with a boolean ``keep`` column, one row per molecule,
-       from ``filter_dropout``.
+     - DataFrame with an ``int8`` ``keep`` column (0/1), one row per
+       molecule, from ``filter_dropout``.
    * - ``<data_name>_sorted``, ``<data_name>_linkage``
      - Outputs of ``sort_by_linkage``.
 
@@ -288,10 +292,11 @@ Common ``global_analysis`` keys:
        ``init_acc``, ``tol``, ``fill_edge``, ``norm_by_strand``,
        ``mask_name``).
    * - ``<prob_name>_calib``
-     - DataFrame, one row per chromosome (and strand, if
-       ``norm_by_strand``): ``chrom``, ``has_controls``,
-       ``frac_informative``, and, on the no-controls EM path, also
-       ``iters``, ``log_likelihood``, ``frac_protected``, and
+     - DataFrame, one row per chromosome (and, if ``norm_by_strand``,
+       per strand, adding a ``strand`` column): ``chrom``,
+       ``has_controls``, ``frac_informative_<channel>`` per channel,
+       and, on the no-controls EM path, also ``iters``,
+       ``log_likelihood``, ``frac_protected``, and
        ``theta_prot_<channel>``/``theta_acc_<channel>`` per channel.
 
 Simulation output
@@ -306,14 +311,14 @@ that must not already exist:
      <dataset_name>.h5     default "results.h5"; dataset metadata
                             and analysis (see below)
      raw_data/              one HDF5 file per (chrom, molecule, run),
-                             sharded into subdirectories of
-                             max_mols_per_dir molecules each
+                             sharded into subdirectories of 100
+                             molecules each
 
 Each per-run raw file (``SimData``, written by the C++ engine) has:
 
 .. code-block:: text
 
-   /params   group (attrs only): nucbp, nbp, llink, mu, seed
+   /params   group (attrs only): nucbp, nbp, llink, elink, mu, seed
    /data     group
        time              1D array, recorded sweep/time points
        energy            1D float array, total energy at each point
@@ -335,12 +340,12 @@ The dataset-level file (``<dataset_name>.h5``, default
 .. code-block:: text
 
    /metadata
-       attrs: raw_dir, nsim, out_type, seed
+       attrs: raw_dir, nsim (always); out_type, seed (optional)
        chroms              string dataset, chromosome names
        nmol                int array, molecules per chromosome
        nbp                 int array, bp length per chromosome
        settings/           group; attrs = every SimSettings field
-       eseq/<chrom>        (optional, store_eseq=True) H5Array,
+       eseq/<chrom>        (optional, store_eseq=True) gzip dataset,
                             (n_mol, nbp), sequence-specific binding
                             energy landscape
        seed_table/<chrom>  (optional) uint32 array, (nmol, nsim),

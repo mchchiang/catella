@@ -498,11 +498,11 @@ Second, if an MTase channel is unused in a given experiment,
 updating the posterior. Finally, we evaluate methylation contexts in a
 strand-specific manner, and both strands contribute. In practice, the
 assayable sets :math:`\{\mathcal{A}_c\}` and the confidence scores
-:math:`q_{x,c}` are taken from ModKit's output, using the
-`--ignore-implicit` flag so that positions absent from the modification
-tags are treated as having emitted no call rather than as unmethylated.
-ModKit searches both strands and reports the strand for each call, so
-sites on either strand contribute to their respective channels without
+:math:`q_{x,c}` are taken from ModKit's output, filtering out
+canonical-call rows (`mod_code` of '-') so that only sites with an
+emitted modification call populate :math:`\mathcal{A}_c`. ModKit
+searches both strands and reports the strand for each call, so sites
+on either strand contribute to their respective channels without
 further processing.
 
 Accounting for correlation in methyltransferase activity between proximal sites

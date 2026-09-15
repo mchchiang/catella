@@ -63,9 +63,9 @@ cover each stage in more depth.
 import catella
 
 exp = catella.load_raw(chromsize="segments.size",
-                        test_file="chromatin.tsv.gz",
-                        fasta_file="segments.fa",
-                        mtase=["A", "GC"])
+                       test_file="chromatin.tsv.gz",
+                       fasta_file="segments.fa",
+                       mtase=["A", "GC"])
 exp = catella.compute_model_prob(exp)
 ```
 

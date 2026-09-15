@@ -32,7 +32,7 @@ jobs:
           use-mamba: true
 
       - name: Install conda-only build tools
-        run: mamba install -y hdf5 pybind11 cxx-compiler cmake ninja pkg-config "pip>=25.1"
+        run: mamba install -y hdf5 pybind11 cxx-compiler cmake ninja pkg-config pandoc "pip>=25.1"
 
       - name: Build and install package with doc extras
         run: pip install -e . --group doc -v

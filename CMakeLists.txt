@@ -26,7 +26,6 @@ python_add_library(catella_cpp MODULE ${CPP_SOURCES} WITH_SOABI)
 target_link_libraries(catella_cpp PRIVATE pybind11::headers HDF5::HDF5)
 target_include_directories(catella_cpp PRIVATE src/catella/cpp)
 target_compile_features(catella_cpp PRIVATE cxx_std_17)
-target_compile_options(catella_cpp PRIVATE -O3)
 
 # Install to wheel root alongside the catella package
 install(TARGETS catella_cpp DESTINATION .)

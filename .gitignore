@@ -23,7 +23,8 @@ catella.egg-info/
 
 # docs
 /docs/generated/
-/docs/_build/
+/docs/build/
+/public/
 
 # claude
 .claude/

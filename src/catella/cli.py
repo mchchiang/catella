@@ -2,11 +2,14 @@
 
 import enum
 import json
-import catella
-import typer
-import pandas as pd
+from collections.abc import Callable
 from pathlib import Path
-from typing import Annotated, Type, TypeVar, Callable, Optional, List
+from typing import Annotated
+
+import pandas as pd
+import typer
+
+import catella
 from catella.experiment.methdata import MethPrintExperiment
 from catella.simulation.results import SimDataset
 
@@ -16,6 +19,7 @@ app = typer.Typer(help="Nucleosome Positioning Monte Carlo Simulation Suite")
 class SourceKind(str, enum.Enum):
     """Which object type an HDF5 file holds, for commands that operate on
     either a MethPrintExperiment or a SimDataset."""
+
     experiment = "experiment"
     dataset = "dataset"
 
@@ -25,32 +29,40 @@ def _load_source(source_file: Path, kind: "SourceKind"):
         return MethPrintExperiment.load(source_file)
     return SimDataset.load(source_file)
 
+
 # Helper to parse a comma-separated option value into a list. Used as
 # a `callback` (not `parser`) so it runs once on the final string
 # value; `typer.Option(parser=...)` on a list[T]-typed option instead
 # treats each flag occurrence as one parsed item and wraps the results
 # in an outer list, which double-wraps a parser that already returns a
 # list from a single occurrence.
-T = TypeVar("T")
-def csv_parser(
-        target_type: Type[T]) -> Callable[[Optional[str]],
-                                          Optional[list[T]]]:
-    def parser(value: Optional[str]) -> Optional[list[T]]:
-        if value is None: return None
-        if not value: return []
+def csv_parser[T](
+    target_type: type[T],
+) -> Callable[[str | None], list[T] | None]:
+    def parser(value: str | None) -> list[T] | None:
+        if value is None:
+            return None
+        if not value:
+            return []
         return [target_type(item.strip()) for item in value.split(",")]
+
     return parser
 
-def fill_nan_parser(value: Optional[str]):
-    if value is None: return None
-    if value == "mean": return value
+
+def fill_nan_parser(value: str | None):
+    if value is None:
+        return None
+    if value == "mean":
+        return value
     try:
         return float(value)
     except ValueError:
         raise typer.BadParameter("fill_nan must be 'mean' or a number")
 
-def eta_parser(value: Optional[str]):
-    if value is None: return None
+
+def eta_parser(value: str | None):
+    if value is None:
+        return None
     try:
         return float(value)
     except ValueError:
@@ -60,126 +72,220 @@ def eta_parser(value: Optional[str]):
     except json.JSONDecodeError:
         raise typer.BadParameter(
             "eta must be a number, or a JSON object of channel name "
-            "to number, e.g. '{\"A\": 0.9, \"HCG\": 0.7}'")
+            'to number, e.g. \'{"A": 0.9, "HCG": 0.7}\''
+        )
+
 
 @app.command(name="load_raw")
 def load_raw(
-    chromsize: Annotated[Path, typer.Argument(help="Chromosome sizes file",
-                                              exists=True, file_okay=True,
-                                              dir_okay=False, readable=True)],
-    test_file: Annotated[Path, typer.Argument(help="Primary methylation file",
-                                              exists=True, file_okay=True,
-                                              dir_okay=False, readable=True)],
-    out_file: Annotated[Path, typer.Argument(help="Path to save results",
-                                             file_okay=True, dir_okay=False)],
+    chromsize: Annotated[
+        Path,
+        typer.Argument(
+            help="Chromosome sizes file",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+        ),
+    ],
+    test_file: Annotated[
+        Path,
+        typer.Argument(
+            help="Primary methylation file",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+        ),
+    ],
+    out_file: Annotated[
+        Path,
+        typer.Argument(
+            help="Path to save results", file_okay=True, dir_okay=False
+        ),
+    ],
     unmeth_file: Annotated[
-        Optional[Path], typer.Option(help="Unmethylated control file",
-                                     exists=True, file_okay=True,
-                                     dir_okay=False, readable=True)] = None,
+        Path | None,
+        typer.Option(
+            help="Unmethylated control file",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+        ),
+    ] = None,
     meth_file: Annotated[
-        Optional[Path], typer.Option(help="Methylated control file",
-                                     exists=True, file_okay=True,
-                                     dir_okay=False, readable=True)] = None,
+        Path | None,
+        typer.Option(
+            help="Methylated control file",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+        ),
+    ] = None,
     fasta_file: Annotated[
-        Optional[Path], typer.Option(help="Reference FASTA file "
-                                     "(required by compute_model_prob)",
-                                     exists=True, file_okay=True,
-                                     dir_okay=False, readable=True)] = None,
+        Path | None,
+        typer.Option(
+            help="Reference FASTA file (required by compute_model_prob)",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+        ),
+    ] = None,
     mtase: Annotated[
-        Optional[str],
-        typer.Option(callback=csv_parser(str),
-                    help="Methyltransferase(s): A, CG, GC")] = None,
+        str | None,
+        typer.Option(
+            callback=csv_parser(str), help="Methyltransferase(s): A, CG, GC"
+        ),
+    ] = None,
     chroms: Annotated[
-        Optional[str],
-        typer.Option(callback=csv_parser(str),
-                    help="Subset of chromosomes to load")] = None,
+        str | None,
+        typer.Option(
+            callback=csv_parser(str), help="Subset of chromosomes to load"
+        ),
+    ] = None,
     wrap: Annotated[
-        bool, typer.Option(help="Wrap relative to center")] = False,
+        bool, typer.Option(help="Wrap relative to center")
+    ] = False,
     ignore_strand: Annotated[
-        bool, typer.Option(help="Ignore recorded strand for mtase "
-                           "context filtering")] = False,
+        bool,
+        typer.Option(
+            help="Ignore recorded strand for mtase context filtering"
+        ),
+    ] = False,
     colidx: Annotated[
-        Optional[str],
-        typer.Option(callback=csv_parser(int), help="ModKit column indices")
+        str | None,
+        typer.Option(callback=csv_parser(int), help="ModKit column indices"),
     ] = None,
     max_nmol: Annotated[
-        Optional[int], typer.Option(help="Max molecules per chromosome")
+        int | None, typer.Option(help="Max molecules per chromosome")
     ] = None,
     seed: Annotated[
-        Optional[int], typer.Option(help="Seed for molecule sampling")
+        int | None, typer.Option(help="Seed for molecule sampling")
     ] = None,
     tmp_dir: Annotated[
-        Optional[Path], typer.Option(help="Scratch directory",
-                                     exists=True, file_okay=False,
-                                     dir_okay=True)] = None,
+        Path | None,
+        typer.Option(
+            help="Scratch directory",
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+        ),
+    ] = None,
     chunk_size: Annotated[
-        int, typer.Option(help="Rows read per streamed chunk")] = 1000000,
+        int, typer.Option(help="Rows read per streamed chunk")
+    ] = 1000000,
     max_cached_chroms: Annotated[
-        int, typer.Option(help="Max chromosomes' raw data kept in "
-                          "memory")] = 1,
+        int, typer.Option(help="Max chromosomes' raw data kept in memory")
+    ] = 1,
     nworker: Annotated[
-        int, typer.Option(help="Threads for parallel file reading")] = 1):
+        int, typer.Option(help="Threads for parallel file reading")
+    ] = 1,
+):
     """
     Load raw methylation footprinting data into a MethPrintExperiment.
     """
     exp = catella.load_raw(
-        chromsize=chromsize, test_file=test_file, unmeth_file=unmeth_file,
-        meth_file=meth_file, fasta_file=fasta_file, mtase=mtase,
-        chroms=chroms, wrap=wrap, ignore_strand=ignore_strand,
-        colidx=colidx, max_nmol=max_nmol, seed=seed, chunk_size=chunk_size,
-        tmp_dir=tmp_dir, max_cached_chroms=max_cached_chroms,
-        nworker=nworker)
+        chromsize=chromsize,
+        test_file=test_file,
+        unmeth_file=unmeth_file,
+        meth_file=meth_file,
+        fasta_file=fasta_file,
+        mtase=mtase,
+        chroms=chroms,
+        wrap=wrap,
+        ignore_strand=ignore_strand,
+        colidx=colidx,
+        max_nmol=max_nmol,
+        seed=seed,
+        chunk_size=chunk_size,
+        tmp_dir=tmp_dir,
+        max_cached_chroms=max_cached_chroms,
+        nworker=nworker,
+    )
     exp.save(out_file)
 
 
 @app.command(name="filter_dropout")
 def filter_dropout(
     source_file: Annotated[
-        Path, typer.Argument(help="Experiment HDF5 file", exists=True,
-                             file_okay=True, dir_okay=False,
-                             readable=True)],
+        Path,
+        typer.Argument(
+            help="Experiment HDF5 file",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+        ),
+    ],
     which: Annotated[
-        Optional[str], typer.Option(help="test, meth, or unmeth; "
-                                    "default evaluates every source")
+        str | None,
+        typer.Option(
+            help="test, meth, or unmeth; default evaluates every source"
+        ),
     ] = None,
     mtase: Annotated[
-        Optional[str],
-        typer.Option(callback=csv_parser(str),
-                    help="Subset of mtase labels to evaluate")] = None,
+        str | None,
+        typer.Option(
+            callback=csv_parser(str), help="Subset of mtase labels to evaluate"
+        ),
+    ] = None,
     chroms: Annotated[
-        Optional[str],
-        typer.Option(callback=csv_parser(str),
-                    help="Subset of chromosomes to evaluate")] = None,
+        str | None,
+        typer.Option(
+            callback=csv_parser(str), help="Subset of chromosomes to evaluate"
+        ),
+    ] = None,
     thres_min: Annotated[
-        float, typer.Option(help="Min allowed no-signal fraction")] = 0.0,
+        float, typer.Option(help="Min allowed no-signal fraction")
+    ] = 0.0,
     thres_max: Annotated[
-        float, typer.Option(help="Max allowed no-signal fraction")] = 1.0,
+        float, typer.Option(help="Max allowed no-signal fraction")
+    ] = 1.0,
     unmapped_strand: Annotated[
-        str, typer.Option(help="union, drop, +, or -")] = "union",
+        str, typer.Option(help="union, drop, +, or -")
+    ] = "union",
     method: Annotated[
-        str, typer.Option(help="separate or aggregate")] = "separate",
+        str, typer.Option(help="separate or aggregate")
+    ] = "separate",
     mask_name: Annotated[
         str, typer.Option(help="Key for the stored mask")
     ] = "dropout_mask",
     out_file: Annotated[
-        Optional[Path], typer.Option(help="Output file (default: "
-                                     "overwrite source_file)",
-                                     file_okay=True, dir_okay=False)
+        Path | None,
+        typer.Option(
+            help="Output file (default: overwrite source_file)",
+            file_okay=True,
+            dir_okay=False,
+        ),
     ] = None,
     overwrite: Annotated[
-        bool, typer.Option(help="Allow overwriting out_file if it is "
-                           "already backed by H5Array analysis data. "
-                           "Ignored (always allowed) when out_file is "
-                           "not given")] = False):
+        bool,
+        typer.Option(
+            help="Allow overwriting out_file if it is "
+            "already backed by H5Array analysis data. "
+            "Ignored (always allowed) when out_file is "
+            "not given"
+        ),
+    ] = False,
+):
     """
     Flag molecules with poor coverage at methylatable positions.
     """
     exp = MethPrintExperiment.load(source_file)
-    catella.filter_dropout(exp=exp, which=which, mtase=mtase,
-                           chroms=chroms, thres_min=thres_min,
-                           thres_max=thres_max,
-                           unmapped_strand=unmapped_strand, method=method,
-                           mask_name=mask_name)
+    catella.filter_dropout(
+        exp=exp,
+        which=which,
+        mtase=mtase,
+        chroms=chroms,
+        thres_min=thres_min,
+        thres_max=thres_max,
+        unmapped_strand=unmapped_strand,
+        method=method,
+        mask_name=mask_name,
+    )
     if out_file is not None:
         exp.save(out_file, overwrite=overwrite)
     else:
@@ -189,33 +295,54 @@ def filter_dropout(
 @app.command(name="summarize_dropout")
 def summarize_dropout(
     source_file: Annotated[
-        Path, typer.Argument(help="Experiment HDF5 file", exists=True,
-                             file_okay=True, dir_okay=False,
-                             readable=True)],
-    which: Annotated[Optional[str], typer.Option(help="test, meth, "
-                                                 "or unmeth")] = None,
+        Path,
+        typer.Argument(
+            help="Experiment HDF5 file",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+        ),
+    ],
+    which: Annotated[
+        str | None, typer.Option(help="test, meth, or unmeth")
+    ] = None,
     mtase: Annotated[
-        Optional[str],
-        typer.Option(callback=csv_parser(str),
-                    help="Subset of mtase labels to summarize")] = None,
+        str | None,
+        typer.Option(
+            callback=csv_parser(str),
+            help="Subset of mtase labels to summarize",
+        ),
+    ] = None,
     chroms: Annotated[
-        Optional[str],
-        typer.Option(callback=csv_parser(str),
-                    help="Subset of chromosomes to summarize")] = None,
+        str | None,
+        typer.Option(
+            callback=csv_parser(str), help="Subset of chromosomes to summarize"
+        ),
+    ] = None,
     unmapped_strand: Annotated[
-        str, typer.Option(help="union, drop, +, or -")] = "union",
+        str, typer.Option(help="union, drop, +, or -")
+    ] = "union",
     out_file: Annotated[
-        Optional[Path], typer.Option(help="Optional path to also save "
-                                     "the summary as CSV",
-                                     file_okay=True, dir_okay=False)
-    ] = None):
+        Path | None,
+        typer.Option(
+            help="Optional path to also save the summary as CSV",
+            file_okay=True,
+            dir_okay=False,
+        ),
+    ] = None,
+):
     """
     Print a per-label dropout fraction summary (QC check).
     """
     exp = MethPrintExperiment.load(source_file)
-    df = catella.summarize_dropout(exp=exp, which=which, mtase=mtase,
-                                   chroms=chroms,
-                                   unmapped_strand=unmapped_strand)
+    df = catella.summarize_dropout(
+        exp=exp,
+        which=which,
+        mtase=mtase,
+        chroms=chroms,
+        unmapped_strand=unmapped_strand,
+    )
     typer.echo(df.to_string(index=False))
     if out_file is not None:
         df.to_csv(out_file, index=False)
@@ -224,88 +351,133 @@ def summarize_dropout(
 @app.command(name="plot_dropout_ecdf")
 def plot_dropout_ecdf(
     source_file: Annotated[
-        Path, typer.Argument(help="Experiment HDF5 file", exists=True,
-                             file_okay=True, dir_okay=False,
-                             readable=True)],
+        Path,
+        typer.Argument(
+            help="Experiment HDF5 file",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+        ),
+    ],
     chrom: Annotated[str, typer.Argument(help="Chromosome identifier")],
-    which: Annotated[Optional[str], typer.Option(help="test, meth, "
-                                                 "or unmeth")] = None,
+    which: Annotated[
+        str | None, typer.Option(help="test, meth, or unmeth")
+    ] = None,
     mtase: Annotated[
-        Optional[str],
-        typer.Option(callback=csv_parser(str),
-                    help="Subset of mtase labels to evaluate")] = None,
+        str | None,
+        typer.Option(
+            callback=csv_parser(str), help="Subset of mtase labels to evaluate"
+        ),
+    ] = None,
     unmapped_strand: Annotated[
-        str, typer.Option(help="union, drop, +, or -")] = "union",
+        str, typer.Option(help="union, drop, +, or -")
+    ] = "union",
     source: Annotated[
-        Optional[str], typer.Option(help="Restrict the plot to this "
-                                    "source")] = None,
+        str | None, typer.Option(help="Restrict the plot to this source")
+    ] = None,
     out_file: Annotated[
-        Optional[Path], typer.Option(help="Path to save the figure",
-                                     file_okay=True, dir_okay=False)] = None,
-    show: Annotated[bool, typer.Option(help="Display the figure")] = True):
+        Path | None,
+        typer.Option(
+            help="Path to save the figure", file_okay=True, dir_okay=False
+        ),
+    ] = None,
+    show: Annotated[bool, typer.Option(help="Display the figure")] = True,
+):
     """
     Plot the empirical CDF of dropout rate per group.
     """
     exp = MethPrintExperiment.load(source_file)
-    catella.plot_dropout_ecdf(exp=exp, chrom=chrom, which=which,
-                              mtase=mtase,
-                              unmapped_strand=unmapped_strand,
-                              source=source, out_file=out_file, show=show)
+    catella.plot_dropout_ecdf(
+        exp=exp,
+        chrom=chrom,
+        which=which,
+        mtase=mtase,
+        unmapped_strand=unmapped_strand,
+        source=source,
+        out_file=out_file,
+        show=show,
+    )
 
 
 @app.command(name="compute_empirical_prob")
 def compute_empirical_prob(
     source_file: Annotated[
-        Path, typer.Argument(help="Experiment HDF5 file", exists=True,
-                             file_okay=True, dir_okay=False,
-                             readable=True)],
+        Path,
+        typer.Argument(
+            help="Experiment HDF5 file",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+        ),
+    ],
     lnuc: Annotated[
-        int, typer.Option(help="Nucleosome footprint / window size "
-                          "(bp)")] = 147,
+        int, typer.Option(help="Nucleosome footprint / window size (bp)")
+    ] = 147,
     prob_name: Annotated[
-        str, typer.Option(help="Key for storing methylation "
-                          "probabilities")] = "meth_prob",
+        str, typer.Option(help="Key for storing methylation probabilities")
+    ] = "meth_prob",
     clip_low: Annotated[
-        Optional[float], typer.Option(help="Lower clip percentile")] = 0.1,
+        float | None, typer.Option(help="Lower clip percentile")
+    ] = 0.1,
     clip_high: Annotated[
-        Optional[float], typer.Option(help="Upper clip percentile")] = 99.9,
+        float | None, typer.Option(help="Upper clip percentile")
+    ] = 99.9,
     norm_by_strand: Annotated[
-        Optional[bool], typer.Option(help="Normalize by strand")] = False,
+        bool | None, typer.Option(help="Normalize by strand")
+    ] = False,
     fill_edge: Annotated[
-        float, typer.Option(help="Probability for the unfilled "
-                            "trailing edge")] = float("nan"),
+        float, typer.Option(help="Probability for the unfilled trailing edge")
+    ] = float("nan"),
     batch_size: Annotated[
-        int, typer.Option(help="Molecules processed per batch")] = 20000,
+        int, typer.Option(help="Molecules processed per batch")
+    ] = 20000,
     percentile_sample_size: Annotated[
         int, typer.Option(help="Sample size for percentile estimation")
     ] = 100000,
     seed: Annotated[
-        Optional[int], typer.Option(help="Seed for percentile "
-                                    "subsampling")] = None,
+        int | None, typer.Option(help="Seed for percentile subsampling")
+    ] = None,
     mask_name: Annotated[
-        Optional[str], typer.Option(help="Key of a prior filter_dropout "
-                                    "mask to apply")] = None,
+        str | None,
+        typer.Option(help="Key of a prior filter_dropout mask to apply"),
+    ] = None,
     out_file: Annotated[
-        Optional[Path], typer.Option(help="Output file (default: "
-                                     "overwrite source_file)",
-                                     file_okay=True, dir_okay=False)
+        Path | None,
+        typer.Option(
+            help="Output file (default: overwrite source_file)",
+            file_okay=True,
+            dir_okay=False,
+        ),
     ] = None,
     overwrite: Annotated[
-        bool, typer.Option(help="Allow overwriting out_file if it is "
-                           "already backed by H5Array analysis data. "
-                           "Ignored (always allowed) when out_file is "
-                           "not given")] = False):
+        bool,
+        typer.Option(
+            help="Allow overwriting out_file if it is "
+            "already backed by H5Array analysis data. "
+            "Ignored (always allowed) when out_file is "
+            "not given"
+        ),
+    ] = False,
+):
     """
     Compute methylation probabilities via empirical normalization.
     """
     exp = MethPrintExperiment.load(source_file)
     catella.compute_empirical_prob(
-        exp=exp, lnuc=lnuc, prob_name=prob_name,
-        clip_low=clip_low, clip_high=clip_high,
-        norm_by_strand=norm_by_strand, fill_edge=fill_edge,
+        exp=exp,
+        lnuc=lnuc,
+        prob_name=prob_name,
+        clip_low=clip_low,
+        clip_high=clip_high,
+        norm_by_strand=norm_by_strand,
+        fill_edge=fill_edge,
         batch_size=batch_size,
-        percentile_sample_size=percentile_sample_size, seed=seed,
-        mask_name=mask_name)
+        percentile_sample_size=percentile_sample_size,
+        seed=seed,
+        mask_name=mask_name,
+    )
     if out_file is not None:
         exp.save(out_file, overwrite=overwrite)
     else:
@@ -315,87 +487,133 @@ def compute_empirical_prob(
 @app.command(name="compute_model_prob")
 def compute_model_prob(
     source_file: Annotated[
-        Path, typer.Argument(help="Experiment HDF5 file", exists=True,
-                             file_okay=True, dir_okay=False,
-                             readable=True)],
+        Path,
+        typer.Argument(
+            help="Experiment HDF5 file",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+        ),
+    ],
     prob_name: Annotated[
-        str, typer.Option(help="Key for storing methylation "
-                          "probabilities")] = "meth_prob",
+        str, typer.Option(help="Key for storing methylation probabilities")
+    ] = "meth_prob",
     pi0: Annotated[
-        float, typer.Option(help="Prior probability a site is "
-                            "methylated")] = 0.5,
+        float, typer.Option(help="Prior probability a site is methylated")
+    ] = 0.5,
     eta: Annotated[
-        Optional[str],
-        typer.Option(callback=eta_parser,
-                    help="Log-odds correction for correlated sites. "
-                    "A number applies to every channel; a JSON object "
-                    "pins only the named channels, e.g. "
-                    '\'{"A": 0.9, "HCG": 0.7}\'. Omit to '
-                    "auto-estimate every channel (default).")] = None,
+        str | None,
+        typer.Option(
+            callback=eta_parser,
+            help="Log-odds correction for correlated sites. "
+            "A number applies to every channel; a JSON object "
+            "pins only the named channels, e.g. "
+            '\'{"A": 0.9, "HCG": 0.7}\'. Omit to '
+            "auto-estimate every channel (default).",
+        ),
+    ] = None,
     eta_max_lag: Annotated[
-        int, typer.Option(help="Max lag (bp) for eta "
-                          "auto-estimation")] = 10,
+        int, typer.Option(help="Max lag (bp) for eta auto-estimation")
+    ] = 10,
     store_rho: Annotated[
-        Optional[bool], typer.Option(help="Store the lag-k "
-                                     "autocorrelation rho(k) used in "
-                                     "eta estimation")] = False,
+        bool | None,
+        typer.Option(
+            help="Store the lag-k autocorrelation rho(k) used in eta "
+            "estimation"
+        ),
+    ] = False,
     nu: Annotated[
-        float, typer.Option(help="Pseudo-count shrinkage strength")] = 10.0,
+        float, typer.Option(help="Pseudo-count shrinkage strength")
+    ] = 10.0,
     rho_leak: Annotated[
-        float, typer.Option(help="Leak fraction toward accessible-state "
-                            "rate")] = 0.1,
+        float, typer.Option(help="Leak fraction toward accessible-state rate")
+    ] = 0.1,
     min_gap: Annotated[
-        float, typer.Option(help="Min accessible/protected rate gap to "
-                            "be informative")] = 0.05,
+        float,
+        typer.Option(
+            help="Min accessible/protected rate gap to be informative"
+        ),
+    ] = 0.05,
     lnuc: Annotated[
-        int, typer.Option(help="Nucleosome footprint / window size "
-                          "(bp)")] = 147,
+        int, typer.Option(help="Nucleosome footprint / window size (bp)")
+    ] = 147,
     n_min: Annotated[
-        int, typer.Option(help="Min context-eligible sites per window "
-                          "(no-controls fit)")] = 10,
+        int,
+        typer.Option(
+            help="Min context-eligible sites per window (no-controls fit)"
+        ),
+    ] = 10,
     max_iters: Annotated[
-        int, typer.Option(help="Max EM iterations (no-controls "
-                          "fit)")] = 200,
+        int, typer.Option(help="Max EM iterations (no-controls fit)")
+    ] = 200,
     init_prot: Annotated[
-        float, typer.Option(help="Initial protected-state rate "
-                            "(no-controls fit)")] = 0.05,
+        float,
+        typer.Option(help="Initial protected-state rate (no-controls fit)"),
+    ] = 0.05,
     init_acc: Annotated[
-        float, typer.Option(help="Initial accessible-state rate "
-                            "(no-controls fit)")] = 0.95,
+        float,
+        typer.Option(help="Initial accessible-state rate (no-controls fit)"),
+    ] = 0.95,
     tol: Annotated[
-        float, typer.Option(help="EM log-likelihood convergence "
-                            "tolerance")] = 1e-8,
+        float, typer.Option(help="EM log-likelihood convergence tolerance")
+    ] = 1e-8,
     fill_edge: Annotated[
-        float, typer.Option(help="Probability for the unfilled "
-                            "trailing edge")] = float("nan"),
+        float, typer.Option(help="Probability for the unfilled trailing edge")
+    ] = float("nan"),
     norm_by_strand: Annotated[
-        Optional[bool], typer.Option(help="Normalize by strand")] = False,
+        bool | None, typer.Option(help="Normalize by strand")
+    ] = False,
     batch_size: Annotated[
-        int, typer.Option(help="Molecules processed per batch")] = 20000,
+        int, typer.Option(help="Molecules processed per batch")
+    ] = 20000,
     mask_name: Annotated[
-        Optional[str], typer.Option(help="Key of a prior filter_dropout "
-                                    "mask to apply")] = None,
+        str | None,
+        typer.Option(help="Key of a prior filter_dropout mask to apply"),
+    ] = None,
     out_file: Annotated[
-        Optional[Path], typer.Option(help="Output file (default: "
-                                     "overwrite source_file)",
-                                     file_okay=True, dir_okay=False)
+        Path | None,
+        typer.Option(
+            help="Output file (default: overwrite source_file)",
+            file_okay=True,
+            dir_okay=False,
+        ),
     ] = None,
     overwrite: Annotated[
-        bool, typer.Option(help="Allow overwriting out_file if it is "
-                           "already backed by H5Array analysis data. "
-                           "Ignored (always allowed) when out_file is "
-                           "not given")] = False):
+        bool,
+        typer.Option(
+            help="Allow overwriting out_file if it is "
+            "already backed by H5Array analysis data. "
+            "Ignored (always allowed) when out_file is "
+            "not given"
+        ),
+    ] = False,
+):
     """
     Compute methylation probabilities via a calibrated log-odds model.
     """
     exp = MethPrintExperiment.load(source_file)
     catella.compute_model_prob(
-        exp=exp, prob_name=prob_name, pi0=pi0, eta=eta,
-        eta_max_lag=eta_max_lag, store_rho=store_rho, nu=nu,
-        rho_leak=rho_leak, min_gap=min_gap, lnuc=lnuc, n_min=n_min,
-        max_iters=max_iters, init_prot=init_prot, init_acc=init_acc,
-        tol=tol, fill_edge=fill_edge, norm_by_strand=norm_by_strand,
-        batch_size=batch_size, mask_name=mask_name)
+        exp=exp,
+        prob_name=prob_name,
+        pi0=pi0,
+        eta=eta,
+        eta_max_lag=eta_max_lag,
+        store_rho=store_rho,
+        nu=nu,
+        rho_leak=rho_leak,
+        min_gap=min_gap,
+        lnuc=lnuc,
+        n_min=n_min,
+        max_iters=max_iters,
+        init_prot=init_prot,
+        init_acc=init_acc,
+        tol=tol,
+        fill_edge=fill_edge,
+        norm_by_strand=norm_by_strand,
+        batch_size=batch_size,
+        mask_name=mask_name,
+    )
     if out_file is not None:
         exp.save(out_file, overwrite=overwrite)
     else:
@@ -405,48 +623,77 @@ def compute_model_prob(
 @app.command()
 def run(
     chroms: Annotated[
-        str, typer.Option(callback=csv_parser(str),
-                          help="Chromosome names")],
+        str, typer.Option(callback=csv_parser(str), help="Chromosome names")
+    ],
     nsim: Annotated[int, typer.Option(help="Simulations per molecule")],
     settings: Annotated[
-        Path, typer.Option(help="Simulation configuration file directory",
-                           exists=True, file_okay=True, dir_okay=False,
-                           readable=True)],
+        Path,
+        typer.Option(
+            help="Simulation configuration file directory",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+        ),
+    ],
     exp_file: Annotated[
-        Path, typer.Option(help="Experiment HDF5 file directory",
-                           exists=True, file_okay=True, dir_okay=False,
-                           readable=True)],
-    out_dir: Annotated[Path, typer.Option(help="Output directory",
-                                          exists=False, file_okay=False,
-                                          dir_okay=True, readable=True)],
+        Path,
+        typer.Option(
+            help="Experiment HDF5 file directory",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+        ),
+    ],
+    out_dir: Annotated[
+        Path,
+        typer.Option(
+            help="Output directory",
+            exists=False,
+            file_okay=False,
+            dir_okay=True,
+            readable=True,
+        ),
+    ],
     dataset_name: Annotated[
         str, typer.Option(help="Dataset file name (no extension)")
     ] = "results",
     out_types: Annotated[
-        Optional[str], typer.Option(callback=csv_parser(str),
-                                    help="energy,position...")] = "all",
-    seed: Annotated[Optional[int], typer.Option(help="Random seed")] = None,
+        str | None,
+        typer.Option(callback=csv_parser(str), help="energy,position..."),
+    ] = "all",
+    seed: Annotated[int | None, typer.Option(help="Random seed")] = None,
     mols: Annotated[
-        Optional[str],
-        typer.Option(callback=csv_parser(int),
-                    help="Molecule indices to simulate (all if omitted)")
+        str | None,
+        typer.Option(
+            callback=csv_parser(int),
+            help="Molecule indices to simulate (all if omitted)",
+        ),
     ] = None,
     nworker: Annotated[
-        Optional[int], typer.Option(help="Number of processes")] = 1,
+        int | None, typer.Option(help="Number of processes")
+    ] = 1,
     store_eseq: Annotated[
-        Optional[bool], typer.Option(help="Store sequence-specific energy "
-                                     "landscape")] = True,
+        bool | None,
+        typer.Option(help="Store sequence-specific energy landscape"),
+    ] = True,
     use_median_eseq_mu: Annotated[
-        Optional[bool], typer.Option(help="Shift mu to median of sequence-"
-                                     "specific energy")] = False,
+        bool | None,
+        typer.Option(help="Shift mu to median of sequence-specific energy"),
+    ] = False,
     verbose: Annotated[
-        Optional[bool], typer.Option(help="Print progress")] = True):
+        bool | None, typer.Option(help="Print progress")
+    ] = True,
+):
     """
     Execute a parallelized methylation simulation.
     """
     exp_data = MethPrintExperiment.load(exp_file)
-    meth_prob = {chrom: exp_data.analysis[chrom]["meth_prob"]
-                 for chrom in exp_data.chroms}
+    meth_prob = {
+        chrom: exp_data.analysis[chrom]["meth_prob"]
+        for chrom in exp_data.chroms
+    }
     return catella.run(
         chroms=chroms,
         nsim=nsim,
@@ -460,39 +707,59 @@ def run(
         nworker=nworker,
         store_eseq=store_eseq,
         use_median_eseq_mu=use_median_eseq_mu,
-        verbose=verbose
+        verbose=verbose,
     )
 
 
 @app.command()
 def analyze(
     dataset_file: Annotated[
-        Path, typer.Argument(help="Simulation dataset HDF5 file",
-                             exists=True, file_okay=True, dir_okay=False,
-                             readable=True)],
+        Path,
+        typer.Argument(
+            help="Simulation dataset HDF5 file",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+        ),
+    ],
     time: Annotated[
-        Optional[int], typer.Option(help="Simulation time point")] = None,
+        int | None, typer.Option(help="Simulation time point")
+    ] = None,
     occup_name: Annotated[
-        str, typer.Option(help="Key to store occupancy")] = "occup",
+        str, typer.Option(help="Key to store occupancy")
+    ] = "occup",
     mean_nnuc_name: Annotated[
         str, typer.Option(help="Key to store mean nucleosome count")
     ] = "mean_nnuc",
     out_file: Annotated[
-        Optional[Path], typer.Option(help="Output file (default: "
-                                     "overwrite dataset_file)",
-                                     file_okay=True, dir_okay=False)
+        Path | None,
+        typer.Option(
+            help="Output file (default: overwrite dataset_file)",
+            file_okay=True,
+            dir_okay=False,
+        ),
     ] = None,
     overwrite: Annotated[
-        bool, typer.Option(help="Allow overwriting out_file if it is "
-                           "already backed by H5Array analysis data. "
-                           "Ignored (always allowed) when out_file is "
-                           "not given")] = False):
+        bool,
+        typer.Option(
+            help="Allow overwriting out_file if it is "
+            "already backed by H5Array analysis data. "
+            "Ignored (always allowed) when out_file is "
+            "not given"
+        ),
+    ] = False,
+):
     """
     Compute post-simulation occupancy and nucleosome count statistics.
     """
     dataset = SimDataset.load(dataset_file)
-    catella.analyze(dataset=dataset, time=time, occup_name=occup_name,
-                 mean_nnuc_name=mean_nnuc_name)
+    catella.analyze(
+        dataset=dataset,
+        time=time,
+        occup_name=occup_name,
+        mean_nnuc_name=mean_nnuc_name,
+    )
     if out_file is not None:
         dataset.save(out_file, overwrite=overwrite)
     else:
@@ -502,40 +769,63 @@ def analyze(
 @app.command()
 def downsample(
     source_file: Annotated[
-        Path, typer.Argument(help="Experiment or dataset HDF5 file",
-                             exists=True, file_okay=True, dir_okay=False,
-                             readable=True)],
+        Path,
+        typer.Argument(
+            help="Experiment or dataset HDF5 file",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+        ),
+    ],
     chrom: Annotated[str, typer.Argument(help="Chromosome name")],
     key: Annotated[str, typer.Argument(help="Analysis key to downsample")],
     max_rows: Annotated[int, typer.Argument(help="Target number of rows")],
     kind: Annotated[
-        SourceKind, typer.Option(help="Whether source_file holds a "
-                                 "MethPrintExperiment or a SimDataset")],
+        SourceKind,
+        typer.Option(
+            help="Whether source_file holds a "
+            "MethPrintExperiment or a SimDataset"
+        ),
+    ],
     how: Annotated[
-        str, typer.Option(help="mean, sum, min, max, or stride")] = "mean",
+        str, typer.Option(help="mean, sum, min, max, or stride")
+    ] = "mean",
     batch_size: Annotated[
-        int, typer.Option(help="Rows read per streamed chunk")] = 20000,
+        int, typer.Option(help="Rows read per streamed chunk")
+    ] = 20000,
     out_key: Annotated[
-        Optional[str], typer.Option(help="Key to store the result "
-                                    "(default: '<key>_downsampled')")
+        str | None,
+        typer.Option(
+            help="Key to store the result (default: '<key>_downsampled')"
+        ),
     ] = None,
     out_file: Annotated[
-        Optional[Path], typer.Option(help="Output file (default: "
-                                     "overwrite source_file)",
-                                     file_okay=True, dir_okay=False)
+        Path | None,
+        typer.Option(
+            help="Output file (default: overwrite source_file)",
+            file_okay=True,
+            dir_okay=False,
+        ),
     ] = None,
     overwrite: Annotated[
-        bool, typer.Option(help="Allow overwriting out_file if it is "
-                           "already backed by H5Array analysis data. "
-                           "Ignored (always allowed) when out_file is "
-                           "not given")] = False):
+        bool,
+        typer.Option(
+            help="Allow overwriting out_file if it is "
+            "already backed by H5Array analysis data. "
+            "Ignored (always allowed) when out_file is "
+            "not given"
+        ),
+    ] = False,
+):
     """
     Downsample an analysis array and store the result under a new key.
     """
     obj = _load_source(source_file, kind)
     data = obj.analysis[chrom][key]
-    result = catella.downsample(data=data, max_rows=max_rows, how=how,
-                              batch_size=batch_size)
+    result = catella.downsample(
+        data=data, max_rows=max_rows, how=how, batch_size=batch_size
+    )
     name = out_key if out_key is not None else f"{key}_downsampled"
     obj.analysis[chrom][name] = pd.DataFrame(result)
     if out_file is not None:
@@ -547,74 +837,117 @@ def downsample(
 @app.command(name="sort_by_linkage")
 def sort_by_linkage(
     source_file: Annotated[
-        Path, typer.Argument(help="Experiment or dataset HDF5 file",
-                             exists=True, file_okay=True, dir_okay=False,
-                             readable=True)],
+        Path,
+        typer.Argument(
+            help="Experiment or dataset HDF5 file",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+        ),
+    ],
     kind: Annotated[
-        SourceKind, typer.Option(help="Whether source_file holds a "
-                                 "MethPrintExperiment or a SimDataset")],
+        SourceKind,
+        typer.Option(
+            help="Whether source_file holds a "
+            "MethPrintExperiment or a SimDataset"
+        ),
+    ],
     chroms: Annotated[
-        Optional[str], typer.Option(callback=csv_parser(str),
-                                    help="Chromosome(s) to "
-                                    "process")] = None,
+        str | None,
+        typer.Option(
+            callback=csv_parser(str), help="Chromosome(s) to process"
+        ),
+    ] = None,
     data_name: Annotated[
-        Optional[str], typer.Option(help="Analysis key to sort")] = None,
+        str | None, typer.Option(help="Analysis key to sort")
+    ] = None,
     raw_which: Annotated[
-        Optional[str], typer.Option(help="test, meth, or unmeth; "
-                                    "'experiment' kind only")] = None,
+        str | None,
+        typer.Option(help="test, meth, or unmeth; 'experiment' kind only"),
+    ] = None,
     mask_name: Annotated[
-        Optional[str], typer.Option(help="Dropout mask key from "
-                                    "filter_dropout to apply; requires "
-                                    "raw_which, 'experiment' kind "
-                                    "only")] = None,
+        str | None,
+        typer.Option(
+            help="Dropout mask key from "
+            "filter_dropout to apply; requires "
+            "raw_which, 'experiment' kind "
+            "only"
+        ),
+    ] = None,
     sorted_name: Annotated[
-        Optional[str], typer.Option(help="Key to store the sorted "
-                                    "result")] = None,
+        str | None, typer.Option(help="Key to store the sorted result")
+    ] = None,
     store_link_mat: Annotated[
-        bool, typer.Option(help="Persist the linkage matrix")] = True,
+        bool, typer.Option(help="Persist the linkage matrix")
+    ] = True,
     link_mat_name: Annotated[
-        Optional[str], typer.Option(help="Key to store the linkage "
-                                    "matrix")] = None,
-    metric: Annotated[
-        str, typer.Option(help="Distance metric")] = "euclidean",
+        str | None, typer.Option(help="Key to store the linkage matrix")
+    ] = None,
+    metric: Annotated[str, typer.Option(help="Distance metric")] = "euclidean",
     method: Annotated[str, typer.Option(help="Linkage method")] = "ward",
     batch_size: Annotated[
-        int, typer.Option(help="Rows processed per batch")] = 20000,
+        int, typer.Option(help="Rows processed per batch")
+    ] = 20000,
     fill_nan: Annotated[
-        Optional[str], typer.Option(callback=fill_nan_parser,
-                                    help="'mean' or a number; how to "
-                                    "handle nan values before "
-                                    "clustering")] = None,
+        str | None,
+        typer.Option(
+            callback=fill_nan_parser,
+            help="'mean' or a number; how to "
+            "handle nan values before "
+            "clustering",
+        ),
+    ] = None,
     out_file: Annotated[
-        Optional[Path], typer.Option(help="Output file (default: "
-                                     "overwrite source_file)",
-                                     file_okay=True, dir_okay=False)
+        Path | None,
+        typer.Option(
+            help="Output file (default: overwrite source_file)",
+            file_okay=True,
+            dir_okay=False,
+        ),
     ] = None,
     overwrite: Annotated[
-        bool, typer.Option(help="Allow overwriting out_file if it is "
-                           "already backed by H5Array analysis data. "
-                           "Ignored (always allowed) when out_file is "
-                           "not given")] = False):
+        bool,
+        typer.Option(
+            help="Allow overwriting out_file if it is "
+            "already backed by H5Array analysis data. "
+            "Ignored (always allowed) when out_file is "
+            "not given"
+        ),
+    ] = False,
+):
     """
     Sort molecules by hierarchical-clustering similarity.
     """
     obj = _load_source(source_file, kind)
     if kind == SourceKind.experiment:
-        catella.sort_by_linkage(exp=obj, chroms=chroms,
-                              data_name=data_name,
-                              raw_which=raw_which, mask_name=mask_name,
-                              sorted_name=sorted_name,
-                              store_link_mat=store_link_mat,
-                              link_mat_name=link_mat_name, metric=metric,
-                              method=method, batch_size=batch_size,
-                              fill_nan=fill_nan)
+        catella.sort_by_linkage(
+            exp=obj,
+            chroms=chroms,
+            data_name=data_name,
+            raw_which=raw_which,
+            mask_name=mask_name,
+            sorted_name=sorted_name,
+            store_link_mat=store_link_mat,
+            link_mat_name=link_mat_name,
+            metric=metric,
+            method=method,
+            batch_size=batch_size,
+            fill_nan=fill_nan,
+        )
     else:
-        catella.sort_by_linkage(dataset=obj, chroms=chroms,
-                              data_name=data_name, sorted_name=sorted_name,
-                              store_link_mat=store_link_mat,
-                              link_mat_name=link_mat_name, metric=metric,
-                              method=method, batch_size=batch_size,
-                              fill_nan=fill_nan)
+        catella.sort_by_linkage(
+            dataset=obj,
+            chroms=chroms,
+            data_name=data_name,
+            sorted_name=sorted_name,
+            store_link_mat=store_link_mat,
+            link_mat_name=link_mat_name,
+            metric=metric,
+            method=method,
+            batch_size=batch_size,
+            fill_nan=fill_nan,
+        )
     if out_file is not None:
         obj.save(out_file, overwrite=overwrite)
     else:
@@ -625,44 +958,76 @@ def sort_by_linkage(
 def plot_occup(
     chrom: Annotated[str, typer.Argument(help="Chromosome identifier")],
     dataset_file: Annotated[
-        Path, typer.Argument(help="Simulation dataset HDF5 file",
-                             exists=True, file_okay=True, dir_okay=False,
-                             readable=True)],
+        Path,
+        typer.Argument(
+            help="Simulation dataset HDF5 file",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+        ),
+    ],
     time: Annotated[
-        Optional[int], typer.Option(help="Time step to compute occupancy "
-                                    "at, if not already present")] = None,
+        int | None,
+        typer.Option(
+            help="Time step to compute occupancy at, if not already present"
+        ),
+    ] = None,
     out_file: Annotated[
-        Optional[Path], typer.Option(help="Path to save the figure",
-                                     file_okay=True, dir_okay=False)] = None,
+        Path | None,
+        typer.Option(
+            help="Path to save the figure", file_okay=True, dir_okay=False
+        ),
+    ] = None,
     occup_name: Annotated[
-        str, typer.Option(help="Key of the occupancy data")] = "occup",
+        str, typer.Option(help="Key of the occupancy data")
+    ] = "occup",
     mols: Annotated[
-        Optional[List[int]], typer.Option(help="Molecule index to "
-                                          "display (repeatable)")] = None,
+        list[int] | None,
+        typer.Option(help="Molecule index to display (repeatable)"),
+    ] = None,
     xscale: Annotated[
-        int, typer.Option(help="Spatial scale factor (power of 10) for "
-                          "the x-axis")] = 1000,
+        int,
+        typer.Option(help="Spatial scale factor (power of 10) for the x-axis"),
+    ] = 1000,
     cmap: Annotated[
-        Optional[str], typer.Option(help="Matplotlib colormap name")
+        str | None, typer.Option(help="Matplotlib colormap name")
     ] = None,
     plot_eseq: Annotated[
-        bool, typer.Option(help="Plot the sequence-specific binding "
-                           "energy")] = False,
+        bool, typer.Option(help="Plot the sequence-specific binding energy")
+    ] = False,
     link_mat_name: Annotated[
-        Optional[str], typer.Option(help="Key of a linkage matrix (e.g. "
-                                    "from sort_by_linkage) to draw as a "
-                                    "dendrogram")] = None,
-    show: Annotated[bool, typer.Option(help="Display the figure")] = True):
+        str | None,
+        typer.Option(
+            help="Key of a linkage matrix (e.g. "
+            "from sort_by_linkage) to draw as a "
+            "dendrogram"
+        ),
+    ] = None,
+    show: Annotated[bool, typer.Option(help="Display the figure")] = True,
+):
     """
     Visualize nucleosome occupancy for a chromosome.
     """
     dataset = SimDataset.load(dataset_file)
-    link_mat = dataset.analysis[chrom][link_mat_name].to_numpy() \
-        if link_mat_name is not None else None
-    catella.plot_occup(chrom=chrom, dataset=dataset, time=time,
-                     out_file=out_file, occup_name=occup_name, mols=mols,
-                     xscale=xscale, cmap=cmap, plot_eseq=plot_eseq,
-                     link_mat=link_mat, show=show)
+    link_mat = (
+        dataset.analysis[chrom][link_mat_name].to_numpy()
+        if link_mat_name is not None
+        else None
+    )
+    catella.plot_occup(
+        chrom=chrom,
+        dataset=dataset,
+        time=time,
+        out_file=out_file,
+        occup_name=occup_name,
+        mols=mols,
+        xscale=xscale,
+        cmap=cmap,
+        plot_eseq=plot_eseq,
+        link_mat=link_mat,
+        show=show,
+    )
 
 
 @app.command(name="plot_nuc_pos")
@@ -671,37 +1036,59 @@ def plot_nuc_pos(
     mol: Annotated[int, typer.Argument(help="Molecule index")],
     run: Annotated[int, typer.Argument(help="Simulation run index")],
     dataset_file: Annotated[
-        Path, typer.Argument(help="Simulation dataset HDF5 file",
-                             exists=True, file_okay=True, dir_okay=False,
-                             readable=True)],
+        Path,
+        typer.Argument(
+            help="Simulation dataset HDF5 file",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+        ),
+    ],
     tstart: Annotated[
-        Optional[int], typer.Option(help="Starting time step")] = None,
-    tend: Annotated[
-        Optional[int], typer.Option(help="Ending time step")] = None,
+        int | None, typer.Option(help="Starting time step")
+    ] = None,
+    tend: Annotated[int | None, typer.Option(help="Ending time step")] = None,
     tscale: Annotated[
-        int, typer.Option(help="Time scale factor (power of 10) for "
-                          "the y-axis")] = 1000,
+        int,
+        typer.Option(help="Time scale factor (power of 10) for the y-axis"),
+    ] = 1000,
     xscale: Annotated[
-        int, typer.Option(help="Spatial scale factor (power of 10) for "
-                          "the x-axis")] = 1000,
+        int,
+        typer.Option(help="Spatial scale factor (power of 10) for the x-axis"),
+    ] = 1000,
     cmap: Annotated[
-        Optional[str], typer.Option(help="Matplotlib colormap name")
+        str | None, typer.Option(help="Matplotlib colormap name")
     ] = None,
     out_file: Annotated[
-        Optional[Path], typer.Option(help="Path to save the figure",
-                                     file_okay=True, dir_okay=False)] = None,
+        Path | None,
+        typer.Option(
+            help="Path to save the figure", file_okay=True, dir_okay=False
+        ),
+    ] = None,
     plot_eseq: Annotated[
-        bool, typer.Option(help="Plot the sequence-specific binding "
-                           "energy")] = False,
-    show: Annotated[bool, typer.Option(help="Display the figure")] = True):
+        bool, typer.Option(help="Plot the sequence-specific binding energy")
+    ] = False,
+    show: Annotated[bool, typer.Option(help="Display the figure")] = True,
+):
     """
     Plot nucleosome positions over time for one simulation run.
     """
     dataset = SimDataset.load(dataset_file)
-    catella.plot_nuc_pos(chrom=chrom, mol=mol, run=run, dataset=dataset,
-                       tstart=tstart, tend=tend, tscale=tscale,
-                       xscale=xscale, cmap=cmap, out_file=out_file,
-                       plot_eseq=plot_eseq, show=show)
+    catella.plot_nuc_pos(
+        chrom=chrom,
+        mol=mol,
+        run=run,
+        dataset=dataset,
+        tstart=tstart,
+        tend=tend,
+        tscale=tscale,
+        xscale=xscale,
+        cmap=cmap,
+        out_file=out_file,
+        plot_eseq=plot_eseq,
+        show=show,
+    )
 
 
 @app.command(name="plot_energy")
@@ -710,144 +1097,238 @@ def plot_energy(
     mol: Annotated[int, typer.Argument(help="Molecule index")],
     run: Annotated[int, typer.Argument(help="Simulation run index")],
     dataset_file: Annotated[
-        Path, typer.Argument(help="Simulation dataset HDF5 file",
-                             exists=True, file_okay=True, dir_okay=False,
-                             readable=True)],
+        Path,
+        typer.Argument(
+            help="Simulation dataset HDF5 file",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+        ),
+    ],
     tstart: Annotated[
-        Optional[int], typer.Option(help="Starting time step")] = None,
-    tend: Annotated[
-        Optional[int], typer.Option(help="Ending time step")] = None,
+        int | None, typer.Option(help="Starting time step")
+    ] = None,
+    tend: Annotated[int | None, typer.Option(help="Ending time step")] = None,
     tscale: Annotated[
-        int, typer.Option(help="Time scale factor (power of 10) for "
-                          "the y-axis")] = 1000,
+        int,
+        typer.Option(help="Time scale factor (power of 10) for the y-axis"),
+    ] = 1000,
     out_file: Annotated[
-        Optional[Path], typer.Option(help="Path to save the figure",
-                                     file_okay=True, dir_okay=False)] = None,
-    show: Annotated[bool, typer.Option(help="Display the figure")] = True):
+        Path | None,
+        typer.Option(
+            help="Path to save the figure", file_okay=True, dir_okay=False
+        ),
+    ] = None,
+    show: Annotated[bool, typer.Option(help="Display the figure")] = True,
+):
     """
     Plot total system energy over time for one simulation run.
     """
     dataset = SimDataset.load(dataset_file)
-    catella.plot_energy(chrom=chrom, mol=mol, run=run, dataset=dataset,
-                      tstart=tstart, tend=tend, tscale=tscale,
-                      out_file=out_file, show=show)
+    catella.plot_energy(
+        chrom=chrom,
+        mol=mol,
+        run=run,
+        dataset=dataset,
+        tstart=tstart,
+        tend=tend,
+        tscale=tscale,
+        out_file=out_file,
+        show=show,
+    )
 
 
 @app.command(name="plot_meth_prob")
 def plot_meth_prob(
     exp_file: Annotated[
-        Path, typer.Argument(help="Experiment HDF5 file", exists=True,
-                             file_okay=True, dir_okay=False,
-                             readable=True)],
+        Path,
+        typer.Argument(
+            help="Experiment HDF5 file",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+        ),
+    ],
     chrom: Annotated[str, typer.Argument(help="Chromosome identifier")],
     key: Annotated[
-        Optional[str], typer.Option(help="Analysis key to plot. "
-                                    "Mutually exclusive with "
-                                    "--raw-which")] = None,
+        str | None,
+        typer.Option(
+            help="Analysis key to plot. Mutually exclusive with --raw-which"
+        ),
+    ] = None,
     raw_which: Annotated[
-        Optional[str], typer.Option(help="Raw data source ('test', "
-                                    "'unmeth', or 'meth') to plot "
-                                    "directly via to_dense(). Mutually "
-                                    "exclusive with --key")] = None,
+        str | None,
+        typer.Option(
+            help="Raw data source ('test', "
+            "'unmeth', or 'meth') to plot "
+            "directly via to_dense(). Mutually "
+            "exclusive with --key"
+        ),
+    ] = None,
     mask_name: Annotated[
-        Optional[str], typer.Option(help="Dropout mask name to apply "
-                                    "when plotting via --raw-which (see "
-                                    "to_dense)")] = None,
+        str | None,
+        typer.Option(
+            help="Dropout mask name to apply "
+            "when plotting via --raw-which (see "
+            "to_dense)"
+        ),
+    ] = None,
     max_rows: Annotated[
-        Optional[int], typer.Option(help="Downsample to at most this "
-                                    "many rows before plotting")] = None,
+        int | None,
+        typer.Option(
+            help="Downsample to at most this many rows before plotting"
+        ),
+    ] = None,
     downsample_how: Annotated[
-        str, typer.Option(help="How to collapse rows when --max-rows "
-                          "is given")] = "mean",
+        str, typer.Option(help="How to collapse rows when --max-rows is given")
+    ] = "mean",
     vmin: Annotated[
-        Optional[float], typer.Option(help="Lower color scale bound")
+        float | None, typer.Option(help="Lower color scale bound")
     ] = None,
     vmax: Annotated[
-        Optional[float], typer.Option(help="Upper color scale bound")
+        float | None, typer.Option(help="Upper color scale bound")
     ] = None,
     cmap: Annotated[
-        Optional[str], typer.Option(help="Matplotlib colormap name")
+        str | None, typer.Option(help="Matplotlib colormap name")
     ] = None,
     cbar_label: Annotated[
-        str, typer.Option(help="Colorbar label")] = "Methylation prob.",
+        str, typer.Option(help="Colorbar label")
+    ] = "Methylation prob.",
     out_file: Annotated[
-        Optional[Path], typer.Option(help="Path to save the figure",
-                                     file_okay=True, dir_okay=False)] = None,
+        Path | None,
+        typer.Option(
+            help="Path to save the figure", file_okay=True, dir_okay=False
+        ),
+    ] = None,
     link_mat_name: Annotated[
-        Optional[str], typer.Option(help="Key of a linkage matrix (e.g. "
-                                    "from sort_by_linkage) to draw as a "
-                                    "dendrogram")] = None,
-    show: Annotated[bool, typer.Option(help="Display the figure")] = True):
+        str | None,
+        typer.Option(
+            help="Key of a linkage matrix (e.g. "
+            "from sort_by_linkage) to draw as a "
+            "dendrogram"
+        ),
+    ] = None,
+    show: Annotated[bool, typer.Option(help="Display the figure")] = True,
+):
     """
     Plot a methylation heatmap.
     """
     if (key is None) == (raw_which is None):
-        raise typer.BadParameter(
-            "Specify exactly one of --key or --raw-which")
+        raise typer.BadParameter("Specify exactly one of --key or --raw-which")
     exp = MethPrintExperiment.load(exp_file)
     data = exp.analysis[chrom][key] if key is not None else None
-    link_mat = exp.analysis[chrom][link_mat_name].to_numpy() \
-        if link_mat_name is not None else None
+    link_mat = (
+        exp.analysis[chrom][link_mat_name].to_numpy()
+        if link_mat_name is not None
+        else None
+    )
     catella.plot_meth_prob(
-        data=data, exp=exp if raw_which is not None else None,
+        data=data,
+        exp=exp if raw_which is not None else None,
         chrom=chrom if raw_which is not None else None,
         raw_which=raw_which,
         mask_name=mask_name if raw_which is not None else None,
-        max_rows=max_rows, downsample_how=downsample_how,
-        vmin=vmin, vmax=vmax, cmap=cmap, cbar_label=cbar_label,
-        out_file=out_file, link_mat=link_mat, show=show)
+        max_rows=max_rows,
+        downsample_how=downsample_how,
+        vmin=vmin,
+        vmax=vmax,
+        cmap=cmap,
+        cbar_label=cbar_label,
+        out_file=out_file,
+        link_mat=link_mat,
+        show=show,
+    )
 
 
 @app.command(name="plot_meth_energy")
 def plot_meth_energy(
     exp_file: Annotated[
-        Path, typer.Argument(help="Experiment HDF5 file", exists=True,
-                             file_okay=True, dir_okay=False,
-                             readable=True)],
+        Path,
+        typer.Argument(
+            help="Experiment HDF5 file",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+        ),
+    ],
     chrom: Annotated[str, typer.Argument(help="Chromosome identifier")],
     key: Annotated[
-        str, typer.Option(help="Analysis key to plot")] = "meth_prob",
+        str, typer.Option(help="Analysis key to plot")
+    ] = "meth_prob",
     emax: Annotated[
-        Optional[float], typer.Option(help="Clamp energy to "
-                                      "[-emax, emax] and use it as "
-                                      "the default color scale "
-                                      "range")] = None,
+        float | None,
+        typer.Option(
+            help="Clamp energy to "
+            "[-emax, emax] and use it as "
+            "the default color scale "
+            "range"
+        ),
+    ] = None,
     max_rows: Annotated[
-        Optional[int], typer.Option(help="Downsample to at most this "
-                                    "many rows before plotting")] = None,
+        int | None,
+        typer.Option(
+            help="Downsample to at most this many rows before plotting"
+        ),
+    ] = None,
     downsample_how: Annotated[
-        str, typer.Option(help="How to collapse rows when --max-rows "
-                          "is given")] = "mean",
+        str, typer.Option(help="How to collapse rows when --max-rows is given")
+    ] = "mean",
     vmin: Annotated[
-        Optional[float], typer.Option(help="Combined with --vmax into "
-                                      "a symmetric half-range centered "
-                                      "at zero")] = None,
-    vmax: Annotated[
-        Optional[float], typer.Option(help="See --vmin")] = None,
+        float | None,
+        typer.Option(
+            help="Combined with --vmax into "
+            "a symmetric half-range centered "
+            "at zero"
+        ),
+    ] = None,
+    vmax: Annotated[float | None, typer.Option(help="See --vmin")] = None,
     cmap: Annotated[
-        Optional[str], typer.Option(help="Matplotlib colormap name")
+        str | None, typer.Option(help="Matplotlib colormap name")
     ] = None,
     cbar_label: Annotated[
-        str, typer.Option(help="Colorbar label")] = "Energy [$k_BT$]",
+        str, typer.Option(help="Colorbar label")
+    ] = "Energy [$k_BT$]",
     out_file: Annotated[
-        Optional[Path], typer.Option(help="Path to save the figure",
-                                     file_okay=True, dir_okay=False)] = None,
+        Path | None,
+        typer.Option(
+            help="Path to save the figure", file_okay=True, dir_okay=False
+        ),
+    ] = None,
     link_mat_name: Annotated[
-        Optional[str], typer.Option(help="Key of a linkage matrix (e.g. "
-                                    "from sort_by_linkage) to draw as a "
-                                    "dendrogram")] = None,
-    show: Annotated[bool, typer.Option(help="Display the figure")] = True):
+        str | None,
+        typer.Option(
+            help="Key of a linkage matrix (e.g. "
+            "from sort_by_linkage) to draw as a "
+            "dendrogram"
+        ),
+    ] = None,
+    show: Annotated[bool, typer.Option(help="Display the figure")] = True,
+):
     """
     Plot a methylation heatmap on an energy scale.
     """
     exp = MethPrintExperiment.load(exp_file)
-    link_mat = exp.analysis[chrom][link_mat_name].to_numpy() \
-        if link_mat_name is not None else None
+    link_mat = (
+        exp.analysis[chrom][link_mat_name].to_numpy()
+        if link_mat_name is not None
+        else None
+    )
     catella.plot_meth_energy(
-        data=exp.analysis[chrom][key], emax=emax,
-        max_rows=max_rows, downsample_how=downsample_how,
-        vmin=vmin, vmax=vmax, cmap=cmap, cbar_label=cbar_label,
-        out_file=out_file, link_mat=link_mat, show=show)
+        data=exp.analysis[chrom][key],
+        emax=emax,
+        max_rows=max_rows,
+        downsample_how=downsample_how,
+        vmin=vmin,
+        vmax=vmax,
+        cmap=cmap,
+        cbar_label=cbar_label,
+        out_file=out_file,
+        link_mat=link_mat,
+        show=show,
+    )
 
 
 # Click adapter of `app`, used by sphinx-click for the CLI reference docs.

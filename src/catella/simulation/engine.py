@@ -1,23 +1,31 @@
 # engine.py
 
-from typing import Tuple, Dict, List, Self, Any
-from pathlib import Path
+import multiprocessing as mp
+from collections.abc import Iterable, Iterator, Mapping, Sequence
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from dataclasses import dataclass, replace
 from itertools import islice
-from collections.abc import Iterable, Iterator, Mapping, Sequence
-import multiprocessing as mp
-from concurrent.futures import ProcessPoolExecutor, wait, FIRST_COMPLETED
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
-from rich.progress import TimeRemainingColumn
+from pathlib import Path
+from typing import Any, ClassVar
+
+import catella_cpp as sim
 import numpy as np
 import pandas as pd
+from catella_cpp import Dump, NucPosModel
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeRemainingColumn,
+)
 from scipy.special import logit
-from catella.simulation.results import SimDataset
-from catella.utils import IndexType
+
 from catella import utils
 from catella.simulation.config import SimSettings
-from catella_cpp import NucPosModel, Dump
-import catella_cpp as sim
+from catella.simulation.results import SimDataset
+from catella.utils import IndexType
+
 
 # Store parameters for a specific simulation run
 @dataclass(frozen=True, kw_only=True)
@@ -30,47 +38,50 @@ class SimRun:
     self-contained so an instance can be sent as-is to a freshly spawned
     worker process.
     """
-    
-    chrom : str
+
+    chrom: str
     """The name or identifier of the chromosome being simulated."""
 
-    mol : int
+    mol: int
     """The index or identifier of the specific molecule within the
     chromosome."""
-    
-    run : int
+
+    run: int
     """The iteration or replica index for this specific molecule-chromosome
     pair."""
-    
-    seed : int
+
+    seed: int
     """The specific random seed used for this execution. Note: This may differ
     from the batch seed if per-run offsets are applied.
     """
-    
-    seq_energy : bytes
+
+    seq_energy: bytes
     """Binary representation of the sequence-specific nucleosome binding
     energy derived from the methylation data."""
-    
-    out_type : Dump.OutputType
+
+    out_type: Dump.OutputType
     """The format or scope of data to be recorded (e.g., Energy, Position,
     All)."""
 
-    out_file : Path
+    out_file: Path
     """The HDF5 file where the simulation results are stored."""
 
-    settings : SimSettings
+    settings: SimSettings
     """The physical constants and Monte Carlo protocol used for this run."""
 
-    _out_map = {"energy" : Dump.OutputType.Energy,
-                "position" : Dump.OutputType.Position,
-                "temp" : Dump.OutputType.Temp,
-                "all" : Dump.OutputType.All}    
+    _out_map: ClassVar[dict[str, Dump.OutputType]] = {
+        "energy": Dump.OutputType.Energy,
+        "position": Dump.OutputType.Position,
+        "temp": Dump.OutputType.Temp,
+        "all": Dump.OutputType.All,
+    }
+
 
 class SimManager:
     """
     Orchestrator for managing and executing nucleosome positioning simulations.
 
-    The SimManager handles the setup, parallel execution, and data collection 
+    The SimManager handles the setup, parallel execution, and data collection
     of Monte Carlo simulations across multiple chromosomes and molecules.
 
     Attributes
@@ -85,10 +96,8 @@ class SimManager:
     ValueError
         If the number of parallel processes `nworker` is invalid.
     """
-    
-    def __init__(self, *,
-                 nworker : int = 1,
-                 verbose : bool = True):
+
+    def __init__(self, *, nworker: int = 1, verbose: bool = True):
 
         if nworker <= 0:
             raise ValueError("nworker must be greater than zero.")
@@ -97,8 +106,7 @@ class SimManager:
         self.verbose = verbose
 
     @staticmethod
-    def _job_seed(master_seed : int, chrom_idx : int, mol : int,
-                  run : int) -> int:
+    def _job_seed(master_seed: int, chrom_idx: int, mol: int, run: int) -> int:
         """
         Derive a deterministic, order-independent seed for a single run.
 
@@ -119,27 +127,31 @@ class SimManager:
         int
             A seed depending only on its inputs, not on generation order.
         """
-        return int(np.random.SeedSequence(
-            entropy=master_seed, spawn_key=(chrom_idx, mol, run)
-        ).generate_state(1)[0])
+        return int(
+            np.random.SeedSequence(
+                entropy=master_seed, spawn_key=(chrom_idx, mol, run)
+            ).generate_state(1)[0]
+        )
 
-    def run(self, *,
-            chroms : str | Iterable[str],
-            nsim : int,
-            settings : str | Path | SimSettings,
-            meth_prob : np.ndarray | Mapping[str,np.ndarray|pd.DataFrame],
-            out_dir : str | Path,
-            dataset_name : str = "results",
-            out_types : str | Iterable[str] = "all",
-            seed : int | None = None,
-            mols : IndexType | Mapping[str,IndexType] = slice(None),
-            store_eseq : bool = True,
-            use_median_eseq_mu : bool = False
-            ) -> SimDataset:
+    def run(
+        self,
+        *,
+        chroms: str | Iterable[str],
+        nsim: int,
+        settings: str | Path | SimSettings,
+        meth_prob: np.ndarray | Mapping[str, np.ndarray | pd.DataFrame],
+        out_dir: str | Path,
+        dataset_name: str = "results",
+        out_types: str | Iterable[str] = "all",
+        seed: int | None = None,
+        mols: IndexType | Mapping[str, IndexType] = slice(None),
+        store_eseq: bool = True,
+        use_median_eseq_mu: bool = False,
+    ) -> SimDataset:
         """
         Execute simulations in parallel across chromosomes and molecules.
 
-        This method generates simulation parameters, spawns a process pool, 
+        This method generates simulation parameters, spawns a process pool,
         and tracks progress as results are written to disk.
 
         Parameters
@@ -149,9 +161,9 @@ class SimManager:
         nsim : int
             Number of independent simulation runs per molecule.
         settings : str or Path or SimSettings
-            The physical constants and Monte Carlo protocol (e.g., nucbp, llink,
-            mu) to apply to all runs in this batch. These can be read from a
-            configuration file.
+            The physical constants and Monte Carlo protocol (e.g., nucbp,
+            llink, mu) to apply to all runs in this batch. These can be
+            read from a configuration file.
         meth_prob : np.ndarray or dict
             The probability of methylation. If multiple chromosomes are
             provided, this must be a mapping of {chrom_name: data}. Data can
@@ -165,14 +177,14 @@ class SimManager:
             the simulation results. The file directory of this HDF5 file is
             `out_dir/{dataset_name}.h5` (e.g., `out_dir/results.h5`).
         out_types : str or iterable of str, default 'all'
-            Types of data to record. Options include 'energy', 'position', 
-            'temp', or 'all'.        
+            Types of data to record. Options include 'energy', 'position',
+            'temp', or 'all'.
         seed : int, optional
             Master seed used to generate independent seeds for each run. If
             None, a high-entropy seed is automatically generated using the
             NumPy default random generator.
         mols : IndexType or dict, default slice(None)
-            Indices of molecules to simulate for each chromosome. Can be a 
+            Indices of molecules to simulate for each chromosome. Can be a
             single index/slice or a mapping of {chrom_name: indices}.
         store_eseq : bool, default True
             Whether to store the sequence-specific nucleosome binding energy
@@ -203,11 +215,13 @@ class SimManager:
         # Normalize methylation data
         if isinstance(meth_prob, np.ndarray):
             if not len(chroms) == 1:
-                raise TypeError("Methylation probability array 'meth_prob' "
-                                "provided but multiple chroms requested.")
-            meth_prob = {chroms[0]:meth_prob}
+                raise TypeError(
+                    "Methylation probability array 'meth_prob' "
+                    "provided but multiple chroms requested."
+                )
+            meth_prob = {chroms[0]: meth_prob}
         elif isinstance(meth_prob, Mapping):
-            meth_prob = {chrom:meth_prob[chrom] for chrom in chroms}
+            meth_prob = {chrom: meth_prob[chrom] for chrom in chroms}
         else:
             raise TypeError("'meth_prob' must be a numpy array or a mapping.")
 
@@ -215,13 +229,12 @@ class SimManager:
         # isinstance() rejects IndexType.__args__'s Sequence[int])
         if isinstance(mols, (int, slice, Sequence)):
             # Apply the same set of indices across all chromosomes
-            mols = {chrom:mols for chrom in chroms}
+            mols = {chrom: mols for chrom in chroms}
         elif isinstance(mols, Mapping):
-            mols = {chrom:mols[chrom] for chrom in chroms}
+            mols = {chrom: mols[chrom] for chrom in chroms}
         else:
             raise TypeError("'mols' must be an IndexType or a mapping.")
 
-        
         # Check that the molecule indices are valid and compute total number
         # of simulations required
         nmol = {}
@@ -231,66 +244,80 @@ class SimManager:
             # Determine the maximum number of molecules and all molecule ids
             size = meth_prob[chrom].shape[0]
             nmol[chrom] = size
-            
+
             # Convert any data frames to numpy arrays in meth_prob
             if isinstance(meth_prob[chrom], pd.DataFrame):
                 meth_prob[chrom] = meth_prob[chrom].to_numpy()
             meth_prob[chrom] = np.atleast_2d(meth_prob[chrom])
             nbp[chrom] = meth_prob[chrom].shape[1]
-            
+
             try:
                 # Apply the index/slice to an 0-element view to trigger errors
                 # without allocating memory for the full index list
                 text_idx = np.empty(size, dtype=np.int8)[mols[chrom]]
                 if text_idx.size == 0:
-                    raise ValueError("Selection 'mols' for chromosome "
-                                     f"'{chrom}' is empty.")
+                    raise ValueError(
+                        f"Selection 'mols' for chromosome '{chrom}' is empty."
+                    )
                 total_sim += text_idx.size * nsim
             except IndexError as e:
-                raise IndexError(f"mols index for chromosome '{chrom}': {e}") \
-                    from None
+                raise IndexError(
+                    f"mols index for chromosome '{chrom}': {e}"
+                ) from None
 
         # Read simulation settings from file if needed
         if isinstance(settings, (str | Path)):
             settings = SimSettings.load(settings)
         elif not isinstance(settings, SimSettings):
-            raise TypeError("'settings' must be either a path to the "
-                            "simulation setting file or a SimSettings object.")
+            raise TypeError(
+                "'settings' must be either a path to the "
+                "simulation setting file or a SimSettings object."
+            )
 
         # Check temperatures are valid
         if settings.end_temp > settings.start_temp:
             raise ValueError("Expect 'end_temp' <= 'start_temp'.")
         if settings.cool_option not in SimSettings._cool_map:
-            raise KeyError("Invalid value for 'cool_option'. Expect either "
-                           "'linear', 'geometric', or 'constant'.")
-        
+            raise KeyError(
+                "Invalid value for 'cool_option'. Expect either "
+                "'linear', 'geometric', or 'constant'."
+            )
+
         # Combine output types
         if isinstance(out_types, str):
             if out_types not in SimRun._out_map:
-                raise ValueError(f"Output type '{out_types}' is not a valid "
-                                 "option.")
+                raise ValueError(
+                    f"Output type '{out_types}' is not a valid option."
+                )
             out_types = [out_types]
         elif not isinstance(out_types, Iterable):
             raise TypeError("'out_types' must be a str or an iterable.")
 
         out_type = SimRun._out_map[out_types[0]]
-        for i in range(1,len(out_types)):
+        for i in range(1, len(out_types)):
             if out_types[i] not in SimRun._out_map:
-                raise ValueError(f"Output type '{out_types[i]}' is not a "
-                                 "valid option.")
+                raise ValueError(
+                    f"Output type '{out_types[i]}' is not a valid option."
+                )
             otype = SimRun._out_map[out_types[i]]
             # Dump.OutputType is a scoped C++ enum class, so pybind11
             # doesn't bind '|' between two enum values directly; combine
             # via their underlying int values instead.
             out_type = Dump.OutputType(int(out_type) | int(otype))
-        
+
         # Compute the methylation energy landscape
         eseq = None
         if store_eseq:
             eseq = {}
             for chrom in chroms:
-                model = NucPosModel(settings.nucbp, nbp[chrom], settings.llink,
-                                    settings.elink, settings.mu, 0)
+                model = NucPosModel(
+                    settings.nucbp,
+                    nbp[chrom],
+                    settings.llink,
+                    settings.elink,
+                    settings.mu,
+                    0,
+                )
                 eseq[chrom] = np.empty(meth_prob[chrom].shape)
                 for i in range(meth_prob[chrom].shape[0]):
                     model.setEnergy(logit(meth_prob[chrom][i]), settings.emax)
@@ -299,12 +326,12 @@ class SimManager:
         # Adjust the chemical potential if needed
         if use_median_eseq_mu:
             avg_eseq = np.empty(len(chroms))
-            for i,chrom in enumerate(chroms):
+            for i, chrom in enumerate(chroms):
                 avg_eseq[i] = np.nanmedian(eseq[chrom])
             avg_eseq = np.mean(avg_eseq)
             print(f"Using median eseq mu: {avg_eseq}")
             settings = replace(settings, mu=avg_eseq)
-            
+
         # Resolve the master seed and precompute a full per-run seed table
         # (covers every (chrom, mol, run) combination, independent of any
         # 'mols' filtering, so it can be persisted and later used to
@@ -317,17 +344,26 @@ class SimManager:
             arr = np.empty((nmol[chrom], nsim), dtype=np.uint32)
             for mol in range(nmol[chrom]):
                 for run in range(nsim):
-                    arr[mol, run] = SimManager._job_seed(seed, chrom_idx,
-                                                         mol, run)
+                    arr[mol, run] = SimManager._job_seed(
+                        seed, chrom_idx, mol, run
+                    )
             seed_table[chrom] = arr
 
         # Prepare the dataset object and save it immediately so a valid,
         # loadable manifest exists on disk even if the run is interrupted
-        dataset = SimDataset.create(chroms=chroms, nmol=nmol, nsim=nsim,
-                                    nbp=nbp, settings=settings, eseq=eseq,
-                                    out_dir=out_dir, dataset_name=dataset_name,
-                                    out_type=out_type, seed=seed,
-                                    seed_table=seed_table)
+        dataset = SimDataset.create(
+            chroms=chroms,
+            nmol=nmol,
+            nsim=nsim,
+            nbp=nbp,
+            settings=settings,
+            eseq=eseq,
+            out_dir=out_dir,
+            dataset_name=dataset_name,
+            out_type=out_type,
+            seed=seed,
+            seed_table=seed_table,
+        )
         dataset.save()
 
         # Generate the parameter list
@@ -337,15 +373,21 @@ class SimManager:
                 for molidx in molidxs:
                     idx = int(molidx)
                     eseq = np.asarray(
-                        logit(meth_prob[chrom][molidx,:]),
-                        dtype=np.float64).tobytes()
+                        logit(meth_prob[chrom][molidx, :]), dtype=np.float64
+                    ).tobytes()
                     for run in range(nsim):
                         sim_file = dataset.sim_file(chrom, idx, run)
-                        yield SimRun(chrom=chrom, mol=idx, run=run,
-                                        settings=settings,
-                                        seed=int(seed_table[chrom][idx, run]),
-                                        seq_energy=eseq, out_type=out_type,
-                                        out_file=sim_file)
+                        yield SimRun(
+                            chrom=chrom,
+                            mol=idx,
+                            run=run,
+                            settings=settings,
+                            seed=int(seed_table[chrom][idx, run]),
+                            seq_energy=eseq,
+                            out_type=out_type,
+                            out_file=sim_file,
+                        )
+
         param_gen = params_generator(settings)
 
         self._dispatch(dataset, param_gen, total_sim)
@@ -355,11 +397,15 @@ class SimManager:
 
         return dataset
 
-    def rerun(self, dataset : SimDataset, *,
-             meth_prob : np.ndarray | Mapping[str,np.ndarray|pd.DataFrame],
-             only : Iterable[Tuple[str,int,int]] | None = None,
-             seed : int | None = None,
-             out_type : Any | None = None) -> SimDataset:
+    def rerun(
+        self,
+        dataset: SimDataset,
+        *,
+        meth_prob: np.ndarray | Mapping[str, np.ndarray | pd.DataFrame],
+        only: Iterable[tuple[str, int, int]] | None = None,
+        seed: int | None = None,
+        out_type: Any | None = None,
+    ) -> SimDataset:
         """
         Rerun specific simulations, by default the incomplete ones.
 
@@ -398,33 +444,42 @@ class SimManager:
             if `seed` is not given and `dataset.seed_table` is None --
             both indicate the dataset predates that being persisted.
         """
-        resolved_out_type = out_type if out_type is not None \
-            else dataset.out_type
+        resolved_out_type = (
+            out_type if out_type is not None else dataset.out_type
+        )
         if resolved_out_type is None:
-            raise ValueError("dataset predates out_type persistence; "
-                             "pass out_type= explicitly")
+            raise ValueError(
+                "dataset predates out_type persistence; "
+                "pass out_type= explicitly"
+            )
 
         if only is None:
             incomplete = dataset.find_incomplete_runs()
-            targets = (incomplete["missing"] + incomplete["corrupted"]
-                      + incomplete["truncated"])
+            targets = (
+                incomplete["missing"]
+                + incomplete["corrupted"]
+                + incomplete["truncated"]
+            )
         else:
             targets = list(only)
 
         if seed is None:
             if dataset.seed_table is None:
-                raise ValueError("dataset predates seed persistence; "
-                                 "pass seed= explicitly")
-            resolved_seeds = {(chrom, mol, run):
-                              int(dataset.seed_table[chrom][mol, run])
-                              for chrom, mol, run in targets}
+                raise ValueError(
+                    "dataset predates seed persistence; pass seed= explicitly"
+                )
+            resolved_seeds = {
+                (chrom, mol, run): int(dataset.seed_table[chrom][mol, run])
+                for chrom, mol, run in targets
+            }
         else:
             # Caller explicitly wants different (not reproduced) seeds.
-            resolved_seeds = {(chrom, mol, run):
-                              SimManager._job_seed(
-                                  seed, dataset.chroms.index(chrom),
-                                  mol, run)
-                              for chrom, mol, run in targets}
+            resolved_seeds = {
+                (chrom, mol, run): SimManager._job_seed(
+                    seed, dataset.chroms.index(chrom), mol, run
+                )
+                for chrom, mol, run in targets
+            }
 
         settings = SimSettings(**dict(dataset.settings))
 
@@ -432,8 +487,10 @@ class SimManager:
         chroms = dataset.chroms
         if isinstance(meth_prob, np.ndarray):
             if not len(chroms) == 1:
-                raise TypeError("Methylation probability array 'meth_prob' "
-                                "provided but dataset has multiple chroms.")
+                raise TypeError(
+                    "Methylation probability array 'meth_prob' "
+                    "provided but dataset has multiple chroms."
+                )
             meth_prob = {chroms[0]: meth_prob}
         elif isinstance(meth_prob, Mapping):
             meth_prob = {chrom: meth_prob[chrom] for chrom in chroms}
@@ -447,25 +504,37 @@ class SimManager:
         def rerun_param_generator():
             for chrom, mol, run in targets:
                 eseq = np.asarray(
-                    logit(meth_prob[chrom][mol,:]),
-                    dtype=np.float64).tobytes()
-                yield SimRun(chrom=chrom, mol=mol, run=run,
-                            settings=settings,
-                            seed=resolved_seeds[(chrom, mol, run)],
-                            seq_energy=eseq, out_type=resolved_out_type,
-                            out_file=dataset.sim_file(chrom, mol, run))
+                    logit(meth_prob[chrom][mol, :]), dtype=np.float64
+                ).tobytes()
+                yield SimRun(
+                    chrom=chrom,
+                    mol=mol,
+                    run=run,
+                    settings=settings,
+                    seed=resolved_seeds[(chrom, mol, run)],
+                    seq_energy=eseq,
+                    out_type=resolved_out_type,
+                    out_file=dataset.sim_file(chrom, mol, run),
+                )
 
-        self._dispatch(dataset, rerun_param_generator(), len(targets),
-                       progress_desc="[cyan]Rerunning simulations ...")
+        self._dispatch(
+            dataset,
+            rerun_param_generator(),
+            len(targets),
+            progress_desc="[cyan]Rerunning simulations ...",
+        )
 
         dataset.save()
 
         return dataset
 
-    def _dispatch(self, dataset : SimDataset, param_gen : Iterator[SimRun],
-                  total : int,
-                  progress_desc : str = "[cyan]Running simulations ...") \
-                  -> None:
+    def _dispatch(
+        self,
+        dataset: SimDataset,
+        param_gen: Iterator[SimRun],
+        total: int,
+        progress_desc: str = "[cyan]Running simulations ...",
+    ) -> None:
         """
         Dispatch a stream of `SimRun` jobs and report progress/errors.
 
@@ -489,7 +558,8 @@ class SimManager:
             BarColumn(),
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TimeRemainingColumn(),
-            disable=not self.verbose)
+            disable=not self.verbose,
+        )
 
         with progress:
             main_task = progress.add_task(progress_desc, total=total)
@@ -500,21 +570,22 @@ class SimManager:
                     progress.console.print(
                         "[red]Error[/red] Simulation failed "
                         f"(chrom={chrom}, mol={mol}, run={run}): "
-                        f"{err_msg}")
+                        f"{err_msg}"
+                    )
                 progress.update(main_task, advance=1)
 
             if self.nworker > 1:
                 ctx = mp.get_context("spawn")
                 window = self.nworker * 2
-                with ProcessPoolExecutor(max_workers=self.nworker,
-                                         mp_context=ctx) as executor:
+                with ProcessPoolExecutor(
+                    max_workers=self.nworker, mp_context=ctx
+                ) as executor:
                     in_flight = {}
                     for param in islice(param_gen, window):
                         future = executor.submit(SimManager._run_job, param)
                         in_flight[future] = param
                     while in_flight:
-                        done, _ = wait(
-                            in_flight, return_when=FIRST_COMPLETED)
+                        done, _ = wait(in_flight, return_when=FIRST_COMPLETED)
                         for future in done:
                             param = in_flight[future]
                             try:
@@ -522,30 +593,37 @@ class SimManager:
                             except Exception:
                                 progress.console.print(
                                     "[red]Error[/red] Worker pool crashed; "
-                                    "aborting the remaining batch.")
+                                    "aborting the remaining batch."
+                                )
                                 for p in in_flight.values():
                                     try:
-                                        status = dataset._classify_run(
-                                            p.chrom, p.mol, p.run) or "ok"
-                                    except Exception:
+                                        status = (
+                                            dataset._classify_run(
+                                                p.chrom, p.mol, p.run
+                                            )
+                                            or "ok"
+                                        )
+                                    except Exception:  # noqa: BLE001
                                         status = "unknown"
                                     progress.console.print(
                                         f"  chrom={p.chrom} mol={p.mol} "
-                                        f"run={p.run}: {status}")
+                                        f"run={p.run}: {status}"
+                                    )
                                 raise
                             del in_flight[future]
                             _handle_result(result)
                         for param in islice(param_gen, len(done)):
-                            future = executor.submit(SimManager._run_job,
-                                                     param)
+                            future = executor.submit(
+                                SimManager._run_job, param
+                            )
                             in_flight[future] = param
-            else: # nworker = 1
+            else:  # nworker = 1
                 for param in param_gen:
                     _handle_result(SimManager._run_job(param))
 
     # Run a single simulation
     @staticmethod
-    def _run_job(p : SimRun):
+    def _run_job(p: SimRun):
         settings = p.settings
         cool_option = SimSettings._cool_map[settings.cool_option]
         try:
@@ -556,16 +634,28 @@ class SimManager:
             eseq_list = np.frombuffer(p.seq_energy, dtype=np.float64).tolist()
             nbp = len(eseq_list)
             # Create the cpp backend Monte Carlo simulation model
-            model = NucPosModel(settings.nucbp, nbp, settings.llink,
-                                settings.elink, settings.mu, p.seed)
+            model = NucPosModel(
+                settings.nucbp,
+                nbp,
+                settings.llink,
+                settings.elink,
+                settings.mu,
+                p.seed,
+            )
             model.setEnergy(eseq_list, settings.emax)
             # For tracking all simulation data
             model.addTracker(
-                sim.createDump(settings.print_freq, str(p.out_file),
-                               p.out_type))
+                sim.createDump(
+                    settings.print_freq, str(p.out_file), p.out_type
+                )
+            )
             # Run the simulation
-            model.run(settings.nsweep, settings.start_temp,
-                     settings.end_temp, cool_option)
+            model.run(
+                settings.nsweep,
+                settings.start_temp,
+                settings.end_temp,
+                cool_option,
+            )
             return (p.chrom, p.mol, p.run, True, None)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return (p.chrom, p.mol, p.run, False, str(e))

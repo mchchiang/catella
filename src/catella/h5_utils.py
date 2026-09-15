@@ -5,10 +5,11 @@ import os
 import shutil
 import tempfile
 import uuid
-from datetime import datetime
-import pandas as pd
-import numpy as np
+from datetime import UTC, datetime
+
 import h5py
+import numpy as np
+import pandas as pd
 
 
 def fresh_tmp_dir(base_dir=None):
@@ -31,7 +32,7 @@ def fresh_tmp_dir(base_dir=None):
         `catella_<timestamp>_<hex>`.
     """
     base = str(base_dir) if base_dir is not None else tempfile.gettempdir()
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    stamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     suffix = uuid.uuid4().hex[:8]
     path = os.path.join(base, f"catella_{stamp}_{suffix}")
     os.makedirs(path)
@@ -42,7 +43,7 @@ def fresh_tmp_dir(base_dir=None):
 # Helper functions for loading and saving data frames in h5 files
 def save_df(name, df, group):
     g = group.create_group(name)
-    dt = h5py.string_dtype(encoding="utf-8") # For storing strings
+    dt = h5py.string_dtype(encoding="utf-8")  # For storing strings
     # Store the master order of all columns
     order = df.columns.astype(str).tolist()
     g.create_dataset("_column_order", data=order, dtype=dt)
@@ -54,17 +55,24 @@ def save_df(name, df, group):
 
     # Save numeric block
     if not num_df.empty:
-        g.create_dataset("num_values", data=num_df.to_numpy(),
-                         compression="gzip")
-        g.create_dataset("num_names", dtype=dt, compression="gzip",
-                         data=num_df.columns.astype(str).tolist())
+        g.create_dataset(
+            "num_values", data=num_df.to_numpy(), compression="gzip"
+        )
+        g.create_dataset(
+            "num_names",
+            dtype=dt,
+            compression="gzip",
+            data=num_df.columns.astype(str).tolist(),
+        )
 
     # Save string columns individually
     if not str_df.empty:
         for col in str_df.columns:
             sdata = str_df[col].astype(str).tolist()
-            g.create_dataset(f"str_{col}", data=sdata, dtype=dt,
-                             compression="gzip")
+            g.create_dataset(
+                f"str_{col}", data=sdata, dtype=dt, compression="gzip"
+            )
+
 
 class AppendableDF:
     """
@@ -97,23 +105,31 @@ class AppendableDF:
         self._str_cols = [c for c in self._columns if dtypes[c] == "string"]
 
         self._group.create_dataset(
-            "_column_order", data=[str(c) for c in self._columns], dtype=dt)
+            "_column_order", data=[str(c) for c in self._columns], dtype=dt
+        )
         self._group.attrs["_column_index_dtype"] = "object"
 
         self._num_ds = None
         if self._num_cols:
             self._num_ds = self._group.create_dataset(
-                "num_values", shape=(0, len(self._num_cols)),
-                maxshape=(None, len(self._num_cols)), dtype=np.float64,
-                compression="gzip")
+                "num_values",
+                shape=(0, len(self._num_cols)),
+                maxshape=(None, len(self._num_cols)),
+                dtype=np.float64,
+                compression="gzip",
+            )
             self._group.create_dataset(
-                "num_names", dtype=dt,
-                data=[str(c) for c in self._num_cols])
+                "num_names", dtype=dt, data=[str(c) for c in self._num_cols]
+            )
         self._str_ds = {}
         for col in self._str_cols:
             self._str_ds[col] = self._group.create_dataset(
-                f"str_{col}", shape=(0,), maxshape=(None,), dtype=dt,
-                compression="gzip")
+                f"str_{col}",
+                shape=(0,),
+                maxshape=(None,),
+                dtype=dt,
+                compression="gzip",
+            )
         self._nrows = 0
 
     def append(self, df_chunk):
@@ -133,12 +149,12 @@ class AppendableDF:
             block = df_chunk[self._num_cols].to_numpy(dtype=np.float64)
             old = self._num_ds.shape[0]
             self._num_ds.resize(old + n, axis=0)
-            self._num_ds[old:old + n, :] = block
+            self._num_ds[old : old + n, :] = block
         for col in self._str_cols:
             ds = self._str_ds[col]
             old = ds.shape[0]
             ds.resize(old + n, axis=0)
-            ds[old:old + n] = df_chunk[col].astype(str).to_numpy()
+            ds[old : old + n] = df_chunk[col].astype(str).to_numpy()
         self._nrows += n
 
     @property
@@ -148,37 +164,43 @@ class AppendableDF:
 
     def close(self):
         """No-op; reserved for symmetry with other streaming writers."""
-        pass
 
 
 def load_df(name, group):
     if name in group:
         g = group[name]
         orig_dtype = g.attrs.get("_column_index_dtype", "object")
-        
+
         # Load the numeric data, if any (absent for all-string frames)
         df = pd.DataFrame()
         if "num_values" in g:
             data = g["num_values"][:]
-            cols = [c.decode("utf-8") if isinstance(c, bytes) else c
-                    for c in g["num_names"][:]]
+            cols = [
+                c.decode("utf-8") if isinstance(c, bytes) else c
+                for c in g["num_names"][:]
+            ]
             df = pd.DataFrame(data, columns=cols)
-        
+
         # Load the string data
-        for k in g.keys():
+        for k in g:
             if k.startswith("str_"):
                 colname = k.replace("str_", "")
-                df[colname] = [s.decode('utf-8') if isinstance(s,bytes) else s
-                               for s in g[k][:]]
+                df[colname] = [
+                    s.decode("utf-8") if isinstance(s, bytes) else s
+                    for s in g[k][:]
+                ]
 
         # Reorder to the original state
-        order = [c.decode() if isinstance(c,bytes) else c
-                 for c in g["_column_order"][:]]
+        order = [
+            c.decode() if isinstance(c, bytes) else c
+            for c in g["_column_order"][:]
+        ]
         df = df[order]
 
         # Convert column names to their original type
         try:
             df.columns = df.columns.astype(orig_dtype)
-        except: pass
+        except (ValueError, TypeError):
+            pass
         return df
     return None

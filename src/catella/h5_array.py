@@ -5,9 +5,11 @@ import shutil
 import tempfile
 import weakref
 from pathlib import Path
+
+import h5py
 import numpy as np
 import pandas as pd
-import h5py
+
 from catella import h5_utils
 
 _DATASET_NAME = "data"
@@ -22,8 +24,7 @@ _ROW_REDUCERS = {
 
 def _acc_mean(acc, batch):
     s, c = acc if acc is not None else (0.0, 0.0)
-    return (s + np.nansum(batch, axis=0),
-            c + (~np.isnan(batch)).sum(axis=0))
+    return (s + np.nansum(batch, axis=0), c + (~np.isnan(batch)).sum(axis=0))
 
 
 def _acc_sum(acc, batch):
@@ -41,8 +42,12 @@ def _acc_max(acc, batch):
     return m if acc is None else np.fmax(acc, m)
 
 
-_COL_ACCUMULATORS = {"mean": _acc_mean, "sum": _acc_sum,
-                     "min": _acc_min, "max": _acc_max}
+_COL_ACCUMULATORS = {
+    "mean": _acc_mean,
+    "sum": _acc_sum,
+    "min": _acc_min,
+    "max": _acc_max,
+}
 
 _DOWNSAMPLE_HOW = ("mean", "sum", "min", "max", "stride")
 
@@ -72,8 +77,12 @@ def _finalize_minmax(acc, ncol):
     return acc if acc is not None else np.full(ncol, np.nan)
 
 
-_COL_FINALIZERS = {"mean": _finalize_mean, "sum": _finalize_sum,
-                   "min": _finalize_minmax, "max": _finalize_minmax}
+_COL_FINALIZERS = {
+    "mean": _finalize_mean,
+    "sum": _finalize_sum,
+    "min": _finalize_minmax,
+    "max": _finalize_minmax,
+}
 
 
 class _ILocIndexer:
@@ -104,13 +113,14 @@ class H5Array:
         self._dataset = dataset
         self._owns_file = owns_file
         self._finalizer = weakref.finalize(
-            self, H5Array._cleanup, file, path, owns_file, owns_dir)
+            self, H5Array._cleanup, file, path, owns_file, owns_dir
+        )
 
     @staticmethod
     def _cleanup(file, path, owns_file, owns_dir):
         try:
             file.close()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         if owns_file:
             Path(path).unlink(missing_ok=True)
@@ -118,10 +128,20 @@ class H5Array:
             shutil.rmtree(Path(path).parent, ignore_errors=True)
 
     @classmethod
-    def create(cls, shape, *, dtype=np.float64, path=None, dir=None,
-              index=None, columns=None,
-              compression="gzip", compression_opts=None,
-              shuffle=True, chunks=None):
+    def create(
+        cls,
+        shape,
+        *,
+        dtype=np.float64,
+        path=None,
+        dir=None,
+        index=None,
+        columns=None,
+        compression="gzip",
+        compression_opts=None,
+        shuffle=True,
+        chunks=None,
+    ):
         """
         Create a new disk-backed array.
 
@@ -202,20 +222,30 @@ class H5Array:
                 if compression_opts is not None:
                     dataset_kwargs["compression_opts"] = compression_opts
                 dataset_kwargs["shuffle"] = shuffle
-                dataset_kwargs["chunks"] = chunks if chunks is not None \
+                dataset_kwargs["chunks"] = (
+                    chunks
+                    if chunks is not None
                     else _default_chunk_shape(shape, dtype)
+                )
             elif chunks is not None:
                 dataset_kwargs["chunks"] = chunks
 
-            dataset = file.create_dataset(_DATASET_NAME, shape=shape,
-                                          dtype=dtype, **dataset_kwargs)
+            dataset = file.create_dataset(
+                _DATASET_NAME, shape=shape, dtype=dtype, **dataset_kwargs
+            )
             if index is not None:
                 H5Array._write_label(file, f"{_DATASET_NAME}__index", index)
             if columns is not None:
-                H5Array._write_label(file, f"{_DATASET_NAME}__columns",
-                                     columns)
-            return cls(path=path, file=file, dataset=dataset,
-                       owns_file=owns_file, owns_dir=owns_dir)
+                H5Array._write_label(
+                    file, f"{_DATASET_NAME}__columns", columns
+                )
+            return cls(
+                path=path,
+                file=file,
+                dataset=dataset,
+                owns_file=owns_file,
+                owns_dir=owns_dir,
+            )
         except BaseException:
             H5Array._cleanup(file, path, owns_file, owns_dir)
             raise
@@ -225,8 +255,9 @@ class H5Array:
         arr = np.asarray(values)
         if arr.dtype.kind in ("U", "O", "S"):
             dt = h5py.string_dtype(encoding="utf-8")
-            parent_group.create_dataset(key, data=[str(v) for v in arr],
-                                        dtype=dt)
+            parent_group.create_dataset(
+                key, data=[str(v) for v in arr], dtype=dt
+            )
         else:
             parent_group.create_dataset(key, data=arr)
 
@@ -240,7 +271,7 @@ class H5Array:
         parent = self._dataset.parent
         base_name = self._dataset.name.rsplit("/", 1)[-1]
         key = f"{base_name}{suffix}"
-        return parent[key] if key in parent else None
+        return parent.get(key, None)
 
     @classmethod
     def load_from(cls, path, dataset_path):
@@ -263,8 +294,7 @@ class H5Array:
         """
         file = h5py.File(str(path), "r")
         dataset = file[dataset_path]
-        return cls(path=str(path), file=file, dataset=dataset,
-                   owns_file=False)
+        return cls(path=str(path), file=file, dataset=dataset, owns_file=False)
 
     @property
     def dataset_path(self) -> str:
@@ -319,8 +349,9 @@ class H5Array:
 
     def _repr_html_(self):
         kind = "scratch" if self._owns_file else "permanent"
-        header = (f"<b>H5Array</b> shape={self.shape} dtype={self.dtype} "
-                 f"({kind})")
+        header = (
+            f"<b>H5Array</b> shape={self.shape} dtype={self.dtype} ({kind})"
+        )
         return f"{header}<pre>{self._preview_str()}</pre>"
 
     def _preview_str(self, edgeitems=3) -> str:
@@ -337,8 +368,11 @@ class H5Array:
         row_trunc = nrow > 2 * edgeitems
         col_trunc = ncol > 2 * edgeitems
 
-        row_idx = (list(range(edgeitems)) + list(range(nrow-edgeitems, nrow))
-                  if row_trunc else list(range(nrow)))
+        row_idx = (
+            list(range(edgeitems)) + list(range(nrow - edgeitems, nrow))
+            if row_trunc
+            else list(range(nrow))
+        )
         block = self._dataset[row_idx, :]
 
         if col_trunc:
@@ -399,8 +433,9 @@ class H5Array:
             The complete array, labeled with `index`/`columns` if they
             were provided at creation time, otherwise a RangeIndex.
         """
-        return pd.DataFrame(self.to_numpy(), index=self.index,
-                            columns=self.columns)
+        return pd.DataFrame(
+            self.to_numpy(), index=self.index, columns=self.columns
+        )
 
     def mean(self, axis=0, batch_size=20000) -> np.ndarray:
         """
@@ -511,7 +546,7 @@ class H5Array:
         edges = np.linspace(0, nrow, max_rows + 1).astype(int)
         out = np.empty((max_rows, ncol))
         for i in range(max_rows):
-            start, stop = edges[i], edges[i+1]
+            start, stop = edges[i], edges[i + 1]
             acc = None
             for sub_start in range(start, stop, batch_size):
                 sub_stop = min(sub_start + batch_size, stop)
@@ -556,14 +591,23 @@ class H5Array:
 
         index_ds = self._label_dataset("__index")
         columns_ds = self._label_dataset("__columns")
-        index = (H5Array._read_label(index_ds)[order]
-                if index_ds is not None else None)
-        columns = (H5Array._read_label(columns_ds)
-                  if columns_ds is not None else None)
+        index = (
+            H5Array._read_label(index_ds)[order]
+            if index_ds is not None
+            else None
+        )
+        columns = (
+            H5Array._read_label(columns_ds) if columns_ds is not None else None
+        )
 
-        out = H5Array.create((nrow_out, ncol), dtype=self.dtype,
-                             path=path, dir=dir, index=index,
-                             columns=columns)
+        out = H5Array.create(
+            (nrow_out, ncol),
+            dtype=self.dtype,
+            path=path,
+            dir=dir,
+            index=index,
+            columns=columns,
+        )
         for start in range(0, nrow_out, batch_size):
             stop = min(start + batch_size, nrow_out)
             block = np.empty((stop - start, ncol), dtype=self.dtype)

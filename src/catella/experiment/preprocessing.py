@@ -1,15 +1,18 @@
 # preprocessing.py
 
 import warnings
+from collections.abc import Iterable
+
 import numpy as np
 import pandas as pd
-from typing import List
-from collections.abc import Iterable
-from catella.experiment.methdata import (
-    MethPrintExperiment, _apply_keep_mask, _strand_of_mol)
-from catella.h5_array import H5Array
+
 from catella import utils
-import matplotlib.pyplot as plt
+from catella.experiment.methdata import (
+    MethPrintExperiment,
+    _apply_keep_mask,
+    _strand_of_mol,
+)
+from catella.h5_array import H5Array
 
 
 def _lookup_mask(exp, chrom, source, mask_name):
@@ -19,13 +22,13 @@ def _lookup_mask(exp, chrom, source, mask_name):
         raise KeyError(
             f"'{key}' not found in exp.analysis['{chrom}']. Run "
             "filter_dropout() for this source first, matching "
-            "mask_name.")
+            "mask_name."
+        )
     return exp.analysis[chrom][key]["keep"].to_numpy()
 
 
 NONE, A, GCH, HCG, GCG = 0, 1, 2, 3, 4
-CONTEXT_NAMES = {NONE: "none", A: "A", GCH: "GCH", HCG: "HCG",
-                 GCG: "GCG"}
+CONTEXT_NAMES = {NONE: "none", A: "A", GCH: "GCH", HCG: "HCG", GCG: "GCG"}
 
 # The four assayable context channels, and the reverse of
 # CONTEXT_NAMES restricted to them, for parsing user eta overrides.
@@ -58,12 +61,14 @@ def _active_channels(exp):
     active = {c for label in exp.mtase for c in _MTASE_CHANNELS[label]}
     return tuple(c for c in _ALL_CHANNELS if c in active)
 
+
 # Warn (not raise) if more than this fraction of wrap-mirrored position
 # pairs disagree on context when folding ctx in model_prob.
 _WRAP_CTX_DISAGREE_WARN_FRAC = 0.02
 
-_UNMAPPED_STRAND_MSG = ("Cannot do normalization by strand with "
-                        "unmapped strands '.'.")
+_UNMAPPED_STRAND_MSG = (
+    "Cannot do normalization by strand with unmapped strands '.'."
+)
 
 
 def _reference_contexts(seq):
@@ -89,7 +94,8 @@ def _reference_contexts(seq):
     """
     s = np.frombuffer(
         seq.upper().encode() if isinstance(seq, str) else seq.upper(),
-        dtype="S1")
+        dtype="S1",
+    )
     L = len(s)
     ctx = np.zeros(L, dtype=np.int8)
 
@@ -153,8 +159,9 @@ def _context_prior_rate(k, n_mol, ctx, nu=10.0, eps=1e-4, channels=None):
     return np.clip(theta, eps, 1 - eps)
 
 
-def _streamed_call_count(exp, chrom, which, ctx, batch_size, mask_name,
-                         row_masks=None):
+def _streamed_call_count(
+    exp, chrom, which, ctx, batch_size, mask_name, row_masks=None
+):
     """
     Per-position summed methylation-calling confidence and molecule
     count for one raw source, streamed in batches so peak memory is
@@ -193,8 +200,13 @@ def _streamed_call_count(exp, chrom, which, ctx, batch_size, mask_name,
         One `(k, n_mol)` pair per `row_masks` key. Only if
         `row_masks` is given.
     """
-    arr = exp.to_dense(chrom, which=which, as_h5array=True,
-                       batch_size=batch_size, mask_name=mask_name)
+    arr = exp.to_dense(
+        chrom,
+        which=which,
+        as_h5array=True,
+        batch_size=batch_size,
+        mask_name=mask_name,
+    )
     try:
         n_total, L = arr.shape
         ctx_ok = ctx != NONE
@@ -214,8 +226,10 @@ def _streamed_call_count(exp, chrom, which, ctx, batch_size, mask_name,
                 n_mol += int(kept.sum())
             return k, n_mol
 
-        acc = {key: {"k": np.zeros(L, dtype=np.float64), "n_mol": 0}
-              for key in row_masks}
+        acc = {
+            key: {"k": np.zeros(L, dtype=np.float64), "n_mol": 0}
+            for key in row_masks
+        }
         for start in range(0, n_total, batch_size):
             stop = min(start + batch_size, n_total)
             batch = arr[start:stop, :]
@@ -225,8 +239,7 @@ def _streamed_call_count(exp, chrom, which, ctx, batch_size, mask_name,
                 q = np.where(ctx_ok[None, :], batch[sel], np.nan)
                 acc[key]["k"] += np.nansum(q, axis=0)
                 acc[key]["n_mol"] += int(sel.sum())
-        return {key: (acc[key]["k"], acc[key]["n_mol"])
-               for key in row_masks}
+        return {key: (acc[key]["k"], acc[key]["n_mol"]) for key in row_masks}
     finally:
         arr.close()
 
@@ -264,13 +277,22 @@ def _leak_interpolated_rate(theta_acc, fpr, rho_leak=0.1, eps=1e-4):
 
 def _informative_mask(theta_acc, fpr, ctx, min_gap=0.05):
     """Positions the assay can discriminate; elsewhere contributes zero."""
-    return ((ctx != NONE) & np.isfinite(theta_acc)
-            & ((theta_acc - fpr) > min_gap))
+    return (
+        (ctx != NONE) & np.isfinite(theta_acc) & ((theta_acc - fpr) > min_gap)
+    )
 
 
-def _calibrate_from_controls(meth_k, meth_n, unmeth_k, unmeth_n, ctx,
-                             nu=10.0, rho_leak=0.1, min_gap=0.05,
-                             channels=None):
+def _calibrate_from_controls(
+    meth_k,
+    meth_n,
+    unmeth_k,
+    unmeth_n,
+    ctx,
+    nu=10.0,
+    rho_leak=0.1,
+    min_gap=0.05,
+    channels=None,
+):
     """
     Estimate theta_prot/theta_acc/informative from meth/unmeth controls.
 
@@ -298,17 +320,28 @@ def _calibrate_from_controls(meth_k, meth_n, unmeth_k, unmeth_n, ctx,
     tuple of np.ndarray
         `(theta_prot, theta_acc, informative)`, each length L.
     """
-    theta_acc = _context_prior_rate(meth_k, meth_n, ctx, nu=nu,
-                                    channels=channels)
-    fpr = _context_prior_rate(unmeth_k, unmeth_n, ctx, nu=nu,
-                              channels=channels)
+    theta_acc = _context_prior_rate(
+        meth_k, meth_n, ctx, nu=nu, channels=channels
+    )
+    fpr = _context_prior_rate(
+        unmeth_k, unmeth_n, ctx, nu=nu, channels=channels
+    )
     theta_prot = _leak_interpolated_rate(theta_acc, fpr, rho_leak=rho_leak)
     informative = _informative_mask(theta_acc, fpr, ctx, min_gap=min_gap)
     return theta_prot, theta_acc, informative
 
 
-def _streamed_window_count(exp, chrom, ctx, lnuc, n_min, batch_size,
-                           mask_name, row_masks=None, channels=None):
+def _streamed_window_count(
+    exp,
+    chrom,
+    ctx,
+    lnuc,
+    n_min,
+    batch_size,
+    mask_name,
+    row_masks=None,
+    channels=None,
+):
     """
     Per-window, per-read summed methylation-calling confidence and
     trial counts for the test sample, streamed in batches so peak
@@ -369,8 +402,13 @@ def _streamed_window_count(exp, chrom, ctx, lnuc, n_min, batch_size,
     """
     if channels is None:
         channels = _ALL_CHANNELS
-    arr = exp.to_dense(chrom, which="test", as_h5array=True,
-                       batch_size=batch_size, mask_name=mask_name)
+    arr = exp.to_dense(
+        chrom,
+        which="test",
+        as_h5array=True,
+        batch_size=batch_size,
+        mask_name=mask_name,
+    )
     try:
         n_total, L = arr.shape
         starts = np.arange(0, L - lnuc + 1, lnuc)
@@ -378,14 +416,16 @@ def _streamed_window_count(exp, chrom, ctx, lnuc, n_min, batch_size,
         if not codes:
             raise ValueError("no assayable contexts in ctx")
 
-        n_win = {c: np.array(
-            [(ctx[s:s + lnuc] == c).sum() for s in starts])
-                for c in codes}
+        n_win = {
+            c: np.array([(ctx[s : s + lnuc] == c).sum() for s in starts])
+            for c in codes
+        }
         total_win = sum(n_win[c] for c in codes)
         keep = total_win >= n_min
         if not keep.any():
             raise ValueError(
-                "too few windows with >= n_min context-eligible sites")
+                "too few windows with >= n_min context-eligible sites"
+            )
         kept_starts = starts[keep]
 
         ctx_ok = ctx != NONE
@@ -412,19 +452,33 @@ def _streamed_window_count(exp, chrom, ctx, lnuc, n_min, batch_size,
                 for c in codes:
                     sel = ctx == c
                     k_c = np.stack(
-                        [np.nansum(q[:, s:s + lnuc][:, sel[s:s + lnuc]],
-                                  axis=1) for s in kept_starts], axis=1)
+                        [
+                            np.nansum(
+                                q[:, s : s + lnuc][:, sel[s : s + lnuc]],
+                                axis=1,
+                            )
+                            for s in kept_starts
+                        ],
+                        axis=1,
+                    )
                     K_batches[key][c].append(k_c)
 
         def _build(key):
             if n_mol[key] * keep.sum() < 10:
                 suffix = "" if key is None else f" for strand {key!r}"
-                raise ValueError("too few windows with >= n_min "
-                                 f"context-eligible sites{suffix}")
-            K = np.array([np.concatenate(K_batches[key][c], axis=0).ravel()
-                         for c in codes]).astype(np.float64)
-            N = np.array([np.tile(n_win[c][keep], n_mol[key])
-                         for c in codes]).astype(np.float64)
+                raise ValueError(
+                    "too few windows with >= n_min "
+                    f"context-eligible sites{suffix}"
+                )
+            K = np.array(
+                [
+                    np.concatenate(K_batches[key][c], axis=0).ravel()
+                    for c in codes
+                ]
+            ).astype(np.float64)
+            N = np.array(
+                [np.tile(n_win[c][keep], n_mol[key]) for c in codes]
+            ).astype(np.float64)
             return K, N, codes
 
         if row_masks is None:
@@ -434,9 +488,18 @@ def _streamed_window_count(exp, chrom, ctx, lnuc, n_min, batch_size,
         arr.close()
 
 
-def _calibrate_from_data(K, N, ctx, codes, max_iters=200, eps=1e-3,
-                         init_prot=0.05, init_acc=0.95, tol=1e-8,
-                         min_gap=0.05):
+def _calibrate_from_data(
+    K,
+    N,
+    ctx,
+    codes,
+    max_iters=200,
+    eps=1e-3,
+    init_prot=0.05,
+    init_acc=0.95,
+    tol=1e-8,
+    min_gap=0.05,
+):
     """
     Fit theta_prot/theta_acc per context with expectation-maximization,
     from precomputed per-window call counts, when no meth/unmeth
@@ -504,13 +567,15 @@ def _calibrate_from_data(K, N, ctx, codes, max_iters=200, eps=1e-3,
 
     for it in range(max_iters):
         n_iter = it + 1
-        lp = np.log(pi) + sum(_log_binom_pmf(K[c], N[c], tp[c])
-                              for c in range(len(codes)))
-        la = np.log1p(-pi) + sum(_log_binom_pmf(K[c], N[c], ta[c])
-                                 for c in range(len(codes)))
+        lp = np.log(pi) + sum(
+            _log_binom_pmf(K[c], N[c], tp[c]) for c in range(len(codes))
+        )
+        la = np.log1p(-pi) + sum(
+            _log_binom_pmf(K[c], N[c], ta[c]) for c in range(len(codes))
+        )
         m = np.maximum(lp, la)
         ll = (m + np.log(np.exp(lp - m) + np.exp(la - m))).sum()
-        r = 1.0 / (1.0 + np.exp(la - lp))          # P(protected | window)
+        r = 1.0 / (1.0 + np.exp(la - lp))  # P(protected | window)
 
         for c in range(len(codes)):
             dp, da = (r * N[c]).sum(), ((1 - r) * N[c]).sum()
@@ -525,8 +590,9 @@ def _calibrate_from_data(K, N, ctx, codes, max_iters=200, eps=1e-3,
         prev = ll
 
     # Label switching: "protected" must be the low-methylation component.
-    if (np.average(tp, weights=N.sum(axis=1))
-            > np.average(ta, weights=N.sum(axis=1))):
+    if np.average(tp, weights=N.sum(axis=1)) > np.average(
+        ta, weights=N.sum(axis=1)
+    ):
         tp, ta = ta, tp
 
     theta_prot = np.full(len(ctx), np.nan)
@@ -535,16 +601,25 @@ def _calibrate_from_data(K, N, ctx, codes, max_iters=200, eps=1e-3,
         sel = ctx == code
         theta_prot[sel], theta_acc[sel] = tp[c], ta[c]
 
-    informative = ((ctx != NONE) & np.isfinite(theta_acc)
-                   & ((theta_acc - theta_prot) > min_gap))
-    em_diag = {"n_iter": n_iter, "log_likelihood": ll,
-              "frac_protected": pi, "codes": codes, "theta_prot": tp,
-              "theta_acc": ta}
+    informative = (
+        (ctx != NONE)
+        & np.isfinite(theta_acc)
+        & ((theta_acc - theta_prot) > min_gap)
+    )
+    em_diag = {
+        "n_iter": n_iter,
+        "log_likelihood": ll,
+        "frac_protected": pi,
+        "codes": codes,
+        "theta_prot": tp,
+        "theta_acc": ta,
+    }
     return theta_prot, theta_acc, informative, em_diag
 
 
-def _per_base_log_odds(q, theta_prot, theta_acc, informative, pi0=0.5,
-                       eta=1.0):
+def _per_base_log_odds(
+    q, theta_prot, theta_acc, informative, pi0=0.5, eta=1.0
+):
     """
     Per-position, per-read log-odds of "protected" versus "accessible".
 
@@ -623,7 +698,8 @@ def _window_sum_log_odds(log_odds, lnuc, fill_edge=0.0):
     if n_win <= 0:
         return out
     cum = np.concatenate(
-        [np.zeros((n_mol, 1)), np.cumsum(log_odds, axis=1)], axis=1)
+        [np.zeros((n_mol, 1)), np.cumsum(log_odds, axis=1)], axis=1
+    )
     out[:, :n_win] = cum[:, lnuc:] - cum[:, :-lnuc]
     return out
 
@@ -660,7 +736,8 @@ def _resolve_eta_overrides(eta):
             if name not in _CHANNEL_NAME_TO_CODE:
                 raise ValueError(
                     f"Unrecognized eta channel {name!r}; expected one "
-                    f"of {sorted(_CHANNEL_NAME_TO_CODE)}.")
+                    f"of {sorted(_CHANNEL_NAME_TO_CODE)}."
+                )
             overrides[_CHANNEL_NAME_TO_CODE[name]] = float(val)
         return overrides
     return {c: float(eta) for c in _ALL_CHANNELS}
@@ -668,14 +745,23 @@ def _resolve_eta_overrides(eta):
 
 def _init_autocorr_stats(max_lag):
     """Zeroed per-channel accumulators for `_accumulate_autocorr_stats`."""
-    return {c: {"n": 0.0, "s1": 0.0, "s2": 0.0,
-               "npair": np.zeros(max_lag), "pprod": np.zeros(max_lag),
-               "psumA": np.zeros(max_lag), "psumB": np.zeros(max_lag)}
-           for c in _ALL_CHANNELS}
+    return {
+        c: {
+            "n": 0.0,
+            "s1": 0.0,
+            "s2": 0.0,
+            "npair": np.zeros(max_lag),
+            "pprod": np.zeros(max_lag),
+            "psumA": np.zeros(max_lag),
+            "psumB": np.zeros(max_lag),
+        }
+        for c in _ALL_CHANNELS
+    }
 
 
-def _accumulate_autocorr_stats(stats, log_odds, called, ctx, max_lag,
-                               channels=None):
+def _accumulate_autocorr_stats(
+    stats, log_odds, called, ctx, max_lag, channels=None
+):
     """
     Fold one batch's contribution into per-channel lag-k
     autocorrelation sums, in place.
@@ -713,15 +799,15 @@ def _accumulate_autocorr_stats(stats, log_odds, called, ctx, max_lag,
             continue
         lam = log_odds * mask_c
         st = stats[c]
-        st["n"] += mask_c.sum()          # count of called sites
-        st["s1"] += lam.sum()            # sum(lambda_x)
-        st["s2"] += (lam * lam).sum()    # sum(lambda_x^2)
+        st["n"] += mask_c.sum()  # count of called sites
+        st["s1"] += lam.sum()  # sum(lambda_x)
+        st["s2"] += (lam * lam).sum()  # sum(lambda_x^2)
         for k in range(1, min(max_lag, L - 1) + 1):
-            left, right = mask_c[:, :L - k], mask_c[:, k:]
-            pair = left & right          # both x and x+k called
+            left, right = mask_c[:, : L - k], mask_c[:, k:]
+            pair = left & right  # both x and x+k called
             if not pair.any():
                 continue
-            lo_left, lo_right = log_odds[:, :L - k], log_odds[:, k:]
+            lo_left, lo_right = log_odds[:, : L - k], log_odds[:, k:]
             i = k - 1
             st["npair"][i] += pair.sum()  # count of pairs
             # sum(lambda_x * lambda_x+k) over pairs
@@ -770,15 +856,16 @@ def _finalize_channel_eta(stats, max_lag, min_n=None):
         if n <= min_n:
             eta[c] = 1.0
             continue
-        bar = st["s1"] / n                    # global channel mean
-        denom = st["s2"] - n * bar * bar       # sum((lambda_x - bar)^2)
+        bar = st["s1"] / n  # global channel mean
+        denom = st["s2"] - n * bar * bar  # sum((lambda_x - bar)^2)
         if denom <= 0:
             eta[c] = 1.0
             continue
         npair, pprod = st["npair"], st["pprod"]
         # sum((lambda_x - bar)(lambda_x+k - bar)) over valid pairs
-        numerator = (pprod - bar * st["psumA"] - bar * st["psumB"]
-                    + npair * bar * bar)
+        numerator = (
+            pprod - bar * st["psumA"] - bar * st["psumB"] + npair * bar * bar
+        )
         rho_c = np.where(npair > 0, numerator / denom, 0.0)
         v = 1.0 + 2.0 * np.sum((1.0 - k / n) * rho_c)
         eta[c] = 1.0 / max(v, 1e-3)
@@ -786,10 +873,23 @@ def _finalize_channel_eta(stats, max_lag, min_n=None):
     return eta, rho
 
 
-def _accumulate_eta_source(exp, chrom, which, ctx, theta_prot, theta_acc,
-                           informative, pi0, batch_size, mask_name, stats,
-                           max_lag, channels, norm_by_strand=False,
-                           strand_labels=None):
+def _accumulate_eta_source(
+    exp,
+    chrom,
+    which,
+    ctx,
+    theta_prot,
+    theta_acc,
+    informative,
+    pi0,
+    batch_size,
+    mask_name,
+    stats,
+    max_lag,
+    channels,
+    norm_by_strand=False,
+    strand_labels=None,
+):
     """
     Stream one raw source and feed its raw (`eta=1`) per-read
     log-odds into `_accumulate_autocorr_stats`.
@@ -831,10 +931,15 @@ def _accumulate_eta_source(exp, chrom, which, ctx, theta_prot, theta_acc,
         `which`'s source, aligned to `to_dense`'s row order. Required
         if `norm_by_strand` is True.
     """
-    arr = exp.to_dense(chrom, which=which, as_h5array=True,
-                       batch_size=batch_size, mask_name=mask_name)
+    arr = exp.to_dense(
+        chrom,
+        which=which,
+        as_h5array=True,
+        batch_size=batch_size,
+        mask_name=mask_name,
+    )
     try:
-        n_total, L = arr.shape
+        n_total, _ = arr.shape
         ctx_ok = ctx[None, :] != NONE
         for start in range(0, n_total, batch_size):
             stop = min(start + batch_size, n_total)
@@ -847,19 +952,30 @@ def _accumulate_eta_source(exp, chrom, which, ctx, theta_prot, theta_acc,
                     if not sel.any():
                         continue
                     log_odds = _per_base_log_odds(
-                        q[sel], theta_prot[s], theta_acc[s],
-                        informative[s], pi0=pi0, eta=1.0)
+                        q[sel],
+                        theta_prot[s],
+                        theta_acc[s],
+                        informative[s],
+                        pi0=pi0,
+                        eta=1.0,
+                    )
                     called = informative[s][None, :] & ~np.isnan(q[sel])
-                    _accumulate_autocorr_stats(stats, log_odds, called,
-                                               ctx, max_lag,
-                                               channels=channels)
+                    _accumulate_autocorr_stats(
+                        stats,
+                        log_odds,
+                        called,
+                        ctx,
+                        max_lag,
+                        channels=channels,
+                    )
             else:
-                log_odds = _per_base_log_odds(q, theta_prot, theta_acc,
-                                              informative, pi0=pi0,
-                                              eta=1.0)
+                log_odds = _per_base_log_odds(
+                    q, theta_prot, theta_acc, informative, pi0=pi0, eta=1.0
+                )
                 called = informative[None, :] & ~np.isnan(q)
-                _accumulate_autocorr_stats(stats, log_odds, called, ctx,
-                                           max_lag, channels=channels)
+                _accumulate_autocorr_stats(
+                    stats, log_odds, called, ctx, max_lag, channels=channels
+                )
     finally:
         arr.close()
 
@@ -885,14 +1001,33 @@ def _frac_informative_by_context(ctx, informative, channels=None):
     """
     if channels is None:
         channels = _ALL_CHANNELS
-    return {f"frac_informative_{CONTEXT_NAMES[c]}":
-           float(informative[ctx == c].mean())
-           for c in channels if (ctx == c).any()}
+    return {
+        f"frac_informative_{CONTEXT_NAMES[c]}": float(
+            informative[ctx == c].mean()
+        )
+        for c in channels
+        if (ctx == c).any()
+    }
 
 
-def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, lnuc, n_min,
-                       max_iters, init_prot, init_acc, tol, batch_size,
-                       mask_name, norm_by_strand=False, channels=None):
+def _chrom_calibration(
+    exp,
+    chrom,
+    *,
+    nu,
+    rho_leak,
+    min_gap,
+    lnuc,
+    n_min,
+    max_iters,
+    init_prot,
+    init_acc,
+    tol,
+    batch_size,
+    mask_name,
+    norm_by_strand=False,
+    channels=None,
+):
     """
     Classify `chrom`'s reference into contexts and calibrate
     theta_prot/theta_acc/informative, from meth/unmeth controls when
@@ -962,13 +1097,14 @@ def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, lnuc, n_min,
     if raw.refseq is None:
         raise ValueError(
             f"No reference sequence for chrom '{chrom}'; "
-            "model_prob needs 'fasta_file' at load_raw.")
+            "model_prob needs 'fasta_file' at load_raw."
+        )
     full_ctx = _reference_contexts(raw.refseq)
     if exp.wrap:
         nbp = raw.nbp
         length = len(raw.refseq)
         lower = full_ctx[:nbp]
-        upper = full_ctx[length - nbp:][::-1]
+        upper = full_ctx[length - nbp :][::-1]
         agree = lower == upper
         ctx = np.where(agree, lower, NONE).astype(lower.dtype)
         frac_disagree = 1.0 - agree.mean()
@@ -980,94 +1116,160 @@ def _chrom_calibration(exp, chrom, *, nu, rho_leak, min_gap, lnuc, n_min,
                 "pairs (folded to NONE there); this may "
                 "indicate the wrong chromsize length or a "
                 "non-symmetric reference, rather than a small "
-                "loop/junction region.", stacklevel=3)
+                "loop/junction region.",
+                stacklevel=3,
+            )
     else:
         ctx = full_ctx
-    has_controls = (raw.meth_data is not None
-                    and raw.unmeth_data is not None)
+    has_controls = raw.meth_data is not None and raw.unmeth_data is not None
 
     if norm_by_strand:
         if (raw.test_data["strand"] == ".").any():
             raise ValueError(_UNMAPPED_STRAND_MSG)
-        if has_controls and ((raw.meth_data["strand"] == ".").any()
-                             or (raw.unmeth_data["strand"] == ".").any()):
+        if has_controls and (
+            (raw.meth_data["strand"] == ".").any()
+            or (raw.unmeth_data["strand"] == ".").any()
+        ):
             raise ValueError(_UNMAPPED_STRAND_MSG)
 
     if has_controls:
         if norm_by_strand:
-            meth_strand = _strand_of_mol(raw.meth_data,
-                                         len(raw.meth_mol_id))
-            unmeth_strand = _strand_of_mol(raw.unmeth_data,
-                                           len(raw.unmeth_mol_id))
+            meth_strand = _strand_of_mol(raw.meth_data, len(raw.meth_mol_id))
+            unmeth_strand = _strand_of_mol(
+                raw.unmeth_data, len(raw.unmeth_mol_id)
+            )
             meth_counts = _streamed_call_count(
-                exp, chrom, "meth", ctx, batch_size, mask_name,
-                row_masks={"+": meth_strand == "+",
-                          "-": meth_strand == "-"})
+                exp,
+                chrom,
+                "meth",
+                ctx,
+                batch_size,
+                mask_name,
+                row_masks={"+": meth_strand == "+", "-": meth_strand == "-"},
+            )
             unmeth_counts = _streamed_call_count(
-                exp, chrom, "unmeth", ctx, batch_size, mask_name,
-                row_masks={"+": unmeth_strand == "+",
-                          "-": unmeth_strand == "-"})
+                exp,
+                chrom,
+                "unmeth",
+                ctx,
+                batch_size,
+                mask_name,
+                row_masks={
+                    "+": unmeth_strand == "+",
+                    "-": unmeth_strand == "-",
+                },
+            )
             theta_prot, theta_acc, informative = {}, {}, {}
             calib_info = {}
             for s in ("+", "-"):
-                theta_prot[s], theta_acc[s], informative[s] = \
+                theta_prot[s], theta_acc[s], informative[s] = (
                     _calibrate_from_controls(
-                        *meth_counts[s], *unmeth_counts[s], ctx,
-                        nu=nu, rho_leak=rho_leak, min_gap=min_gap,
-                        channels=channels)
+                        *meth_counts[s],
+                        *unmeth_counts[s],
+                        ctx,
+                        nu=nu,
+                        rho_leak=rho_leak,
+                        min_gap=min_gap,
+                        channels=channels,
+                    )
+                )
                 calib_info[s] = {
                     "has_controls": has_controls,
-                    **_frac_informative_by_context(ctx, informative[s],
-                                                   channels=channels)}
+                    **_frac_informative_by_context(
+                        ctx, informative[s], channels=channels
+                    ),
+                }
         else:
             meth_k, meth_n = _streamed_call_count(
-                exp, chrom, "meth", ctx, batch_size, mask_name)
+                exp, chrom, "meth", ctx, batch_size, mask_name
+            )
             unmeth_k, unmeth_n = _streamed_call_count(
-                exp, chrom, "unmeth", ctx, batch_size, mask_name)
+                exp, chrom, "unmeth", ctx, batch_size, mask_name
+            )
             theta_prot, theta_acc, informative = _calibrate_from_controls(
-                meth_k, meth_n, unmeth_k, unmeth_n, ctx,
-                nu=nu, rho_leak=rho_leak, min_gap=min_gap,
-                channels=channels)
+                meth_k,
+                meth_n,
+                unmeth_k,
+                unmeth_n,
+                ctx,
+                nu=nu,
+                rho_leak=rho_leak,
+                min_gap=min_gap,
+                channels=channels,
+            )
             calib_info = {
                 "has_controls": has_controls,
-                **_frac_informative_by_context(ctx, informative,
-                                               channels=channels)}
+                **_frac_informative_by_context(
+                    ctx, informative, channels=channels
+                ),
+            }
     else:
         if norm_by_strand:
-            test_strand = _strand_of_mol(raw.test_data,
-                                         len(raw.test_mol_id))
+            test_strand = _strand_of_mol(raw.test_data, len(raw.test_mol_id))
             win_counts = _streamed_window_count(
-                exp, chrom, ctx, lnuc, n_min, batch_size, mask_name,
-                row_masks={"+": test_strand == "+",
-                          "-": test_strand == "-"}, channels=channels)
+                exp,
+                chrom,
+                ctx,
+                lnuc,
+                n_min,
+                batch_size,
+                mask_name,
+                row_masks={"+": test_strand == "+", "-": test_strand == "-"},
+                channels=channels,
+            )
             theta_prot, theta_acc, informative = {}, {}, {}
             calib_info = {}
             for s in ("+", "-"):
                 K, N, codes = win_counts[s]
-                theta_prot[s], theta_acc[s], informative[s], em_diag = \
+                theta_prot[s], theta_acc[s], informative[s], em_diag = (
                     _calibrate_from_data(
-                        K, N, ctx, codes, max_iters=max_iters,
-                        init_prot=init_prot, init_acc=init_acc, tol=tol,
-                        min_gap=min_gap)
+                        K,
+                        N,
+                        ctx,
+                        codes,
+                        max_iters=max_iters,
+                        init_prot=init_prot,
+                        init_acc=init_acc,
+                        tol=tol,
+                        min_gap=min_gap,
+                    )
+                )
                 calib_info[s] = {
                     "has_controls": has_controls,
-                    **_frac_informative_by_context(ctx, informative[s],
-                                                   channels=channels),
-                    **em_diag}
+                    **_frac_informative_by_context(
+                        ctx, informative[s], channels=channels
+                    ),
+                    **em_diag,
+                }
         else:
             K, N, codes = _streamed_window_count(
-                exp, chrom, ctx, lnuc, n_min, batch_size, mask_name,
-                channels=channels)
-            theta_prot, theta_acc, informative, em_diag = \
-                _calibrate_from_data(
-                    K, N, ctx, codes, max_iters=max_iters,
-                    init_prot=init_prot, init_acc=init_acc, tol=tol,
-                    min_gap=min_gap)
+                exp,
+                chrom,
+                ctx,
+                lnuc,
+                n_min,
+                batch_size,
+                mask_name,
+                channels=channels,
+            )
+            theta_prot, theta_acc, informative, em_diag = _calibrate_from_data(
+                K,
+                N,
+                ctx,
+                codes,
+                max_iters=max_iters,
+                init_prot=init_prot,
+                init_acc=init_acc,
+                tol=tol,
+                min_gap=min_gap,
+            )
             calib_info = {
                 "has_controls": has_controls,
-                **_frac_informative_by_context(ctx, informative,
-                                               channels=channels),
-                **em_diag}
+                **_frac_informative_by_context(
+                    ctx, informative, channels=channels
+                ),
+                **em_diag,
+            }
     return ctx, theta_prot, theta_acc, informative, has_controls, calib_info
 
 
@@ -1079,16 +1281,20 @@ class MethPrintAnalysis:
     rolling average smoothing and molecule-wise percentile scaling. Support
     relative normalization against unmethylated and fully methylated controls.
     """
-    
+
     _EPSILON = np.finfo(float).eps  # Smallest float to avoid DivByZero
 
-    def smooth(self, exp : MethPrintExperiment, *,
-               lnuc : int,
-               name : str = "smoothed",
-               nan_method : str = "mean",
-               fill_edge : float | str = np.nan,
-               batch_size : int = 20000,
-               mask_name : str | None = None):
+    def smooth(
+        self,
+        exp: MethPrintExperiment,
+        *,
+        lnuc: int,
+        name: str = "smoothed",
+        nan_method: str = "mean",
+        fill_edge: float | str = np.nan,
+        batch_size: int = 20000,
+        mask_name: str | None = None,
+    ):
         """
         Smooth methylation signals across an experiment using a rolling
         average.
@@ -1144,14 +1350,23 @@ class MethPrintAnalysis:
         """
 
         if nan_method not in ("mean", "interpolate", "none"):
-            raise ValueError("'nan_method' must be 'mean', 'interpolate', "
-                             f"or 'none', got {nan_method!r}.")
+            raise ValueError(
+                "'nan_method' must be 'mean', 'interpolate', "
+                f"or 'none', got {nan_method!r}."
+            )
 
-        exp.global_analysis[f"{name}_params"] = pd.DataFrame([{
-            "lnuc": lnuc, "nan_method": nan_method,
-            "fill_edge": fill_edge, "mask_name": mask_name or ""}])
+        exp.global_analysis[f"{name}_params"] = pd.DataFrame(
+            [
+                {
+                    "lnuc": lnuc,
+                    "nan_method": nan_method,
+                    "fill_edge": fill_edge,
+                    "mask_name": mask_name or "",
+                }
+            ]
+        )
         tmp_dir = exp.resolve_tmp_dir()
-        
+
         # Some helper functions
         def smooth_df(df, nbp, nmol, keep):
             if not isinstance(fill_edge, str) and not np.isnan(fill_edge):
@@ -1159,13 +1374,13 @@ class MethPrintAnalysis:
                 if not (vmin <= fill_edge <= vmax):
                     raise ValueError(
                         f"'fill_edge'={fill_edge} is outside the data "
-                        f"range [{vmin}, {vmax}].")
+                        f"range [{vmin}, {vmax}]."
+                    )
 
-            all_pos = pd.Index(range(0, nbp))
+            all_pos = pd.Index(range(nbp))
             df = df.sort_values("mol_index", kind="stable")
             mol_index = df["mol_index"].to_numpy()
-            out = H5Array.create((nmol, nbp), dtype=np.float64,
-                                 dir=tmp_dir)
+            out = H5Array.create((nmol, nbp), dtype=np.float64, dir=tmp_dir)
 
             for start in range(0, nmol, batch_size):
                 stop = min(start + batch_size, nmol)
@@ -1174,14 +1389,16 @@ class MethPrintAnalysis:
 
                 # Pivot and reindex to ensure all positions are represented
                 df_piv = batch_df.pivot(
-                    index="pos", columns="mol_index",
-                    values="mod_qual").reindex(all_pos)
+                    index="pos", columns="mol_index", values="mod_qual"
+                ).reindex(all_pos)
 
                 # Rolling mean centered by shifting and store the results
                 # in a left-aligned manner
-                res = df_piv.rolling(
-                    window=lnuc, min_periods=1).mean().shift(
-                        -(lnuc-1))
+                res = (
+                    df_piv.rolling(window=lnuc, min_periods=1)
+                    .mean()
+                    .shift(-(lnuc - 1))
+                )
 
                 # Interior nans (bounded by valid data on both sides) are
                 # filled per nan_method; interpolate() with
@@ -1191,11 +1408,11 @@ class MethPrintAnalysis:
                 if nan_method == "none":
                     pass
                 elif nan_method == "interpolate":
-                    res = res.interpolate(method="linear",
-                                          limit_area="inside")
+                    res = res.interpolate(method="linear", limit_area="inside")
                 else:
-                    interior_interp = res.interpolate(method="linear",
-                                                       limit_area="inside")
+                    interior_interp = res.interpolate(
+                        method="linear", limit_area="inside"
+                    )
                     interior_mask = res.isna() & interior_interp.notna()
                     res = res.where(~interior_mask, res.fillna(res.mean()))
 
@@ -1214,36 +1431,46 @@ class MethPrintAnalysis:
         for chrom in exp.chroms:
             raw = exp.raw[chrom]
             nbp = raw.nbp
-            def src_keep(src):
-                return _lookup_mask(exp, chrom, src, mask_name) \
-                    if mask_name is not None else None
+
+            def src_keep(src, chrom=chrom):
+                return (
+                    _lookup_mask(exp, chrom, src, mask_name)
+                    if mask_name is not None
+                    else None
+                )
+
             exp.analysis[chrom][f"test_{name}"] = smooth_df(
-                raw.test_data, nbp, len(raw.test_mol_id),
-                src_keep("test"))
+                raw.test_data, nbp, len(raw.test_mol_id), src_keep("test")
+            )
             if raw.meth_data is not None:
                 exp.analysis[chrom][f"meth_{name}"] = smooth_df(
-                    raw.meth_data, nbp, len(raw.meth_mol_id),
-                    src_keep("meth"))
+                    raw.meth_data, nbp, len(raw.meth_mol_id), src_keep("meth")
+                )
             if raw.unmeth_data is not None:
                 exp.analysis[chrom][f"unmeth_{name}"] = smooth_df(
-                    raw.unmeth_data, nbp, len(raw.unmeth_mol_id),
-                    src_keep("unmeth"))
-                
-            
-    def empirical_prob(self, exp : MethPrintExperiment, *,
-                  lnuc : int | None = None,
-                  smoothed_name : str = "smoothed",
-                  prob_name : str = "meth_prob",
-                  clip_low : float = 0.1,
-                  clip_high : float = 99.9,
-                  norm_by_strand : bool = False,
-                  resmooth : bool = False,
-                  fill_edge : float = np.nan,
-                  batch_size : int = 20000,
-                  percentile_sample_size : int = 100000,
-                  seed : int | None = None,
-                  mask_name : str | None = None):
+                    raw.unmeth_data,
+                    nbp,
+                    len(raw.unmeth_mol_id),
+                    src_keep("unmeth"),
+                )
 
+    def empirical_prob(
+        self,
+        exp: MethPrintExperiment,
+        *,
+        lnuc: int | None = None,
+        smoothed_name: str = "smoothed",
+        prob_name: str = "meth_prob",
+        clip_low: float = 0.1,
+        clip_high: float = 99.9,
+        norm_by_strand: bool = False,
+        resmooth: bool = False,
+        fill_edge: float = np.nan,
+        batch_size: int = 20000,
+        percentile_sample_size: int = 100000,
+        seed: int | None = None,
+        mask_name: str | None = None,
+    ):
         """
         Convert the smoothed methylation signal into a methylation probability
         profile with values ranging between 0 and 1.
@@ -1358,14 +1585,16 @@ class MethPrintAnalysis:
         def streamed_nanmean(arr, row_mask=None):
             # Per-position mean over molecules (rows), streamed in
             # batches, delegating to H5Array's shared reduction logic
-            return arr._streamed_reduce("mean", 0, batch_size,
-                                        row_mask=row_mask)
+            return arr._streamed_reduce(
+                "mean", 0, batch_size, row_mask=row_mask
+            )
 
         def apply_norm(test_batch, meth_avg, unmeth_avg):
             denom = meth_avg - unmeth_avg
             # Avoid division by zero
-            denom = np.where(np.abs(denom) < self._EPSILON,
-                             self._EPSILON, denom)
+            denom = np.where(
+                np.abs(denom) < self._EPSILON, self._EPSILON, denom
+            )
             return (test_batch - unmeth_avg) / denom
 
         tmp_dir = exp.resolve_tmp_dir()
@@ -1375,18 +1604,26 @@ class MethPrintAnalysis:
         # method's own fill_edge (applied to the final probabilities
         # below) is the only missing-data handling in effect.
         already_smoothed = (
-            f"test_{smoothed_name}" in exp.analysis[exp.chroms[0]])
+            f"test_{smoothed_name}" in exp.analysis[exp.chroms[0]]
+        )
         cached_params = exp.global_analysis.get(f"{smoothed_name}_params")
 
         if resmooth or not already_smoothed:
             if lnuc is None and cached_params is not None:
                 lnuc = int(cached_params["lnuc"].iloc[0])
             if lnuc is None:
-                raise ValueError("'lnuc' must be specified if data are not "
-                                 "already smoothed.")
-            self.smooth(lnuc=lnuc, exp=exp, name=smoothed_name,
-                       nan_method="none", batch_size=batch_size,
-                       mask_name=mask_name)
+                raise ValueError(
+                    "'lnuc' must be specified if data are not already "
+                    "smoothed."
+                )
+            self.smooth(
+                lnuc=lnuc,
+                exp=exp,
+                name=smoothed_name,
+                nan_method="none",
+                batch_size=batch_size,
+                mask_name=mask_name,
+            )
         elif cached_params is not None:
             row = cached_params.iloc[0]
             mismatched = []
@@ -1403,7 +1640,8 @@ class MethPrintAnalysis:
                     f"'{smoothed_name}' was already smoothed with "
                     f"different {', '.join(mismatched)}; pass "
                     "resmooth=True to recompute, or use a "
-                    "different 'smoothed_name'.")
+                    "different 'smoothed_name'."
+                )
 
         # lnuc may still be unset if smoothing was skipped and the
         # caller didn't pass it; downstream code needs the real value.
@@ -1418,12 +1656,15 @@ class MethPrintAnalysis:
             test_arr = ana[f"test_{smoothed_name}"]
             if mask_name is not None:
                 test_arr = _apply_keep_mask(
-                    test_arr, _lookup_mask(exp, chrom, "test", mask_name),
-                    batch_size)
+                    test_arr,
+                    _lookup_mask(exp, chrom, "test", mask_name),
+                    batch_size,
+                )
             nmol, nbp = test_arr.shape
 
-            has_controls = (raw.meth_data is not None and
-                            raw.unmeth_data is not None)
+            has_controls = (
+                raw.meth_data is not None and raw.unmeth_data is not None
+            )
             test_strand = None
             meth_avg = unmeth_avg = None
             meth_avg_pos = meth_avg_neg = None
@@ -1436,36 +1677,59 @@ class MethPrintAnalysis:
                     meth_arr = _apply_keep_mask(
                         meth_arr,
                         _lookup_mask(exp, chrom, "meth", mask_name),
-                        batch_size)
+                        batch_size,
+                    )
                     unmeth_arr = _apply_keep_mask(
                         unmeth_arr,
                         _lookup_mask(exp, chrom, "unmeth", mask_name),
-                        batch_size)
+                        batch_size,
+                    )
                 if norm_by_strand:
-                    tp, tn, tu = strands(raw.test_data)
-                    mp, mn, mu = strands(raw.meth_data)
-                    up, un, uu = strands(raw.unmeth_data)
+                    _, _, tu = strands(raw.test_data)
+                    _, _, mu = strands(raw.meth_data)
+                    _, _, uu = strands(raw.unmeth_data)
                     if len(tu) > 0 or len(mu) > 0 or len(uu) > 0:
-                        raise ValueError("Cannot do normalization by strand "
-                                         "with unmapped strands '.'.")
+                        raise ValueError(
+                            "Cannot do normalization by strand "
+                            "with unmapped strands '.'."
+                        )
                     test_strand = strand_of_mol(raw.test_data, nmol)
-                    meth_strand = strand_of_mol(raw.meth_data,
-                                                meth_arr.shape[0])
-                    unmeth_strand = strand_of_mol(raw.unmeth_data,
-                                                  unmeth_arr.shape[0])
+                    meth_strand = strand_of_mol(
+                        raw.meth_data, meth_arr.shape[0]
+                    )
+                    unmeth_strand = strand_of_mol(
+                        raw.unmeth_data, unmeth_arr.shape[0]
+                    )
                     meth_avg_pos = streamed_nanmean(
-                        meth_arr, meth_strand == "+")
+                        meth_arr, meth_strand == "+"
+                    )
                     meth_avg_neg = streamed_nanmean(
-                        meth_arr, meth_strand == "-")
+                        meth_arr, meth_strand == "-"
+                    )
                     unmeth_avg_pos = streamed_nanmean(
-                        unmeth_arr, unmeth_strand == "+")
+                        unmeth_arr, unmeth_strand == "+"
+                    )
                     unmeth_avg_neg = streamed_nanmean(
-                        unmeth_arr, unmeth_strand == "-")
+                        unmeth_arr, unmeth_strand == "-"
+                    )
                 else:
                     meth_avg = streamed_nanmean(meth_arr)
                     unmeth_avg = streamed_nanmean(unmeth_arr)
 
-            def normalized_batch(start, stop):
+            def normalized_batch(
+                start,
+                stop,
+                test_arr=test_arr,
+                has_controls=has_controls,
+                norm_by_strand=norm_by_strand,
+                test_strand=test_strand,
+                meth_avg_pos=meth_avg_pos,
+                meth_avg_neg=meth_avg_neg,
+                unmeth_avg_pos=unmeth_avg_pos,
+                unmeth_avg_neg=unmeth_avg_neg,
+                meth_avg=meth_avg,
+                unmeth_avg=unmeth_avg,
+            ):
                 batch = test_arr[start:stop, :]
                 if not has_controls:
                     return batch
@@ -1473,18 +1737,32 @@ class MethPrintAnalysis:
                     labels = test_strand[start:stop]
                     out = np.empty_like(batch)
                     pos, neg = labels == "+", labels == "-"
-                    out[pos] = apply_norm(batch[pos], meth_avg_pos,
-                                          unmeth_avg_pos)
-                    out[neg] = apply_norm(batch[neg], meth_avg_neg,
-                                          unmeth_avg_neg)
+                    out[pos] = apply_norm(
+                        batch[pos], meth_avg_pos, unmeth_avg_pos
+                    )
+                    out[neg] = apply_norm(
+                        batch[neg], meth_avg_neg, unmeth_avg_neg
+                    )
                     return out
                 return apply_norm(batch, meth_avg, unmeth_avg)
 
             # Normalize the data so that all values are between 0 and 1
             # Exclude trailing edge created by rolling window
-            end_idx = -(lnuc-1) if lnuc > 1 else None
+            end_idx = -(lnuc - 1) if lnuc > 1 else None
 
-            def normalized_sample(arr, strand_labels):
+            def normalized_sample(
+                arr,
+                strand_labels,
+                has_controls=has_controls,
+                norm_by_strand=norm_by_strand,
+                meth_avg_pos=meth_avg_pos,
+                meth_avg_neg=meth_avg_neg,
+                unmeth_avg_pos=unmeth_avg_pos,
+                unmeth_avg_neg=unmeth_avg_neg,
+                meth_avg=meth_avg,
+                unmeth_avg=unmeth_avg,
+                end_idx=end_idx,
+            ):
                 # Random subsample of an array's molecules, normalized
                 # the same way as `normalized_batch` when controls are
                 # available (or left raw otherwise), sampled
@@ -1502,16 +1780,19 @@ class MethPrintAnalysis:
                             normed = np.empty_like(batch)
                             pos, neg = labels == "+", labels == "-"
                             normed[pos] = apply_norm(
-                                batch[pos], meth_avg_pos, unmeth_avg_pos)
+                                batch[pos], meth_avg_pos, unmeth_avg_pos
+                            )
                             normed[neg] = apply_norm(
-                                batch[neg], meth_avg_neg, unmeth_avg_neg)
+                                batch[neg], meth_avg_neg, unmeth_avg_neg
+                            )
                             batch = normed
                         else:
                             batch = apply_norm(batch, meth_avg, unmeth_avg)
-                    n_take = min(stop - start,
-                                max(1, round((stop - start) * sample_frac)))
-                    rows = rng.choice(stop - start, size=n_take,
-                                      replace=False)
+                    n_take = min(
+                        stop - start,
+                        max(1, round((stop - start) * sample_frac)),
+                    )
+                    rows = rng.choice(stop - start, size=n_take, replace=False)
                     chunks.append(batch[rows, :end_idx])
                 return np.concatenate(chunks, axis=0)
 
@@ -1523,9 +1804,11 @@ class MethPrintAnalysis:
             # back to the test signal itself when there are no controls.
             if has_controls:
                 unmeth_sample = normalized_sample(
-                    unmeth_arr, unmeth_strand if norm_by_strand else None)
+                    unmeth_arr, unmeth_strand if norm_by_strand else None
+                )
                 meth_sample = normalized_sample(
-                    meth_arr, meth_strand if norm_by_strand else None)
+                    meth_arr, meth_strand if norm_by_strand else None
+                )
                 vmin = np.nanpercentile(unmeth_sample, clip_low)
                 vmax = np.nanpercentile(meth_sample, clip_high)
             else:
@@ -1534,7 +1817,7 @@ class MethPrintAnalysis:
                 vmax = np.nanpercentile(test_sample, clip_high)
 
             # Use the difference between percentiles as the scaling factor
-            denom = np.maximum(vmax-vmin, self._EPSILON)
+            denom = np.maximum(vmax - vmin, self._EPSILON)
 
             # Map to probability [0,1] and stream the result to disk.
             # Clip to ensure that outliers outside the percentile bounds
@@ -1547,7 +1830,7 @@ class MethPrintAnalysis:
                 # (see _apply_keep_mask); keep them excluded from the
                 # output rather than neutral-filling them below.
                 masked = np.isnan(batch).all(axis=1)
-                prob = np.clip((batch-vmin)/denom, 0.0, 1.0)
+                prob = np.clip((batch - vmin) / denom, 0.0, 1.0)
                 # Interior gaps carry no evidence either way, so they
                 # are filled with 0.5 (logit(0.5) == 0), the same
                 # neutral value model_prob gives uninformative
@@ -1555,33 +1838,36 @@ class MethPrintAnalysis:
                 # full window at all and are filled with fill_edge
                 # instead, mirroring model_prob's own edge handling.
                 interior = prob[:, :end_idx]
-                prob[:, :end_idx] = np.where(np.isnan(interior), 0.5,
-                                             interior)
+                prob[:, :end_idx] = np.where(np.isnan(interior), 0.5, interior)
                 if end_idx is not None:
                     prob[:, end_idx:] = fill_edge
                 prob[masked, :] = np.nan
                 out.write_batch(start, stop, prob)
             ana[prob_name] = out
 
-    def model_prob(self, exp : MethPrintExperiment, *,
-                   prob_name : str = "meth_prob",
-                   pi0 : float = 0.5,
-                   eta : float | dict[str, float] | None = None,
-                   eta_max_lag : int = 10,
-                   store_rho : bool = False,
-                   nu : float = 10.0,
-                   rho_leak : float = 0.1,
-                   min_gap : float = 0.05,
-                   lnuc : int = 147,
-                   n_min : int = 10,
-                   max_iters : int = 200,
-                   init_prot : float = 0.05,
-                   init_acc : float = 0.95,
-                   tol : float = 1e-8,
-                   fill_edge : float = np.nan,
-                   norm_by_strand : bool = False,
-                   batch_size : int = 20000,
-                   mask_name : str | None = None):
+    def model_prob(
+        self,
+        exp: MethPrintExperiment,
+        *,
+        prob_name: str = "meth_prob",
+        pi0: float = 0.5,
+        eta: float | dict[str, float] | None = None,
+        eta_max_lag: int = 10,
+        store_rho: bool = False,
+        nu: float = 10.0,
+        rho_leak: float = 0.1,
+        min_gap: float = 0.05,
+        lnuc: int = 147,
+        n_min: int = 10,
+        max_iters: int = 200,
+        init_prot: float = 0.05,
+        init_acc: float = 0.95,
+        tol: float = 1e-8,
+        fill_edge: float = np.nan,
+        norm_by_strand: bool = False,
+        batch_size: int = 20000,
+        mask_name: str | None = None,
+    ):
         """
         Convert multi-channel methylation footprinting calls into a
         methylation probability profile with values ranging between 0
@@ -1739,12 +2025,21 @@ class MethPrintAnalysis:
         need_auto = set(channels) - set(overrides)
         channel_eta = dict(overrides)
 
-        calib_kwargs = dict(nu=nu, rho_leak=rho_leak, min_gap=min_gap,
-                            lnuc=lnuc, n_min=n_min, max_iters=max_iters,
-                            init_prot=init_prot, init_acc=init_acc,
-                            tol=tol, batch_size=batch_size,
-                            mask_name=mask_name,
-                            norm_by_strand=norm_by_strand, channels=channels)
+        calib_kwargs = {
+            "nu": nu,
+            "rho_leak": rho_leak,
+            "min_gap": min_gap,
+            "lnuc": lnuc,
+            "n_min": n_min,
+            "max_iters": max_iters,
+            "init_prot": init_prot,
+            "init_acc": init_acc,
+            "tol": tol,
+            "batch_size": batch_size,
+            "mask_name": mask_name,
+            "norm_by_strand": norm_by_strand,
+            "channels": channels,
+        }
         _strand_suffix = {"+": "pos", "-": "neg"}
 
         def _calib_rows(chrom, info):
@@ -1752,20 +2047,31 @@ class MethPrintAnalysis:
             rows = []
             for strand, sub in strata:
                 row = {"chrom": chrom, "has_controls": sub["has_controls"]}
-                row.update({k: v for k, v in sub.items()
-                           if k.startswith("frac_informative_")})
+                row.update(
+                    {
+                        k: v
+                        for k, v in sub.items()
+                        if k.startswith("frac_informative_")
+                    }
+                )
                 if strand is not None:
                     row["strand"] = strand
                 if "n_iter" in sub:
                     row["iters"] = sub["n_iter"]
                     row["log_likelihood"] = sub["log_likelihood"]
                     row["frac_protected"] = sub["frac_protected"]
-                    row.update({f"theta_prot_{CONTEXT_NAMES[c]}": v
-                               for c, v in zip(sub["codes"],
-                                              sub["theta_prot"])})
-                    row.update({f"theta_acc_{CONTEXT_NAMES[c]}": v
-                               for c, v in zip(sub["codes"],
-                                              sub["theta_acc"])})
+                    row.update(
+                        {
+                            f"theta_prot_{CONTEXT_NAMES[c]}": v
+                            for c, v in zip(sub["codes"], sub["theta_prot"])
+                        }
+                    )
+                    row.update(
+                        {
+                            f"theta_acc_{CONTEXT_NAMES[c]}": v
+                            for c, v in zip(sub["codes"], sub["theta_acc"])
+                        }
+                    )
                 rows.append(row)
             return rows
 
@@ -1774,10 +2080,15 @@ class MethPrintAnalysis:
         if need_auto:
             stats = _init_autocorr_stats(eta_max_lag)
             for chrom in exp.chroms:
-                (ctx, theta_prot, theta_acc, informative, has_controls,
-                 calib_info) = _chrom_calibration(exp, chrom, **calib_kwargs)
-                calib_cache[chrom] = (ctx, theta_prot, theta_acc,
-                                      informative)
+                (
+                    ctx,
+                    theta_prot,
+                    theta_acc,
+                    informative,
+                    has_controls,
+                    calib_info,
+                ) = _chrom_calibration(exp, chrom, **calib_kwargs)
+                calib_cache[chrom] = (ctx, theta_prot, theta_acc, informative)
                 calib_records.extend(_calib_rows(chrom, calib_info))
                 # meth control isolates the crosstalk artifact from
                 # real, occupancy-driven correlation in the test data
@@ -1789,40 +2100,72 @@ class MethPrintAnalysis:
                     src_mol_id = getattr(raw, f"{source}_mol_id")
                     strand_labels = _strand_of_mol(src_df, len(src_mol_id))
                 _accumulate_eta_source(
-                    exp, chrom, source, ctx, theta_prot, theta_acc,
-                    informative, pi0, batch_size, mask_name, stats,
-                    eta_max_lag, need_auto, norm_by_strand=norm_by_strand,
-                    strand_labels=strand_labels)
+                    exp,
+                    chrom,
+                    source,
+                    ctx,
+                    theta_prot,
+                    theta_acc,
+                    informative,
+                    pi0,
+                    batch_size,
+                    mask_name,
+                    stats,
+                    eta_max_lag,
+                    need_auto,
+                    norm_by_strand=norm_by_strand,
+                    strand_labels=strand_labels,
+                )
             estimated, rho_by_channel = _finalize_channel_eta(
-                stats, eta_max_lag)
+                stats, eta_max_lag
+            )
             channel_eta.update({c: estimated[c] for c in need_auto})
 
             if store_rho and rho_by_channel:
-                exp.global_analysis[f"{prob_name}_rho"] = pd.DataFrame({
-                    "lag": np.arange(1, eta_max_lag + 1),
-                    **{f"rho_{CONTEXT_NAMES[c]}": rho_by_channel[c]
-                      for c in channels if c in rho_by_channel}})
+                exp.global_analysis[f"{prob_name}_rho"] = pd.DataFrame(
+                    {
+                        "lag": np.arange(1, eta_max_lag + 1),
+                        **{
+                            f"rho_{CONTEXT_NAMES[c]}": rho_by_channel[c]
+                            for c in channels
+                            if c in rho_by_channel
+                        },
+                    }
+                )
 
-        exp.global_analysis[f"{prob_name}_eta"] = pd.DataFrame([{
-            f"eta_{CONTEXT_NAMES[c]}": channel_eta[c]
-            for c in channels}])
+        exp.global_analysis[f"{prob_name}_eta"] = pd.DataFrame(
+            [{f"eta_{CONTEXT_NAMES[c]}": channel_eta[c] for c in channels}]
+        )
 
-        exp.global_analysis[f"{prob_name}_params"] = pd.DataFrame([{
-            "pi0": pi0, "eta_max_lag": eta_max_lag, "nu": nu,
-            "rho_leak": rho_leak, "min_gap": min_gap, "lnuc": lnuc,
-            "n_min": n_min, "max_iters": max_iters, "init_prot": init_prot,
-            "init_acc": init_acc, "tol": tol, "fill_edge": fill_edge,
-            "norm_by_strand": norm_by_strand,
-            "mask_name": mask_name or ""}])
+        exp.global_analysis[f"{prob_name}_params"] = pd.DataFrame(
+            [
+                {
+                    "pi0": pi0,
+                    "eta_max_lag": eta_max_lag,
+                    "nu": nu,
+                    "rho_leak": rho_leak,
+                    "min_gap": min_gap,
+                    "lnuc": lnuc,
+                    "n_min": n_min,
+                    "max_iters": max_iters,
+                    "init_prot": init_prot,
+                    "init_acc": init_acc,
+                    "tol": tol,
+                    "fill_edge": fill_edge,
+                    "norm_by_strand": norm_by_strand,
+                    "mask_name": mask_name or "",
+                }
+            ]
+        )
 
         for chrom in exp.chroms:
             raw = exp.raw[chrom]
             if chrom in calib_cache:
-                ctx, theta_prot, theta_acc, informative = \
-                    calib_cache[chrom]
+                ctx, theta_prot, theta_acc, informative = calib_cache[chrom]
             else:
-                (ctx, theta_prot, theta_acc, informative, _,
-                 calib_info) = _chrom_calibration(exp, chrom, **calib_kwargs)
+                (ctx, theta_prot, theta_acc, informative, _, calib_info) = (
+                    _chrom_calibration(exp, chrom, **calib_kwargs)
+                )
                 calib_records.extend(_calib_rows(chrom, calib_info))
 
             if norm_by_strand:
@@ -1834,9 +2177,13 @@ class MethPrintAnalysis:
                     theta_cols[f"informative_{suffix}"] = informative[s]
                 theta_df = pd.DataFrame(theta_cols)
             else:
-                theta_df = pd.DataFrame({"theta_prot": theta_prot,
-                                         "theta_acc": theta_acc,
-                                         "informative": informative})
+                theta_df = pd.DataFrame(
+                    {
+                        "theta_prot": theta_prot,
+                        "theta_acc": theta_acc,
+                        "informative": informative,
+                    }
+                )
             exp.analysis[chrom][f"{prob_name}_theta"] = theta_df
 
             eta_by_pos = np.ones(len(ctx))
@@ -1844,11 +2191,16 @@ class MethPrintAnalysis:
                 eta_by_pos[ctx == c] = channel_eta[c]
 
             nmol = len(raw.test_mol_id)
-            out = H5Array.create((nmol, raw.nbp), dtype=np.float64,
-                                 dir=tmp_dir)
-            test_arr = exp.to_dense(chrom, which="test", as_h5array=True,
-                                    batch_size=batch_size,
-                                    mask_name=mask_name)
+            out = H5Array.create(
+                (nmol, raw.nbp), dtype=np.float64, dir=tmp_dir
+            )
+            test_arr = exp.to_dense(
+                chrom,
+                which="test",
+                as_h5array=True,
+                batch_size=batch_size,
+                mask_name=mask_name,
+            )
             try:
                 ctx_ok = ctx[None, :] != NONE
                 test_strand = None
@@ -1867,17 +2219,33 @@ class MethPrintAnalysis:
                         pos, neg = labels == "+", labels == "-"
                         log_odds = np.empty_like(q)
                         log_odds[pos] = _per_base_log_odds(
-                            q[pos], theta_prot["+"], theta_acc["+"],
-                            informative["+"], pi0=pi0, eta=eta_by_pos)
+                            q[pos],
+                            theta_prot["+"],
+                            theta_acc["+"],
+                            informative["+"],
+                            pi0=pi0,
+                            eta=eta_by_pos,
+                        )
                         log_odds[neg] = _per_base_log_odds(
-                            q[neg], theta_prot["-"], theta_acc["-"],
-                            informative["-"], pi0=pi0, eta=eta_by_pos)
+                            q[neg],
+                            theta_prot["-"],
+                            theta_acc["-"],
+                            informative["-"],
+                            pi0=pi0,
+                            eta=eta_by_pos,
+                        )
                     else:
                         log_odds = _per_base_log_odds(
-                            q, theta_prot, theta_acc, informative,
-                            pi0=pi0, eta=eta_by_pos)
+                            q,
+                            theta_prot,
+                            theta_acc,
+                            informative,
+                            pi0=pi0,
+                            eta=eta_by_pos,
+                        )
                     log_odds_win = _window_sum_log_odds(
-                        log_odds, lnuc, fill_edge=log_odds_fill)
+                        log_odds, lnuc, fill_edge=log_odds_fill
+                    )
                     prob = expit(-log_odds_win)
                     prob[masked, :] = np.nan
                     out.write_batch(start, stop, prob)
@@ -1885,22 +2253,24 @@ class MethPrintAnalysis:
                 test_arr.close()
             exp.analysis[chrom][prob_name] = out
 
-        exp.global_analysis[f"{prob_name}_calib"] = pd.DataFrame(
-            calib_records)
+        exp.global_analysis[f"{prob_name}_calib"] = pd.DataFrame(calib_records)
 
-    def sort_by_linkage(self, exp : MethPrintExperiment, *,
-                        chroms : str | Iterable[str] | None = None,
-                        data_name : str = "test_smoothed",
-                        raw_which : str | None = None,
-                        mask_name : str | None = None,
-                        sorted_name : str | None = None,
-                        store_link_mat : bool = True,
-                        link_mat_name : str | None = None,
-                        metric : str = "euclidean",
-                        method : str = "ward",
-                        batch_size : int = 20000,
-                        fill_nan : str | float | None = None
-                        ) -> dict[str, np.ndarray]:
+    def sort_by_linkage(
+        self,
+        exp: MethPrintExperiment,
+        *,
+        chroms: str | Iterable[str] | None = None,
+        data_name: str = "test_smoothed",
+        raw_which: str | None = None,
+        mask_name: str | None = None,
+        sorted_name: str | None = None,
+        store_link_mat: bool = True,
+        link_mat_name: str | None = None,
+        metric: str = "euclidean",
+        method: str = "ward",
+        batch_size: int = 20000,
+        fill_nan: str | float | None = None,
+    ) -> dict[str, np.ndarray]:
         """
         Sort molecules by hierarchical-clustering similarity.
 
@@ -1979,8 +2349,7 @@ class MethPrintAnalysis:
             some chromosome.
         """
         if mask_name is not None and raw_which is None:
-            raise ValueError(
-                "'mask_name' requires 'raw_which' to be given.")
+            raise ValueError("'mask_name' requires 'raw_which' to be given.")
         chroms = utils.normalize_chroms(chroms, default_chroms=exp.chroms)
         tmp_dir = exp.resolve_tmp_dir()
         link_mats = {}
@@ -1988,16 +2357,21 @@ class MethPrintAnalysis:
             ana = exp.analysis[chrom]
             owns_data = False
             if raw_which is not None:
-                data = exp.to_dense(chrom, which=raw_which,
-                                    as_h5array=True, batch_size=batch_size,
-                                    mask_name=mask_name)
+                data = exp.to_dense(
+                    chrom,
+                    which=raw_which,
+                    as_h5array=True,
+                    batch_size=batch_size,
+                    mask_name=mask_name,
+                )
                 base_name = raw_which
                 owns_data = True
             elif data_name not in ana and data_name == "test_smoothed":
                 # Default target not computed yet -- fall back to the
                 # raw test signal rather than requiring smooth() first.
-                data = exp.to_dense(chrom, which="test",
-                                    as_h5array=True, batch_size=batch_size)
+                data = exp.to_dense(
+                    chrom, which="test", as_h5array=True, batch_size=batch_size
+                )
                 base_name = "test"
                 owns_data = True
             else:
@@ -2007,19 +2381,29 @@ class MethPrintAnalysis:
                         f"exp.analysis['{chrom}']. Run 'smooth' or "
                         "'meth_prob' first (matching the name/prob_name "
                         "used there), or pass 'raw_which' to source "
-                        "from the raw long-form data instead.")
+                        "from the raw long-form data instead."
+                    )
                 data = ana[data_name]
                 base_name = data_name
-            name = sorted_name if sorted_name is not None \
+            name = (
+                sorted_name
+                if sorted_name is not None
                 else f"{base_name}_sorted"
+            )
 
             try:
                 order, link_mat = utils.compute_linkage(
-                    data, metric=metric, method=method,
-                    batch_size=batch_size, dir=tmp_dir, fill_nan=fill_nan)
+                    data,
+                    metric=metric,
+                    method=method,
+                    batch_size=batch_size,
+                    dir=tmp_dir,
+                    fill_nan=fill_nan,
+                )
                 if isinstance(data, H5Array):
-                    sorted_data = data.reorder_rows(order, dir=tmp_dir,
-                                                    batch_size=batch_size)
+                    sorted_data = data.reorder_rows(
+                        order, dir=tmp_dir, batch_size=batch_size
+                    )
                 else:
                     sorted_data = data.iloc[order]
             finally:
@@ -2027,8 +2411,11 @@ class MethPrintAnalysis:
                     data.close()
             exp.analysis[chrom][name] = sorted_data
             if store_link_mat:
-                lname = link_mat_name if link_mat_name is not None \
+                lname = (
+                    link_mat_name
+                    if link_mat_name is not None
                     else f"{base_name}_linkage"
+                )
                 exp.analysis[chrom][lname] = pd.DataFrame(link_mat)
             link_mats[chrom] = link_mat
         return link_mats

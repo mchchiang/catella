@@ -6,38 +6,60 @@ import tempfile
 import warnings
 import weakref
 from collections import OrderedDict
+from collections.abc import Mapping
 from collections.abc import Mapping as ABCMapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 from types import MappingProxyType
-from typing import Tuple, List, Mapping, Dict, Self, Any
-from catella.containers import DataFrameMap, FixedKeyMap
-from catella.h5_array import H5Array
-from catella import utils
-from catella import h5_utils
+from typing import Any, Self
+
+import h5py
 import numpy as np
 import pandas as pd
-import h5py
 import pyarrow as pa
 import pyarrow.csv as pyarrow_csv
 import pyfaidx
 
+from catella import h5_utils, utils
+from catella.containers import DataFrameMap, FixedKeyMap
+from catella.h5_array import H5Array
+
 # Column names as they appear in raw Modkit output, and their internal
 # canonical equivalents (positionally parallel).
-_MODKIT_COLNAMES = ["read_id", "ref_position", "chrom", "ref_strand",
-                    "mod_qual", "mod_code"]
-_CANONICAL_NAMES = ["mol_id", "upos", "chrom", "strand", "mod_qual",
-                    "mod_code"]
+_MODKIT_COLNAMES = [
+    "read_id",
+    "ref_position",
+    "chrom",
+    "ref_strand",
+    "mod_qual",
+    "mod_code",
+]
+_CANONICAL_NAMES = [
+    "mol_id",
+    "upos",
+    "chrom",
+    "strand",
+    "mod_qual",
+    "mod_code",
+]
 _CANONICAL_PA_TYPES = {
-    "mol_id": pa.string(), "upos": pa.int64(), "chrom": pa.string(),
-    "strand": pa.string(), "mod_qual": pa.float64(), "mod_code": pa.string(),
+    "mol_id": pa.string(),
+    "upos": pa.int64(),
+    "chrom": pa.string(),
+    "strand": pa.string(),
+    "mod_qual": pa.float64(),
+    "mod_code": pa.string(),
 }
 # Fixed schema for the raw per-chromosome long-format tables, used by
 # the streaming AppendableDF writer in load_raw().
-_RAW_COLUMN_SPEC = {"mol_index": "numeric", "pos": "numeric",
-                    "strand": "string", "mod_qual": "numeric",
-                    "mod_code": "string"}
+_RAW_COLUMN_SPEC = {
+    "mol_index": "numeric",
+    "pos": "numeric",
+    "strand": "string",
+    "mod_qual": "numeric",
+    "mod_code": "string",
+}
 
 # Molecule-count threshold above which MethPrintExperiment.to_dense()
 # warns when materializing a pd.DataFrame (as opposed to streaming to
@@ -49,8 +71,12 @@ _DENSE_WARN_ROWS = 5000
 _VALID_MTASE = {"A", "CG", "GC"}
 
 # File extension -> pyarrow compression codec, for _decompress_once.
-_COMPRESSION_EXTS = {".gz": "gzip", ".bz2": "bz2", ".xz": "lzma",
-                     ".zst": "zstd"}
+_COMPRESSION_EXTS = {
+    ".gz": "gzip",
+    ".bz2": "bz2",
+    ".xz": "lzma",
+    ".zst": "zstd",
+}
 
 
 def _normalize_mtase(mtase):
@@ -80,7 +106,8 @@ def _normalize_mtase(mtase):
     if unknown:
         raise ValueError(
             f"Unknown mtase value(s) {unknown}; must be one or more "
-            f"of {sorted(_VALID_MTASE)}.")
+            f"of {sorted(_VALID_MTASE)}."
+        )
     if len(set(values)) != len(values):
         raise ValueError("Duplicate mtase values given.")
     return values
@@ -114,8 +141,10 @@ def _decompress_once(data_file, tmp_dir):
 
     fd, scratch_path = tempfile.mkstemp(suffix=".tsv", dir=tmp_dir)
     os.close(fd)
-    with pa.input_stream(str(data_file), compression=codec) as src, \
-            open(scratch_path, "wb") as dst:
+    with (
+        pa.input_stream(str(data_file), compression=codec) as src,
+        open(scratch_path, "wb") as dst,
+    ):
         while True:
             chunk = src.read(64 * 1024 * 1024)
             if not chunk:
@@ -152,12 +181,14 @@ def _resolve_modkit_schema(data_file, sep, colidx):
     """
     if colidx is None:
         header_df = pd.read_csv(data_file, sep=sep, nrows=0)
-        raw_by_modkit = {str(c).lstrip("#").strip(): c
-                        for c in header_df.columns}
-        name_for = {canon: raw_by_modkit[modkit]
-                   for modkit, canon in zip(_MODKIT_COLNAMES,
-                                            _CANONICAL_NAMES)
-                   if modkit in raw_by_modkit}
+        raw_by_modkit = {
+            str(c).lstrip("#").strip(): c for c in header_df.columns
+        }
+        name_for = {
+            canon: raw_by_modkit[modkit]
+            for modkit, canon in zip(_MODKIT_COLNAMES, _CANONICAL_NAMES)
+            if modkit in raw_by_modkit
+        }
         return None, name_for
 
     with open(data_file, "r") as fh:
@@ -200,8 +231,15 @@ def _parse_fasta(fasta_file, wanted_chroms):
     return sequences
 
 
-def _iter_csv_chunks(data_file, header_names, name_for, sep,
-                     needed_canonical, chunk_size, block_size):
+def _iter_csv_chunks(
+    data_file,
+    header_names,
+    name_for,
+    sep,
+    needed_canonical,
+    chunk_size,
+    block_size,
+):
     """
     Stream a raw data file in row-chunks with canonical column names.
 
@@ -233,14 +271,20 @@ def _iter_csv_chunks(data_file, header_names, name_for, sep,
     include = [name_for[c] for c in needed_canonical]
     types = {name_for[c]: _CANONICAL_PA_TYPES[c] for c in needed_canonical}
     read_opts = pyarrow_csv.ReadOptions(
-        block_size=block_size, column_names=header_names,
-        autogenerate_column_names=False)
+        block_size=block_size,
+        column_names=header_names,
+        autogenerate_column_names=False,
+    )
     parse_opts = pyarrow_csv.ParseOptions(delimiter=sep)
     convert_opts = pyarrow_csv.ConvertOptions(
-        include_columns=include, column_types=types)
+        include_columns=include, column_types=types
+    )
     reader = pyarrow_csv.open_csv(
-        str(data_file), read_options=read_opts, parse_options=parse_opts,
-        convert_options=convert_opts)
+        str(data_file),
+        read_options=read_opts,
+        parse_options=parse_opts,
+        convert_options=convert_opts,
+    )
     rename = {name_for[c]: c for c in needed_canonical}
 
     buf, buf_rows = [], 0
@@ -248,15 +292,22 @@ def _iter_csv_chunks(data_file, header_names, name_for, sep,
         buf.append(batch)
         buf_rows += batch.num_rows
         if buf_rows >= chunk_size:
-            yield pa.Table.from_batches(buf).to_pandas().rename(
-                columns=rename)
+            yield pa.Table.from_batches(buf).to_pandas().rename(columns=rename)
             buf, buf_rows = [], 0
     if buf:
         yield pa.Table.from_batches(buf).to_pandas().rename(columns=rename)
 
 
-def _scan_accepted_mols(data_file, header_names, name_for, sep,
-                        chunk_size, block_size, max_nmol, rng):
+def _scan_accepted_mols(
+    data_file,
+    header_names,
+    name_for,
+    sep,
+    chunk_size,
+    block_size,
+    max_nmol,
+    rng,
+):
     """
     Determine, per chromosome, which molecules are kept and their
     `mol_index`.
@@ -301,11 +352,18 @@ def _scan_accepted_mols(data_file, header_names, name_for, sep,
     """
     mol_order = {}
     for batch_df in _iter_csv_chunks(
-            data_file, header_names, name_for, sep, ["chrom", "mol_id"],
-            chunk_size, block_size):
+        data_file,
+        header_names,
+        name_for,
+        sep,
+        ["chrom", "mol_id"],
+        chunk_size,
+        block_size,
+    ):
         dedup = batch_df.drop_duplicates(["chrom", "mol_id"])
-        for chrom, mol_id in zip(dedup["chrom"].to_numpy(),
-                                 dedup["mol_id"].to_numpy()):
+        for chrom, mol_id in zip(
+            dedup["chrom"].to_numpy(), dedup["mol_id"].to_numpy()
+        ):
             seen = mol_order.setdefault(chrom, {})
             if mol_id not in seen:
                 seen[mol_id] = None
@@ -316,15 +374,28 @@ def _scan_accepted_mols(data_file, header_names, name_for, sep,
         if max_nmol is not None and len(mols) > max_nmol:
             mols = rng.choice(mols, max_nmol, replace=False)
         sorted_mols = np.sort(mols)
-        result[chrom] = {"mol_id": sorted_mols,
-                         "index": {m: i for i, m in enumerate(sorted_mols)}}
+        result[chrom] = {
+            "mol_id": sorted_mols,
+            "index": {m: i for i, m in enumerate(sorted_mols)},
+        }
     return result
 
 
-def _stream_rows_to_staging(data_file, header_names, name_for, sep,
-                            chunk_size, block_size, full_sizes, wrap,
-                            mol_maps, appenders, refseq_by_chrom=None,
-                            mtase=None, ignore_strand=False):
+def _stream_rows_to_staging(
+    data_file,
+    header_names,
+    name_for,
+    sep,
+    chunk_size,
+    block_size,
+    full_sizes,
+    wrap,
+    mol_maps,
+    appenders,
+    refseq_by_chrom=None,
+    mtase=None,
+    ignore_strand=False,
+):
     """
     Stream full rows, transform them, and append to per-chromosome
     disk-backed appenders.
@@ -386,15 +457,16 @@ def _stream_rows_to_staging(data_file, header_names, name_for, sep,
 
     needed = ["mol_id", "upos", "chrom", "strand", "mod_qual", "mod_code"]
     for batch_df in _iter_csv_chunks(
-            data_file, header_names, name_for, sep, needed, chunk_size,
-            block_size):
+        data_file, header_names, name_for, sep, needed, chunk_size, block_size
+    ):
         for chrom, group in batch_df.groupby("chrom", sort=False):
             mapping = mol_maps.get(chrom)
             if mapping is None:
                 continue
             mol_index = group["mol_id"].map(mapping["index"])
-            keep = (mol_index.notna().to_numpy()
-                   & (group["mod_code"].to_numpy() != "-"))
+            keep = mol_index.notna().to_numpy() & (
+                group["mod_code"].to_numpy() != "-"
+            )
 
             masks = valid_by_chrom.get(chrom)
             if masks is not None:
@@ -406,8 +478,10 @@ def _stream_rows_to_staging(data_file, header_names, name_for, sep,
                     strand_all = group["strand"].to_numpy()
                     # Unmapped strand ('.') is not validated -- kept.
                     consistent = np.where(
-                        strand_all == "+", plus[upos_all],
-                        np.where(strand_all == "-", minus[upos_all], True))
+                        strand_all == "+",
+                        plus[upos_all],
+                        np.where(strand_all == "-", minus[upos_all], True),
+                    )
                 keep = keep & consistent
 
             if not keep.any():
@@ -418,18 +492,23 @@ def _stream_rows_to_staging(data_file, header_names, name_for, sep,
             upos = group["upos"].to_numpy()
             if wrap:
                 length = full_sizes[chrom]
-                pos = np.where(upos > (length-1)/2,
-                              length - upos - 1, upos)
+                pos = np.where(
+                    upos > (length - 1) / 2, length - upos - 1, upos
+                )
             else:
                 pos = upos
 
-            out = pd.DataFrame({
-                "mol_index": mol_index,
-                "pos": pos.astype(np.int64),
-                "strand": group["strand"].to_numpy(),
-                "mod_qual": group["mod_qual"].astype(np.float64).to_numpy(),
-                "mod_code": group["mod_code"].to_numpy(),
-            })
+            out = pd.DataFrame(
+                {
+                    "mol_index": mol_index,
+                    "pos": pos.astype(np.int64),
+                    "strand": group["strand"].to_numpy(),
+                    "mod_qual": group["mod_qual"]
+                    .astype(np.float64)
+                    .to_numpy(),
+                    "mod_code": group["mod_code"].to_numpy(),
+                }
+            )
             appenders[chrom].append(out)
 
 
@@ -456,9 +535,24 @@ def _ensure_chrom_data_group(graw, chrom, nbp, refseq_by_chrom):
     return gchrom.create_group("data")
 
 
-def _ingest_file(name, data_file, *, sep, colidx, chunk_size, block_size,
-                 sizes, full_sizes, wrap, refseq_by_chrom, mtase,
-                 ignore_strand, max_nmol, rng, tmp_dir):
+def _ingest_file(
+    name,
+    data_file,
+    *,
+    sep,
+    colidx,
+    chunk_size,
+    block_size,
+    sizes,
+    full_sizes,
+    wrap,
+    refseq_by_chrom,
+    mtase,
+    ignore_strand,
+    max_nmol,
+    rng,
+    tmp_dir,
+):
     """
     Resolve, scan, and stream one raw data file into its own private
     staging HDF5 file, independent of any other source file.
@@ -494,36 +588,56 @@ def _ingest_file(name, data_file, *, sep, colidx, chunk_size, block_size,
     scratch_path = _decompress_once(data_file, tmp_dir)
     read_path = scratch_path or str(data_file)
     try:
-        header_names, name_for = _resolve_modkit_schema(
-            read_path, sep, colidx)
+        header_names, name_for = _resolve_modkit_schema(read_path, sep, colidx)
         mol_maps = _scan_accepted_mols(
-            read_path, header_names, name_for, sep, chunk_size,
-            block_size, max_nmol, rng)
+            read_path,
+            header_names,
+            name_for,
+            sep,
+            chunk_size,
+            block_size,
+            max_nmol,
+            rng,
+        )
         # Chromosomes not covered by the chromsize table are silently
         # dropped, matching the legacy inner merge
         mol_maps = {c: m for c, m in mol_maps.items() if c in sizes}
 
         dt = h5py.string_dtype(encoding="utf-8")
-        fd, private_path = tempfile.mkstemp(
-            suffix=f".{name}.h5", dir=tmp_dir)
+        fd, private_path = tempfile.mkstemp(suffix=f".{name}.h5", dir=tmp_dir)
         os.close(fd)
         with h5py.File(private_path, "w") as h5stream:
             graw = h5stream.create_group("raw_data")
             appenders = {}
             for chrom, m in mol_maps.items():
                 gdata = _ensure_chrom_data_group(
-                    graw, chrom, sizes[chrom], refseq_by_chrom)
-                gdata.create_dataset(f"{name}_mol_id", data=m["mol_id"],
-                                     dtype=dt)
+                    graw, chrom, sizes[chrom], refseq_by_chrom
+                )
+                gdata.create_dataset(
+                    f"{name}_mol_id", data=m["mol_id"], dtype=dt
+                )
                 appenders[chrom] = h5_utils.AppendableDF(
-                    gdata, f"{name}_data", columns=list(_RAW_COLUMN_SPEC),
-                    dtypes=_RAW_COLUMN_SPEC)
+                    gdata,
+                    f"{name}_data",
+                    columns=list(_RAW_COLUMN_SPEC),
+                    dtypes=_RAW_COLUMN_SPEC,
+                )
 
             _stream_rows_to_staging(
-                read_path, header_names, name_for, sep, chunk_size,
-                block_size, full_sizes, wrap, mol_maps, appenders,
-                refseq_by_chrom=refseq_by_chrom, mtase=mtase,
-                ignore_strand=ignore_strand)
+                read_path,
+                header_names,
+                name_for,
+                sep,
+                chunk_size,
+                block_size,
+                full_sizes,
+                wrap,
+                mol_maps,
+                appenders,
+                refseq_by_chrom=refseq_by_chrom,
+                mtase=mtase,
+                ignore_strand=ignore_strand,
+            )
     finally:
         if scratch_path is not None:
             os.remove(scratch_path)
@@ -544,76 +658,105 @@ class MethPrintData:
     for the chromosome may also be stored, via `refseq`.
 
     .. note::
-       This class is intended for internal use within a 
-       :class:`MethPrintExperiment`. Use the experiment's loading 
+       This class is intended for internal use within a
+       :class:`MethPrintExperiment`. Use the experiment's loading
        mechanisms rather than instantiating this class directly.
     """
-    
-    chrom : str
+
+    chrom: str
     """The chromosome identifier for this data block."""
-    
-    nbp : int
+
+    nbp: int
     """The total number of base pairs in the chromatin fiber."""
 
-    _frozen_refseq : str | None = field(
-        metadata={"doc": "str: The reference nucleotide sequence for this "
-                  "chromosome, or None if not provided."})
+    _frozen_refseq: str | None = field(
+        metadata={
+            "doc": "str: The reference nucleotide sequence for this "
+            "chromosome, or None if not provided."
+        }
+    )
 
-    _frozen_test_mol_id : np.ndarray = field(
-        metadata={"doc": "np.ndarray: Array of molecule identifiers for the "
-                  "test samples."})
-    
-    _frozen_test_data : pd.DataFrame = field(
-        metadata={"doc": "pd.DataFrame: Raw methylation quality scores for "
-                  "test samples."})
-    
-    _frozen_unmeth_mol_id : np.ndarray | None = field(
-        metadata={"doc": "np.ndarray: Array of molecule identifiers for "
-                  "unmethylated controls."})
-    
-    _frozen_unmeth_data : pd.DataFrame | None = field(
-        metadata={"doc": "pd.DataFrame: Raw methylation quality scores for "
-                  "unmethylated controls."})
-    
-    _frozen_meth_mol_id : np.ndarray | None = field(
-        metadata={"doc": "np.ndarray: Array of molecule identifiers for "
-                  "methylated controls."})
-    
-    _frozen_meth_data : pd.DataFrame | None = field(
-        metadata={"doc": "pd.DataFrame: Raw methylation quality scores for "
-                  "methylated controls."})
+    _frozen_test_mol_id: np.ndarray = field(
+        metadata={
+            "doc": "np.ndarray: Array of molecule identifiers for the "
+            "test samples."
+        }
+    )
 
-    def __init__(self, **kwargs : Any):
+    _frozen_test_data: pd.DataFrame = field(
+        metadata={
+            "doc": "pd.DataFrame: Raw methylation quality scores for "
+            "test samples."
+        }
+    )
+
+    _frozen_unmeth_mol_id: np.ndarray | None = field(
+        metadata={
+            "doc": "np.ndarray: Array of molecule identifiers for "
+            "unmethylated controls."
+        }
+    )
+
+    _frozen_unmeth_data: pd.DataFrame | None = field(
+        metadata={
+            "doc": "pd.DataFrame: Raw methylation quality scores for "
+            "unmethylated controls."
+        }
+    )
+
+    _frozen_meth_mol_id: np.ndarray | None = field(
+        metadata={
+            "doc": "np.ndarray: Array of molecule identifiers for "
+            "methylated controls."
+        }
+    )
+
+    _frozen_meth_data: pd.DataFrame | None = field(
+        metadata={
+            "doc": "pd.DataFrame: Raw methylation quality scores for "
+            "methylated controls."
+        }
+    )
+
+    def __init__(self, **kwargs: Any):
         if not kwargs.pop("_internal", False):
-            raise TypeError("Use MethPrintData._load() to instantiate ",
-                            "this class.")
+            raise TypeError(
+                "Use MethPrintData._load() to instantiate ", "this class."
+            )
         for f in fields(self):
             val = kwargs.get(f.name)
             if val is None:
                 val = kwargs.get(f.name.removeprefix("_frozen_"))
             object.__setattr__(self, f.name, val)
-    
+
     def _save(self, group):
-        dt = h5py.string_dtype(encoding="utf-8") # For storing strings        
+        dt = h5py.string_dtype(encoding="utf-8")  # For storing strings
         gchrom = group.create_group(self.chrom)
         gmeta = gchrom.create_group("metadata")
         gmeta.attrs["chrom"] = self.chrom
         gmeta.attrs["nbp"] = self.nbp
         if self._frozen_refseq is not None:
-            gmeta.create_dataset("refseq", data=self._frozen_refseq,
-                                 dtype=dt)
+            gmeta.create_dataset("refseq", data=self._frozen_refseq, dtype=dt)
         gdata = gchrom.create_group("data")
+
         def save_data(name, mol_id, df, gdata):
             if mol_id is not None and df is not None:
-                gdata.create_dataset(name+"_mol_id", data=mol_id, dtype=dt)
-                h5_utils.save_df(name+"_data", df, gdata)
-        save_data("test", self._frozen_test_mol_id,
-                  self._frozen_test_data, gdata)
-        save_data("unmeth", self._frozen_unmeth_mol_id,
-                  self._frozen_unmeth_data, gdata)
-        save_data("meth", self._frozen_meth_mol_id,
-                  self._frozen_meth_data, gdata)        
-        
+                gdata.create_dataset(name + "_mol_id", data=mol_id, dtype=dt)
+                h5_utils.save_df(name + "_data", df, gdata)
+
+        save_data(
+            "test", self._frozen_test_mol_id, self._frozen_test_data, gdata
+        )
+        save_data(
+            "unmeth",
+            self._frozen_unmeth_mol_id,
+            self._frozen_unmeth_data,
+            gdata,
+        )
+        save_data(
+            "meth", self._frozen_meth_mol_id, self._frozen_meth_data, gdata
+        )
+
     @classmethod
     def _load(cls, group, chrom) -> Self:
         if chrom not in group:
@@ -623,24 +766,32 @@ class MethPrintData:
         chrom = gmeta.attrs["chrom"]
         nbp = int(gmeta.attrs["nbp"])
         refseq = gmeta["refseq"].asstr()[()] if "refseq" in gmeta else None
+
         def load_data(name, gdata):
-            id_name = name+"_mol_id"
-            data_name = name+"_data"
+            id_name = name + "_mol_id"
+            data_name = name + "_data"
             if id_name in gdata and data_name in gdata:
                 mol_id = gdata[id_name].asstr()[()]
                 df = h5_utils.load_df(data_name, gdata)
                 return mol_id, df
             return None, None
+
         gdata = gchrom["data"]
-        test_mol_id, test_data = load_data("test", gdata)        
+        test_mol_id, test_data = load_data("test", gdata)
         unmeth_mol_id, unmeth_data = load_data("unmeth", gdata)
         meth_mol_id, meth_data = load_data("meth", gdata)
-        return cls._create(chrom=chrom, nbp=nbp, refseq=refseq,
-                           test_mol_id=test_mol_id, test_data=test_data,
-                           unmeth_mol_id=unmeth_mol_id,
-                           unmeth_data=unmeth_data, meth_mol_id=meth_mol_id,
-                           meth_data=meth_data)
-    
+        return cls._create(
+            chrom=chrom,
+            nbp=nbp,
+            refseq=refseq,
+            test_mol_id=test_mol_id,
+            test_data=test_data,
+            unmeth_mol_id=unmeth_mol_id,
+            unmeth_data=unmeth_data,
+            meth_mol_id=meth_mol_id,
+            meth_data=meth_data,
+        )
+
     @classmethod
     def _create(cls, **kwargs) -> Self:
         # Some validation
@@ -651,12 +802,13 @@ class MethPrintData:
     def __repr__(self):
         # Get all public attributes by filtering out private attributes
         # (those starting with '_')
-        public_attrs = [attr for attr in self.__slots__ if
-                        not attr.startswith('_')]
+        public_attrs = [
+            attr for attr in self.__slots__ if not attr.startswith("_")
+        ]
         # Add public properties explicitly (we check for them in __dict__)
         for attr, value in self.__class__.__dict__.items():
-            if isinstance(value, property) and not attr.startswith('_'):
-                public_attrs.append(attr)        
+            if isinstance(value, property) and not attr.startswith("_"):
+                public_attrs.append(attr)
         # Create a string of the public attribute names (not values)
         repr_str = f"{self.__class__.__name__}({', '.join(public_attrs)})"
         return repr_str
@@ -730,7 +882,7 @@ def _methylatable_positions(refseq, mtase_label, strand):
     mask = np.zeros(len(arr), dtype=bool)
     if mtase_label == "A":
         base = b"A" if strand == "+" else b"T"
-        mask |= (arr == base)
+        mask |= arr == base
         return mask
     b1, b2 = mtase_label[0].encode(), mtase_label[1].encode()
     dinuc = (arr[:-1] == b1) & (arr[1:] == b2)
@@ -785,12 +937,16 @@ def _resolve_sources(raw, which):
     """
     if which is not None:
         return [which]
-    return [src for src in ("test", "meth", "unmeth")
-            if getattr(raw, f"{src}_data") is not None]
+    return [
+        src
+        for src in ("test", "meth", "unmeth")
+        if getattr(raw, f"{src}_data") is not None
+    ]
 
 
-def _label_coverage(df, mol_id, refseq, labels, unmapped_strand,
-                    ignore_strand=False):
+def _label_coverage(
+    df, mol_id, refseq, labels, unmapped_strand, ignore_strand=False
+):
     """
     Per-molecule covered/total methylatable-site counts, per label.
 
@@ -889,14 +1045,13 @@ def _dropout_fracs(cov, labels):
     """
     covered = np.stack([cov[label][0] for label in labels])
     n_total = np.stack([cov[label][1] for label in labels])
-    frac = np.where(
-        n_total > 0, 1.0 - covered / np.maximum(n_total, 1), 0.0)
+    frac = np.where(n_total > 0, 1.0 - covered / np.maximum(n_total, 1), 0.0)
 
     covered_sum = covered.sum(axis=0)
     n_total_sum = n_total.sum(axis=0)
     pooled = np.where(
-        n_total_sum > 0, 1.0 - covered_sum / np.maximum(n_total_sum, 1),
-        0.0)
+        n_total_sum > 0, 1.0 - covered_sum / np.maximum(n_total_sum, 1), 0.0
+    )
     return frac, pooled
 
 
@@ -943,29 +1098,31 @@ class MethPrintExperiment:
     """
     Manager for MethPrint experimental data and analysis results.
 
-    This class provides tools to load raw methylation signals from sequencing 
+    This class provides tools to load raw methylation signals from sequencing
     files, manage control datasets (unmethylated and methylated, which are
     optional), and store the results of normalization and downstream analyses.
 
     .. note::
-       Direct instantiation is disabled. Use :meth:`load_raw` to process new 
+       Direct instantiation is disabled. Use :meth:`load_raw` to process new
        sequencing data or :meth:`load` to open an existing HDF5 dataset.
     """
-    
-    _raw_data : Mapping[str,MethPrintData]
-    _analysis : Mapping[str,DataFrameMap]
-    _global_analysis : DataFrameMap
-    _finalizer : Any | None
-    _tmp_dir : str | None
-    _exp_file : str | None
-    _mtase : Tuple[str, ...] | None
-    _wrap : bool
-    _ignore_strand : bool
 
-    def __init__(self, **kwargs : Any):
+    _raw_data: Mapping[str, MethPrintData]
+    _analysis: Mapping[str, DataFrameMap]
+    _global_analysis: DataFrameMap
+    _finalizer: Any | None
+    _tmp_dir: str | None
+    _exp_file: str | None
+    _mtase: tuple[str, ...] | None
+    _wrap: bool
+    _ignore_strand: bool
+
+    def __init__(self, **kwargs: Any):
         if not kwargs.pop("_internal", False):
-            raise TypeError("Use MethPrintExperiment.load() or .load_raw()",
-                            "to instantiate this class")
+            raise TypeError(
+                "Use MethPrintExperiment.load() or .load_raw()",
+                "to instantiate this class",
+            )
 
         # Bulk assignment of fields
         for f in fields(self):
@@ -974,8 +1131,7 @@ class MethPrintExperiment:
                 setattr(self, f.name, val)
 
         # Create the dicts for analysis
-        self._analysis = {chrom : DataFrameMap()
-                          for chrom in self._raw_data.keys()}
+        self._analysis = {chrom: DataFrameMap() for chrom in self._raw_data}
         self._global_analysis = DataFrameMap()
 
         self._finalizer = kwargs.get("_finalizer")
@@ -1022,7 +1178,8 @@ class MethPrintExperiment:
         if self._tmp_dir is None:
             self._tmp_dir = h5_utils.fresh_tmp_dir()
             self._finalizer = weakref.finalize(
-                self, MethPrintExperiment._cleanup_tmp_dir, self._tmp_dir)
+                self, MethPrintExperiment._cleanup_tmp_dir, self._tmp_dir
+            )
         return self._tmp_dir
 
     def close(self):
@@ -1041,26 +1198,27 @@ class MethPrintExperiment:
 
     def __exit__(self, *exc_info):
         self.close()
-    
-        
+
     @classmethod
-    def load_raw(cls,
-                 chromsize : str | Path,
-                 test_file : str | Path,
-                 unmeth_file : str | Path | None = None,
-                 meth_file : str | Path | None = None,
-                 fasta_file : str | Path | None = None,
-                 mtase : str | List[str] | None = None,
-                 chroms : List[str] | None = None,
-                 wrap : bool = False,
-                 ignore_strand : bool = False,
-                 colidx : List | None = None,
-                 max_nmol : int | None = None,
-                 seed : int | None = None,
-                 chunk_size : int = 1000000,
-                 tmp_dir : str | Path | None = None,
-                 max_cached_chroms : int = 1,
-                 nworker : int = 1) -> Self:
+    def load_raw(
+        cls,
+        chromsize: str | Path,
+        test_file: str | Path,
+        unmeth_file: str | Path | None = None,
+        meth_file: str | Path | None = None,
+        fasta_file: str | Path | None = None,
+        mtase: str | list[str] | None = None,
+        chroms: list[str] | None = None,
+        wrap: bool = False,
+        ignore_strand: bool = False,
+        colidx: list | None = None,
+        max_nmol: int | None = None,
+        seed: int | None = None,
+        chunk_size: int = 1000000,
+        tmp_dir: str | Path | None = None,
+        max_cached_chroms: int = 1,
+        nworker: int = 1,
+    ) -> Self:
         """
         Create an experiment by processing raw sequencing data files.
 
@@ -1156,14 +1314,18 @@ class MethPrintExperiment:
         if first_line == "\t".join(size_cols):
             df_size = pd.read_csv(chromsize, sep="\t")
         else:
-            df_size = pd.read_csv(chromsize, sep="\t", names=size_cols,
-                                  header=None)
+            df_size = pd.read_csv(
+                chromsize, sep="\t", names=size_cols, header=None
+            )
         if "chrom" not in df_size.columns:
-            raise ValueError("Column 'chrom' containing the chromosome "
-                             "identifier is missing.")
+            raise ValueError(
+                "Column 'chrom' containing the chromosome "
+                "identifier is missing."
+            )
         if "length" not in df_size.columns:
-            raise ValueError("Column 'length' containing the chromosome "
-                             "length is missing.")
+            raise ValueError(
+                "Column 'length' containing the chromosome length is missing."
+            )
         if not df_size["chrom"].is_unique:
             raise ValueError("Chromosomes must be unique in chromsize file")
 
@@ -1173,8 +1335,9 @@ class MethPrintExperiment:
         # range) used for `nbp`.
         full_sizes = dict(zip(df_size["chrom"], df_size["length"].astype(int)))
         if wrap:
-            sizes = dict(zip(df_size["chrom"],
-                             (df_size["length"]/2).astype(int)))
+            sizes = dict(
+                zip(df_size["chrom"], (df_size["length"] / 2).astype(int))
+            )
         else:
             sizes = full_sizes
 
@@ -1182,9 +1345,9 @@ class MethPrintExperiment:
             unknown = set(chroms) - set(df_size["chrom"])
             if unknown:
                 raise ValueError(
-                    f"Chromosomes not found in chromsize: {sorted(unknown)}")
-            full_sizes = {c: v for c, v in full_sizes.items()
-                         if c in chroms}
+                    f"Chromosomes not found in chromsize: {sorted(unknown)}"
+                )
+            full_sizes = {c: v for c, v in full_sizes.items() if c in chroms}
             sizes = {c: v for c, v in sizes.items() if c in chroms}
 
         refseq_by_chrom = {}
@@ -1195,7 +1358,8 @@ class MethPrintExperiment:
                     raise ValueError(
                         f"Reference sequence length for chromosome "
                         f"{chrom!r} ({len(seq)}) does not match its "
-                        f"chromsize length ({full_sizes[chrom]}).")
+                        f"chromsize length ({full_sizes[chrom]})."
+                    )
 
         sep = "\t"
         block_size = 64 * 1024 * 1024
@@ -1225,38 +1389,62 @@ class MethPrintExperiment:
                 if len(files) == 1:
                     # Single source: write directly into h5stream.
                     name, data_file = files[0]
-                    rng = (None if max_nmol is None
-                          else np.random.default_rng(seed))
+                    rng = (
+                        None
+                        if max_nmol is None
+                        else np.random.default_rng(seed)
+                    )
                     print(f"Reading {data_file} ...")
                     scratch_path = _decompress_once(data_file, tmp_dir)
                     read_path = scratch_path or str(data_file)
                     try:
                         header_names, name_for = _resolve_modkit_schema(
-                            read_path, sep, colidx)
+                            read_path, sep, colidx
+                        )
                         mol_maps = _scan_accepted_mols(
-                            read_path, header_names, name_for, sep,
-                            chunk_size, block_size, max_nmol, rng)
-                        mol_maps = {c: m for c, m in mol_maps.items()
-                                   if c in sizes}
+                            read_path,
+                            header_names,
+                            name_for,
+                            sep,
+                            chunk_size,
+                            block_size,
+                            max_nmol,
+                            rng,
+                        )
+                        mol_maps = {
+                            c: m for c, m in mol_maps.items() if c in sizes
+                        }
 
                         appenders = {}
                         for chrom, m in mol_maps.items():
                             gdata = _ensure_chrom_data_group(
-                                graw, chrom, sizes[chrom], refseq_by_chrom)
+                                graw, chrom, sizes[chrom], refseq_by_chrom
+                            )
                             gdata.create_dataset(
-                                f"{name}_mol_id", data=m["mol_id"],
-                                dtype=dt)
+                                f"{name}_mol_id", data=m["mol_id"], dtype=dt
+                            )
                             appenders[chrom] = h5_utils.AppendableDF(
-                                gdata, f"{name}_data",
+                                gdata,
+                                f"{name}_data",
                                 columns=list(_RAW_COLUMN_SPEC),
-                                dtypes=_RAW_COLUMN_SPEC)
+                                dtypes=_RAW_COLUMN_SPEC,
+                            )
 
                         _stream_rows_to_staging(
-                            read_path, header_names, name_for, sep,
-                            chunk_size, block_size, full_sizes, wrap,
-                            mol_maps, appenders,
-                            refseq_by_chrom=refseq_by_chrom, mtase=mtase,
-                            ignore_strand=ignore_strand)
+                            read_path,
+                            header_names,
+                            name_for,
+                            sep,
+                            chunk_size,
+                            block_size,
+                            full_sizes,
+                            wrap,
+                            mol_maps,
+                            appenders,
+                            refseq_by_chrom=refseq_by_chrom,
+                            mtase=mtase,
+                            ignore_strand=ignore_strand,
+                        )
                     finally:
                         if scratch_path is not None:
                             os.remove(scratch_path)
@@ -1267,57 +1455,83 @@ class MethPrintExperiment:
                     if max_nmol is None:
                         rngs = [None] * len(files)
                     else:
-                        rngs = [np.random.default_rng(child) for child in
-                                np.random.SeedSequence(seed).spawn(
-                                    len(files))]
+                        rngs = [
+                            np.random.default_rng(child)
+                            for child in np.random.SeedSequence(seed).spawn(
+                                len(files)
+                            )
+                        ]
 
-                    ingest_kwargs = dict(
-                        sep=sep, colidx=colidx, chunk_size=chunk_size,
-                        block_size=block_size, sizes=sizes,
-                        full_sizes=full_sizes, wrap=wrap,
-                        refseq_by_chrom=refseq_by_chrom, mtase=mtase,
-                        ignore_strand=ignore_strand, max_nmol=max_nmol,
-                        tmp_dir=tmp_dir)
-                    tasks = [(name, data_file, rngs[i])
-                            for i, (name, data_file) in enumerate(files)]
+                    ingest_kwargs = {
+                        "sep": sep,
+                        "colidx": colidx,
+                        "chunk_size": chunk_size,
+                        "block_size": block_size,
+                        "sizes": sizes,
+                        "full_sizes": full_sizes,
+                        "wrap": wrap,
+                        "refseq_by_chrom": refseq_by_chrom,
+                        "mtase": mtase,
+                        "ignore_strand": ignore_strand,
+                        "max_nmol": max_nmol,
+                        "tmp_dir": tmp_dir,
+                    }
+                    tasks = [
+                        (name, data_file, rngs[i])
+                        for i, (name, data_file) in enumerate(files)
+                    ]
 
                     if nworker > 1:
                         with ThreadPoolExecutor(
-                                max_workers=min(nworker,
-                                                len(tasks))) as executor:
-                            ingested = list(executor.map(
-                                lambda t: _ingest_file(
-                                    t[0], t[1], rng=t[2], **ingest_kwargs),
-                                tasks))
+                            max_workers=min(nworker, len(tasks))
+                        ) as executor:
+                            ingested = list(
+                                executor.map(
+                                    lambda t: _ingest_file(
+                                        t[0], t[1], rng=t[2], **ingest_kwargs
+                                    ),
+                                    tasks,
+                                )
+                            )
                     else:
                         ingested = [
-                            _ingest_file(name, data_file, rng=rng,
-                                        **ingest_kwargs)
-                            for name, data_file, rng in tasks]
+                            _ingest_file(
+                                name, data_file, rng=rng, **ingest_kwargs
+                            )
+                            for name, data_file, rng in tasks
+                        ]
 
                     test_chroms = ingested[0][1]
                     for name, chroms_found, _ in ingested[1:]:
                         if chroms_found != test_chroms:
                             raise ValueError(
                                 "Different number of chromosomes in test "
-                                f"and {name} datasets")
+                                f"and {name} datasets"
+                            )
 
-                    handles = {name: h5py.File(path, "r")
-                              for name, _, path in ingested}
+                    handles = {
+                        name: h5py.File(path, "r")
+                        for name, _, path in ingested
+                    }
                     try:
                         for chrom in sorted(test_chroms):
                             gchrom = graw.create_group(chrom)
                             handles["test"].copy(
-                                f"raw_data/{chrom}/metadata", gchrom,
-                                name="metadata")
+                                f"raw_data/{chrom}/metadata",
+                                gchrom,
+                                name="metadata",
+                            )
                             gdata = gchrom.create_group("data")
                             for name, _, _ in ingested:
-                                src = handles[name][
-                                    f"raw_data/{chrom}/data"]
-                                src.copy(f"{name}_mol_id", gdata,
-                                        name=f"{name}_mol_id")
-                                src.copy(f"{name}_data", gdata,
-                                        name=f"{name}_data")
+                                src = handles[name][f"raw_data/{chrom}/data"]
+                                src.copy(
+                                    f"{name}_mol_id",
+                                    gdata,
+                                    name=f"{name}_mol_id",
+                                )
+                                src.copy(
+                                    f"{name}_data", gdata, name=f"{name}_data"
+                                )
                     finally:
                         for h in handles.values():
                             h.close()
@@ -1332,11 +1546,13 @@ class MethPrintExperiment:
         exp._exp_file = None
         exp._tmp_dir = tmp_dir
         exp._finalizer = weakref.finalize(
-            exp, MethPrintExperiment._cleanup_tmp_dir, tmp_dir)
+            exp, MethPrintExperiment._cleanup_tmp_dir, tmp_dir
+        )
         return exp
-                
-    def save(self, exp_file: str | Path | None = None, *,
-            overwrite : bool = False):
+
+    def save(
+        self, exp_file: str | Path | None = None, *, overwrite: bool = False
+    ):
         """
         Save the experiment data and analysis to an HDF5 file.
 
@@ -1368,7 +1584,8 @@ class MethPrintExperiment:
             if exp_file is None:
                 raise ValueError(
                     "No exp_file given and this experiment has not "
-                    "been saved before; pass 'exp_file' explicitly.")
+                    "been saved before; pass 'exp_file' explicitly."
+                )
 
         dest_path = Path(exp_file)
         dest = str(dest_path.resolve())
@@ -1376,23 +1593,27 @@ class MethPrintExperiment:
             isinstance(entry, H5Array)
             and str(Path(entry.path).resolve()) == dest
             for data in list(self._analysis.values()) + [self._global_analysis]
-            for entry in data.values())
+            for entry in data.values()
+        )
         if collision:
             if not overwrite:
                 raise ValueError(
                     "Cannot save to the same file that backs an "
                     "existing H5Array analysis entry; save to a "
                     "different path, or pass overwrite=True to safely "
-                    "replace it in place.")
+                    "replace it in place."
+                )
             colliding = [
                 (data, name, entry.dataset_path)
                 for data in list(self._analysis.values())
                 + [self._global_analysis]
                 for name, entry in data.items()
                 if isinstance(entry, H5Array)
-                and str(Path(entry.path).resolve()) == dest]
+                and str(Path(entry.path).resolve()) == dest
+            ]
             tmp_path = dest_path.with_name(
-                dest_path.name + f".tmp{os.getpid()}")
+                dest_path.name + f".tmp{os.getpid()}"
+            )
             closed = False
             try:
                 self.save(tmp_path)
@@ -1409,16 +1630,17 @@ class MethPrintExperiment:
             finally:
                 if closed:
                     for data, name, dataset_path in colliding:
-                        data[name] = H5Array.load_from(
-                            dest_path, dataset_path)
+                        data[name] = H5Array.load_from(dest_path, dataset_path)
             self._exp_file = dest
             return
 
         with h5py.File(exp_file, "a") as h5stream:
             # Skip only if re-saving to the same file we're already
             # backed by; other destinations always get a fresh copy.
-            same_file = (self._exp_file is not None and
-                        str(Path(self._exp_file).resolve()) == dest)
+            same_file = (
+                self._exp_file is not None
+                and str(Path(self._exp_file).resolve()) == dest
+            )
             if not same_file or "raw_data" not in h5stream:
                 if "raw_data" in h5stream:
                     del h5stream["raw_data"]
@@ -1431,7 +1653,8 @@ class MethPrintExperiment:
                 h5stream.attrs["ignore_strand"] = self._ignore_strand
 
             # Save any analysis data
-            if "analysis" in h5stream: del h5stream["analysis"]
+            if "analysis" in h5stream:
+                del h5stream["analysis"]
             gana = h5stream.create_group("analysis")
             for chrom, data in self._analysis.items():
                 gchrom = gana.create_group(chrom)
@@ -1440,7 +1663,8 @@ class MethPrintExperiment:
                         entry.save_to(gchrom, name)
                     else:
                         h5_utils.save_df(name, entry, gchrom)
-            if "global_analysis" in h5stream: del h5stream["global_analysis"]
+            if "global_analysis" in h5stream:
+                del h5stream["global_analysis"]
             gana = h5stream.create_group("global_analysis")
             for name, entry in self._global_analysis.items():
                 if isinstance(entry, H5Array):
@@ -1448,11 +1672,14 @@ class MethPrintExperiment:
                 else:
                     h5_utils.save_df(name, entry, gana)
         self._exp_file = dest
-                
+
     @classmethod
-    def load(cls, exp_file: str | Path,
-             chroms: List[str] | None = None,
-             max_cached_chroms: int = 1) -> Self:
+    def load(
+        cls,
+        exp_file: str | Path,
+        chroms: list[str] | None = None,
+        max_cached_chroms: int = 1,
+    ) -> Self:
         """
         Load an experiment from a persistent HDF5 file.
 
@@ -1492,20 +1719,28 @@ class MethPrintExperiment:
                 if unknown:
                     raise ValueError(
                         f"Chromosomes not found in {exp_file}: "
-                        f"{sorted(unknown)}")
+                        f"{sorted(unknown)}"
+                    )
                 selected = list(chroms)
             else:
                 selected = available_chroms
-            raw_data = LazyRawDataMap(exp_file, selected,
-                                      max_cached=max_cached_chroms)
-            mtase = tuple(h5stream.attrs["mtase"].split(",")) \
-                if "mtase" in h5stream.attrs else None
+            raw_data = LazyRawDataMap(
+                exp_file, selected, max_cached=max_cached_chroms
+            )
+            mtase = (
+                tuple(h5stream.attrs["mtase"].split(","))
+                if "mtase" in h5stream.attrs
+                else None
+            )
             wrap = bool(h5stream.attrs.get("wrap", False))
             ignore_strand = bool(h5stream.attrs.get("ignore_strand", False))
-            obj = cls._create(_raw_data=raw_data,
-                              _exp_file=str(Path(exp_file).resolve()),
-                              _mtase=mtase, _wrap=wrap,
-                              _ignore_strand=ignore_strand)
+            obj = cls._create(
+                _raw_data=raw_data,
+                _exp_file=str(Path(exp_file).resolve()),
+                _mtase=mtase,
+                _wrap=wrap,
+                _ignore_strand=ignore_strand,
+            )
 
             # Load any analysis data
             gana = h5stream["analysis"]
@@ -1516,25 +1751,28 @@ class MethPrintExperiment:
                 for name in gchrom:
                     if isinstance(gchrom[name], h5py.Dataset):
                         obj._analysis[chrom][name] = H5Array.load_from(
-                            exp_file, f"analysis/{chrom}/{name}")
+                            exp_file, f"analysis/{chrom}/{name}"
+                        )
                     else:
                         obj._analysis[chrom][name] = h5_utils.load_df(
-                            name, gchrom)
+                            name, gchrom
+                        )
             gana = h5stream["global_analysis"]
             for name in gana:
                 if isinstance(gana[name], h5py.Dataset):
                     obj._global_analysis[name] = H5Array.load_from(
-                        exp_file, f"global_analysis/{name}")
+                        exp_file, f"global_analysis/{name}"
+                    )
                 else:
                     obj._global_analysis[name] = h5_utils.load_df(name, gana)
             return obj
-                
+
     @classmethod
     def _create(cls, **kwargs) -> Self:
         return cls(**kwargs, _internal=True)
 
     @property
-    def chroms(self) -> Tuple[str,...]:
+    def chroms(self) -> tuple[str, ...]:
         """
         Get the identifiers of all chromosomes in the experiment.
 
@@ -1546,7 +1784,7 @@ class MethPrintExperiment:
         return tuple(self._raw_data.keys())
 
     @property
-    def mtase(self) -> Tuple[str,...] | None:
+    def mtase(self) -> tuple[str, ...] | None:
         """
         Get the methyltransferase(s) used for this experiment.
 
@@ -1582,14 +1820,14 @@ class MethPrintExperiment:
         return self._ignore_strand
 
     @property
-    def raw(self) -> Mapping[str,MethPrintData]:
+    def raw(self) -> Mapping[str, MethPrintData]:
         """
         Provide read-only access to the raw experimental data.
 
         Returns
         -------
         MappingProxyType
-            A frozen mapping where keys are chromosome names and values 
+            A frozen mapping where keys are chromosome names and values
             are :class:`MethPrintData` objects.
         """
         return MappingProxyType(self._raw_data)
@@ -1605,15 +1843,15 @@ class MethPrintExperiment:
     def analysis(self) -> Mapping[str, DataFrameMap]:
         """
         Access the analysis results for each chromosome.
-        
+
         Returns
         -------
         FixedKeyMap
-            A mapping where chromosome keys are fixed, but the analysis 
+            A mapping where chromosome keys are fixed, but the analysis
             DataFrames remain mutable.
         """
         return FixedKeyMap(self._analysis)
-    
+
     @property
     def global_analysis(self) -> DataFrameMap:
         """
@@ -1626,9 +1864,17 @@ class MethPrintExperiment:
         """
         return self._global_analysis
 
-    def to_dense(self, chrom, which="test", *, mols=None,
-                as_h5array=True, dtype=np.float64, batch_size=20000,
-                mask_name=None):
+    def to_dense(
+        self,
+        chrom,
+        which="test",
+        *,
+        mols=None,
+        as_h5array=True,
+        dtype=np.float64,
+        batch_size=20000,
+        mask_name=None,
+    ):
         """
         Convert a raw long-format methylation table to a dense
         representation.
@@ -1686,26 +1932,31 @@ class MethPrintExperiment:
         from `load_raw`, `smooth`, or `meth_prob`).
         """
         if not np.issubdtype(np.dtype(dtype), np.floating):
-            raise ValueError("'dtype' must be a floating dtype to "
-                             f"represent missing values as NaN, got "
-                             f"{dtype}")
+            raise ValueError(
+                "'dtype' must be a floating dtype to "
+                f"represent missing values as NaN, got "
+                f"{dtype}"
+            )
 
         raw = self.raw[chrom]
         df = getattr(raw, f"{which}_data")
         mol_id = getattr(raw, f"{which}_mol_id")
         if df is None or mol_id is None:
             raise ValueError(
-                f"No '{which}' data available for chrom '{chrom}'")
+                f"No '{which}' data available for chrom '{chrom}'"
+            )
         nbp = raw.nbp
         all_pos = pd.Index(range(nbp))
 
         keep = None
         if mask_name is not None:
-            keep = self._analysis[chrom][
-                f"{which}_{mask_name}"]["keep"].to_numpy()
+            keep = self._analysis[chrom][f"{which}_{mask_name}"][
+                "keep"
+            ].to_numpy()
 
-        mol_ids = np.arange(len(mol_id)) if mols is None \
-            else np.atleast_1d(mols)
+        mol_ids = (
+            np.arange(len(mol_id)) if mols is None else np.atleast_1d(mols)
+        )
         if mols is not None:
             df = df[df["mol_index"].isin(mol_ids)]
 
@@ -1715,10 +1966,12 @@ class MethPrintExperiment:
                     f"Materializing {len(mol_ids)} molecules as a "
                     f"pd.DataFrame ({len(mol_ids)}x{nbp}); this may "
                     "use significant memory. Pass as_h5array=True to "
-                    "stream to disk instead.", stacklevel=2)
-            piv = df.pivot(index="mol_index", columns="pos",
-                           values="mod_qual").reindex(index=mol_ids,
-                                                      columns=all_pos)
+                    "stream to disk instead.",
+                    stacklevel=2,
+                )
+            piv = df.pivot(
+                index="mol_index", columns="pos", values="mod_qual"
+            ).reindex(index=mol_ids, columns=all_pos)
             piv = piv.astype(dtype)
             if keep is not None:
                 piv = _apply_keep_mask(piv, keep[mol_ids])
@@ -1727,10 +1980,12 @@ class MethPrintExperiment:
         df = df.sort_values("mol_index", kind="stable")
         mol_index = df["mol_index"].to_numpy()
         nmol_out = len(mol_ids)
-        out = H5Array.create((nmol_out, nbp), dtype=dtype,
-                             index=(mol_ids if mols is not None
-                                   else None),
-                             dir=self.resolve_tmp_dir())
+        out = H5Array.create(
+            (nmol_out, nbp),
+            dtype=dtype,
+            index=(mol_ids if mols is not None else None),
+            dir=self.resolve_tmp_dir(),
+        )
         for start in range(0, nmol_out, batch_size):
             stop = min(start + batch_size, nmol_out)
             chunk_ids = mol_ids[start:stop]
@@ -1744,9 +1999,8 @@ class MethPrintExperiment:
                 # non-contiguous) subset -- select by membership.
                 batch_df = df[df["mol_index"].isin(chunk_ids)]
             piv = batch_df.pivot(
-                index="mol_index", columns="pos",
-                values="mod_qual").reindex(index=chunk_ids,
-                                           columns=all_pos)
+                index="mol_index", columns="pos", values="mod_qual"
+            ).reindex(index=chunk_ids, columns=all_pos)
             arr = piv.to_numpy()
             if keep is not None:
                 arr = _apply_keep_mask(arr, keep[chunk_ids])
@@ -1777,7 +2031,8 @@ class MethPrintExperiment:
             raise ValueError(
                 "This experiment has no 'mtase' set (specify it via "
                 "load_raw()); required to determine methylatable "
-                "positions.")
+                "positions."
+            )
         if mtase is None:
             return self._mtase
         labels = _normalize_mtase(mtase)
@@ -1785,7 +2040,8 @@ class MethPrintExperiment:
         if unknown:
             raise ValueError(
                 "'mtase' contains label(s) not in this experiment's "
-                f"mtase {list(self._mtase)}: {sorted(unknown)}.")
+                f"mtase {list(self._mtase)}: {sorted(unknown)}."
+            )
         return labels
 
     def _resolve_chroms_subset(self, chroms):
@@ -1814,17 +2070,22 @@ class MethPrintExperiment:
             raise ValueError(
                 "'chroms' contains chromosome(s) not in this "
                 f"experiment's chroms {list(self.chroms)}: "
-                f"{sorted(unknown)}.")
+                f"{sorted(unknown)}."
+            )
         return tuple(chroms)
 
-    def filter_dropout(self, *, which: str | None = None,
-                       mtase: list | None = None,
-                       chroms: list | None = None,
-                       thres_min: float = 0.0,
-                       thres_max: float = 1.0,
-                       unmapped_strand: str = "union",
-                       method: str = "separate",
-                       mask_name: str = "dropout_mask") -> None:
+    def filter_dropout(
+        self,
+        *,
+        which: str | None = None,
+        mtase: list | None = None,
+        chroms: list | None = None,
+        thres_min: float = 0.0,
+        thres_max: float = 1.0,
+        unmapped_strand: str = "union",
+        method: str = "separate",
+        mask_name: str = "dropout_mask",
+    ) -> None:
         """
         Flag molecules with poor coverage at methylatable positions.
 
@@ -1882,31 +2143,37 @@ class MethPrintExperiment:
         chroms = self._resolve_chroms_subset(chroms)
         if not (0.0 <= thres_min <= 1.0):
             raise ValueError(
-                f"'thres_min' must be in [0, 1], got {thres_min}.")
+                f"'thres_min' must be in [0, 1], got {thres_min}."
+            )
         if not (0.0 <= thres_max <= 1.0):
             raise ValueError(
-                f"'thres_max' must be in [0, 1], got {thres_max}.")
+                f"'thres_max' must be in [0, 1], got {thres_max}."
+            )
         if thres_min > thres_max:
             raise ValueError(
                 "'thres_min' must be <= 'thres_max', got "
-                f"thres_min={thres_min}, thres_max={thres_max}.")
+                f"thres_min={thres_min}, thres_max={thres_max}."
+            )
         if unmapped_strand not in _VALID_UNMAPPED_STRAND:
             raise ValueError(
                 "'unmapped_strand' must be one of "
                 f"{sorted(_VALID_UNMAPPED_STRAND)}, got "
-                f"{unmapped_strand!r}.")
+                f"{unmapped_strand!r}."
+            )
         if method not in _VALID_FILTER_DROPOUT_METHOD:
             raise ValueError(
                 "'method' must be one of "
                 f"{sorted(_VALID_FILTER_DROPOUT_METHOD)}, got "
-                f"{method!r}.")
+                f"{method!r}."
+            )
 
         for chrom in chroms:
             raw = self.raw[chrom]
             if raw.refseq is None:
                 raise ValueError(
                     f"No refseq available for chrom '{chrom}'; "
-                    "required to determine methylatable positions.")
+                    "required to determine methylatable positions."
+                )
             sources = _resolve_sources(raw, which)
 
             for src in sources:
@@ -1914,31 +2181,45 @@ class MethPrintExperiment:
                 mol_id = getattr(raw, f"{src}_mol_id")
                 if df is None or mol_id is None:
                     raise ValueError(
-                        f"No '{src}' data available for chrom '{chrom}'")
+                        f"No '{src}' data available for chrom '{chrom}'"
+                    )
                 cov = _label_coverage(
-                    df, mol_id, raw.refseq, labels, unmapped_strand,
-                    ignore_strand=self._ignore_strand)
+                    df,
+                    mol_id,
+                    raw.refseq,
+                    labels,
+                    unmapped_strand,
+                    ignore_strand=self._ignore_strand,
+                )
                 dropout_frac, combined_frac = _dropout_fracs(cov, labels)
 
                 if method == "separate":
-                    keep = ((dropout_frac >= thres_min) &
-                            (dropout_frac <= thres_max)).all(axis=0)
+                    keep = (
+                        (dropout_frac >= thres_min)
+                        & (dropout_frac <= thres_max)
+                    ).all(axis=0)
                 else:
-                    keep = (combined_frac >= thres_min) & \
-                           (combined_frac <= thres_max)
+                    keep = (combined_frac >= thres_min) & (
+                        combined_frac <= thres_max
+                    )
 
                 # Stored as int, not bool: bool isn't a numeric dtype
                 # to h5_utils' save/load, so it would round-trip
                 # through the string block as literal "True"/"False"
                 # text -- and casting that back to bool makes every
                 # non-empty string truthy, silently breaking the mask.
-                self._analysis[chrom][f"{src}_{mask_name}"] = \
-                    pd.DataFrame({"keep": keep.astype(np.int8)})
+                self._analysis[chrom][f"{src}_{mask_name}"] = pd.DataFrame(
+                    {"keep": keep.astype(np.int8)}
+                )
 
-    def summarize_dropout(self, *, which: str | None = None,
-                          mtase: list | None = None,
-                          chroms: list | None = None,
-                          unmapped_strand: str = "union") -> pd.DataFrame:
+    def summarize_dropout(
+        self,
+        *,
+        which: str | None = None,
+        mtase: list | None = None,
+        chroms: list | None = None,
+        unmapped_strand: str = "union",
+    ) -> pd.DataFrame:
         """
         Return a per-label dropout fraction summary (QC check).
 
@@ -1986,7 +2267,8 @@ class MethPrintExperiment:
             raise ValueError(
                 "'unmapped_strand' must be one of "
                 f"{sorted(_VALID_UNMAPPED_STRAND)}, got "
-                f"{unmapped_strand!r}.")
+                f"{unmapped_strand!r}."
+            )
 
         percentiles = [0, 25, 50, 75, 100]
         pct_cols = [f"p{p}" for p in percentiles]
@@ -1996,7 +2278,8 @@ class MethPrintExperiment:
             if raw.refseq is None:
                 raise ValueError(
                     f"No refseq available for chrom '{chrom}'; "
-                    "required to determine methylatable positions.")
+                    "required to determine methylatable positions."
+                )
             sources = _resolve_sources(raw, which)
 
             for src in sources:
@@ -2004,43 +2287,74 @@ class MethPrintExperiment:
                 mol_id = getattr(raw, f"{src}_mol_id")
                 if df is None or mol_id is None:
                     raise ValueError(
-                        f"No '{src}' data available for chrom '{chrom}'")
+                        f"No '{src}' data available for chrom '{chrom}'"
+                    )
                 cov = _label_coverage(
-                    df, mol_id, raw.refseq, labels, unmapped_strand,
-                    ignore_strand=self._ignore_strand)
+                    df,
+                    mol_id,
+                    raw.refseq,
+                    labels,
+                    unmapped_strand,
+                    ignore_strand=self._ignore_strand,
+                )
                 frac, pooled = _dropout_fracs(cov, labels)
 
                 for i, label in enumerate(labels):
-                    plus_n = int(_methylatable_positions(
-                        raw.refseq, label, "+").sum())
-                    minus_n = int(_methylatable_positions(
-                        raw.refseq, label, "-").sum())
-                    row = {"chrom": chrom, "source": src, "label": label,
-                           "n_sites_plus": plus_n,
-                           "n_sites_minus": minus_n}
-                    row.update(zip(pct_cols,
-                                   np.percentile(frac[i], percentiles)))
+                    plus_n = int(
+                        _methylatable_positions(raw.refseq, label, "+").sum()
+                    )
+                    minus_n = int(
+                        _methylatable_positions(raw.refseq, label, "-").sum()
+                    )
+                    row = {
+                        "chrom": chrom,
+                        "source": src,
+                        "label": label,
+                        "n_sites_plus": plus_n,
+                        "n_sites_minus": minus_n,
+                    }
+                    row.update(
+                        zip(pct_cols, np.percentile(frac[i], percentiles))
+                    )
                     rows.append(row)
 
                 if len(labels) > 1:
-                    row = {"chrom": chrom, "source": src,
-                           "label": "aggregate",
-                           "n_sites_plus": sum(int(_methylatable_positions(
-                               raw.refseq, label, "+").sum())
-                               for label in labels),
-                           "n_sites_minus": sum(int(_methylatable_positions(
-                               raw.refseq, label, "-").sum())
-                               for label in labels)}
-                    row.update(zip(pct_cols,
-                                   np.percentile(pooled, percentiles)))
+                    row = {
+                        "chrom": chrom,
+                        "source": src,
+                        "label": "aggregate",
+                        "n_sites_plus": sum(
+                            int(
+                                _methylatable_positions(
+                                    raw.refseq, label, "+"
+                                ).sum()
+                            )
+                            for label in labels
+                        ),
+                        "n_sites_minus": sum(
+                            int(
+                                _methylatable_positions(
+                                    raw.refseq, label, "-"
+                                ).sum()
+                            )
+                            for label in labels
+                        ),
+                    }
+                    row.update(
+                        zip(pct_cols, np.percentile(pooled, percentiles))
+                    )
                     rows.append(row)
 
         return pd.DataFrame(rows)
 
-    def dropout_fractions(self, *, which: str | None = None,
-                          mtase: list | None = None,
-                          chroms: list | None = None,
-                          unmapped_strand: str = "union") -> dict:
+    def dropout_fractions(
+        self,
+        *,
+        which: str | None = None,
+        mtase: list | None = None,
+        chroms: list | None = None,
+        unmapped_strand: str = "union",
+    ) -> dict:
         """
         Return each molecule's dropout fraction (QC check).
 
@@ -2088,7 +2402,8 @@ class MethPrintExperiment:
             raise ValueError(
                 "'unmapped_strand' must be one of "
                 f"{sorted(_VALID_UNMAPPED_STRAND)}, got "
-                f"{unmapped_strand!r}.")
+                f"{unmapped_strand!r}."
+            )
 
         result = {}
         for chrom in chroms:
@@ -2096,7 +2411,8 @@ class MethPrintExperiment:
             if raw.refseq is None:
                 raise ValueError(
                     f"No refseq available for chrom '{chrom}'; "
-                    "required to determine methylatable positions.")
+                    "required to determine methylatable positions."
+                )
             sources = _resolve_sources(raw, which)
 
             for src in sources:
@@ -2104,10 +2420,16 @@ class MethPrintExperiment:
                 mol_id = getattr(raw, f"{src}_mol_id")
                 if df is None or mol_id is None:
                     raise ValueError(
-                        f"No '{src}' data available for chrom '{chrom}'")
+                        f"No '{src}' data available for chrom '{chrom}'"
+                    )
                 cov = _label_coverage(
-                    df, mol_id, raw.refseq, labels, unmapped_strand,
-                    ignore_strand=self._ignore_strand)
+                    df,
+                    mol_id,
+                    raw.refseq,
+                    labels,
+                    unmapped_strand,
+                    ignore_strand=self._ignore_strand,
+                )
                 frac, pooled = _dropout_fracs(cov, labels)
 
                 for i, label in enumerate(labels):
@@ -2120,11 +2442,12 @@ class MethPrintExperiment:
     def __repr__(self):
         # Get all public attributes by filtering out private attributes
         # (those starting with '_')
-        public_attrs = [attr for attr in self.__slots__ if
-                        not attr.startswith('_')]
+        public_attrs = [
+            attr for attr in self.__slots__ if not attr.startswith("_")
+        ]
         # Add public properties explicitly (we check for them in __dict__)
         for attr, value in self.__class__.__dict__.items():
-            if isinstance(value, property) and not attr.startswith('_'):
+            if isinstance(value, property) and not attr.startswith("_"):
                 public_attrs.append(attr)
         # Create a string of the public attribute names (not values)
         repr_str = f"{self.__class__.__name__}({', '.join(public_attrs)})"

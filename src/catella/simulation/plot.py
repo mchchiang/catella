@@ -1,17 +1,20 @@
 # plot.py
 
 import warnings
-import matplotlib.pyplot as plt
-from functools import wraps
-from dataclasses import dataclass, field
 from collections.abc import Iterable
-from catella.simulation.results import SimDataset
-from catella.simulation.analysis import NucFiberMap, SimAnalysis
+from dataclasses import dataclass, field
+from functools import wraps
 from pathlib import Path
-from matplotlib.colors import Normalize
+
+import matplotlib.pyplot as plt
 import numpy as np
 import scipy.cluster.hierarchy as sch
+from matplotlib.colors import Normalize
+
 from catella.mapping import CoordsTransform
+from catella.simulation.analysis import NucFiberMap, SimAnalysis
+from catella.simulation.results import SimDataset
+
 
 @dataclass(slots=True, kw_only=True)
 class SimPlot:
@@ -23,38 +26,41 @@ class SimPlot:
     visualize nucleosome positions over time or across different molecules
     within a dataset.
     """
-    
+
     # Global plot settings
-    linewidth : int = 1.0
+    linewidth: int = 1.0
     """The border and axis line thickness for all plots."""
-    
-    fontsize : int = 14
+
+    fontsize: int = 14
     """The base font size for labels, ticks, and titles."""
-    
-    cmap : str = "OrRd"
+
+    cmap: str = "OrRd"
     """The Matplotlib colormap name used for heatmaps."""
 
-    nan_color : str = "lightgray"
+    nan_color: str = "lightgray"
     """The color used to render NaN cells in heatmaps."""
 
-    _rc : dict = field(init=None)
+    _rc: dict = field(init=None)
 
     def __post_init__(self):
         """Initializes the runtime configuration dictionary for matplotlib
         styling."""
-        self._rc = {"font.size" : self.fontsize,
-                    "axes.linewidth" : self.linewidth,
-                    "axes.axisbelow" : False,
-                    "axes.unicode_minus" : False
-                    }
+        self._rc = {
+            "font.size": self.fontsize,
+            "axes.linewidth": self.linewidth,
+            "axes.axisbelow": False,
+            "axes.unicode_minus": False,
+        }
 
     def _apply_style(func):
         """Decorator to apply the class-defined matplotlib RC context to a
         method."""
+
         @wraps(func)
         def wrapper(self, *args, **kwargs):
             with plt.rc_context(rc=self._rc):
                 return func(self, *args, **kwargs)
+
         return wrapper
 
     def _log10(self, x, name=None):
@@ -81,19 +87,23 @@ class SimPlot:
         log10x = np.log10(x)
         if log10x < 0.0 or not np.isclose(np.mod(log10x, 1), 0, atol=1e-9):
             xstr = name if name is not None else "x"
-            raise ValueError(f"'{name}' must be a non-negative power of 10.")
+            raise ValueError(f"'{xstr}' must be a non-negative power of 10.")
         return log10x
 
     @_apply_style
-    def plot_energy(self, dataset : SimDataset, *,
-                    chrom : str,
-                    mol : int,
-                    run : int,
-                    tstart : int | None = None,
-                    tend : int | None = None,
-                    tscale : int = 1000,
-                    out_file : str | Path | None = None,
-                    show : bool = True):
+    def plot_energy(
+        self,
+        dataset: SimDataset,
+        *,
+        chrom: str,
+        mol: int,
+        run: int,
+        tstart: int | None = None,
+        tend: int | None = None,
+        tscale: int = 1000,
+        out_file: str | Path | None = None,
+        show: bool = True,
+    ):
         """
         Plot the total energy of the system for a specific simulation run
         of a molecule over time.
@@ -133,48 +143,55 @@ class SimPlot:
         tpow = int(self._log10(tscale, "tscale"))
 
         # Retrieve the data
-        data = dataset.raw[chrom,mol,run]
+        data = dataset.raw[chrom, mol, run]
 
         # Normalize time indices and validate time values
         nframes = len(data.time)
         start_idx = 0 if tstart is None else data.time_index(tstart)
-        end_idx = nframes if tend is None else \
-            min(data.time_index(tend)+1, nframes)
+        end_idx = (
+            nframes
+            if tend is None
+            else min(data.time_index(tend) + 1, nframes)
+        )
         time = data.time[start_idx:end_idx] / tscale
         energy = data.energy[start_idx:end_idx]
-        
-        # Plot the nucleosome position as a heat map        
+
+        # Plot the nucleosome position as a heat map
         fig, ax = plt.subplots()
         ax.plot(time, energy)
-        
+
         tpow_str = rf"$10^{{{tpow}}}$"
         ax.set_xlabel(rf"Time $t$ [{tpow_str} MCS]")
-        ax.set_ylabel(rf"Energy [$k_BT$]")        
+        ax.set_ylabel(r"Energy [$k_BT$]")
 
         fig.tight_layout()
-        
-        if show: plt.show()
+
+        if show:
+            plt.show()
 
         if out_file is not None:
             out_file = Path(out_file)
             out_dir = out_file.parents[0]
             out_dir.mkdir(exist_ok=True, parents=True)
             fig.savefig(out_file)
-    
-    
+
     @_apply_style
-    def plot_nuc_pos(self, dataset : SimDataset, *,
-                     chrom : str,
-                     mol : int,
-                     run : int,
-                     tstart : int | None = None,
-                     tend : int | None = None,
-                     tscale : int = 1000,
-                     xscale : int = 1000,
-                     cmap : str | None = None,
-                     out_file : str | Path | None = None,
-                     plot_eseq : bool = False,
-                     show : bool = True):
+    def plot_nuc_pos(
+        self,
+        dataset: SimDataset,
+        *,
+        chrom: str,
+        mol: int,
+        run: int,
+        tstart: int | None = None,
+        tend: int | None = None,
+        tscale: int = 1000,
+        xscale: int = 1000,
+        cmap: str | None = None,
+        out_file: str | Path | None = None,
+        plot_eseq: bool = False,
+        show: bool = True,
+    ):
         """
         Plot the nucleosome position heatmap for a specific simulation run of
         a molecule over time.
@@ -224,20 +241,23 @@ class SimPlot:
         xpow = int(self._log10(xscale, "xscale"))
 
         # Retrieve the data
-        data = dataset.raw[chrom,mol,run]
+        data = dataset.raw[chrom, mol, run]
         nuc_map = NucFiberMap(nbp=data.nbp, nucbp=data.nucbp)
 
         # Normalize time indices and validate time values
         nframes = len(data.time)
         start_idx = 0 if tstart is None else data.time_index(tstart)
-        end_idx = nframes if tend is None else \
-            min(data.time_index(tend)+1, nframes)
+        end_idx = (
+            nframes
+            if tend is None
+            else min(data.time_index(tend) + 1, nframes)
+        )
 
         # Compute the nucleosome occupancy map
         occup = nuc_map.stack(data.position[start_idx:end_idx])
         tstart = data.time[start_idx]
-        tend = data.time[end_idx-1]
-        
+        tend = data.time[end_idx - 1]
+
         # Set up the figure. The second column is a dedicated,
         # narrow slot for the colorbar so it doesn't shrink the
         # heatmap panel itself.
@@ -245,17 +265,19 @@ class SimPlot:
         if plot_eseq:
             nplots = 2
             gridspec_kw["height_ratios"] = [4, 1]
-            fig, ax = plt.subplots(nrows=nplots, ncols=2,
-                                   gridspec_kw=gridspec_kw)
+            fig, ax = plt.subplots(
+                nrows=nplots, ncols=2, gridspec_kw=gridspec_kw
+            )
             w, h = fig.get_size_inches()
-            fig.set_size_inches(w, h*1.25)
+            fig.set_size_inches(w, h * 1.25)
             hm_ax, cbar_ax = ax[0, 0], ax[0, 1]
             seq_ax = ax[1, 0]
             ax[1, 1].axis("off")
         else:
             nplots = 1
-            fig, ax = plt.subplots(nrows=nplots, ncols=2,
-                                   gridspec_kw=gridspec_kw)
+            fig, ax = plt.subplots(
+                nrows=nplots, ncols=2, gridspec_kw=gridspec_kw
+            )
             hm_ax, cbar_ax = ax[0], ax[1]
             seq_ax = None
 
@@ -263,14 +285,19 @@ class SimPlot:
         norm = Normalize(vmin=0, vmax=1)
         cmap_obj = plt.get_cmap(cmap if cmap is not None else self.cmap)
         cmap_obj = cmap_obj.with_extremes(bad=self.nan_color)
-        im = hm_ax.imshow(occup, cmap=cmap_obj, norm=norm, aspect="auto",
-                          origin="lower", interpolation="none",
-                          extent=[0, data.nbp/xscale, tstart/tscale,
-                                  tend/tscale])
+        im = hm_ax.imshow(
+            occup,
+            cmap=cmap_obj,
+            norm=norm,
+            aspect="auto",
+            origin="lower",
+            interpolation="none",
+            extent=[0, data.nbp / xscale, tstart / tscale, tend / tscale],
+        )
         xpow_str = rf"$10^{{{xpow}}}$"
         tpow_str = rf"$10^{{{tpow}}}$"
         hm_ax.invert_yaxis()
-        hm_ax.set_xlim(0, data.nbp/xscale)
+        hm_ax.set_xlim(0, data.nbp / xscale)
         if plot_eseq:
             hm_ax.get_xaxis().set_visible(False)
         hm_ax.set_ylabel(rf"Time $t$ [{tpow_str} MCS]")
@@ -279,48 +306,53 @@ class SimPlot:
 
         # Plot the sequence energy if needed
         if plot_eseq:
-            eseq = dataset.eseq[chrom][mol,:]
+            eseq = dataset.eseq[chrom][mol, :]
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", category=RuntimeWarning)
                 emin = max(np.nanmin(eseq), -dataset.settings["emax"])
                 emax = min(np.nanmax(eseq), dataset.settings["emax"])
             if np.isfinite(emin) and np.isfinite(emax):
-                seq_ax.set_ylim(emin,emax)
+                seq_ax.set_ylim(emin, emax)
             lnuc = dataset.settings["nucbp"]
             trans = CoordsTransform(lnuc=lnuc)
             eseq = trans.left_to_center_aligned(eseq)
-            eseq[:lnuc//2] = np.nan
-            eseq[len(eseq)-lnuc//2:] = np.nan
-            seq_ax.plot(np.arange(0,data.nbp)/xscale, eseq)
+            eseq[: lnuc // 2] = np.nan
+            eseq[len(eseq) - lnuc // 2 :] = np.nan
+            seq_ax.plot(np.arange(0, data.nbp) / xscale, eseq)
             seq_ax.set_ylabel(r"$E_{\text{seq}}$ [$k_BT$]")
-            seq_ax.set_xlim(0, data.nbp/xscale)
+            seq_ax.set_xlim(0, data.nbp / xscale)
 
         # Common x-axis label
         btm_ax = seq_ax if plot_eseq else hm_ax
         btm_ax.set_xlabel(rf"Position $x$ [{xpow_str} bp]")
-        
+
         fig.tight_layout()
-        
-        if show: plt.show()
+
+        if show:
+            plt.show()
 
         if out_file is not None:
             out_file = Path(out_file)
             out_dir = out_file.parents[0]
             out_dir.mkdir(exist_ok=True, parents=True)
             fig.savefig(out_file)
-        
+
     @_apply_style
-    def plot_occup(self, dataset : SimDataset, *,
-                   chrom : str,
-                   time : int | None = None,
-                   occup_name : str = "occup",
-                   mols : Iterable[int] | None = None,
-                   xscale : int = 1000,
-                   cmap : str | None = None,
-                   out_file : str | Path | None = None,
-                   plot_eseq : bool = False,
-                   link_mat : np.ndarray | None = None,
-                   show : bool = True):
+    def plot_occup(
+        self,
+        dataset: SimDataset,
+        *,
+        chrom: str,
+        time: int | None = None,
+        occup_name: str = "occup",
+        mols: Iterable[int] | None = None,
+        xscale: int = 1000,
+        cmap: str | None = None,
+        out_file: str | Path | None = None,
+        plot_eseq: bool = False,
+        link_mat: np.ndarray | None = None,
+        show: bool = True,
+    ):
         """
         Plot the nucleosome occupancy across all molecules for a specific
         chromosome.
@@ -379,13 +411,14 @@ class SimPlot:
         if occup_name not in dataset.analysis[chrom]:
             # Compute occupancy on-the-fly if the analysis cannot be found
             ana = SimAnalysis()
-            ana.compute_occup(dataset=dataset, time=time, chroms=chrom,
-                              name=occup_name)
+            ana.compute_occup(
+                dataset=dataset, time=time, chroms=chrom, name=occup_name
+            )
         occup = dataset.analysis[chrom][occup_name]
         if mols is not None:
             occup = np.asarray(occup)[list(mols)]
         sort_data = link_mat is not None
-        
+
         # Set up the figure. The rightmost column is a dedicated,
         # narrow slot for the colorbar, so it appears to the right of
         # the dendrogram (when shown) instead of shrinking hm_ax.
@@ -395,20 +428,23 @@ class SimPlot:
         if plot_eseq:
             nrows = 2
             gridspec_kw["height_ratios"] = [4, 1]
-            fig, ax = plt.subplots(nrows=nrows, ncols=ncols,
-                                   gridspec_kw=gridspec_kw)
+            fig, ax = plt.subplots(
+                nrows=nrows, ncols=ncols, gridspec_kw=gridspec_kw
+            )
             w, h = fig.get_size_inches()
-            fig.set_size_inches(w*1.25, h*1.25)
-            hm_ax = ax[0,0]
-            dend_ax = ax[0,1] if sort_data else None
-            cbar_ax = ax[0,2] if sort_data else ax[0,1]
-            seq_ax = ax[1,0]
-            ax[1,1].axis("off")
-            if sort_data: ax[1,2].axis("off")
+            fig.set_size_inches(w * 1.25, h * 1.25)
+            hm_ax = ax[0, 0]
+            dend_ax = ax[0, 1] if sort_data else None
+            cbar_ax = ax[0, 2] if sort_data else ax[0, 1]
+            seq_ax = ax[1, 0]
+            ax[1, 1].axis("off")
+            if sort_data:
+                ax[1, 2].axis("off")
         else:
             nrows = 1
-            fig, ax = plt.subplots(nrows=nrows, ncols=ncols,
-                                   gridspec_kw=gridspec_kw)
+            fig, ax = plt.subplots(
+                nrows=nrows, ncols=ncols, gridspec_kw=gridspec_kw
+            )
             hm_ax = ax[0]
             dend_ax = ax[1] if sort_data else None
             cbar_ax = ax[2] if sort_data else ax[1]
@@ -419,11 +455,17 @@ class SimPlot:
         norm = Normalize(vmin=0, vmax=1)
         cmap_obj = plt.get_cmap(cmap if cmap is not None else self.cmap)
         cmap_obj = cmap_obj.with_extremes(bad=self.nan_color)
-        im = hm_ax.imshow(occup, cmap=cmap_obj, norm=norm, aspect="auto",
-                          origin="lower", interpolation="none",
-                          extent=[0,occup.shape[1]/xscale,0,occup.shape[0]])
+        im = hm_ax.imshow(
+            occup,
+            cmap=cmap_obj,
+            norm=norm,
+            aspect="auto",
+            origin="lower",
+            interpolation="none",
+            extent=[0, occup.shape[1] / xscale, 0, occup.shape[0]],
+        )
         xpow_str = rf"$10^{{{xpow}}}$"
-        hm_ax.set_xlim(0, nbp/xscale)
+        hm_ax.set_xlim(0, nbp / xscale)
         if plot_eseq:
             hm_ax.get_xaxis().set_visible(False)
         hm_ax.set_ylabel(r"Molecule index")
@@ -432,8 +474,13 @@ class SimPlot:
 
         # Plot dendrogram on the right panel
         if sort_data:
-            sch.dendrogram(link_mat, orientation="right", ax=dend_ax,
-                           no_labels=True, link_color_func=lambda x : "black")
+            sch.dendrogram(
+                link_mat,
+                orientation="right",
+                ax=dend_ax,
+                no_labels=True,
+                link_color_func=lambda x: "black",
+            )
             dend_ax.axis("off")
 
         # Plot the sequence energy if needed
@@ -447,27 +494,27 @@ class SimPlot:
                 emin = max(np.nanmin(eseq), -dataset.settings["emax"])
                 emax = min(np.nanmax(eseq), dataset.settings["emax"])
             if np.isfinite(emin) and np.isfinite(emax):
-                seq_ax.set_ylim(emin,emax)
+                seq_ax.set_ylim(emin, emax)
             lnuc = dataset.settings["nucbp"]
             trans = CoordsTransform(lnuc=lnuc)
             eseq = trans.left_to_center_aligned(eseq)
-            eseq[:lnuc//2] = np.nan
-            eseq[len(eseq)-lnuc//2:] = np.nan
-            seq_ax.plot(np.arange(0,nbp)/xscale, eseq)
+            eseq[: lnuc // 2] = np.nan
+            eseq[len(eseq) - lnuc // 2 :] = np.nan
+            seq_ax.plot(np.arange(0, nbp) / xscale, eseq)
             seq_ax.set_ylabel(r"$\langle E_{\text{seq}} \rangle$ [$k_BT$]")
-            seq_ax.set_xlim(0, nbp/xscale)
+            seq_ax.set_xlim(0, nbp / xscale)
 
         # Common x-axis label
         btm_ax = seq_ax if plot_eseq else hm_ax
         btm_ax.set_xlabel(rf"Position $x$ [{xpow_str} bp]")
 
         hm_ax.set_title(f"Occupancy Profile for {chrom}", pad=12)
-        
-        if show: plt.show()
+
+        if show:
+            plt.show()
 
         if out_file is not None:
             out_file = Path(out_file)
             out_dir = out_file.parents[0]
             out_dir.mkdir(exist_ok=True, parents=True)
             fig.savefig(out_file)
-        

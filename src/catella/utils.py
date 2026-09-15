@@ -2,14 +2,16 @@
 
 import shutil
 import warnings
+from collections.abc import Iterable, Sequence
 from dataclasses import fields
-from typing import List, Iterable, Sequence
-import pandas as pd
+
 import numpy as np
+import pandas as pd
 import scipy.cluster.hierarchy as sch
-from scipy.spatial.distance import pdist, cdist, squareform
+from scipy.spatial.distance import cdist, pdist, squareform
+
 from catella import h5_utils
-from catella.h5_array import H5Array, _DOWNSAMPLE_HOW
+from catella.h5_array import _DOWNSAMPLE_HOW, H5Array
 
 IndexType = int | slice | Sequence[int]
 
@@ -18,16 +20,17 @@ IndexType = int | slice | Sequence[int]
 # of how it is built.
 _CLUSTER_WARN_ROWS = 5000
 
+
 def add_frozen_properties(cls):
     keyword = "_frozen_"
     for f in fields(cls):
         if not f.name.startswith(keyword):
             continue
-        
+
         public_name = f.name.removeprefix(keyword)
         private_name = f.name
         doc_str = f.metadata.get("doc", "")
-        
+
         def make_getter(p_name):
             def getter(self):
                 val = getattr(self, p_name)
@@ -41,19 +44,26 @@ def add_frozen_properties(cls):
                     return val.copy()
                 # Nested lists/tuples: convert to tuple of views
                 if isinstance(val, (tuple, list)):
-                    return tuple(v.view() if isinstance(v, np.ndarray)
-                                 else v for v in val)
+                    return tuple(
+                        v.view() if isinstance(v, np.ndarray) else v
+                        for v in val
+                    )
                 return val
+
             return getter
+
         # Attach property + docstring. Properties don't need a slot.
         prop = property(make_getter(private_name))
         prop.__doc__ = doc_str
         setattr(cls, public_name, prop)
     return cls
 
+
 # Standard utility to normalize chromosome inputs into a list
-def normalize_chroms(chroms: str | Iterable[str] | None = None, 
-                     default_chroms: Iterable[str] | None = None) -> List[str]:
+def normalize_chroms(
+    chroms: str | Iterable[str] | None = None,
+    default_chroms: Iterable[str] | None = None,
+) -> list[str]:
     if chroms is None:
         return list(default_chroms) if default_chroms is not None else []
     if isinstance(chroms, str):
@@ -63,6 +73,7 @@ def normalize_chroms(chroms: str | Iterable[str] | None = None,
     if not isinstance(chroms, Iterable):
         raise TypeError("chroms must be a str or an iterable.")
     return list(chroms)
+
 
 def downsample(arr, max_rows, *, how="mean", batch_size=20000):
     """
@@ -98,8 +109,9 @@ def downsample(arr, max_rows, *, how="mean", batch_size=20000):
     if how not in _DOWNSAMPLE_HOW:
         raise ValueError(f"'how' must be one of {_DOWNSAMPLE_HOW}")
 
-    dense = arr.to_numpy() if isinstance(arr, pd.DataFrame) \
-        else np.asarray(arr)
+    dense = (
+        arr.to_numpy() if isinstance(arr, pd.DataFrame) else np.asarray(arr)
+    )
     nrow = dense.shape[0]
     if nrow <= max_rows:
         return dense
@@ -107,24 +119,42 @@ def downsample(arr, max_rows, *, how="mean", batch_size=20000):
         step = -(-nrow // max_rows)  # ceil div
         return dense[0:nrow:step]
     edges = _bin_edges(nrow, max_rows)
-    return np.stack([_reduce_rows(dense[edges[i]:edges[i+1]], how)
-                     for i in range(len(edges) - 1)])
+    return np.stack(
+        [
+            _reduce_rows(dense[edges[i] : edges[i + 1]], how)
+            for i in range(len(edges) - 1)
+        ]
+    )
+
 
 def _bin_edges(n, max_rows):
     n_bins = min(n, max_rows)
     return np.linspace(0, n, n_bins + 1).astype(int)
 
+
 def _reduce_rows(block, how):
     if block.shape[0] == 0:
         return np.full(block.shape[1], np.nan)
-    fn = {"mean": np.nanmean, "sum": np.nansum,
-         "min": np.nanmin, "max": np.nanmax}[how]
+    fn = {
+        "mean": np.nanmean,
+        "sum": np.nansum,
+        "min": np.nanmin,
+        "max": np.nanmax,
+    }[how]
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=RuntimeWarning)
         return fn(block, axis=0)
 
-def compute_linkage(matrix, *, metric="euclidean", method="ward",
-                    batch_size=20000, dir=None, fill_nan=None):
+
+def compute_linkage(
+    matrix,
+    *,
+    metric="euclidean",
+    method="ward",
+    batch_size=20000,
+    dir=None,
+    fill_nan=None,
+):
     """
     Compute a hierarchical-clustering leaf order for a matrix's rows.
 
@@ -184,11 +214,14 @@ def compute_linkage(matrix, *, metric="euclidean", method="ward",
     distance is undefined (`nan`), which `scipy.cluster.hierarchy.
     linkage` rejects with `ValueError`; use `fill_nan` to avoid this.
     """
-    if fill_nan is not None and fill_nan != "mean" \
-            and not isinstance(fill_nan, (int, float)):
+    if (
+        fill_nan is not None
+        and fill_nan != "mean"
+        and not isinstance(fill_nan, (int, float))
+    ):
         raise ValueError(
-            "fill_nan must be None, 'mean', or a number, got "
-            f"{fill_nan!r}.")
+            f"fill_nan must be None, 'mean', or a number, got {fill_nan!r}."
+        )
 
     nrow = matrix.shape[0]
     if nrow > _CLUSTER_WARN_ROWS:
@@ -196,12 +229,17 @@ def compute_linkage(matrix, *, metric="euclidean", method="ward",
             f"Clustering {nrow} rows requires an {nrow}x{nrow} pairwise "
             "distance matrix; this may be slow and memory-intensive. "
             "Consider downsampling first (e.g. H5Array.downsample).",
-            stacklevel=2)
+            stacklevel=2,
+        )
 
     if isinstance(matrix, H5Array):
-        dist_vec = _streamed_pdist(matrix, metric=metric,
-                                   batch_size=batch_size, dir=dir,
-                                   fill_nan=fill_nan)
+        dist_vec = _streamed_pdist(
+            matrix,
+            metric=metric,
+            batch_size=batch_size,
+            dir=dir,
+            fill_nan=fill_nan,
+        )
     else:
         dense = np.asarray(matrix)
         if fill_nan is not None:
@@ -215,6 +253,7 @@ def compute_linkage(matrix, *, metric="euclidean", method="ward",
     order = sch.leaves_list(link_mat)
     return order, link_mat
 
+
 def _nan_euclidean(u, v):
     # Euclidean distance using only jointly-observed columns, scaled
     # up to the full column count -- matches
@@ -226,14 +265,17 @@ def _nan_euclidean(u, v):
     sq = np.sum((u[mask] - v[mask]) ** 2)
     return np.sqrt(len(u) / n_present * sq)
 
+
 def _resolve_metric(metric, has_nan):
     if not has_nan:
         return metric
     if metric != "euclidean":
         raise ValueError(
             "NaN-masked distances are only supported for "
-            f"metric='euclidean', got {metric!r} with nan present.")
+            f"metric='euclidean', got {metric!r} with nan present."
+        )
     return _nan_euclidean
+
 
 def _apply_fill_nan(dense, fill_nan):
     if fill_nan == "mean":
@@ -246,6 +288,7 @@ def _apply_fill_nan(dense, fill_nan):
     else:
         fill_values = fill_nan
     return np.where(np.isnan(dense), fill_values, dense)
+
 
 def _h5_column_nanmean(h5arr, batch_size):
     # Column-wise nan-safe mean over the full H5Array, computed in
@@ -262,6 +305,7 @@ def _h5_column_nanmean(h5arr, batch_size):
         sums += np.where(mask, block, 0.0).sum(axis=0)
         counts += mask.sum(axis=0)
     return np.divide(sums, counts, out=np.zeros_like(sums), where=counts > 0)
+
 
 def _streamed_pdist(h5arr, *, metric, batch_size, dir, fill_nan=None):
     # Builds the nrow x nrow distance matrix on disk in row-blocks (so
@@ -299,12 +343,14 @@ def _streamed_pdist(h5arr, *, metric, batch_size, dir, fill_nan=None):
                     else:
                         m = _resolve_metric(metric, has_nan_a)
                         row_block[:, b0:b1] = squareform(
-                            pdist(block_a, metric=m))
+                            pdist(block_a, metric=m)
+                        )
                 else:
                     block_b = h5arr[b0:b1, :]
                     if fill_values is not None:
-                        block_b = np.where(np.isnan(block_b), fill_values,
-                                           block_b)
+                        block_b = np.where(
+                            np.isnan(block_b), fill_values, block_b
+                        )
                         has_nan_b = False
                     else:
                         has_nan_b = np.isnan(block_b).any()

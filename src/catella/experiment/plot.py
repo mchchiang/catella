@@ -1,14 +1,16 @@
 # plot.py
 
 import warnings
-from functools import wraps
 from dataclasses import dataclass, field
+from functools import wraps
 from pathlib import Path
-import numpy as np
+
 import matplotlib.pyplot as plt
+import numpy as np
 import scipy.cluster.hierarchy as sch
 from matplotlib.colors import Normalize
 from scipy.special import logit
+
 from catella import utils
 
 # Row-count threshold above which plot_meth_prob() warns, since it plots
@@ -29,54 +31,61 @@ class MethPlot:
     """
 
     # Global plot settings
-    linewidth : int = 1.0
+    linewidth: int = 1.0
     """The border and axis line thickness for all plots."""
 
-    fontsize : int = 14
+    fontsize: int = 14
     """The base font size for labels, ticks, and titles."""
 
-    cmap : str = "OrRd"
+    cmap: str = "OrRd"
     """The Matplotlib colormap name used for heatmaps."""
 
-    nan_color : str = "lightgray"
+    nan_color: str = "lightgray"
     """The color used to render NaN cells in heatmaps."""
 
-    _rc : dict = field(init=None)
+    _rc: dict = field(init=None)
 
     def __post_init__(self):
         """Initializes the runtime configuration dictionary for
         matplotlib styling."""
-        self._rc = {"font.size" : self.fontsize,
-                    "axes.linewidth" : self.linewidth,
-                    "axes.axisbelow" : False,
-                    "axes.unicode_minus" : False
-                    }
+        self._rc = {
+            "font.size": self.fontsize,
+            "axes.linewidth": self.linewidth,
+            "axes.axisbelow": False,
+            "axes.unicode_minus": False,
+        }
 
     def _apply_style(func):
         """Decorator to apply the class-defined matplotlib RC context to
         a method."""
+
         @wraps(func)
         def wrapper(self, *args, **kwargs):
             with plt.rc_context(rc=self._rc):
                 return func(self, *args, **kwargs)
+
         return wrapper
 
     @_apply_style
-    def plot_meth_prob(self, data=None, *,
-                       exp=None,
-                       chrom : str | None = None,
-                       raw_which : str | None = None,
-                       mols=None,
-                       mask_name : str | None = None,
-                       max_rows : int | None = None,
-                       downsample_how : str = "mean",
-                       vmin : float | None = None,
-                       vmax : float | None = None,
-                       cmap : str | None = None,
-                       cbar_label : str = "Methylation prob.",
-                       out_file : str | Path | None = None,
-                       link_mat : np.ndarray | None = None,
-                       show : bool = True):
+    def plot_meth_prob(
+        self,
+        data=None,
+        *,
+        exp=None,
+        chrom: str | None = None,
+        raw_which: str | None = None,
+        mols=None,
+        mask_name: str | None = None,
+        max_rows: int | None = None,
+        downsample_how: str = "mean",
+        vmin: float | None = None,
+        vmax: float | None = None,
+        cmap: str | None = None,
+        cbar_label: str = "Methylation prob.",
+        out_file: str | Path | None = None,
+        link_mat: np.ndarray | None = None,
+        show: bool = True,
+    ):
         """
         Plot a methylation heatmap.
 
@@ -158,21 +167,27 @@ class MethPlot:
             if exp is None or chrom is None or raw_which is None:
                 raise ValueError(
                     "Provide either 'data', or all of 'exp', 'chrom', "
-                    "and 'raw_which'.")
-            data = exp.to_dense(chrom, which=raw_which, mols=mols,
-                                mask_name=mask_name)
+                    "and 'raw_which'."
+                )
+            data = exp.to_dense(
+                chrom, which=raw_which, mols=mols, mask_name=mask_name
+            )
             raw_data = data
-        elif (exp is not None or chrom is not None
-              or raw_which is not None or mols is not None
-              or mask_name is not None):
+        elif (
+            exp is not None
+            or chrom is not None
+            or raw_which is not None
+            or mols is not None
+            or mask_name is not None
+        ):
             raise ValueError(
                 "'exp'/'chrom'/'raw_which'/'mols'/'mask_name' cannot "
-                "be combined with 'data'.")
+                "be combined with 'data'."
+            )
 
         try:
             if max_rows is not None:
-                data = utils.downsample(data, max_rows,
-                                        how=downsample_how)
+                data = utils.downsample(data, max_rows, how=downsample_how)
 
             nrow = data.shape[0]
             if nrow > _PLOT_WARN_ROWS:
@@ -180,7 +195,9 @@ class MethPlot:
                     f"Plotting {nrow} rows at full resolution; this may "
                     "be slow and memory-intensive. Consider passing "
                     "'max_rows', or downsampling first "
-                    "(utils.downsample).", stacklevel=2)
+                    "(utils.downsample).",
+                    stacklevel=2,
+                )
 
             matrix = np.asarray(data)
             nrow, ncol = matrix.shape
@@ -190,24 +207,35 @@ class MethPlot:
 
             if link_mat is not None:
                 fig, ax = plt.subplots(
-                    ncols=3, gridspec_kw={"width_ratios": [5, 1, 0.25]})
+                    ncols=3, gridspec_kw={"width_ratios": [5, 1, 0.25]}
+                )
                 hm_ax, dend_ax, cbar_ax = ax
             else:
                 fig, ax = plt.subplots(
-                    ncols=2, gridspec_kw={"width_ratios": [20, 1]})
+                    ncols=2, gridspec_kw={"width_ratios": [20, 1]}
+                )
                 hm_ax, cbar_ax = ax
 
-            im = hm_ax.imshow(matrix, cmap=cmap_obj, norm=norm,
-                              aspect="auto", origin="lower",
-                              interpolation="none",
-                              extent=[0, ncol, 0, nrow])
+            im = hm_ax.imshow(
+                matrix,
+                cmap=cmap_obj,
+                norm=norm,
+                aspect="auto",
+                origin="lower",
+                interpolation="none",
+                extent=[0, ncol, 0, nrow],
+            )
             hm_ax.set_xlabel("Position [bp]")
             hm_ax.set_ylabel("Molecule index")
 
             if link_mat is not None:
-                sch.dendrogram(link_mat, orientation="right", ax=dend_ax,
-                               no_labels=True,
-                               link_color_func=lambda x: "black")
+                sch.dendrogram(
+                    link_mat,
+                    orientation="right",
+                    ax=dend_ax,
+                    no_labels=True,
+                    link_color_func=lambda x: "black",
+                )
                 dend_ax.axis("off")
 
             # cbar_ax is always the rightmost column, so the colorbar
@@ -217,7 +245,8 @@ class MethPlot:
 
             fig.tight_layout()
 
-            if show: plt.show()
+            if show:
+                plt.show()
 
             if out_file is not None:
                 out_file = Path(out_file)
@@ -229,17 +258,21 @@ class MethPlot:
                 raw_data.close()
 
     @_apply_style
-    def plot_meth_energy(self, data, *,
-                         emax : float | None = None,
-                         max_rows : int | None = None,
-                         downsample_how : str = "mean",
-                         vmin : float | None = None,
-                         vmax : float | None = None,
-                         cmap : str | None = None,
-                         cbar_label : str = r"Energy [$k_BT$]",
-                         out_file : str | Path | None = None,
-                         link_mat : np.ndarray | None = None,
-                         show : bool = True):
+    def plot_meth_energy(
+        self,
+        data,
+        *,
+        emax: float | None = None,
+        max_rows: int | None = None,
+        downsample_how: str = "mean",
+        vmin: float | None = None,
+        vmax: float | None = None,
+        cmap: str | None = None,
+        cbar_label: str = r"Energy [$k_BT$]",
+        out_file: str | Path | None = None,
+        link_mat: np.ndarray | None = None,
+        show: bool = True,
+    ):
         """
         Plot a methylation heatmap on an energy scale.
 
@@ -292,24 +325,34 @@ class MethPlot:
             halfrange = emax
         else:
             finite = energy[np.isfinite(energy)]
-            halfrange = np.nanmax(np.abs(finite)) if finite.size > 0 \
-                else None
+            halfrange = np.nanmax(np.abs(finite)) if finite.size > 0 else None
 
         if halfrange is not None:
             vmin, vmax = -halfrange, halfrange
 
-        self.plot_meth_prob(energy, vmin=vmin, vmax=vmax,
-                            cmap=cmap if cmap is not None else "RdBu_r",
-                            cbar_label=cbar_label, out_file=out_file,
-                            max_rows=max_rows,
-                            downsample_how=downsample_how,
-                            link_mat=link_mat, show=show)
+        self.plot_meth_prob(
+            energy,
+            vmin=vmin,
+            vmax=vmax,
+            cmap=cmap if cmap is not None else "RdBu_r",
+            cbar_label=cbar_label,
+            out_file=out_file,
+            max_rows=max_rows,
+            downsample_how=downsample_how,
+            link_mat=link_mat,
+            show=show,
+        )
 
     @_apply_style
-    def plot_dropout_ecdf(self, dropout_fractions, chrom, *,
-                          source : str | None = None,
-                          out_file : str | Path | None = None,
-                          show : bool = True):
+    def plot_dropout_ecdf(
+        self,
+        dropout_fractions,
+        chrom,
+        *,
+        source: str | None = None,
+        out_file: str | Path | None = None,
+        show: bool = True,
+    ):
         """
         Plot the empirical CDF of dropout rate per group.
 
@@ -338,28 +381,31 @@ class MethPlot:
             If `chrom` (or `source`, when given) has no matching
             entries in `dropout_fractions`.
         """
-        keys = [key for key in dropout_fractions if key[0] == chrom
-               and (source is None or key[1] == source)]
+        keys = [
+            key
+            for key in dropout_fractions
+            if key[0] == chrom and (source is None or key[1] == source)
+        ]
         if not keys:
             raise ValueError(
                 f"No entries for chrom={chrom!r}, source={source!r} "
-                "in dropout_fractions.")
+                "in dropout_fractions."
+            )
 
         fig, ax = plt.subplots()
         for src, label in sorted((k[1], k[2]) for k in keys):
             frac = np.sort(dropout_fractions[(chrom, src, label)])
             n = len(frac)
             ecdf_pct = 100 * np.arange(1, n + 1) / n
-            ax.step(frac, ecdf_pct, where="post",
-                   label=f"{src}/{label}")
+            ax.step(frac, ecdf_pct, where="post", label=f"{src}/{label}")
 
         ax.set_xlabel("Dropout rate")
         ax.set_ylabel("ECDF [%]")
-        ax.legend(loc="center left", bbox_to_anchor=(1, 0.5),
-                 frameon=False)
+        ax.legend(loc="center left", bbox_to_anchor=(1, 0.5), frameon=False)
         fig.tight_layout()
 
-        if show: plt.show()
+        if show:
+            plt.show()
 
         if out_file is not None:
             out_file = Path(out_file)

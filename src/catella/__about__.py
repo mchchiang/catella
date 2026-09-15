@@ -7,6 +7,8 @@ __maintainers__ = [
     {"name": "Davide Marenduzzo"},
     {"name": "Nick Gilbert"},
 ]
-__summary__ = "A Monte-Carlo simulator for predicting nucleosome positions" \
+__summary__ = (
+    "A Monte-Carlo simulator for predicting nucleosome positions "
     "based on DNA methylation footprinting data"
+)
 __url__ = "https://github.com/mchchiang/catella"

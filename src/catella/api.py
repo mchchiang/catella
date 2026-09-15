@@ -5,37 +5,43 @@
 
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
+
 import numpy as np
 import pandas as pd
 from scipy.special import logit
-from catella.experiment.preprocessing import MethPrintAnalysis, _lookup_mask
+
+from catella import utils
 from catella.experiment.methdata import MethPrintExperiment
 from catella.experiment.plot import MethPlot
+from catella.experiment.preprocessing import MethPrintAnalysis, _lookup_mask
 from catella.h5_array import H5Array
+from catella.simulation.analysis import SimAnalysis
 from catella.simulation.config import SimSettings
 from catella.simulation.engine import SimManager
-from catella.simulation.results import SimDataset
-from catella.simulation.analysis import SimAnalysis
 from catella.simulation.plot import SimPlot
-from catella import utils
+from catella.simulation.results import SimDataset
 from catella.utils import IndexType
 
-def load_raw(*, chromsize : str | Path,
-             test_file : str | Path,
-             unmeth_file : str | Path | None = None,
-             meth_file : str | Path | None = None,
-             fasta_file : str | Path | None = None,
-             mtase : str | Iterable[str] | None = None,
-             chroms : Iterable[str] | None = None,
-             wrap : bool = False,
-             ignore_strand : bool = False,
-             colidx : Iterable | None = None,
-             max_nmol : int | None = None,
-             seed : int | None = None,
-             chunk_size : int = 1000000,
-             tmp_dir : str | Path | None = None,
-             max_cached_chroms : int = 1,
-             nworker : int = 1) -> MethPrintExperiment:
+
+def load_raw(
+    *,
+    chromsize: str | Path,
+    test_file: str | Path,
+    unmeth_file: str | Path | None = None,
+    meth_file: str | Path | None = None,
+    fasta_file: str | Path | None = None,
+    mtase: str | Iterable[str] | None = None,
+    chroms: Iterable[str] | None = None,
+    wrap: bool = False,
+    ignore_strand: bool = False,
+    colidx: Iterable | None = None,
+    max_nmol: int | None = None,
+    seed: int | None = None,
+    chunk_size: int = 1000000,
+    tmp_dir: str | Path | None = None,
+    max_cached_chroms: int = 1,
+    nworker: int = 1,
+) -> MethPrintExperiment:
     """
     Load raw methylation footprinting data into a MethPrintExperiment.
 
@@ -108,26 +114,40 @@ def load_raw(*, chromsize : str | Path,
         `compute_empirical_prob`/`compute_model_prob`.
     """
     return MethPrintExperiment.load_raw(
-        chromsize=chromsize, test_file=test_file,
-        unmeth_file=unmeth_file, meth_file=meth_file,
-        fasta_file=fasta_file, mtase=mtase, chroms=chroms, wrap=wrap,
-        ignore_strand=ignore_strand, colidx=colidx, max_nmol=max_nmol,
-        seed=seed, chunk_size=chunk_size, tmp_dir=tmp_dir,
-        max_cached_chroms=max_cached_chroms, nworker=nworker)
+        chromsize=chromsize,
+        test_file=test_file,
+        unmeth_file=unmeth_file,
+        meth_file=meth_file,
+        fasta_file=fasta_file,
+        mtase=mtase,
+        chroms=chroms,
+        wrap=wrap,
+        ignore_strand=ignore_strand,
+        colidx=colidx,
+        max_nmol=max_nmol,
+        seed=seed,
+        chunk_size=chunk_size,
+        tmp_dir=tmp_dir,
+        max_cached_chroms=max_cached_chroms,
+        nworker=nworker,
+    )
 
 
-def compute_empirical_prob(exp : MethPrintExperiment, *,
-               out_file : str | Path | None = None,
-               lnuc : int = 147,
-               prob_name : str = "meth_prob",
-               clip_low : float = 0.1,
-               clip_high : float = 99.9,
-               norm_by_strand : bool = False,
-               fill_edge : float = np.nan,
-               batch_size : int = 20000,
-               percentile_sample_size : int = 100000,
-               seed : int | None = None,
-               mask_name : str | None = None) -> MethPrintExperiment:
+def compute_empirical_prob(
+    exp: MethPrintExperiment,
+    *,
+    out_file: str | Path | None = None,
+    lnuc: int = 147,
+    prob_name: str = "meth_prob",
+    clip_low: float = 0.1,
+    clip_high: float = 99.9,
+    norm_by_strand: bool = False,
+    fill_edge: float = np.nan,
+    batch_size: int = 20000,
+    percentile_sample_size: int = 100000,
+    seed: int | None = None,
+    mask_name: str | None = None,
+) -> MethPrintExperiment:
     """
     Compute methylation probabilities via empirical normalization.
 
@@ -194,12 +214,19 @@ def compute_empirical_prob(exp : MethPrintExperiment, *,
 
     # Smooth and normalize the data - compute methylation probability
     ana = MethPrintAnalysis()
-    ana.empirical_prob(exp=exp, lnuc=lnuc, prob_name=prob_name,
-                       clip_low=clip_low, clip_high=clip_high,
-                       norm_by_strand=norm_by_strand, fill_edge=fill_edge,
-                       batch_size=batch_size,
-                       percentile_sample_size=percentile_sample_size,
-                       seed=seed, mask_name=mask_name)
+    ana.empirical_prob(
+        exp=exp,
+        lnuc=lnuc,
+        prob_name=prob_name,
+        clip_low=clip_low,
+        clip_high=clip_high,
+        norm_by_strand=norm_by_strand,
+        fill_edge=fill_edge,
+        batch_size=batch_size,
+        percentile_sample_size=percentile_sample_size,
+        seed=seed,
+        mask_name=mask_name,
+    )
 
     # Save the results
     if out_file is not None:
@@ -208,26 +235,29 @@ def compute_empirical_prob(exp : MethPrintExperiment, *,
     return exp
 
 
-def compute_model_prob(exp : MethPrintExperiment, *,
-               out_file : str | Path | None = None,
-               prob_name : str = "meth_prob",
-               pi0 : float = 0.5,
-               eta : float | dict[str, float] | None = None,
-               eta_max_lag : int = 10,
-               store_rho : bool = False,
-               nu : float = 10.0,
-               rho_leak : float = 0.1,
-               min_gap : float = 0.05,
-               lnuc : int = 147,
-               n_min : int = 10,
-               max_iters : int = 200,
-               init_prot : float = 0.05,
-               init_acc : float = 0.95,
-               tol : float = 1e-8,
-               fill_edge : float = np.nan,
-               norm_by_strand : bool = False,
-               batch_size : int = 20000,
-               mask_name : str | None = None) -> MethPrintExperiment:
+def compute_model_prob(
+    exp: MethPrintExperiment,
+    *,
+    out_file: str | Path | None = None,
+    prob_name: str = "meth_prob",
+    pi0: float = 0.5,
+    eta: float | dict[str, float] | None = None,
+    eta_max_lag: int = 10,
+    store_rho: bool = False,
+    nu: float = 10.0,
+    rho_leak: float = 0.1,
+    min_gap: float = 0.05,
+    lnuc: int = 147,
+    n_min: int = 10,
+    max_iters: int = 200,
+    init_prot: float = 0.05,
+    init_acc: float = 0.95,
+    tol: float = 1e-8,
+    fill_edge: float = np.nan,
+    norm_by_strand: bool = False,
+    batch_size: int = 20000,
+    mask_name: str | None = None,
+) -> MethPrintExperiment:
     """
     Compute methylation probabilities via a calibrated log-odds model.
 
@@ -355,13 +385,27 @@ def compute_model_prob(exp : MethPrintExperiment, *,
 
     # Compute methylation probability via the calibrated log-odds model
     ana = MethPrintAnalysis()
-    ana.model_prob(exp=exp, prob_name=prob_name, pi0=pi0, eta=eta,
-                   eta_max_lag=eta_max_lag, store_rho=store_rho, nu=nu,
-                   rho_leak=rho_leak, min_gap=min_gap, lnuc=lnuc,
-                   n_min=n_min, max_iters=max_iters, init_prot=init_prot,
-                   init_acc=init_acc, tol=tol, fill_edge=fill_edge,
-                   norm_by_strand=norm_by_strand, batch_size=batch_size,
-                   mask_name=mask_name)
+    ana.model_prob(
+        exp=exp,
+        prob_name=prob_name,
+        pi0=pi0,
+        eta=eta,
+        eta_max_lag=eta_max_lag,
+        store_rho=store_rho,
+        nu=nu,
+        rho_leak=rho_leak,
+        min_gap=min_gap,
+        lnuc=lnuc,
+        n_min=n_min,
+        max_iters=max_iters,
+        init_prot=init_prot,
+        init_acc=init_acc,
+        tol=tol,
+        fill_edge=fill_edge,
+        norm_by_strand=norm_by_strand,
+        batch_size=batch_size,
+        mask_name=mask_name,
+    )
 
     # Save the results
     if out_file is not None:
@@ -370,14 +414,17 @@ def compute_model_prob(exp : MethPrintExperiment, *,
     return exp
 
 
-def estimate_start_temp(exp : MethPrintExperiment, *,
-               prob_name : str = "meth_prob",
-               chroms : str | Iterable[str] | None = None,
-               percentile : float = 90.0,
-               batch_size : int = 20000,
-               percentile_sample_size : int = 100000,
-               seed : int | None = None,
-               mask_name : str | None = None) -> float:
+def estimate_start_temp(
+    exp: MethPrintExperiment,
+    *,
+    prob_name: str = "meth_prob",
+    chroms: str | Iterable[str] | None = None,
+    percentile: float = 90.0,
+    batch_size: int = 20000,
+    percentile_sample_size: int = 100000,
+    seed: int | None = None,
+    mask_name: str | None = None,
+) -> float:
     """
     Estimate a data-driven `SimSettings.start_temp` value.
 
@@ -439,7 +486,8 @@ def estimate_start_temp(exp : MethPrintExperiment, *,
         keep = None
         if mask_name is not None:
             keep = np.asarray(
-                _lookup_mask(exp, chrom, "test", mask_name), dtype=bool)
+                _lookup_mask(exp, chrom, "test", mask_name), dtype=bool
+            )
         n_total = arr.shape[0]
         if n_total == 0:
             continue
@@ -451,8 +499,9 @@ def estimate_start_temp(exp : MethPrintExperiment, *,
                 batch = batch[keep[start:stop]]
             if batch.shape[0] == 0:
                 continue
-            n_take = min(batch.shape[0],
-                        max(1, round(batch.shape[0] * sample_frac)))
+            n_take = min(
+                batch.shape[0], max(1, round(batch.shape[0] * sample_frac))
+            )
             rows = rng.choice(batch.shape[0], size=n_take, replace=False)
             chunks.append(np.abs(logit(batch[rows, :])))
 
@@ -460,15 +509,18 @@ def estimate_start_temp(exp : MethPrintExperiment, *,
     return float(np.nanpercentile(sample, percentile))
 
 
-def filter_dropout(exp : MethPrintExperiment, *,
-           which : str | None = None,
-           mtase : list | None = None,
-           chroms : list | None = None,
-           thres_min : float = 0.0,
-           thres_max : float = 1.0,
-           unmapped_strand : str = "union",
-           method : str = "separate",
-           mask_name : str = "dropout_mask") -> None:
+def filter_dropout(
+    exp: MethPrintExperiment,
+    *,
+    which: str | None = None,
+    mtase: list | None = None,
+    chroms: list | None = None,
+    thres_min: float = 0.0,
+    thres_max: float = 1.0,
+    unmapped_strand: str = "union",
+    method: str = "separate",
+    mask_name: str = "dropout_mask",
+) -> None:
     """
     Flag molecules with poor coverage at methylatable positions.
 
@@ -516,17 +568,26 @@ def filter_dropout(exp : MethPrintExperiment, *,
         `unmapped_strand`/`method` is invalid, a requested source is
         missing for some chromosome, or `refseq` is missing.
     """
-    exp.filter_dropout(which=which, mtase=mtase, chroms=chroms,
-                       thres_min=thres_min, thres_max=thres_max,
-                       unmapped_strand=unmapped_strand,
-                       method=method, mask_name=mask_name)
+    exp.filter_dropout(
+        which=which,
+        mtase=mtase,
+        chroms=chroms,
+        thres_min=thres_min,
+        thres_max=thres_max,
+        unmapped_strand=unmapped_strand,
+        method=method,
+        mask_name=mask_name,
+    )
 
 
-def summarize_dropout(exp : MethPrintExperiment, *,
-              which : str | None = None,
-              mtase : list | None = None,
-              chroms : list | None = None,
-              unmapped_strand : str = "union") -> pd.DataFrame:
+def summarize_dropout(
+    exp: MethPrintExperiment,
+    *,
+    which: str | None = None,
+    mtase: list | None = None,
+    chroms: list | None = None,
+    unmapped_strand: str = "union",
+) -> pd.DataFrame:
     """
     Return a per-label dropout fraction summary (QC check).
 
@@ -564,18 +625,25 @@ def summarize_dropout(exp : MethPrintExperiment, *,
         is invalid, a source is missing for some chromosome, or
         `refseq` is missing.
     """
-    return exp.summarize_dropout(which=which, mtase=mtase, chroms=chroms,
-                                 unmapped_strand=unmapped_strand)
+    return exp.summarize_dropout(
+        which=which,
+        mtase=mtase,
+        chroms=chroms,
+        unmapped_strand=unmapped_strand,
+    )
 
 
-def plot_dropout_ecdf(exp : MethPrintExperiment, *,
-                chrom : str,
-                which : str | None = None,
-                mtase : list | None = None,
-                unmapped_strand : str = "union",
-                source : str | None = None,
-                out_file : str | Path | None = None,
-                show : bool = True):
+def plot_dropout_ecdf(
+    exp: MethPrintExperiment,
+    *,
+    chrom: str,
+    which: str | None = None,
+    mtase: list | None = None,
+    unmapped_strand: str = "union",
+    source: str | None = None,
+    out_file: str | Path | None = None,
+    show: bool = True,
+):
     """
     Plot the empirical CDF of dropout rate per group.
 
@@ -617,31 +685,38 @@ def plot_dropout_ecdf(exp : MethPrintExperiment, *,
         given) has no matching entries in the result (from
         `MethPlot.plot_dropout_ecdf`).
     """
-    fractions = exp.dropout_fractions(which=which, mtase=mtase,
-                                      chroms=[chrom],
-                                      unmapped_strand=unmapped_strand)
+    fractions = exp.dropout_fractions(
+        which=which,
+        mtase=mtase,
+        chroms=[chrom],
+        unmapped_strand=unmapped_strand,
+    )
     methplot = MethPlot()
-    methplot.plot_dropout_ecdf(fractions, chrom, source=source,
-                               out_file=out_file, show=show)
+    methplot.plot_dropout_ecdf(
+        fractions, chrom, source=source, out_file=out_file, show=show
+    )
 
 
-def run(*, chroms : str | Iterable[str],
-        nsim : int,
-        settings : str | Path | SimSettings,
-        meth_prob : np.ndarray | Mapping[str,np.ndarray|pd.DataFrame],
-        out_dir : str | Path,
-        dataset_name : str = "results",
-        out_types : str | Iterable[str] = "all",        
-        seed : int | None = None,        
-        mols : IndexType | Mapping[str,IndexType] = slice(None),
-        store_eseq : bool = True,
-        use_median_eseq_mu : bool = False,
-        nworker : int = 1,
-        verbose : bool = True) -> SimDataset:
+def run(
+    *,
+    chroms: str | Iterable[str],
+    nsim: int,
+    settings: str | Path | SimSettings,
+    meth_prob: np.ndarray | Mapping[str, np.ndarray | pd.DataFrame],
+    out_dir: str | Path,
+    dataset_name: str = "results",
+    out_types: str | Iterable[str] = "all",
+    seed: int | None = None,
+    mols: IndexType | Mapping[str, IndexType] = slice(None),
+    store_eseq: bool = True,
+    use_median_eseq_mu: bool = False,
+    nworker: int = 1,
+    verbose: bool = True,
+) -> SimDataset:
     """
     Execute a parallelized methylation simulation.
 
-    Orchestrate the simulation process using a `SimManager` to handle data 
+    Orchestrate the simulation process using a `SimManager` to handle data
     distribution across multiple workers. Generate synthetic datasets based
     on provided methylation profiles and simulation settings.
 
@@ -652,17 +727,17 @@ def run(*, chroms : str | Iterable[str],
     nsim : int
         Number of independent simulation runs per molecule.
     settings : str or Path or SimSettings
-        Simulation parameters. Can be a path to a configuration file or a 
+        Simulation parameters. Can be a path to a configuration file or a
         `SimSettings` object.
     meth_prob : np.ndarray or Mapping[str, np.ndarray | pd.DataFrame]
         Probability of methylation. If multiple chromosomes are provided, this
         must be a mapping of {chrom_name: data}. Data can be NumPy arrays or
-        Pandas DataFrames. 
+        Pandas DataFrames.
     out_dir : str or Path
         Directory or file prefix where simulation results will be stored.
     out_types : str | Iterable[str], default 'all'
-        Types of data to record. Options include 'energy', 'position',      
-        'temp', or 'all'. 
+        Types of data to record. Options include 'energy', 'position',
+        'temp', or 'all'.
     seed : int, optional
         Seed for the random number generator to ensure reproducibility.
     mols : IndexType | Mapping[str, IndexType], default slice(None
@@ -672,7 +747,7 @@ def run(*, chroms : str | Iterable[str],
         landscape derived from the methylation data to output dataset file.
     use_median_eseq_mu : bool : default False
         Whether to modify the chemical potential parameter so that it is
-        equal to the mean of the methlyation energy.    
+        equal to the mean of the methlyation energy.
     nworker : int, default 1
         Number of parallel processes to spawn.
     verbose : bool, default True
@@ -685,17 +760,29 @@ def run(*, chroms : str | Iterable[str],
         results.
     """
     manager = SimManager(nworker=nworker, verbose=verbose)
-    dataset = manager.run(chroms=chroms, nsim=nsim, settings=settings,
-                          meth_prob=meth_prob, out_types=out_types,
-                          out_dir=out_dir, dataset_name=dataset_name,
-                          seed=seed, mols=mols, store_eseq=store_eseq,
-                          use_median_eseq_mu=use_median_eseq_mu)    
+    dataset = manager.run(
+        chroms=chroms,
+        nsim=nsim,
+        settings=settings,
+        meth_prob=meth_prob,
+        out_types=out_types,
+        out_dir=out_dir,
+        dataset_name=dataset_name,
+        seed=seed,
+        mols=mols,
+        store_eseq=store_eseq,
+        use_median_eseq_mu=use_median_eseq_mu,
+    )
     return dataset
 
-def analyze(dataset : SimDataset, *,
-            time : int | None = None,
-            occup_name : str = "occup",
-            mean_nnuc_name : str = "mean_nnuc"):
+
+def analyze(
+    dataset: SimDataset,
+    *,
+    time: int | None = None,
+    occup_name: str = "occup",
+    mean_nnuc_name: str = "mean_nnuc",
+):
     """
     Perform post-simulation statistical analysis on a dataset.
 
@@ -708,30 +795,34 @@ def analyze(dataset : SimDataset, *,
     dataset : SimDataset
         The simulation dataset to analyze.
     time : int, optional
-        A specific time point (snapshot) from the simulation to analyze. 
+        A specific time point (snapshot) from the simulation to analyze.
         If None, the final state of the simulation is typically used.
     occup_name : str, default "occup"
-        The key/name under which to store the computed occupancy data 
+        The key/name under which to store the computed occupancy data
         within the dataset.
     mean_nnuc_name : str, default "mean_nnuc"
-        The key/name under which to store the computed mean number of 
+        The key/name under which to store the computed mean number of
         nucleosomes within the dataset.
     """
     ana = SimAnalysis()
     ana.compute_occup(dataset=dataset, time=time, name=occup_name)
     ana.compute_mean_nnuc(dataset=dataset, time=time, name=mean_nnuc_name)
 
-def plot_occup(dataset : SimDataset, *,
-               chrom : str,
-               time : int | None = None,
-               out_file : str | Path | None = None,
-               occup_name : str = "occup",
-               mols : Iterable[int] | None = None,
-               xscale : int = 1000,
-               cmap : str | None = None,
-               plot_eseq : bool = False,
-               link_mat : np.ndarray | None = None,
-               show : bool = True):
+
+def plot_occup(
+    dataset: SimDataset,
+    *,
+    chrom: str,
+    time: int | None = None,
+    out_file: str | Path | None = None,
+    occup_name: str = "occup",
+    mols: Iterable[int] | None = None,
+    xscale: int = 1000,
+    cmap: str | None = None,
+    plot_eseq: bool = False,
+    link_mat: np.ndarray | None = None,
+    show: bool = True,
+):
     """
     Visualize nucleosome occupancy profiles for a specific chromosome.
 
@@ -787,23 +878,36 @@ def plot_occup(dataset : SimDataset, *,
     has been called on the dataset prior to plotting.
     """
     simplot = SimPlot()
-    simplot.plot_occup(chrom=chrom, dataset=dataset, time=time,
-                       occup_name=occup_name, mols=mols, xscale=xscale,
-                       cmap=cmap, out_file=out_file, plot_eseq=plot_eseq,
-                       link_mat=link_mat, show=show)
+    simplot.plot_occup(
+        chrom=chrom,
+        dataset=dataset,
+        time=time,
+        occup_name=occup_name,
+        mols=mols,
+        xscale=xscale,
+        cmap=cmap,
+        out_file=out_file,
+        plot_eseq=plot_eseq,
+        link_mat=link_mat,
+        show=show,
+    )
 
-def plot_nuc_pos(dataset : SimDataset, *,
-                 chrom : str,
-                 mol : int,
-                 run : int,
-                 tstart : int | None = None,
-                 tend : int | None = None,
-                 tscale : int = 1000,
-                 xscale : int = 1000,
-                 cmap : str | None = None,
-                 out_file : str | Path | None = None,
-                 plot_eseq : bool = False,
-                 show : bool = True):
+
+def plot_nuc_pos(
+    dataset: SimDataset,
+    *,
+    chrom: str,
+    mol: int,
+    run: int,
+    tstart: int | None = None,
+    tend: int | None = None,
+    tscale: int = 1000,
+    xscale: int = 1000,
+    cmap: str | None = None,
+    out_file: str | Path | None = None,
+    plot_eseq: bool = False,
+    show: bool = True,
+):
     """
     Plot the time-course positions of nucleosomes for a specific simulation
     run of a molecule.
@@ -856,21 +960,34 @@ def plot_nuc_pos(dataset : SimDataset, *,
     it also requires that `store_eseq` was set to True during `run`.
     """
     simplot = SimPlot()
-    simplot.plot_nuc_pos(chrom=chrom, mol=mol, run=run, dataset=dataset,
-                         tstart=tstart, tend=tend, tscale=tscale,
-                         xscale=xscale, cmap=cmap, out_file=out_file,
-                         plot_eseq=plot_eseq, show=show)
+    simplot.plot_nuc_pos(
+        chrom=chrom,
+        mol=mol,
+        run=run,
+        dataset=dataset,
+        tstart=tstart,
+        tend=tend,
+        tscale=tscale,
+        xscale=xscale,
+        cmap=cmap,
+        out_file=out_file,
+        plot_eseq=plot_eseq,
+        show=show,
+    )
 
 
-def plot_energy(dataset : SimDataset, *,
-                chrom : str,
-                mol : int,
-                run : int,
-                tstart : int | None = None,
-                tend : int | None = None,
-                tscale : int = 1000,
-                out_file : str | Path | None = None,
-                show : bool = True):
+def plot_energy(
+    dataset: SimDataset,
+    *,
+    chrom: str,
+    mol: int,
+    run: int,
+    tstart: int | None = None,
+    tend: int | None = None,
+    tscale: int = 1000,
+    out_file: str | Path | None = None,
+    show: bool = True,
+):
     """
     Plot the total energy of the system for a specific simulation run of a
     molecule over time.
@@ -909,26 +1026,37 @@ def plot_energy(dataset : SimDataset, *,
     in the `out_types` during the `run` execution.
     """
     simplot = SimPlot()
-    simplot.plot_energy(chrom=chrom, mol=mol, run=run, dataset=dataset,
-                        tstart=tstart, tend=tend, tscale=tscale,
-                        out_file=out_file, show=show)
+    simplot.plot_energy(
+        chrom=chrom,
+        mol=mol,
+        run=run,
+        dataset=dataset,
+        tstart=tstart,
+        tend=tend,
+        tscale=tscale,
+        out_file=out_file,
+        show=show,
+    )
 
 
-def plot_meth_prob(data : H5Array | pd.DataFrame | np.ndarray | None = None, *,
-                   exp : MethPrintExperiment | None = None,
-                   chrom : str | None = None,
-                   raw_which : str | None = None,
-                   mols : int | Sequence[int] | None = None,
-                   mask_name : str | None = None,
-                   max_rows : int | None = None,
-                   downsample_how : str = "mean",
-                   vmin : float | None = None,
-                   vmax : float | None = None,
-                   cmap : str | None = None,
-                   cbar_label : str = "Methylation prob.",
-                   out_file : str | Path | None = None,
-                   link_mat : np.ndarray | None = None,
-                   show : bool = True):
+def plot_meth_prob(
+    data: H5Array | pd.DataFrame | np.ndarray | None = None,
+    *,
+    exp: MethPrintExperiment | None = None,
+    chrom: str | None = None,
+    raw_which: str | None = None,
+    mols: int | Sequence[int] | None = None,
+    mask_name: str | None = None,
+    max_rows: int | None = None,
+    downsample_how: str = "mean",
+    vmin: float | None = None,
+    vmax: float | None = None,
+    cmap: str | None = None,
+    cbar_label: str = "Methylation prob.",
+    out_file: str | Path | None = None,
+    link_mat: np.ndarray | None = None,
+    show: bool = True,
+):
     """
     Plot a methylation heatmap.
 
@@ -998,25 +1126,39 @@ def plot_meth_prob(data : H5Array | pd.DataFrame | np.ndarray | None = None, *,
         `raw_which`/`mols`/`mask_name`.
     """
     methplot = MethPlot()
-    methplot.plot_meth_prob(data, exp=exp, chrom=chrom, raw_which=raw_which,
-                            mols=mols, mask_name=mask_name,
-                            max_rows=max_rows, downsample_how=downsample_how,
-                            vmin=vmin, vmax=vmax, cmap=cmap,
-                            cbar_label=cbar_label, out_file=out_file,
-                            link_mat=link_mat, show=show)
+    methplot.plot_meth_prob(
+        data,
+        exp=exp,
+        chrom=chrom,
+        raw_which=raw_which,
+        mols=mols,
+        mask_name=mask_name,
+        max_rows=max_rows,
+        downsample_how=downsample_how,
+        vmin=vmin,
+        vmax=vmax,
+        cmap=cmap,
+        cbar_label=cbar_label,
+        out_file=out_file,
+        link_mat=link_mat,
+        show=show,
+    )
 
 
-def plot_meth_energy(data : H5Array | pd.DataFrame | np.ndarray, *,
-                     emax : float | None = None,
-                     max_rows : int | None = None,
-                     downsample_how : str = "mean",
-                     vmin : float | None = None,
-                     vmax : float | None = None,
-                     cmap : str | None = None,
-                     cbar_label : str = r"Energy [$k_BT$]",
-                     out_file : str | Path | None = None,
-                     link_mat : np.ndarray | None = None,
-                     show : bool = True):
+def plot_meth_energy(
+    data: H5Array | pd.DataFrame | np.ndarray,
+    *,
+    emax: float | None = None,
+    max_rows: int | None = None,
+    downsample_how: str = "mean",
+    vmin: float | None = None,
+    vmax: float | None = None,
+    cmap: str | None = None,
+    cbar_label: str = r"Energy [$k_BT$]",
+    out_file: str | Path | None = None,
+    link_mat: np.ndarray | None = None,
+    show: bool = True,
+):
     """
     Plot a methylation heatmap on an energy scale.
 
@@ -1060,17 +1202,28 @@ def plot_meth_energy(data : H5Array | pd.DataFrame | np.ndarray, *,
         backend.
     """
     methplot = MethPlot()
-    methplot.plot_meth_energy(data, emax=emax, max_rows=max_rows,
-                              downsample_how=downsample_how,
-                              vmin=vmin, vmax=vmax, cmap=cmap,
-                              cbar_label=cbar_label, out_file=out_file,
-                              link_mat=link_mat, show=show)
+    methplot.plot_meth_energy(
+        data,
+        emax=emax,
+        max_rows=max_rows,
+        downsample_how=downsample_how,
+        vmin=vmin,
+        vmax=vmax,
+        cmap=cmap,
+        cbar_label=cbar_label,
+        out_file=out_file,
+        link_mat=link_mat,
+        show=show,
+    )
 
 
-def downsample(*, data : H5Array | pd.DataFrame | np.ndarray,
-               max_rows : int,
-               how : str = "mean",
-               batch_size : int = 20000) -> np.ndarray:
+def downsample(
+    *,
+    data: H5Array | pd.DataFrame | np.ndarray,
+    max_rows: int,
+    how: str = "mean",
+    batch_size: int = 20000,
+) -> np.ndarray:
     """
     Collapse rows of a dense array to at most `max_rows`.
 
@@ -1102,20 +1255,22 @@ def downsample(*, data : H5Array | pd.DataFrame | np.ndarray,
     return utils.downsample(data, max_rows, how=how, batch_size=batch_size)
 
 
-def sort_by_linkage(*, dataset : SimDataset | None = None,
-                    exp : MethPrintExperiment | None = None,
-                    chroms : str | Iterable[str] | None = None,
-                    data_name : str | None = None,
-                    raw_which : str | None = None,
-                    mask_name : str | None = None,
-                    sorted_name : str | None = None,
-                    store_link_mat : bool = True,
-                    link_mat_name : str | None = None,
-                    metric : str = "euclidean",
-                    method : str = "ward",
-                    batch_size : int = 20000,
-                    fill_nan : str | float | None = None
-                    ) -> dict[str, np.ndarray]:
+def sort_by_linkage(
+    *,
+    dataset: SimDataset | None = None,
+    exp: MethPrintExperiment | None = None,
+    chroms: str | Iterable[str] | None = None,
+    data_name: str | None = None,
+    raw_which: str | None = None,
+    mask_name: str | None = None,
+    sorted_name: str | None = None,
+    store_link_mat: bool = True,
+    link_mat_name: str | None = None,
+    metric: str = "euclidean",
+    method: str = "ward",
+    batch_size: int = 20000,
+    fill_nan: str | float | None = None,
+) -> dict[str, np.ndarray]:
     """
     Sort molecules by hierarchical-clustering similarity.
 
@@ -1178,9 +1333,15 @@ def sort_by_linkage(*, dataset : SimDataset | None = None,
     """
     if (dataset is None) == (exp is None):
         raise ValueError("Exactly one of 'dataset' or 'exp' must be given.")
-    kwargs = dict(sorted_name=sorted_name, store_link_mat=store_link_mat,
-                 link_mat_name=link_mat_name, metric=metric, method=method,
-                 batch_size=batch_size, fill_nan=fill_nan)
+    kwargs = {
+        "sorted_name": sorted_name,
+        "store_link_mat": store_link_mat,
+        "link_mat_name": link_mat_name,
+        "metric": metric,
+        "method": method,
+        "batch_size": batch_size,
+        "fill_nan": fill_nan,
+    }
     if data_name is not None:
         kwargs["data_name"] = data_name
     if chroms is not None:
@@ -1194,4 +1355,3 @@ def sort_by_linkage(*, dataset : SimDataset | None = None,
     if mask_name is not None:
         kwargs["mask_name"] = mask_name
     return MethPrintAnalysis().sort_by_linkage(exp=exp, **kwargs)
-

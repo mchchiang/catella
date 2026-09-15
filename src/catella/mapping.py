@@ -1,20 +1,23 @@
 # mapping.py
 
-import numpy as np
-import pandas as pd
 from dataclasses import dataclass
 
+import numpy as np
+import pandas as pd
+
 from catella.h5_array import H5Array
+
 
 @dataclass(slots=True)
 class CoordsTransform:
     """
     Handle alignment transformations for smoothed data.
     """
-    lnuc : int
+
+    lnuc: int
     """The smoothing window size used to calculate the original mean."""
 
-    fill_edge : float = np.nan
+    fill_edge: float = np.nan
     """The value used to fill empty spaces created by shifting data. Default
        np.nan."""
 
@@ -43,14 +46,22 @@ class CoordsTransform:
     def _apply_shift_h5array(self, x, delta, axis, batch_size, path, dir):
         nrow, ncol = x.shape
         axis = axis if axis >= 0 else x.ndim + axis
-        out = H5Array.create(x.shape, dtype=x.dtype, path=path, dir=dir,
-                             index=x.index, columns=x.columns)
+        out = H5Array.create(
+            x.shape,
+            dtype=x.dtype,
+            path=path,
+            dir=dir,
+            index=x.index,
+            columns=x.columns,
+        )
         if axis != 0:
             for start in range(0, nrow, batch_size):
                 stop = min(start + batch_size, nrow)
                 out.write_batch(
-                    start, stop,
-                    self._apply_shift(x[start:stop, :], delta, axis))
+                    start,
+                    stop,
+                    self._apply_shift(x[start:stop, :], delta, axis),
+                )
             return out
 
         shift = min(abs(delta), nrow)
@@ -62,26 +73,29 @@ class CoordsTransform:
             fill_range = (nrow - shift, nrow)
 
         if fill_range[1] > fill_range[0]:
-            fill_block = np.full((fill_range[1] - fill_range[0], ncol),
-                                 self.fill_edge)
+            fill_block = np.full(
+                (fill_range[1] - fill_range[0], ncol), self.fill_edge
+            )
             out.write_batch(*fill_range, fill_block)
 
-        copy_range = (fill_range[1], nrow) if delta >= 0 else \
-            (0, fill_range[0])
+        copy_range = (
+            (fill_range[1], nrow) if delta >= 0 else (0, fill_range[0])
+        )
         for start in range(copy_range[0], copy_range[1], batch_size):
             stop = min(start + batch_size, copy_range[1])
             src_start, src_stop = src_of(start, stop)
             out.write_batch(start, stop, x[src_start:src_stop, :])
         return out
 
-    def left_to_center_aligned(self,
-                               x : np.ndarray | pd.DataFrame | pd.Series
-                                   | H5Array,
-                               axis : int = -1,
-                               trim : bool = False,
-                               batch_size : int = 20000,
-                               path : str | None = None,
-                               dir : str | None = None):
+    def left_to_center_aligned(
+        self,
+        x: np.ndarray | pd.DataFrame | pd.Series | H5Array,
+        axis: int = -1,
+        trim: bool = False,
+        batch_size: int = 20000,
+        path: str | None = None,
+        dir: str | None = None,
+    ):
         """
         Shift left-aligned data to the center.
 
@@ -110,25 +124,31 @@ class CoordsTransform:
         np.ndarray | pd.DataFrame | pd.Series | H5Array
             The center-aligned data.
         """
-        delta = int(self.lnuc//2)
-        res = self._apply_shift_h5array(x, delta, axis, batch_size, path,
-                                        dir) if isinstance(x, H5Array) \
+        delta = int(self.lnuc // 2)
+        res = (
+            self._apply_shift_h5array(x, delta, axis, batch_size, path, dir)
+            if isinstance(x, H5Array)
             else self._apply_shift(x, delta, axis)
+        )
         if trim and delta > 0:
             slc = [slice(None)] * x.ndim
             slc[axis] = slice(delta, -delta)
-            return res.iloc[tuple(slc)] if hasattr(res, "iloc") else \
-                res[tuple(slc)]
+            return (
+                res.iloc[tuple(slc)]
+                if hasattr(res, "iloc")
+                else res[tuple(slc)]
+            )
         return res
 
-    def center_to_left_aligned(self,
-                               x : np.ndarray | pd.DataFrame | pd.Series
-                                   | H5Array,
-                               axis : int = -1,
-                               trim : bool = False,
-                               batch_size : int = 20000,
-                               path : str | None = None,
-                               dir : str | None = None):
+    def center_to_left_aligned(
+        self,
+        x: np.ndarray | pd.DataFrame | pd.Series | H5Array,
+        axis: int = -1,
+        trim: bool = False,
+        batch_size: int = 20000,
+        path: str | None = None,
+        dir: str | None = None,
+    ):
         """
         Shift center-aligned data back to the left.
 
@@ -157,14 +177,18 @@ class CoordsTransform:
         np.ndarray | pd.DataFrame | pd.Series | H5Array
             The left-aligned data.
         """
-        delta = -int(self.lnuc//2)
-        res = self._apply_shift_h5array(x, delta, axis, batch_size, path,
-                                        dir) if isinstance(x, H5Array) \
+        delta = -int(self.lnuc // 2)
+        res = (
+            self._apply_shift_h5array(x, delta, axis, batch_size, path, dir)
+            if isinstance(x, H5Array)
             else self._apply_shift(x, delta, axis)
+        )
         if trim and abs(delta) > 0:
             slc = [slice(None)] * x.ndim
             slc[axis] = slice(None, delta)
-            return res.iloc[tuple(slc)] if hasattr(res, "iloc") else \
-                res[tuple(slc)]
+            return (
+                res.iloc[tuple(slc)]
+                if hasattr(res, "iloc")
+                else res[tuple(slc)]
+            )
         return res
-

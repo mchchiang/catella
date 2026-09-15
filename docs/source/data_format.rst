@@ -1,7 +1,7 @@
 Input and Output Data Formats
 ===============================
 
-This page documents the file formats catella reads (raw methylation
+This page documents the file formats ``catella`` reads (raw methylation
 footprinting data) and writes (HDF5-backed experiment and simulation
 results). It is a reference page; for a walkthrough of how these files
 are produced and consumed in practice, see the tutorials.
@@ -20,8 +20,9 @@ columns are assigned positionally. Chromosome names must be unique.
 Example (``segments.size``)::
 
    chrom	length
-   OCT4	5000
-   GREB1	5443
+   601	11110
+   R1	11220
+   R2	11220   
 
 This file is required by ``load_raw`` (and the ``catella load_raw``
 CLI command), and every ``chrom`` referenced in the methylation call
@@ -39,11 +40,14 @@ optionally gzip-compressed, produced by ``modkit extract full``, e.g.:
 .. code-block:: bash
 
    modkit extract full --motif A 0 --motif CG 0 --motif GC 1 \
-       --mapped --ignore-implicit --ref genome.fa input.bam -
+       --mapped --ref genome.fa input.bam - | awk '$14 != "-"'
 
-Keep ModKit's header row (do not pass ``--no-header``) unless you
-supply ``colidx`` to select columns positionally. Only six of ModKit's
-output columns are read:
+The awk command at the end is optional: ``load_raw`` itself drops
+canonical-base rows (``mod_code`` of ``-``, i.e. no methylation signal)
+when reading the file, so piping through awk is only useful to shrink
+the file beforehand. Keep ModKit's header row (do not pass
+``--no-header``) unless you supply ``colidx`` to select columns
+positionally. Only six of ModKit's output columns are read:
 
 .. list-table::
    :header-rows: 1
@@ -79,7 +83,8 @@ output columns are read:
      - ``mod_code``
      - string
      - Base-modification code from the MM tag (e.g. ``a`` for 6mA,
-       ``m`` for 5mC, ``-`` for canonical).
+       ``m`` for 5mC). Rows with a canonical call (``-``) are dropped
+       by ``load_raw`` and never stored.
 
 If ``colidx`` is given (a list of six integers, in the order of the
 table above), the file is assumed headerless and those column indices
@@ -104,9 +109,9 @@ the requested methyltransferase context(s).
 Reference FASTA
 ~~~~~~~~~~~~~~~~~
 
-A multi-FASTA file (``fasta_file``), one record per chromosome. Each
-record's id must match a ``chrom`` in the chromosome-size file, and
-its sequence length must exactly equal that chromosome's ``length``
+A multi-chromosome FASTA file (``fasta_file``), with one record per
+chromosome. Each record's id must match a ``chrom`` in the chromosome-size
+file, and its sequence length must exactly equal that chromosome's ``length``
 (``ValueError`` otherwise). Read via ``pyfaidx``, so a ``.fai`` index
 is expected alongside it (built automatically if missing).
 

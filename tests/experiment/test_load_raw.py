@@ -198,6 +198,37 @@ class TestDownsamplingAndWrap:
                 unmeth_file=unmeth_file)
 
 
+class TestCanonicalCallFiltering:
+    def test_drops_canonical_mod_code_rows(self, tmp_path):
+        rows = [("m0", 1, "chr1", "+", 0.9, "a"),
+               ("m0", 2, "chr1", "+", 0.8, "-"),
+               ("m0", 3, "chr1", "+", 0.7, "m")]
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 100})
+
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file)
+        raw = exp.raw["chr1"]
+        assert sorted(raw.test_data["pos"]) == [1, 3]
+        assert "-" not in raw.test_data["mod_code"].to_numpy()
+        exp.close()
+
+    def test_all_canonical_leaves_molecule_with_no_rows(self, tmp_path):
+        rows = [("m0", 1, "chr1", "+", 0.9, "-")]
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 100})
+
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file)
+        raw = exp.raw["chr1"]
+        assert len(raw.test_data) == 0
+        exp.close()
+
+
 class TestColidx:
     def test_headerless_file_with_colidx(self, tmp_path):
         # File columns: extra, chrom, upos, strand, mod_qual, mod_code, mol_id

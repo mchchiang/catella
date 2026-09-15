@@ -329,6 +329,10 @@ def _stream_rows_to_staging(data_file, header_names, name_for, sep,
     Stream full rows, transform them, and append to per-chromosome
     disk-backed appenders.
 
+    Rows with a canonical call (`mod_code` of '-', i.e. no methylation
+    signal) are dropped, since the emission model only considers sites
+    with an actual modification call.
+
     Parameters
     ----------
     data_file : str or pathlib.Path
@@ -389,7 +393,8 @@ def _stream_rows_to_staging(data_file, header_names, name_for, sep,
             if mapping is None:
                 continue
             mol_index = group["mol_id"].map(mapping["index"])
-            keep = mol_index.notna().to_numpy()
+            keep = (mol_index.notna().to_numpy()
+                   & (group["mod_code"].to_numpy() != "-"))
 
             masks = valid_by_chrom.get(chrom)
             if masks is not None:
@@ -1059,22 +1064,18 @@ class MethPrintExperiment:
         """
         Create an experiment by processing raw sequencing data files.
 
-        This method reads chromosome sizes and experimental data (typically
-        modkit CSV output), re-orients the data if requested, and splits
-        the signals by chromosome. Each file is streamed in two passes
-        (molecule discovery, then row transfer) so the full file is
-        never held in memory at once; raw data ends up in a staging
-        HDF5 file and the returned experiment lazily loads it (see
-        `load`), so not all chromosomes need to be resident in memory
-        either. If more than one of `test_file`/`unmeth_file`/
-        `meth_file` is given, each is read fully independently (see
+        Reads chromosome sizes and experimental data (typically modkit
+        output), drops canonical calls (`mod_code` of '-'), re-orients
+        data if requested, and splits signals by chromosome into a
+        staging HDF5 file that the returned experiment lazily loads
+        (see `load`). If more than one of `test_file`/`unmeth_file`/
+        `meth_file` is given, each is read independently (see
         `nworker`) and merged afterward.
 
         Parameters
         ----------
         chromsize : str or pathlib.Path
-            Tab-separated file containing chromosome names and
-            their lengths (bp).
+            Tab-separated file of chromosome names and lengths (bp).
         test_file : str or pathlib.Path
             Raw experimental (test) data file.
         unmeth_file : str or pathlib.Path, optional
@@ -1103,29 +1104,25 @@ class MethPrintExperiment:
             `norm_by_strand`.
         colidx : list of int, optional
             Explicit column indices if the input file has no header
-            matching Modkit's column names. Positionally parallel to
-            the canonical field order: `colidx[0]` is the file column
-            index holding `read_id`, `colidx[1]` holds `ref_position`,
-            `colidx[2]` holds `chrom`, `colidx[3]` holds `ref_strand`,
-            `colidx[4]` holds `mod_qual`, `colidx[5]` holds `mod_code`.
+            matching Modkit's column names, in canonical field order:
+            `read_id`, `ref_position`, `chrom`, `ref_strand`,
+            `mod_qual`, `mod_code`.
         max_nmol : int or None
             Maximum number of molecules to extract for each chromosome.
         seed : int or None
-            The seed for the random number generator selecting the molecules
-            if `max_nmol` is specified. Downsampling is independent per
-            data file when more than one is given.
+            Random number generator seed for downsampling when
+            `max_nmol` is given; independent per data file when more
+            than one is given.
         chunk_size : int, default 1000000
             Approximate number of rows read (and held in memory) per
             streamed chunk.
         tmp_dir : str or Path, optional
-            Directory used for the scratch staging file backing the
-            returned experiment's raw data (removed once the experiment
-            is closed or garbage-collected; see `close`). A fresh
-            `catella_<timestamp>_<hex>` subfolder is created for it —
-            under this directory if given, otherwise under the system
-            default temporary directory — and cached on the returned
-            experiment so that later `smooth`/`meth_prob` calls on it
-            reuse the same subfolder by default.
+            Directory for the scratch staging file backing the
+            returned experiment's raw data (removed once the
+            experiment is closed or garbage-collected; see `close`).
+            A fresh `catella_<timestamp>_<hex>` subfolder is created
+            under it (or under the system default temporary directory)
+            and reused by later `smooth`/`meth_prob` calls.
         max_cached_chroms : int, default 1
             Maximum number of chromosomes' raw data kept in memory at
             once by the returned experiment (forwarded to `load`).

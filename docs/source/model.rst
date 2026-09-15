@@ -450,7 +450,7 @@ M.CviPI [GpC-5-methyl-cytosine (5mGpC)-specific], and M.SssI
 [CpG-5-methyl-cytosine (5mCpG)-specific]. To accommodate these different
 MTases, we extend the model to have multiple assayable sets
 :math:`\{\mathcal{A}_c\}`, where :math:`c\in\mathcal{M} =
-\{\text{M6A},\text{HCG},\text{GCH},\text{GCG}\}` are the methylation
+\{\text{A},\text{HCG},\text{GCH},\text{GCG}\}` are the methylation
 channels (H stands for any base except guanine). We need three separate
 channels for GpC and CpG methylation because GCG are ambiguous sites that
 can be targeted by both GpC and CpG MTases, and the kinetics there are

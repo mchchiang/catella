@@ -23,19 +23,19 @@ def _lookup_mask(exp, chrom, source, mask_name):
     return exp.analysis[chrom][key]["keep"].to_numpy()
 
 
-NONE, M6A, GCH, HCG, GCG = 0, 1, 2, 3, 4
-CONTEXT_NAMES = {NONE: "none", M6A: "M6A", GCH: "GCH", HCG: "HCG",
+NONE, A, GCH, HCG, GCG = 0, 1, 2, 3, 4
+CONTEXT_NAMES = {NONE: "none", A: "A", GCH: "GCH", HCG: "HCG",
                  GCG: "GCG"}
 
 # The four assayable context channels, and the reverse of
 # CONTEXT_NAMES restricted to them, for parsing user eta overrides.
-_ALL_CHANNELS = (M6A, GCH, HCG, GCG)
+_ALL_CHANNELS = (A, GCH, HCG, GCG)
 _CHANNEL_NAME_TO_CODE = {CONTEXT_NAMES[c]: c for c in _ALL_CHANNELS}
 
 # Context channel(s) each mtase label actually methylates. "CG"/"GC"
 # both include GCG, since that position matches both rules (see
 # _reference_contexts).
-_MTASE_CHANNELS = {"A": (M6A,), "CG": (HCG, GCG), "GC": (GCH, GCG)}
+_MTASE_CHANNELS = {"A": (A,), "CG": (HCG, GCG), "GC": (GCH, GCG)}
 
 
 def _active_channels(exp):
@@ -84,7 +84,7 @@ def _reference_contexts(seq):
     Returns
     -------
     np.ndarray
-        int8, length `len(seq)`, one of NONE/M6A/GCH/HCG/GCG per
+        int8, length `len(seq)`, one of NONE/A/GCH/HCG/GCG per
         position.
     """
     s = np.frombuffer(
@@ -96,7 +96,7 @@ def _reference_contexts(seq):
     prev = np.concatenate([[b"N"], s[:-1]])
     nxt = np.concatenate([s[1:], [b"N"]])
 
-    ctx[(s == b"A") | (s == b"T")] = M6A
+    ctx[(s == b"A") | (s == b"T")] = A
 
     fwd_C = s == b"C"
     rev_C = s == b"G"
@@ -638,7 +638,7 @@ def _resolve_eta_overrides(eta):
     eta : float, dict of str to float, or None
         `None` requests auto-estimation for every channel; a float
         pins every channel to that value; a dict pins only the named
-        channels (keys from `CONTEXT_NAMES`, e.g. "M6A"), leaving any
+        channels (keys from `CONTEXT_NAMES`, e.g. "A"), leaving any
         channel not mentioned to be auto-estimated.
 
     Returns
@@ -1615,7 +1615,7 @@ class MethPrintAnalysis:
             Per-channel multiplicative correction for inflated log-
             likelihood ratios from correlated nearby sites (e.g.
             palindromic CpG/GpC positions). If None (default), each
-            channel's ("M6A"/"GCH"/"HCG"/"GCG") eta is auto-estimated
+            channel's ("A"/"GCH"/"HCG"/"GCG") eta is auto-estimated
             from lag-k autocorrelation in its log-odds -- from the
             methylated control when available, or from the test data
             otherwise. A float pins every channel to that value; a

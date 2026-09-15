@@ -60,7 +60,7 @@ def eta_parser(value: Optional[str]):
     except json.JSONDecodeError:
         raise typer.BadParameter(
             "eta must be a number, or a JSON object of channel name "
-            "to number, e.g. '{\"M6A\": 0.9, \"HCG\": 0.7}'")
+            "to number, e.g. '{\"A\": 0.9, \"HCG\": 0.7}'")
 
 @app.command(name="load_raw")
 def load_raw(
@@ -330,7 +330,7 @@ def compute_model_prob(
                     help="Log-odds correction for correlated sites. "
                     "A number applies to every channel; a JSON object "
                     "pins only the named channels, e.g. "
-                    '\'{"M6A": 0.9, "HCG": 0.7}\'. Omit to '
+                    '\'{"A": 0.9, "HCG": 0.7}\'. Omit to '
                     "auto-estimate every channel (default).")] = None,
     eta_max_lag: Annotated[
         int, typer.Option(help="Max lag (bp) for eta "

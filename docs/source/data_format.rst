@@ -127,7 +127,7 @@ Methyltransferase (``mtase``) channels
 ``mtase`` is not a file but a parameter constraining how calls are
 parsed: one or more of ``"A"`` (any-context adenine, e.g. EcoGII m6A),
 ``"CG"`` (CpG, e.g. M.SssI), or ``"GC"`` (GpC, e.g. M.CviPI). These
-correspond to the assayable-site channels M6A/HCG/GCH/GCG described in
+correspond to the assayable-site channels A/HCG/GCH/GCG described in
 the :doc:`model` page.
 
 Simulation settings file
@@ -279,7 +279,7 @@ Common ``global_analysis`` keys:
      - DataFrame (1 row): ``lnuc``, ``nan_method``, ``fill_edge``,
        ``mask_name``.
    * - ``<prob_name>_eta``
-     - DataFrame (1 row): ``eta_M6A``, ``eta_GCH``, ``eta_HCG``,
+     - DataFrame (1 row): ``eta_A``, ``eta_GCH``, ``eta_HCG``,
        ``eta_GCG`` — per-channel crosstalk correction factors
        (``compute_model_prob`` only).
    * - ``<prob_name>_rho`` (if ``store_rho=True``)

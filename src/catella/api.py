@@ -257,7 +257,7 @@ def compute_model_prob(exp : MethPrintExperiment, *,
         Per-channel multiplicative correction for inflated log-
         likelihood ratios from correlated nearby sites (e.g.
         palindromic CpG/GpC positions). If None (default), each
-        channel's ("M6A"/"GCH"/"HCG"/"GCG") eta is auto-estimated
+        channel's ("A"/"GCH"/"HCG"/"GCG") eta is auto-estimated
         from lag-k autocorrelation in its log-odds -- from the
         methylated control when available, or from the test data
         otherwise. A float pins every channel to that value; a dict

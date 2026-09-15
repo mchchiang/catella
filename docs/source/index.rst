@@ -11,6 +11,7 @@ Welcome to catella's documentation!
    tutorials/tut00_data_prep
    tutorials/tut01_meth_prob
    tutorials/tut02_run_sim
+   example_pipeline
    cli
    api
    citation

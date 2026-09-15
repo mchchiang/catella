@@ -1,9 +1,14 @@
 cmake_minimum_required(VERSION 3.20)
 project(catella_cpp LANGUAGES CXX)
 
-# Pick up conda-installed packages (HDF5, pybind11)
+# Pick up conda-installed packages (HDF5, pybind11). On Windows, conda
+# installs headers, libs and CMake configs under Library/ rather than
+# directly under the env root.
 if(DEFINED ENV{CONDA_PREFIX})
     list(APPEND CMAKE_PREFIX_PATH "$ENV{CONDA_PREFIX}")
+    if(WIN32)
+        list(APPEND CMAKE_PREFIX_PATH "$ENV{CONDA_PREFIX}/Library")
+    endif()
 endif()
 
 find_package(Python REQUIRED COMPONENTS Interpreter Development.Module)

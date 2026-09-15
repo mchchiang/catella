@@ -262,8 +262,7 @@ class SimPlot:
         # Plot the nucleosome position as a heat map
         norm = Normalize(vmin=0, vmax=1)
         cmap_obj = plt.get_cmap(cmap if cmap is not None else self.cmap)
-        cmap_obj = cmap_obj.copy()
-        cmap_obj.set_bad(self.nan_color)
+        cmap_obj = cmap_obj.with_extremes(bad=self.nan_color)
         im = hm_ax.imshow(occup, cmap=cmap_obj, norm=norm, aspect="auto",
                           origin="lower", interpolation="none",
                           extent=[0, data.nbp/xscale, tstart/tscale,
@@ -419,8 +418,7 @@ class SimPlot:
         nbp = dataset.nbp[chrom]
         norm = Normalize(vmin=0, vmax=1)
         cmap_obj = plt.get_cmap(cmap if cmap is not None else self.cmap)
-        cmap_obj = cmap_obj.copy()
-        cmap_obj.set_bad(self.nan_color)
+        cmap_obj = cmap_obj.with_extremes(bad=self.nan_color)
         im = hm_ax.imshow(occup, cmap=cmap_obj, norm=norm, aspect="auto",
                           origin="lower", interpolation="none",
                           extent=[0,occup.shape[1]/xscale,0,occup.shape[0]])

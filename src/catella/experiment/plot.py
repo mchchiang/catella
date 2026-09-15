@@ -186,8 +186,7 @@ class MethPlot:
             nrow, ncol = matrix.shape
             norm = Normalize(vmin=vmin, vmax=vmax)
             cmap_obj = plt.get_cmap(cmap if cmap is not None else self.cmap)
-            cmap_obj = cmap_obj.copy()
-            cmap_obj.set_bad(self.nan_color)
+            cmap_obj = cmap_obj.with_extremes(bad=self.nan_color)
 
             if link_mat is not None:
                 fig, ax = plt.subplots(

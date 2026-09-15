@@ -10,6 +10,8 @@ dependencies:
   - hdf5
   - pkg-config
   - cxx-compiler
+  - cmake
+  - ninja
   # Runtime dependencies (Conda versions)
   - pyyaml
   - numpy
@@ -18,9 +20,10 @@ dependencies:
   - pandas>=3.0
   - h5py
   - matplotlib
-  - typer
+  - typer<=0.25.1
   - rich
   - pyarrow
+  - pyfaidx
   # Documentation dependencies
   #- nbsphinx
   #- sphinx

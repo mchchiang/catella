@@ -82,6 +82,7 @@ filterwarnings = [
 ]
 
 [tool.ruff]
-line-length = 80
+line-length = 79
 src = ["src/catella"]
 lint.pydocstyle.convention = "numpy"
+lint.extend-select = ["E501"]

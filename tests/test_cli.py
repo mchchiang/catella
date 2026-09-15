@@ -1,5 +1,6 @@
 # test_cli.py
 
+import gc
 import json
 
 import matplotlib
@@ -15,6 +16,7 @@ from catella import utils
 from catella.cli import app
 from catella.experiment.methdata import MethPrintExperiment
 from catella.experiment.preprocessing import MethPrintAnalysis
+from catella.h5_array import H5Array
 from catella.simulation.analysis import SimAnalysis
 from catella.simulation.config import SimSettings
 from catella.simulation.engine import SimManager
@@ -23,6 +25,15 @@ from catella.simulation.results import SimDataset
 runner = CliRunner()
 
 _TSV_HEADER = "read_id\tref_position\tchrom\tref_strand\tmod_qual\tmod_code\n"
+
+
+def _close_all_h5arrays(obj):
+    # Loading eagerly opens a handle per analysis entry, not just the
+    # one a test reads; leaving any open blocks a Windows rename.
+    for data in list(obj.analysis.values()) + [obj.global_analysis]:
+        for entry in data.values():
+            if isinstance(entry, H5Array):
+                entry.close()
 
 
 def _write_tsv(path, rows):
@@ -609,7 +620,7 @@ class TestDownsample:
         exp = MethPrintExperiment.load(exp_file)
         expected = utils.downsample(
             exp.analysis["chr1"]["meth_prob"], 2, how="mean")
-        exp.analysis["chr1"]["meth_prob"].close()
+        _close_all_h5arrays(exp)
 
         result = runner.invoke(app, [
             "downsample", str(exp_file), "chr1", "meth_prob", "2",
@@ -654,7 +665,7 @@ class TestSortByLinkage:
         exp = MethPrintExperiment.load(exp_file)
         meth_prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
         order, _ = utils.compute_linkage(meth_prob)
-        exp.analysis["chr1"]["meth_prob"].close()
+        _close_all_h5arrays(exp)
 
         result = runner.invoke(app, [
             "sort_by_linkage", str(exp_file), "--kind", "experiment",
@@ -726,6 +737,10 @@ class TestSortByLinkage:
                                       "--kind", "dataset",
                                       "--data-name", "occup_nan"])
         assert no_fill.exit_code != 0
+        # Drop the retained traceback, which keeps the failed
+        # invocation's own file handle open otherwise.
+        del no_fill
+        gc.collect()
 
         result = runner.invoke(app, ["sort_by_linkage",
                                      str(dataset._dataset_file),

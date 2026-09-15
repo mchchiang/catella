@@ -4,6 +4,7 @@ import atexit
 import os
 import shutil
 import tempfile
+import time
 import uuid
 from datetime import datetime
 import pandas as pd
@@ -37,6 +38,37 @@ def fresh_tmp_dir(base_dir=None):
     os.makedirs(path)
     atexit.register(shutil.rmtree, path, ignore_errors=True)
     return path
+
+
+def replace_retrying(src, dst, attempts=5, delay=0.1):
+    """
+    Replace `dst` with `src`, retrying briefly on transient failures.
+
+    On Windows, a file's OS-level lock can briefly outlive the
+    `close()` call that releases it (e.g. antivirus scanning), so
+    `os.replace` can raise `PermissionError` right after every handle
+    was properly closed. Retry a few times with a short backoff
+    before giving up.
+
+    Parameters
+    ----------
+    src : str or pathlib.Path
+        Path of the file to move into place.
+    dst : str or pathlib.Path
+        Destination path to atomically replace.
+    attempts : int, default 5
+        Maximum number of attempts before re-raising the error.
+    delay : float, default 0.1
+        Seconds to wait between attempts.
+    """
+    for attempt in range(attempts):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(delay)
 
 
 # Helper functions for loading and saving data frames in h5 files

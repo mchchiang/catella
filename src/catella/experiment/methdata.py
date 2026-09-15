@@ -1402,7 +1402,7 @@ class MethPrintExperiment:
                 for data, name, _ in colliding:
                     data[name].close()
                 closed = True
-                os.replace(tmp_path, dest_path)
+                h5_utils.replace_retrying(tmp_path, dest_path)
             except BaseException:
                 tmp_path.unlink(missing_ok=True)
                 raise

@@ -8,6 +8,7 @@
 #include <vector>
 #include "dtype.hpp"
 #include "mcmc.hpp"
+#include "tm.hpp"
 #include "tracker.hpp"
 #include "pytrack.hpp"
 #include "pytrack_factory.hpp"
@@ -37,7 +38,26 @@ PYBIND11_MODULE(catella_cpp, m) {
     .value("Linear", NucPosMCMC::Cooling::Linear)
     .value("Geometric", NucPosMCMC::Cooling::Geometric)
     .value("Constant", NucPosMCMC::Cooling::Constant);
-  
+
+  py::class_<NucPosTM> tmcls(m, "NucPosTM");
+  tmcls.def(py::init<int,int,int,double,double,ulint>(),
+	    py::arg("nucbp"), py::arg("nbp"), py::arg("llink"),
+	    py::arg("elink"), py::arg("mu"), py::arg("seed"));
+  tmcls.def("setEnergy", [](NucPosTM& self, vector<double> eseq,
+			    double emax) {
+    self.setEnergy(eseq, emax);
+  }, py::arg("eseq"), py::arg("emax"));
+  tmcls.def("solve", &NucPosTM::solve, py::arg("temp") = 1.0);
+  tmcls.def("getLogZ", &NucPosTM::getLogZ);
+  tmcls.def("getStartProb", &NucPosTM::getStartProb);
+  tmcls.def("getOccup", &NucPosTM::getOccup);
+  tmcls.def("getMeanN", &NucPosTM::getMeanN);
+  tmcls.def("getVarN", &NucPosTM::getVarN, py::arg("dmu") = 1e-4);
+  tmcls.def("getVarOccup", &NucPosTM::getVarOccup);
+  tmcls.def("sampleConfig", &NucPosTM::sampleConfig);
+  tmcls.def("getSeqEnergy", &NucPosTM::getSeqEnergy);
+  tmcls.def("reset", &NucPosTM::reset);
+
   py::class_<Tracker, shared_ptr<Tracker> >(m, "Tracker");
   
   py::class_<PyTrackBase, Tracker, shared_ptr<PyTrackBase> >(m, "PyTracker")

@@ -7,13 +7,13 @@
 #include <string>
 #include <fstream>
 #include "dtype.hpp"
-#include "model.hpp"
+#include "mcmc.hpp"
 #include "dump_dat.hpp"
 
 class DumpEnergy : public DumpDat {
 public:
   DumpEnergy(lint printFreq, const std::string& file);
-  void dump(lint time, const NucPosModel& model,
+  void dump(lint time, const NucPosMCMC& model,
 	    std::ofstream& writer) override final;
 };
 

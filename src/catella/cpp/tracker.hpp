@@ -7,7 +7,7 @@
 #include <string>
 #include "dtype.hpp"
 
-class NucPosModel;
+class NucPosMCMC;
 
 class Tracker {
 
@@ -18,10 +18,10 @@ protected:
 public:
   Tracker(lint printFreq);
   virtual ~Tracker() = default;
-  virtual void initialize(lint time, const NucPosModel& model) = 0;
-  virtual void update(lint time, const NucPosModel& model) = 0;
-  virtual void finalize(lint time, const NucPosModel& model) = 0;
-  void track(lint time, const NucPosModel& model);
+  virtual void initialize(lint time, const NucPosMCMC& model) = 0;
+  virtual void update(lint time, const NucPosMCMC& model) = 0;
+  virtual void finalize(lint time, const NucPosMCMC& model) = 0;
+  void track(lint time, const NucPosMCMC& model);
   void reset();
 };
 

@@ -11,7 +11,7 @@
 class PyTrackPos : public PyTrack<PyTrackPos,std::vector<int> > {
 public:
   PyTrackPos(lint printFreq);
-  void track(lint time, const NucPosModel& model);
+  void track(lint time, const NucPosMCMC& model);
 };
 
 #endif

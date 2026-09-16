@@ -11,7 +11,7 @@ from typing import Any, ClassVar
 import catella_cpp as sim
 import numpy as np
 import pandas as pd
-from catella_cpp import Dump, NucPosModel
+from catella_cpp import Dump, NucPosMCMC
 from rich.progress import (
     BarColumn,
     Progress,
@@ -310,7 +310,7 @@ class SimManager:
         if store_eseq:
             eseq = {}
             for chrom in chroms:
-                model = NucPosModel(
+                model = NucPosMCMC(
                     settings.nucbp,
                     nbp[chrom],
                     settings.llink,
@@ -634,7 +634,7 @@ class SimManager:
             eseq_list = np.frombuffer(p.seq_energy, dtype=np.float64).tolist()
             nbp = len(eseq_list)
             # Create the cpp backend Monte Carlo simulation model
-            model = NucPosModel(
+            model = NucPosMCMC(
                 settings.nucbp,
                 nbp,
                 settings.llink,

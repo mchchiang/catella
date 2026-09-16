@@ -7,12 +7,12 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 #include "dtype.hpp"
-#include "model.hpp"
+#include "mcmc.hpp"
 #include "tracker.hpp"
 
 namespace py = pybind11;
 
-class NucPosModel;
+class NucPosMCMC;
 
 class PyTrackBase : public Tracker {
 
@@ -36,13 +36,13 @@ public:
   
   void reset() override {data.clear();}
 
-  void initialize(lint time, const NucPosModel& model) override final {}
-  
-  void update(lint time, const NucPosModel& model) override final {
+  void initialize(lint time, const NucPosMCMC& model) override final {}
+
+  void update(lint time, const NucPosMCMC& model) override final {
     static_cast<Derived*>(this)->track(time, model);
   }
 
-  void finalize(lint time, const NucPosModel& model) override final {}  
+  void finalize(lint time, const NucPosMCMC& model) override final {}
 
   py::object values() override {
     if constexpr (std::is_arithmetic<T>::value) {

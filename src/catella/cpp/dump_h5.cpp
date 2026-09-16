@@ -5,7 +5,7 @@
 #include <vector>
 #include <hdf5.h>
 #include "dtype.hpp"
-#include "model.hpp"
+#include "mcmc.hpp"
 #include "dump_h5.hpp"
 
 #define MAX_CHUNK_SIZE 1024
@@ -114,7 +114,7 @@ DumpH5::DumpH5(lint freq, const string& f, OutputType otype) :
 
 DumpH5::~DumpH5() {}
 
-void DumpH5::initialize(lint time, const NucPosModel& model) {
+void DumpH5::initialize(lint time, const NucPosMCMC& model) {
   h5file = H5Fcreate(file.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
   if (h5file < 0) {
     throw std::runtime_error("Failed to create the HDF5 file " + file);
@@ -125,15 +125,15 @@ void DumpH5::initialize(lint time, const NucPosModel& model) {
 
   // Write parameters
   const auto& params = model.getParams();
-  writeAttribute("nucbp", params.nucbp, h5params);
-  writeAttribute("nbp", params.nbp, h5params);
-  writeAttribute("llink", params.llink, h5params);
-  writeAttribute("elink", params.elink, h5params);
-  writeAttribute("mu", params.mu, h5params);
+  writeAttribute("nucbp", params.model.nucbp, h5params);
+  writeAttribute("nbp", params.model.nbp, h5params);
+  writeAttribute("llink", params.model.llink, h5params);
+  writeAttribute("elink", params.model.elink, h5params);
+  writeAttribute("mu", params.model.mu, h5params);
   writeAttribute("seed", params.seed, h5params);
 }
 
-void DumpH5::update(lint time, const NucPosModel& model) {
+void DumpH5::update(lint time, const NucPosMCMC& model) {
   times.push_back(time);
   if (static_cast<int>(outType) & static_cast<int>(OutputType::Energy)) {
     energy.push_back(model.getEnergy());
@@ -146,7 +146,7 @@ void DumpH5::update(lint time, const NucPosModel& model) {
   }
 }
 
-void DumpH5::finalize(lint time, const NucPosModel& model) {  
+void DumpH5::finalize(lint time, const NucPosMCMC& model) {
   writeVector("time", times, h5data);
   if (static_cast<int>(outType) & static_cast<int>(OutputType::Energy)) {
     writeVector("energy", energy, h5data);

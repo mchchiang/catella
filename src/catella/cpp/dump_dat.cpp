@@ -6,7 +6,7 @@
 #include <string>
 #include "dtype.hpp"
 #include "tracker.hpp"
-#include "model.hpp"
+#include "mcmc.hpp"
 #include "dump_dat.hpp"
 
 using std::cout;
@@ -17,7 +17,7 @@ using std::string;
 DumpDat::DumpDat(lint freq, const string& f, bool app) :
   Tracker(freq), file(f), append(app) {}
 
-void DumpDat::initialize(lint time, const NucPosModel& model) {
+void DumpDat::initialize(lint time, const NucPosMCMC& model) {
   if (append) {
     fileStream.open(file, std::ios::out | std::ios::app);
     if (!fileStream) {
@@ -26,7 +26,7 @@ void DumpDat::initialize(lint time, const NucPosModel& model) {
   }
 }
 
-void DumpDat::update(lint time, const NucPosModel& model) {
+void DumpDat::update(lint time, const NucPosMCMC& model) {
   if (!append) {
     string ofile;    
     stringstream ss;
@@ -44,7 +44,7 @@ void DumpDat::update(lint time, const NucPosModel& model) {
   }
 }
 
-void DumpDat::finalize(lint time, const NucPosModel& model) {
+void DumpDat::finalize(lint time, const NucPosMCMC& model) {
   if (append) {
     fileStream.close();
   }

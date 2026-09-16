@@ -22,10 +22,10 @@ public:
   
   DumpH5(lint freq, const std::string& file, OutputType opt);
   ~DumpH5();
-  
-  void initialize(lint time, const NucPosModel& model) override final;
-  void update(lint time, const NucPosModel& model) override final;
-  void finalize(lint time, const NucPosModel& model) override final;
+
+  void initialize(lint time, const NucPosMCMC& model) override final;
+  void update(lint time, const NucPosMCMC& model) override final;
+  void finalize(lint time, const NucPosMCMC& model) override final;
   
 private:
 

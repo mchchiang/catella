@@ -11,7 +11,7 @@
 class PyTrackEnergy : public PyTrack<PyTrackEnergy,double> {
 public:
   PyTrackEnergy(lint printFreq);
-  void track(lint time, const NucPosModel& model);
+  void track(lint time, const NucPosMCMC& model);
 };
 
 #endif

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar, Self
 
-from catella_cpp import NucPosModel
+from catella_cpp import NucPosMCMC
 
 
 # Store parameters relevant for a batch of runs
@@ -48,10 +48,10 @@ class SimSettings:
     emax: float
     """The maximum methylation energy (in $k_BT$)."""
 
-    _cool_map: ClassVar[dict[str, NucPosModel.Cooling]] = {
-        "linear": NucPosModel.Cooling.Linear,
-        "geometric": NucPosModel.Cooling.Geometric,
-        "constant": NucPosModel.Cooling.Constant,
+    _cool_map: ClassVar[dict[str, NucPosMCMC.Cooling]] = {
+        "linear": NucPosMCMC.Cooling.Linear,
+        "geometric": NucPosMCMC.Cooling.Geometric,
+        "constant": NucPosMCMC.Cooling.Constant,
     }
 
     @classmethod

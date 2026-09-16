@@ -287,7 +287,7 @@ class MethPlot:
             `exp.analysis[chrom]["meth_prob"]`.
         emax : float, optional
             If given, clamp energy to [-emax, emax] (matching
-            `SimSettings.emax`'s clamping in `NucPosModel.setEnergy`)
+            `SimSettings.emax`'s clamping in `NucPosMCMC.setEnergy`)
             and use it as the default `vmin`/`vmax`. If None, energy
             is unclamped and the default color-scale range is
             inferred from the finite values in `data`.

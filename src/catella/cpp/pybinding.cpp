@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 #include "dtype.hpp"
-#include "model.hpp"
+#include "mcmc.hpp"
 #include "tracker.hpp"
 #include "pytrack.hpp"
 #include "pytrack_factory.hpp"
@@ -20,23 +20,23 @@ using std::string;
 using std::vector;
 
 PYBIND11_MODULE(catella_cpp, m) {
-  py::class_<NucPosModel> modelcls(m, "NucPosModel");
-  modelcls.def(py::init<int,int,int,double,double,ulint>(),
-	       py::arg("nucbp"), py::arg("nbp"), py::arg("llink"),
-	       py::arg("elink"), py::arg("mu"), py::arg("seed"));
-  modelcls.def("run", &NucPosModel::run);
-  modelcls.def("reset", &NucPosModel::reset);
-  modelcls.def("addTracker", &NucPosModel::addTracker);
-  modelcls.def("getSeqEnergy", &NucPosModel::getSeqEnergy);
-  modelcls.def("setEnergy", [](NucPosModel& self, vector<double> eseq,
-				double emax) {
+  py::class_<NucPosMCMC> mcmccls(m, "NucPosMCMC");
+  mcmccls.def(py::init<int,int,int,double,double,ulint>(),
+	      py::arg("nucbp"), py::arg("nbp"), py::arg("llink"),
+	      py::arg("elink"), py::arg("mu"), py::arg("seed"));
+  mcmccls.def("run", &NucPosMCMC::run);
+  mcmccls.def("reset", &NucPosMCMC::reset);
+  mcmccls.def("addTracker", &NucPosMCMC::addTracker);
+  mcmccls.def("getSeqEnergy", &NucPosMCMC::getSeqEnergy);
+  mcmccls.def("setEnergy", [](NucPosMCMC& self, vector<double> eseq,
+			      double emax) {
     self.setEnergy(eseq, emax);
   }, py::arg("eseq"), py::arg("emax"));
 
-  py::enum_<NucPosModel::Cooling>(modelcls, "Cooling")
-    .value("Linear", NucPosModel::Cooling::Linear)
-    .value("Geometric", NucPosModel::Cooling::Geometric)
-    .value("Constant", NucPosModel::Cooling::Constant);
+  py::enum_<NucPosMCMC::Cooling>(mcmccls, "Cooling")
+    .value("Linear", NucPosMCMC::Cooling::Linear)
+    .value("Geometric", NucPosMCMC::Cooling::Geometric)
+    .value("Constant", NucPosMCMC::Cooling::Constant);
   
   py::class_<Tracker, shared_ptr<Tracker> >(m, "Tracker");
   

@@ -3,11 +3,11 @@
 #include <optional>
 #include "dtype.hpp"
 #include "tracker.hpp"
-#include "model.hpp"
+#include "mcmc.hpp"
 
 Tracker::Tracker(lint freq) : printFreq(freq) {}
 
-void Tracker::track(lint time, const NucPosModel& model) {
+void Tracker::track(lint time, const NucPosMCMC& model) {
   if (time % printFreq == 0 && (!prevTime || time != *prevTime)) {
     update(time, model);
     prevTime = time;

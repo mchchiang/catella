@@ -74,7 +74,7 @@ class TestComputeOccup:
     def test_missing_molecule_filled_with_nan(self, tmp_path, capsys):
         dataset = _make_dataset(tmp_path, nmol=5, nbp=16, nsim=2)
         for run in range(dataset.nsim):
-            dataset.sim_file("chr1", 2, run).unlink()
+            dataset.mcmc_file("chr1", 2, run).unlink()
 
         ana = SimAnalysis()
         ana.compute_occup(dataset=dataset, batch_size=2)
@@ -133,7 +133,7 @@ class TestComputeAccess:
     def test_missing_molecule_stays_nan(self, tmp_path, capsys):
         dataset = _make_dataset(tmp_path, nmol=5, nbp=15, nsim=2)
         for run in range(dataset.nsim):
-            dataset.sim_file("chr1", 3, run).unlink()
+            dataset.mcmc_file("chr1", 3, run).unlink()
 
         ana = SimAnalysis()
         ana.compute_access(dataset=dataset, batch_size=2)

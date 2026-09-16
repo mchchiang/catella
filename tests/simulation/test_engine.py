@@ -116,7 +116,7 @@ class TestSimManagerRun:
             seed=1,
             out_types=["energy", "position"],
         )
-        sim_file = dataset.sim_file("chr1", 0, 0)
+        sim_file = dataset.mcmc_file("chr1", 0, 0)
         with h5py.File(sim_file, "r") as f:
             keys = set(f["data"].keys())
         assert "energy" in keys
@@ -192,7 +192,7 @@ class TestSimManagerRun:
         assert dataset.seed == 7
         assert dataset.seed_table["chr1"].shape == (2, 2)
 
-        sim_file = dataset.sim_file("chr1", 1, 0)
+        sim_file = dataset.mcmc_file("chr1", 1, 0)
         with h5py.File(sim_file, "r") as f:
             recorded_seed = int(f["params"].attrs["seed"])
         assert int(dataset.seed_table["chr1"][1, 0]) == recorded_seed
@@ -290,7 +290,7 @@ class TestSimManagerRun:
         )
 
         bad_run = _make_sim_run(
-            dataset.sim_file("chr1", 0, 0), settings=Unpicklable()
+            dataset.mcmc_file("chr1", 0, 0), settings=Unpicklable()
         )
         manager = SimManager(nworker=2, verbose=False)
 
@@ -316,7 +316,7 @@ class TestSimManagerRerun:
             seed=5,
         )
 
-        target_file = dataset.sim_file("chr1", 1, 0)
+        target_file = dataset.mcmc_file("chr1", 1, 0)
         original_seed = int(dataset.seed_table["chr1"][1, 0])
         target_file.unlink()
         assert dataset.find_incomplete_runs()["missing"] == [("chr1", 1, 0)]
@@ -339,7 +339,7 @@ class TestSimManagerRerun:
             out_dir=tmp_path / "rr_pos",
             seed=5,
         )
-        dataset.sim_file("chr1", 1, 0).unlink()
+        dataset.mcmc_file("chr1", 1, 0).unlink()
 
         manager.rerun(dataset, meth_prob=meth_prob)
 
@@ -413,7 +413,7 @@ class TestSimManagerRerun:
             seed=5,
         )
         original_seed = int(dataset.seed_table["chr1"][0, 0])
-        target_file = dataset.sim_file("chr1", 0, 0)
+        target_file = dataset.mcmc_file("chr1", 0, 0)
 
         manager.rerun(
             dataset=dataset,
@@ -437,7 +437,7 @@ class TestSimManagerRerun:
             out_dir=tmp_path / "rr4",
             seed=5,
         )
-        target_file = dataset.sim_file("chr1", 0, 0)
+        target_file = dataset.mcmc_file("chr1", 0, 0)
         target_file.write_bytes(b"not a valid hdf5 file")
         assert dataset.find_incomplete_runs()["corrupted"] == [("chr1", 0, 0)]
 

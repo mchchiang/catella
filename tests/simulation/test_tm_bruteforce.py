@@ -79,7 +79,9 @@ class TestCoreQuantities:
             (4, 1, 0.5, 0.0, 13, 3),
         ],
     )
-    def test_logz_startprob_occup_meann(self, nucbp, llink, elink, mu, nbp, seed):
+    def test_logz_startprob_occup_meann(
+        self, nucbp, llink, elink, mu, nbp, seed
+    ):
         rng = np.random.default_rng(seed)
         eseq = rng.normal(size=nbp).tolist()
         logz_bf, start_bf, occup_bf, meann_bf, _ = _brute_force(
@@ -162,7 +164,9 @@ class TestSampling:
             for i, x in enumerate(positions):
                 expected += eseq[x]
                 if i > 0:
-                    expected += _erep(x - positions[i - 1], nucbp, llink, elink)
+                    expected += _erep(
+                        x - positions[i - 1], nucbp, llink, elink
+                    )
             expected -= mu * len(positions)
             assert energy == pytest.approx(expected, rel=1e-8, abs=1e-8)
 

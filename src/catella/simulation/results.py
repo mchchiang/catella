@@ -30,9 +30,9 @@ MAX_OPEN_FILES = Semaphore(500)
 
 @utils.add_frozen_properties
 @dataclass(frozen=True, slots=True, init=False)
-class SimData:
+class SimMCMCData:
     """
-    Container for results and parameters of a single simulation run.
+    Container for results and parameters of a single MCMC simulation run.
 
     This class provides a read-only, memory-efficient representation of
     Monte Carlo simulation data, including physical parameters (chemical
@@ -40,7 +40,8 @@ class SimData:
 
     .. note::
        Direct instantiation is disabled to ensure data integrity. Use the
-       factory method :meth:`SimData.load` to create instances from HDF5 files.
+       factory method :meth:`SimMCMCData.load` to create instances from
+       HDF5 files.
     """
 
     nucbp: int
@@ -92,7 +93,7 @@ class SimData:
 
     def __init__(self, **kwargs: Any):
         if not kwargs.pop("_internal", False):
-            raise TypeError("Use SimData.load() to instantiate this class")
+            raise TypeError("Use SimMCMCData.load() to instantiate this class")
 
         # Bulk assignment of fields
         for f in fields(self):
@@ -172,13 +173,14 @@ class SimData:
 
         Returns
         -------
-        SimData
+        SimMCMCData
             A new instance populated with the loaded parameters and data.
 
         Raises
         ------
         OSError
-            If the file cannot be opened or does not follow the SimData schema.
+            If the file cannot be opened or does not follow the
+            SimMCMCData schema.
         """
         with h5py.File(sim_file, "r") as f:
             # Load model parameters
@@ -317,6 +319,303 @@ class SimData:
         return repr_str
 
 
+@utils.add_frozen_properties
+@dataclass(frozen=True, slots=True, init=False)
+class SimTMData:
+    """
+    Container for one exact sample from the transfer-matrix solver.
+
+    Unlike SimMCMCData, this holds no trajectory: a single TM run is
+    one independent, exact sample drawn via stochastic traceback, not
+    a sequence of Monte Carlo sweeps. There is no time or temperature
+    axis.
+
+    .. note::
+       Direct instantiation is disabled. Use the factory method
+       :meth:`SimTMData.load` to create instances from HDF5 files.
+    """
+
+    nucbp: int
+    """The number of base pairs occupied by a single nucleosome."""
+
+    nbp: int
+    """The total number of base pairs in the chromatin fiber."""
+
+    llink: int
+    """The DNA linker length between nucleosomes."""
+
+    elink: float
+    """The energy scale of the linker repulsion potential."""
+
+    mu: float
+    """The chemical potential (energy gained by adding a nucleosome)."""
+
+    seed: int
+    """The seed used to draw this exact sample."""
+
+    _frozen_position: np.ndarray = field(
+        metadata={"doc": "np.ndarray: The sampled nucleosome start "
+                  "positions."}
+    )
+
+    _frozen_energy: float = field(
+        metadata={
+            "doc": "float: The exact Hamiltonian energy of this sample."
+        }
+    )
+
+    _frozen_logz: float = field(
+        metadata={
+            "doc": "float: The log partition function for this molecule."
+        }
+    )
+
+    def __init__(self, **kwargs: Any):
+        if not kwargs.pop("_internal", False):
+            raise TypeError("Use SimTMData.load() to instantiate this class")
+
+        for f in fields(self):
+            val = kwargs.get(f.name)
+            if val is None:
+                val = kwargs.get(f.name.removeprefix("_frozen_"))
+            object.__setattr__(self, f.name, val)
+
+    @classmethod
+    def load(cls, sim_file: str | Path) -> Self:
+        """
+        Load one exact transfer-matrix sample from a single-sample HDF5
+        file (the format written for one sampling job, before
+        consolidation into a per-molecule file).
+
+        Parameters
+        ----------
+        sim_file : str or Path
+            The HDF5 file containing the sample.
+
+        Returns
+        -------
+        SimTMData
+            A new instance populated with the loaded parameters and data.
+
+        Raises
+        ------
+        OSError
+            If the file cannot be opened or does not follow the
+            SimTMData schema.
+        """
+        with h5py.File(sim_file, "r") as f:
+            g = f["params"]
+            nucbp = g.attrs["nucbp"]
+            nbp = g.attrs["nbp"]
+            llink = g.attrs["llink"]
+            elink = g.attrs["elink"]
+            mu = g.attrs["mu"]
+            seed = g.attrs["seed"]
+
+            g = f["data"]
+            position = g["position"][()]
+            energy = g.attrs["energy"]
+            logz = g.attrs["logz"]
+            return cls._create(
+                nucbp=nucbp,
+                nbp=nbp,
+                llink=llink,
+                elink=elink,
+                mu=mu,
+                seed=seed,
+                position=position,
+                energy=energy,
+                logz=logz,
+            )
+
+    @classmethod
+    def _create(cls, **kwargs) -> Self:
+        nucbp = kwargs.get("nucbp")
+        nbp = kwargs.get("nbp")
+        llink = kwargs.get("llink")
+        seed = kwargs.get("seed")
+        if nucbp <= 0 or nbp <= 0 or llink <= 0 or seed <= 0:
+            raise ValueError("nucbp, nbp, llink, and seed must be positive.")
+        return cls(**kwargs, _internal=True)
+
+    def __repr__(self):
+        public_attrs = [
+            attr for attr in self.__slots__ if not attr.startswith("_")
+        ]
+        for attr, value in self.__class__.__dict__.items():
+            if isinstance(value, property) and not attr.startswith("_"):
+                public_attrs.append(attr)
+        repr_str = f"{self.__class__.__name__}({', '.join(public_attrs)})"
+        return repr_str
+
+
+def _write_tm_file(
+    out_file: str | Path,
+    *,
+    nucbp: int,
+    nbp: int,
+    llink: int,
+    elink: float,
+    mu: float,
+    seed: int,
+    position: np.ndarray,
+    energy: float,
+    logz: float,
+) -> None:
+    """
+    Write one exact transfer-matrix sample to a single-sample HDF5 file.
+
+    This is the per-job output format used while sampling runs in
+    parallel; :func:`_consolidate_tm_samples` later merges many of
+    these into one combined per-molecule file, at which point the
+    single-sample files are no longer needed.
+
+    Parameters
+    ----------
+    out_file : str or Path
+        Destination HDF5 file.
+    nucbp, nbp, llink, elink, mu, seed : int or float
+        Physical parameters and seed, stored as attrs on '/params'.
+    position : np.ndarray
+        The sampled nucleosome start positions.
+    energy : float
+        The exact Hamiltonian energy of the sampled configuration.
+    logz : float
+        The log partition function for this molecule.
+    """
+    with h5py.File(out_file, "w") as f:
+        gparams = f.create_group("params")
+        gparams.attrs["nucbp"] = nucbp
+        gparams.attrs["nbp"] = nbp
+        gparams.attrs["llink"] = llink
+        gparams.attrs["elink"] = elink
+        gparams.attrs["mu"] = mu
+        gparams.attrs["seed"] = seed
+
+        gdata = f.create_group("data")
+        gdata.create_dataset(
+            "position", data=np.asarray(position, dtype=np.int32)
+        )
+        gdata.attrs["energy"] = energy
+        gdata.attrs["logz"] = logz
+
+
+def _consolidate_tm_samples(
+    sample_files: Iterable[str | Path], combined_file: str | Path
+) -> None:
+    """
+    Merge many single-sample TM files into one combined per-molecule
+    file, using the same flat/offset jagged layout already used for
+    MCMC position trajectories, but indexed by sample instead of frame.
+
+    Parameters
+    ----------
+    sample_files : iterable of str or Path
+        The single-sample files to merge, as written by
+        :func:`_write_tm_file`. Order determines the sample index
+        ('run') each ends up at in the combined file.
+    combined_file : str or Path
+        Destination HDF5 file for the merged samples.
+
+    Raises
+    ------
+    ValueError
+        If `sample_files` is empty, or if the samples do not all share
+        the same physical parameters and log partition function.
+    """
+    sample_files = list(sample_files)
+    if not sample_files:
+        raise ValueError("sample_files must contain at least one file.")
+
+    params = None
+    logz = None
+    positions = []
+    energies = []
+    seeds = []
+    for sf in sample_files:
+        with h5py.File(sf, "r") as f:
+            gparams = f["params"]
+            this_params = {
+                k: gparams.attrs[k]
+                for k in ("nucbp", "nbp", "llink", "elink", "mu")
+            }
+            if params is None:
+                params = this_params
+            elif params != this_params:
+                raise ValueError(
+                    "All sample files must share the same physical "
+                    "parameters."
+                )
+            seeds.append(gparams.attrs["seed"])
+
+            gdata = f["data"]
+            if logz is None:
+                logz = gdata.attrs["logz"]
+            positions.append(gdata["position"][()])
+            energies.append(gdata.attrs["energy"])
+
+    flat = np.concatenate(positions) if positions else np.array([], dtype=int)
+    offset = np.zeros(len(positions) + 1, dtype=np.uint64)
+    for i, p in enumerate(positions):
+        offset[i + 1] = offset[i] + len(p)
+
+    with h5py.File(combined_file, "w") as f:
+        gparams = f.create_group("params")
+        for k, v in params.items():
+            gparams.attrs[k] = v
+
+        gdata = f.create_group("data")
+        gdata.attrs["logz"] = logz
+        gdata.create_dataset("position_flat", data=flat.astype(np.int32))
+        gdata.create_dataset("position_offset", data=offset)
+        gdata.create_dataset("energy", data=np.asarray(energies))
+        gdata.create_dataset("seed", data=np.asarray(seeds))
+
+
+def _read_tm_sample(combined_file: str | Path, run: int) -> SimTMData:
+    """
+    Load one sample by index from a combined per-molecule TM file.
+
+    Parameters
+    ----------
+    combined_file : str or Path
+        The combined file written by :func:`_consolidate_tm_samples`.
+    run : int
+        The sample index within the combined file.
+
+    Returns
+    -------
+    SimTMData
+        The requested sample.
+    """
+    with h5py.File(combined_file, "r") as f:
+        g = f["params"]
+        nucbp = g.attrs["nucbp"]
+        nbp = g.attrs["nbp"]
+        llink = g.attrs["llink"]
+        elink = g.attrs["elink"]
+        mu = g.attrs["mu"]
+
+        g = f["data"]
+        logz = g.attrs["logz"]
+        offset = g["position_offset"][()]
+        flat = g["position_flat"]
+        position = flat[offset[run] : offset[run + 1]]
+        energy = g["energy"][run]
+        seed = g["seed"][run]
+        return SimTMData._create(
+            nucbp=nucbp,
+            nbp=nbp,
+            llink=llink,
+            elink=elink,
+            mu=mu,
+            seed=seed,
+            position=position,
+            energy=energy,
+            logz=logz,
+        )
+
+
 class SimFileMapper:
     def __init__(
         self,
@@ -331,7 +630,7 @@ class SimFileMapper:
         self.mol_pad = max(1, int(np.ceil(np.log10(total_mols))))
         self.run_pad = max(1, int(np.ceil(np.log10(max_runs_per_mol))))
 
-    def params_to_file(self, chrom: str, molidx: int, run: int) -> Path:
+    def params_to_mcmc_file(self, chrom: str, molidx: int, run: int) -> Path:
         # Compute range
         start = int((molidx // self.max_mols_per_dir) * self.max_mols_per_dir)
         end = int(start + self.max_mols_per_dir - 1)
@@ -343,6 +642,18 @@ class SimFileMapper:
         run_name = f"run_{int(run):0{r}d}"
         sim_h5 = f"{chrom}_{mol_name}_{run_name}.h5"
         return self.root_dir / chrom / shard_name / mol_name / sim_h5
+
+    def params_to_tm_file(self, chrom: str, molidx: int) -> Path:
+        # A molecule's TM samples live in one file (generated once), so
+        # unlike params_to_mcmc_file there is no per-molecule directory,
+        # just the file directly in the shard directory.
+        start = int((molidx // self.max_mols_per_dir) * self.max_mols_per_dir)
+        end = int(start + self.max_mols_per_dir - 1)
+        z = self.mol_pad
+        shard_name = f"mol_{int(start):0{z}d}-{int(end):0{z}d}"
+        mol_name = f"mol_{int(molidx):0{z}d}"
+        sim_h5 = f"{chrom}_{mol_name}_tm.h5"
+        return self.root_dir / chrom / shard_name / sim_h5
 
     def file_to_params(self, sim_file: str | Path):
         sim_file = Path(sim_file)
@@ -393,7 +704,18 @@ class SimDataset:
 
         def __getitem__(self, keys):
             chrom, mol, run = keys
-            sim_file = self._parent.sim_file(chrom, mol, run)
+            if self._parent._method == "tm":
+                combined_file = self._parent._file_map.params_to_tm_file(
+                    chrom, mol
+                )
+                if not combined_file.exists():
+                    raise ValueError(
+                        "Cannot find the simulation for chrom "
+                        f"{chrom}, molecule {mol}, run {run}"
+                    )
+                arrays = self._load_tm_combined(str(combined_file))
+                return self._slice_tm_sample(arrays, run)
+            sim_file = self._parent.mcmc_file(chrom, mol, run)
             if sim_file.exists():
                 return self._load_sim_data(str(sim_file))
             else:
@@ -405,13 +727,45 @@ class SimDataset:
         @staticmethod
         @lru_cache(maxsize=1024)
         def _load_sim_data(sim_file: str):
-            return SimData.load(sim_file)
+            return SimMCMCData.load(sim_file)
+
+        @staticmethod
+        @lru_cache(maxsize=1024)
+        def _load_tm_combined(combined_file: str):
+            with h5py.File(combined_file, "r") as f:
+                gparams = f["params"]
+                params = {
+                    k: gparams.attrs[k]
+                    for k in ("nucbp", "nbp", "llink", "elink", "mu")
+                }
+                gdata = f["data"]
+                return {
+                    "params": params,
+                    "logz": gdata.attrs["logz"],
+                    "flat": gdata["position_flat"][()],
+                    "offset": gdata["position_offset"][()],
+                    "energy": gdata["energy"][()],
+                    "seed": gdata["seed"][()],
+                }
+
+        @staticmethod
+        def _slice_tm_sample(arrays, run: int) -> "SimTMData":
+            offset = arrays["offset"]
+            position = arrays["flat"][offset[run] : offset[run + 1]]
+            return SimTMData._create(
+                **arrays["params"],
+                seed=arrays["seed"][run],
+                position=position,
+                energy=arrays["energy"][run],
+                logz=arrays["logz"],
+            )
 
     _chroms: Iterable[str]
     _nmol: Mapping[str, int]
     _nsim: int
     _nbp: Mapping[str, int]
     _settings: SimSettings
+    _method: str
     _eseq: Mapping[str, np.ndarray]
     _view_eseq: Mapping[str, np.ndarray]
     _out_type: Any
@@ -444,13 +798,22 @@ class SimDataset:
         dataset_file: Path,
         file_map: SimFileMapper,
         eseq: Mapping[str, np.ndarray] | None,
+        method: str = "mcmc",
         out_type: Any | None = None,
         seed: int | None = None,
         seed_table: Mapping[str, np.ndarray] | None = None,
     ):
         # Some validations
-        if nsim <= 0:
-            raise ValueError("Number of simulations must be positive")
+        if method not in ("mcmc", "tm"):
+            raise ValueError("method must be 'mcmc' or 'tm'.")
+        if nsim < 0:
+            raise ValueError("Number of simulations cannot be negative")
+        if method == "mcmc" and nsim == 0:
+            raise ValueError(
+                "Number of simulations must be positive for method="
+                "'mcmc'. Only 'tm' datasets can start with nsim=0 "
+                "(exact quantities do not require any samples)."
+            )
         # Check the keys in nmol match up with chroms
         if set(nmol.keys()) != set(chroms):
             raise ValueError("Chromosomes in nmol do not match with chroms")
@@ -467,6 +830,7 @@ class SimDataset:
         obj._nsim = int(nsim)
         obj._nbp = dict(nbp)
         obj._settings = settings
+        obj._method = method
         obj._raw_dir = raw_dir
         obj._dataset_file = dataset_file
         obj._file_map = file_map
@@ -499,6 +863,7 @@ class SimDataset:
         out_dir: str | Path,
         dataset_name: str = "results",
         eseq: np.ndarray | Mapping[str, np.ndarray] | None = None,
+        method: str = "mcmc",
         out_type: Any | None = None,
         seed: int | None = None,
         seed_table: Mapping[str, np.ndarray] | None = None,
@@ -519,7 +884,10 @@ class SimDataset:
             the same count is applied to all chromosomes. If a mapping is
             provided, it must specify the count for each chromosome name.
         nsim : int
-            The number of simulation runs to perform for each molecule.
+            The number of simulation runs (or, for `method='tm'`, exact
+            samples) per molecule. May be 0 for `method='tm'`, since the
+            exact occupancy/mean-N/variance quantities require no
+            samples at all; `method='mcmc'` requires a positive value.
         nbp : int or dict of {str: int}
             The number of base-pair for each chromsome segment.
         settings : SimSettings
@@ -535,6 +903,9 @@ class SimDataset:
         eseq : np.ndarray or None, default None
             The sequence-specific energy landscape derived from the
             methylation data.
+        method : {"mcmc", "tm"}, default "mcmc"
+            Which engine generated (or will generate) this dataset's raw
+            samples.
         out_type : Dump.OutputType, optional
             The format or scope of data recorded for each simulation run.
         seed : int, optional
@@ -595,6 +966,7 @@ class SimDataset:
             raw_dir=raw_dir,
             dataset_file=dataset_file,
             file_map=file_map,
+            method=method,
             out_type=out_type,
             seed=seed,
             seed_table=seed_table,
@@ -618,7 +990,7 @@ class SimDataset:
 
         Returns
         -------
-        SimData
+        SimMCMCData
             The loaded simulation dataset object with all analysis maps
             populated.
 
@@ -671,6 +1043,7 @@ class SimDataset:
                 out_type = Dump.OutputType(int(gmeta.attrs["out_type"]))
             else:
                 out_type = None
+            method = gmeta.attrs.get("method", "mcmc")
             seed = int(gmeta.attrs["seed"]) if "seed" in gmeta.attrs else None
             if "seed_table" in gmeta:
                 gseeds = gmeta["seed_table"]
@@ -687,6 +1060,7 @@ class SimDataset:
                 raw_dir=raw_dir,
                 file_map=file_map,
                 dataset_file=dataset_file,
+                method=method,
                 out_type=out_type,
                 seed=seed,
                 seed_table=seed_table,
@@ -801,11 +1175,16 @@ class SimDataset:
             if "metadata" in h5stream:
                 gmeta = h5stream["metadata"]
                 gmeta.attrs["raw_dir"] = str(self._raw_dir)
+                # A TM dataset may start at nsim=0 and transition once
+                # to nsim=N after samples are generated, so refresh it
+                # on every save (unlike the fixed fields below).
+                gmeta.attrs["nsim"] = self._nsim
             else:  # if "metadata" not in h5stream:
                 # Save metadata asssociated with raw simulation data
                 gmeta = h5stream.create_group("metadata")
                 gmeta.attrs["raw_dir"] = str(self._raw_dir)
                 gmeta.attrs["nsim"] = self._nsim
+                gmeta.attrs["method"] = self._method
                 gmeta.create_dataset("chroms", data=self._chroms, dtype=dt)
                 nmol_arr = np.asarray(
                     [self._nmol[chrom] for chrom in self._chroms]
@@ -940,7 +1319,9 @@ class SimDataset:
             mol_range = range(self._nmol[chrom]) if mols is None else mols
             for mol in mol_range:
                 for run in range(self._nsim):
-                    sim_file = self._file_map.params_to_file(chrom, mol, run)
+                    sim_file = self._file_map.params_to_mcmc_file(
+                        chrom, mol, run
+                    )
                     if sim_file.exists():
                         yield (chrom, mol, run)
 
@@ -1045,8 +1426,8 @@ class SimDataset:
                     # Submit only this batch
                     tasks: dict[Future, tuple] = {
                         executor.submit(
-                            SimData.extract,
-                            self._file_map.params_to_file(*sim_id),
+                            SimMCMCData.extract,
+                            self._file_map.params_to_mcmc_file(*sim_id),
                             time,
                             obs,
                         ): sim_id
@@ -1082,8 +1463,12 @@ class SimDataset:
         else:  # nworker = 1
             for sim_id in self.iter_runs(chroms, mols):
                 chrom, mol, run = sim_id
-                sim_file = self._file_map.params_to_file(chrom, mol, run)
-                results[chrom][mol][run] = SimData.extract(sim_file, time, obs)
+                sim_file = self._file_map.params_to_mcmc_file(
+                    chrom, mol, run
+                )
+                results[chrom][mol][run] = SimMCMCData.extract(
+                    sim_file, time, obs
+                )
                 key = (chrom, mol)
                 finished_counts[key] += 1
                 # Aggregate results from different runs if needed
@@ -1125,17 +1510,31 @@ class SimDataset:
         Returns
         -------
         str or None
-            One of 'missing' (no file on disk), 'corrupted' (the file
-            exists but cannot be read), 'truncated' (the file is readable
-            but its trajectory is shorter than `nsweep // print_freq + 1`
-            expects), or None if the run is complete.
+            One of 'missing' (no file on disk, or -- for `method='tm'`
+            -- fewer samples stored than `run` requires), 'corrupted'
+            (the file exists but cannot be read), 'truncated' (MCMC
+            only: the file is readable but its trajectory is shorter
+            than `nsweep // print_freq + 1` expects), or None if the
+            run is complete.
         """
-        sim_file = self._file_map.params_to_file(chrom, mol, run)
+        if self._method == "tm":
+            combined_file = self._file_map.params_to_tm_file(chrom, mol)
+            if not combined_file.exists():
+                return "missing"
+            try:
+                with MAX_OPEN_FILES, h5py.File(combined_file, "r") as f:
+                    n_samples = len(f["data"]["energy"])
+            except Exception:  # noqa: BLE001
+                return "corrupted"
+            if run >= n_samples:
+                return "missing"
+            return None
+        sim_file = self._file_map.params_to_mcmc_file(chrom, mol, run)
         if not sim_file.exists():
             return "missing"
         try:
             with MAX_OPEN_FILES:
-                data = SimData.load(sim_file)
+                data = SimMCMCData.load(sim_file)
         except Exception:  # noqa: BLE001
             return "corrupted"
         expected = self._settings.nsweep // self._settings.print_freq + 1
@@ -1216,7 +1615,7 @@ class SimDataset:
 
         return incomplete
 
-    def sim_file(self, chrom: str, mol: int, run: int) -> Path:
+    def mcmc_file(self, chrom: str, mol: int, run: int) -> Path:
         """
         Retrieve the file directory for a specific simulation run.
 
@@ -1240,7 +1639,41 @@ class SimDataset:
         mapping structure, regardless of whether the file actually exists on
         disk.
         """
-        return self._file_map.params_to_file(chrom, mol, run)
+        return self._file_map.params_to_mcmc_file(chrom, mol, run)
+
+    def tm_file(self, chrom: str, mol: int) -> Path:
+        """
+        Retrieve the file directory for a molecule's combined
+        transfer-matrix samples.
+
+        Parameters
+        ----------
+        chrom : str
+            The identifier of the simulated chromosome.
+        mol : int
+            The index of the simulated molecule.
+
+        Returns
+        -------
+        Path
+            The directory of the combined HDF5 file holding all of this
+            molecule's exact samples, regardless of whether the file
+            actually exists on disk.
+        """
+        return self._file_map.params_to_tm_file(chrom, mol)
+
+    @property
+    def method(self) -> str:
+        """
+        Which engine generated (or will generate) this dataset's raw
+        samples.
+
+        Returns
+        -------
+        str
+            Either 'mcmc' or 'tm'.
+        """
+        return self._method
 
     @property
     def settings(self) -> Mapping[str, Any]:
@@ -1290,13 +1723,14 @@ class SimDataset:
     @property
     def nsim(self) -> int:
         """
-        The total number of simulation runs performed per molecule.
+        The number of simulation runs per molecule (`method='mcmc'`) or
+        exact samples per molecule (`method='tm'`; may be 0).
 
         Returns
         -------
         int
-            The count of independent simulation trajectories for each
-            molecule-chromosome pair.
+            The count of independent simulation trajectories, or exact
+            samples, for each molecule-chromosome pair.
         """
         return self._nsim
 
@@ -1381,7 +1815,8 @@ class SimDataset:
         Provide lazy access to the raw simulation data files.
 
         This property returns an accessor object that supports tuple-based
-        indexing to load individual :class:`SimData` objects on demand.
+        indexing to load individual :class:`SimMCMCData` (`method='mcmc'`)
+        or :class:`SimTMData` (`method='tm'`) objects on demand.
 
         Returns
         -------

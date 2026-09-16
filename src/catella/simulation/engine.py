@@ -376,7 +376,7 @@ class SimManager:
                         logit(meth_prob[chrom][molidx, :]), dtype=np.float64
                     ).tobytes()
                     for run in range(nsim):
-                        sim_file = dataset.sim_file(chrom, idx, run)
+                        sim_file = dataset.mcmc_file(chrom, idx, run)
                         yield SimRun(
                             chrom=chrom,
                             mol=idx,
@@ -514,7 +514,7 @@ class SimManager:
                     seed=resolved_seeds[(chrom, mol, run)],
                     seq_energy=eseq,
                     out_type=resolved_out_type,
-                    out_file=dataset.sim_file(chrom, mol, run),
+                    out_file=dataset.mcmc_file(chrom, mol, run),
                 )
 
         self._dispatch(

@@ -659,6 +659,9 @@ def run(
     dataset_name: Annotated[
         str, typer.Option(help="Dataset file name (no extension)")
     ] = "results",
+    method: Annotated[
+        str, typer.Option(help="Simulation engine: 'mcmc' or 'tm'")
+    ] = "mcmc",
     out_types: Annotated[
         str | None,
         typer.Option(callback=csv_parser(str), help="energy,position..."),
@@ -701,6 +704,7 @@ def run(
         meth_prob=meth_prob,
         out_dir=out_dir,
         dataset_name=dataset_name,
+        method=method,
         out_types=out_types,
         seed=seed,
         mols=mols if mols is not None else slice(None),
@@ -732,6 +736,18 @@ def analyze(
     mean_nnuc_name: Annotated[
         str, typer.Option(help="Key to store mean nucleosome count")
     ] = "mean_nnuc",
+    compute_var: Annotated[
+        bool,
+        typer.Option(
+            help="Also compute exact variance (method='tm' only)"
+        ),
+    ] = False,
+    var_nnuc_name: Annotated[
+        str, typer.Option(help="Key to store nucleosome count variance")
+    ] = "var_nnuc",
+    var_occup_name: Annotated[
+        str, typer.Option(help="Key to store occupancy variance")
+    ] = "var_occup",
     out_file: Annotated[
         Path | None,
         typer.Option(
@@ -759,6 +775,9 @@ def analyze(
         time=time,
         occup_name=occup_name,
         mean_nnuc_name=mean_nnuc_name,
+        compute_var=compute_var,
+        var_nnuc_name=var_nnuc_name,
+        var_occup_name=var_occup_name,
     )
     if out_file is not None:
         dataset.save(out_file, overwrite=overwrite)

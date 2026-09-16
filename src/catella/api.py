@@ -705,6 +705,7 @@ def run(
     meth_prob: np.ndarray | Mapping[str, np.ndarray | pd.DataFrame],
     out_dir: str | Path,
     dataset_name: str = "results",
+    method: str = "mcmc",
     out_types: str | Iterable[str] = "all",
     seed: int | None = None,
     mols: IndexType | Mapping[str, IndexType] = slice(None),
@@ -725,7 +726,10 @@ def run(
     chroms : str or iterable of str
         The identifier(s) of chromosome(s) to include in the simulation.
     nsim : int
-        Number of independent simulation runs per molecule.
+        Number of independent simulation runs per molecule (`method=
+        'mcmc'`), or exact samples per molecule (`method='tm'`; may be
+        0, since the exact occupancy/mean-N/variance quantities require
+        no samples at all).
     settings : str or Path or SimSettings
         Simulation parameters. Can be a path to a configuration file or a
         `SimSettings` object.
@@ -735,9 +739,14 @@ def run(
         Pandas DataFrames.
     out_dir : str or Path
         Directory or file prefix where simulation results will be stored.
+    method : {"mcmc", "tm"}, default "mcmc"
+        Which engine to run. For 'tm', `settings.end_temp` is the
+        temperature the exact equilibrium distribution is evaluated
+        at; `settings.start_temp`/`cool_option`/`nsweep`/`print_freq`
+        and `out_types` are ignored.
     out_types : str | Iterable[str], default 'all'
         Types of data to record. Options include 'energy', 'position',
-        'temp', or 'all'.
+        'temp', or 'all'. Ignored for `method='tm'`.
     seed : int, optional
         Seed for the random number generator to ensure reproducibility.
     mols : IndexType | Mapping[str, IndexType], default slice(None
@@ -765,6 +774,7 @@ def run(
         nsim=nsim,
         settings=settings,
         meth_prob=meth_prob,
+        method=method,
         out_types=out_types,
         out_dir=out_dir,
         dataset_name=dataset_name,
@@ -782,13 +792,19 @@ def analyze(
     time: int | None = None,
     occup_name: str = "occup",
     mean_nnuc_name: str = "mean_nnuc",
+    compute_var: bool = False,
+    var_nnuc_name: str = "var_nnuc",
+    var_occup_name: str = "var_occup",
 ):
     """
     Perform post-simulation statistical analysis on a dataset.
 
     Calculate key nucleosome metrics, such as site occupancy and average
-    nucleosome counts, across the simulated trajectories. Results are stored
-    directly back into the provided SimDataset.
+    nucleosome counts. For `dataset.method == "mcmc"`, these are computed
+    across the simulated trajectories at a given time point; for
+    `"tm"`, they are computed exactly via the transfer-matrix solver,
+    with no time axis. Results are stored directly back into the
+    provided SimDataset.
 
     Parameters
     ----------
@@ -797,16 +813,35 @@ def analyze(
     time : int, optional
         A specific time point (snapshot) from the simulation to analyze.
         If None, the final state of the simulation is typically used.
+        `method='mcmc'` only; must be None for `dataset.method == "tm"`.
     occup_name : str, default "occup"
         The key/name under which to store the computed occupancy data
         within the dataset.
     mean_nnuc_name : str, default "mean_nnuc"
         The key/name under which to store the computed mean number of
         nucleosomes within the dataset.
+    compute_var : bool, default False
+        If True, also compute the exact variance of the nucleosome
+        count and per-bp occupancy. Requires `dataset.method == "tm"`.
+    var_nnuc_name : str, default "var_nnuc"
+        The key/name under which to store the computed nucleosome count
+        variance. Only used if `compute_var` is True.
+    var_occup_name : str, default "var_occup"
+        The key/name under which to store the computed per-bp occupancy
+        variance. Only used if `compute_var` is True.
+
+    Raises
+    ------
+    ValueError
+        If `time` is given for a `dataset.method == "tm"` dataset, or
+        if `compute_var` is True but `dataset.method != "tm"`.
     """
     ana = SimAnalysis()
     ana.compute_occup(dataset=dataset, time=time, name=occup_name)
     ana.compute_mean_nnuc(dataset=dataset, time=time, name=mean_nnuc_name)
+    if compute_var:
+        ana.compute_var_nnuc(dataset=dataset, name=var_nnuc_name)
+        ana.compute_var_occup(dataset=dataset, name=var_occup_name)
 
 
 def plot_occup(

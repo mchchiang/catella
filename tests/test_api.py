@@ -530,9 +530,48 @@ class TestEstimateStartTemp:
         assert np.isfinite(got)
 
 
+def _make_tm_dataset(tmp_path, nmol=4, nbp=15, seed=2):
+    rng = np.random.default_rng(seed)
+    meth_prob = rng.random((nmol, nbp))
+    manager = SimManager(nworker=1, verbose=False)
+    return manager.run(
+        chroms="chr1",
+        nsim=0,
+        method="tm",
+        settings=_settings(),
+        meth_prob=meth_prob,
+        out_dir=tmp_path / "tm_sim",
+        seed=seed,
+    )
+
+
+class TestRun:
+    def test_method_tm_creates_tm_dataset(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path)
+        assert dataset.method == "tm"
+        assert dataset.nsim == 0
+
+
 class TestAnalyze:
     def test_dataset_accepted_positionally(self, tmp_path):
         dataset = _make_dataset(tmp_path)
         catella.analyze(dataset)
         assert "occup" in dataset.analysis["chr1"]
         assert "mean_nnuc" in dataset.analysis["chr1"]
+
+    def test_tm_dataset_computes_occup_and_mean_nnuc(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path)
+        catella.analyze(dataset)
+        assert "occup" in dataset.analysis["chr1"]
+        assert "mean_nnuc" in dataset.analysis["chr1"]
+
+    def test_compute_var_on_tm_dataset(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path)
+        catella.analyze(dataset, compute_var=True)
+        assert "var_nnuc" in dataset.analysis["chr1"]
+        assert "var_occup" in dataset.analysis["chr1"]
+
+    def test_compute_var_requires_tm_method(self, tmp_path):
+        dataset = _make_dataset(tmp_path)
+        with pytest.raises(ValueError):
+            catella.analyze(dataset, compute_var=True)

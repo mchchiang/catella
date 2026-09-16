@@ -848,6 +848,50 @@ class TestRun:
                     expected.raw["chr1", mol, run_idx].position[-1],
                 )
 
+    def test_method_tm_creates_tm_dataset(self, tmp_path):
+        rows = _make_test_rows(nmol=3, nbp=20)
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 20})
+        exp_file = tmp_path / "exp.h5"
+        exp = catella.load_raw(chromsize=chromsize, test_file=test_file)
+        catella.compute_empirical_prob(exp=exp, out_file=exp_file, lnuc=5)
+
+        settings_file = tmp_path / "settings.json"
+        _write_settings_json(settings_file)
+        out_dir = tmp_path / "tm_out"
+
+        result = runner.invoke(
+            app,
+            [
+                "run",
+                "--chroms",
+                "chr1",
+                "--nsim",
+                "0",
+                "--settings",
+                str(settings_file),
+                "--exp-file",
+                str(exp_file),
+                "--out-dir",
+                str(out_dir),
+                "--dataset-name",
+                "tmrun",
+                "--method",
+                "tm",
+                "--seed",
+                "42",
+                "--nworker",
+                "1",
+                "--no-verbose",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        cli_dataset = SimDataset.load(out_dir / "tmrun.h5")
+        assert cli_dataset.method == "tm"
+        assert cli_dataset.nsim == 0
+
 
 class TestAnalyze:
     def test_matches_direct_api_call(self, tmp_path):
@@ -882,6 +926,35 @@ class TestAnalyze:
             reloaded.analysis["chr1"]["my_nnuc"].to_numpy(),
             direct_dataset.analysis["chr1"]["my_nnuc"].to_numpy(),
         )
+
+    def test_compute_var_flag_on_tm_dataset(self, tmp_path):
+        rng = np.random.default_rng(3)
+        meth_prob = rng.random((3, 15))
+        manager = SimManager(nworker=1, verbose=False)
+        dataset = manager.run(
+            chroms="chr1",
+            nsim=0,
+            method="tm",
+            settings=SimSettings(**_settings_dict()),
+            meth_prob=meth_prob,
+            out_dir=tmp_path / "tm_sim",
+            dataset_name="tm_results",
+            seed=1,
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "analyze",
+                str(dataset._dataset_file),
+                "--compute-var",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+
+        reloaded = SimDataset.load(dataset._dataset_file)
+        assert "var_nnuc" in reloaded.analysis["chr1"]
+        assert "var_occup" in reloaded.analysis["chr1"]
 
 
 class TestDownsample:

@@ -11,10 +11,14 @@ from catella_cpp import NucPosMCMC
 @dataclass(frozen=True, slots=True, kw_only=True)
 class SimSettings:
     """
-    Configuration for the physical model and Monte Carlo simulation protocol.
+    Configuration for the physical model and simulation protocol.
 
     This class encapsulates the 'recipe' for a simulation batch, ensuring
-    reproducibility by grouping physical constants and annealing schedules.
+    reproducibility by grouping physical constants and annealing
+    schedules. Shared by both engines (see `SimManager.run`'s `method`
+    parameter); the MCMC-only protocol fields (`start_temp`,
+    `cool_option`, `nsweep`, `print_freq`) are optional and unused for
+    method='tm'.
     """
 
     nucbp: int
@@ -29,21 +33,27 @@ class SimSettings:
     mu: float
     """The chemical potential; energy gained by adding a nucleosome."""
 
-    start_temp: float
-    """Starting temperature for the simulation annealing."""
-
     end_temp: float
-    """Ending temperature for the simulation annealing."""
+    """Ending temperature for the simulation annealing (method='mcmc'),
+    or the temperature the exact equilibrium distribution is evaluated
+    at (method='tm')."""
 
-    cool_option: str
-    """The protocol for updating the temperature in the simulation from the
-    start value to the end value."""
+    start_temp: float | None = None
+    """Starting temperature for the simulation annealing. Required for
+    method='mcmc'; unused for method='tm'."""
 
-    nsweep: int
-    """Number of Monte Carlo sweeps to perform per simulation."""
+    cool_option: str | None = None
+    """The protocol for updating the temperature in the simulation from
+    the start value to the end value. Required for method='mcmc';
+    unused for method='tm'."""
 
-    print_freq: int
-    """Frequency (in sweeps) at which to record simulation data."""
+    nsweep: int | None = None
+    """Number of Monte Carlo sweeps to perform per simulation. Required
+    for method='mcmc'; unused for method='tm'."""
+
+    print_freq: int | None = None
+    """Frequency (in sweeps) at which to record simulation data.
+    Required for method='mcmc'; unused for method='tm'."""
 
     emax: float
     """The maximum methylation energy (in $k_BT$)."""

@@ -448,3 +448,183 @@ class TestSimManagerRerun:
             "corrupted": [],
             "truncated": [],
         }
+
+
+def _make_tm_settings(**overrides):
+    defaults = {
+        "nucbp": 3,
+        "llink": 2,
+        "elink": 1.0,
+        "mu": 0.5,
+        "end_temp": 1.0,
+        "emax": 5.0,
+    }
+    defaults.update(overrides)
+    return SimSettings(**defaults)
+
+
+class TestRunJobTM:
+    def test_success_writes_sample_file(self, tmp_path):
+        seq_energy = np.asarray(
+            _make_meth_prob(nmol=1, nbp=20)[0], dtype=np.float64
+        ).tobytes()
+        p = SimRun(
+            chrom="chr1",
+            mol=0,
+            run=0,
+            method="tm",
+            seed=1,
+            seq_energy=seq_energy,
+            out_type=None,
+            out_file=tmp_path / "sample.h5",
+            settings=_make_tm_settings(),
+        )
+        chrom, mol, run, success, err_msg = SimManager._run_job(p)
+        assert (chrom, mol, run) == ("chr1", 0, 0)
+        assert success is True
+        assert err_msg is None
+
+        from catella.simulation.results import SimTMData
+
+        data = SimTMData.load(tmp_path / "sample.h5")
+        assert data.nucbp == 3
+        assert data.nbp == 20
+
+
+class TestSimManagerRunTM:
+    def test_zero_nsim_creates_dataset_with_no_samples(self, tmp_path):
+        meth_prob = _make_meth_prob(nmol=2, nbp=30)
+        manager = SimManager(nworker=1, verbose=False)
+        dataset = manager.run(
+            chroms="chr1",
+            nsim=0,
+            method="tm",
+            settings=_make_tm_settings(),
+            meth_prob=meth_prob,
+            out_dir=tmp_path / "tm0",
+            seed=1,
+        )
+        assert dataset.method == "tm"
+        assert dataset.nsim == 0
+        with pytest.raises(ValueError):
+            dataset.raw["chr1", 0, 0]
+
+    def test_generates_and_consolidates_samples(self, tmp_path):
+        from catella.simulation.results import SimTMData
+
+        meth_prob = _make_meth_prob(nmol=2, nbp=30)
+        manager = SimManager(nworker=1, verbose=False)
+        dataset = manager.run(
+            chroms="chr1",
+            nsim=3,
+            method="tm",
+            settings=_make_tm_settings(),
+            meth_prob=meth_prob,
+            out_dir=tmp_path / "tm1",
+            seed=1,
+        )
+        assert dataset.method == "tm"
+        assert dataset.nsim == 3
+
+        sample = dataset.raw["chr1", 0, 1]
+        assert isinstance(sample, SimTMData)
+        assert sample.nucbp == 3
+        assert sample.nbp == 30
+
+        # Temp per-run files should be cleaned up after consolidation.
+        for run in range(3):
+            assert not dataset.mcmc_file("chr1", 0, run).exists()
+        assert dataset.tm_file("chr1", 0).exists()
+
+        assert dataset.find_incomplete_runs() == {
+            "missing": [],
+            "corrupted": [],
+            "truncated": [],
+        }
+
+    def test_reload_preserves_method_and_samples(self, tmp_path):
+        meth_prob = _make_meth_prob(nmol=1, nbp=30)
+        manager = SimManager(nworker=1, verbose=False)
+        dataset = manager.run(
+            chroms="chr1",
+            nsim=2,
+            method="tm",
+            settings=_make_tm_settings(),
+            meth_prob=meth_prob,
+            out_dir=tmp_path / "tm2",
+            seed=1,
+        )
+        loaded = SimDataset.load(dataset._dataset_file)
+        assert loaded.method == "tm"
+        assert loaded.nsim == 2
+        assert loaded.raw["chr1", 0, 0].nucbp == 3
+
+
+class TestRerunTM:
+    def test_rejects_triplets_in_only(self, tmp_path):
+        meth_prob = _make_meth_prob(nmol=1, nbp=30)
+        manager = SimManager(nworker=1, verbose=False)
+        dataset = manager.run(
+            chroms="chr1",
+            nsim=2,
+            method="tm",
+            settings=_make_tm_settings(),
+            meth_prob=meth_prob,
+            out_dir=tmp_path / "tm_rerun1",
+            seed=1,
+        )
+        with pytest.raises(ValueError):
+            manager.rerun(
+                dataset=dataset,
+                meth_prob=meth_prob,
+                only=[("chr1", 0, 0)],
+            )
+
+    def test_regenerates_missing_molecule(self, tmp_path):
+        meth_prob = _make_meth_prob(nmol=2, nbp=30)
+        manager = SimManager(nworker=1, verbose=False)
+        dataset = manager.run(
+            chroms="chr1",
+            nsim=2,
+            method="tm",
+            settings=_make_tm_settings(),
+            meth_prob=meth_prob,
+            out_dir=tmp_path / "tm_rerun2",
+            seed=1,
+        )
+        dataset.tm_file("chr1", 1).unlink()
+        assert dataset.find_incomplete_runs()["missing"] != []
+
+        manager.rerun(dataset=dataset, meth_prob=meth_prob)
+
+        assert dataset.find_incomplete_runs() == {
+            "missing": [],
+            "corrupted": [],
+            "truncated": [],
+        }
+        assert dataset.raw["chr1", 1, 0] is not None
+
+    def test_only_pairs_regenerate_specific_molecule(self, tmp_path):
+        meth_prob = _make_meth_prob(nmol=2, nbp=30)
+        manager = SimManager(nworker=1, verbose=False)
+        dataset = manager.run(
+            chroms="chr1",
+            nsim=2,
+            method="tm",
+            settings=_make_tm_settings(),
+            meth_prob=meth_prob,
+            out_dir=tmp_path / "tm_rerun3",
+            seed=1,
+        )
+        old_energy = dataset.raw["chr1", 0, 0].energy
+        dataset.tm_file("chr1", 0).unlink()
+
+        manager.rerun(
+            dataset=dataset, meth_prob=meth_prob, only=[("chr1", 0)]
+        )
+
+        # Reproduced with the same seed_table, so the exact sample
+        # should match what was there before.
+        assert dataset.raw["chr1", 0, 0].energy == pytest.approx(
+            old_energy
+        )

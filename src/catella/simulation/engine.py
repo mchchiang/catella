@@ -11,7 +11,7 @@ from typing import Any, ClassVar
 import catella_cpp as sim
 import numpy as np
 import pandas as pd
-from catella_cpp import Dump, NucPosMCMC
+from catella_cpp import Dump, NucPosMCMC, NucPosTM
 from rich.progress import (
     BarColumn,
     Progress,
@@ -23,7 +23,11 @@ from scipy.special import logit
 
 from catella import utils
 from catella.simulation.config import SimSettings
-from catella.simulation.results import SimDataset
+from catella.simulation.results import (
+    SimDataset,
+    _consolidate_tm_samples,
+    _write_tm_file,
+)
 from catella.utils import IndexType
 
 
@@ -50,6 +54,9 @@ class SimRun:
     """The iteration or replica index for this specific molecule-chromosome
     pair."""
 
+    method: str = "mcmc"
+    """Which engine to run: 'mcmc' or 'tm'."""
+
     seed: int
     """The specific random seed used for this execution. Note: This may differ
     from the batch seed if per-run offsets are applied.
@@ -59,9 +66,10 @@ class SimRun:
     """Binary representation of the sequence-specific nucleosome binding
     energy derived from the methylation data."""
 
-    out_type: Dump.OutputType
+    out_type: Dump.OutputType | None
     """The format or scope of data to be recorded (e.g., Energy, Position,
-    All)."""
+    All). Unused (None) for method='tm', which has no trajectory to
+    select fields from."""
 
     out_file: Path
     """The HDF5 file where the simulation results are stored."""
@@ -142,6 +150,7 @@ class SimManager:
         meth_prob: np.ndarray | Mapping[str, np.ndarray | pd.DataFrame],
         out_dir: str | Path,
         dataset_name: str = "results",
+        method: str = "mcmc",
         out_types: str | Iterable[str] = "all",
         seed: int | None = None,
         mols: IndexType | Mapping[str, IndexType] = slice(None),
@@ -159,7 +168,10 @@ class SimManager:
         chroms : str or iterable of str
             The identifier(s) of chromosome(s) to include in the simulation.
         nsim : int
-            Number of independent simulation runs per molecule.
+            Number of independent simulation runs per molecule
+            (`method='mcmc'`), or exact samples per molecule
+            (`method='tm'`; may be 0, since the exact occupancy/mean-N/
+            variance quantities require no samples at all).
         settings : str or Path or SimSettings
             The physical constants and Monte Carlo protocol (e.g., nucbp,
             llink, mu) to apply to all runs in this batch. These can be
@@ -176,9 +188,14 @@ class SimManager:
             Name of the dataset HDF5 file storing the metadata and analysis of
             the simulation results. The file directory of this HDF5 file is
             `out_dir/{dataset_name}.h5` (e.g., `out_dir/results.h5`).
+        method : {"mcmc", "tm"}, default "mcmc"
+            Which engine to run. For 'tm', `settings.end_temp` is the
+            temperature the exact equilibrium distribution is evaluated
+            at; `settings.start_temp`/`cool_option`/`nsweep`/
+            `print_freq` and `out_types` are ignored.
         out_types : str or iterable of str, default 'all'
             Types of data to record. Options include 'energy', 'position',
-            'temp', or 'all'.
+            'temp', or 'all'. Ignored for `method='tm'`.
         seed : int, optional
             Master seed used to generate independent seeds for each run. If
             None, a high-entropy seed is automatically generated using the
@@ -209,6 +226,9 @@ class SimManager:
         FileExistsError
             If the specified `out_dir` already contains an existing dataset.
         """
+
+        if method not in ("mcmc", "tm"):
+            raise ValueError("'method' must be 'mcmc' or 'tm'.")
 
         chroms = utils.normalize_chroms(chroms)
 
@@ -274,36 +294,49 @@ class SimManager:
                 "simulation setting file or a SimSettings object."
             )
 
-        # Check temperatures are valid
-        if settings.end_temp > settings.start_temp:
-            raise ValueError("Expect 'end_temp' <= 'start_temp'.")
-        if settings.cool_option not in SimSettings._cool_map:
-            raise KeyError(
-                "Invalid value for 'cool_option'. Expect either "
-                "'linear', 'geometric', or 'constant'."
-            )
-
-        # Combine output types
-        if isinstance(out_types, str):
-            if out_types not in SimRun._out_map:
-                raise ValueError(
-                    f"Output type '{out_types}' is not a valid option."
+        if method == "mcmc":
+            # Check the MCMC-only protocol fields are present and valid
+            # (they are optional on SimSettings so 'tm' configs can omit
+            # them, so 'mcmc' must check for their presence itself).
+            for field_name in (
+                "start_temp", "cool_option", "nsweep", "print_freq"
+            ):
+                if getattr(settings, field_name) is None:
+                    raise ValueError(
+                        f"'{field_name}' is required for method='mcmc'."
+                    )
+            if settings.end_temp > settings.start_temp:
+                raise ValueError("Expect 'end_temp' <= 'start_temp'.")
+            if settings.cool_option not in SimSettings._cool_map:
+                raise KeyError(
+                    "Invalid value for 'cool_option'. Expect either "
+                    "'linear', 'geometric', or 'constant'."
                 )
-            out_types = [out_types]
-        elif not isinstance(out_types, Iterable):
-            raise TypeError("'out_types' must be a str or an iterable.")
 
-        out_type = SimRun._out_map[out_types[0]]
-        for i in range(1, len(out_types)):
-            if out_types[i] not in SimRun._out_map:
-                raise ValueError(
-                    f"Output type '{out_types[i]}' is not a valid option."
-                )
-            otype = SimRun._out_map[out_types[i]]
-            # Dump.OutputType is a scoped C++ enum class, so pybind11
-            # doesn't bind '|' between two enum values directly; combine
-            # via their underlying int values instead.
-            out_type = Dump.OutputType(int(out_type) | int(otype))
+            # Combine output types
+            if isinstance(out_types, str):
+                if out_types not in SimRun._out_map:
+                    raise ValueError(
+                        f"Output type '{out_types}' is not a valid option."
+                    )
+                out_types = [out_types]
+            elif not isinstance(out_types, Iterable):
+                raise TypeError("'out_types' must be a str or an iterable.")
+
+            out_type = SimRun._out_map[out_types[0]]
+            for i in range(1, len(out_types)):
+                if out_types[i] not in SimRun._out_map:
+                    raise ValueError(
+                        f"Output type '{out_types[i]}' is not a valid "
+                        "option."
+                    )
+                otype = SimRun._out_map[out_types[i]]
+                # Dump.OutputType is a scoped C++ enum class, so pybind11
+                # doesn't bind '|' between two enum values directly;
+                # combine via their underlying int values instead.
+                out_type = Dump.OutputType(int(out_type) | int(otype))
+        else:  # method == "tm"
+            out_type = None
 
         # Compute the methylation energy landscape
         eseq = None
@@ -360,6 +393,7 @@ class SimManager:
             eseq=eseq,
             out_dir=out_dir,
             dataset_name=dataset_name,
+            method=method,
             out_type=out_type,
             seed=seed,
             seed_table=seed_table,
@@ -381,6 +415,7 @@ class SimManager:
                             chrom=chrom,
                             mol=idx,
                             run=run,
+                            method=method,
                             settings=settings,
                             seed=int(seed_table[chrom][idx, run]),
                             seq_energy=eseq,
@@ -391,6 +426,14 @@ class SimManager:
         param_gen = params_generator(settings)
 
         self._dispatch(dataset, param_gen, total_sim)
+
+        if method == "tm" and nsim > 0:
+            targets = [
+                (chrom, int(molidx))
+                for chrom in chroms
+                for molidx in np.arange(nmol[chrom])[mols[chrom]]
+            ]
+            self._consolidate_tm_molecules(dataset, targets, nsim)
 
         # Save the dataset to file
         dataset.save()
@@ -418,10 +461,14 @@ class SimManager:
             `run()`. This is never persisted in `dataset`, so it must be
             re-supplied here; given the same data, reruns reproduce the
             exact original simulation by default.
-        only : iterable of (str, int, int), optional
-            The specific `(chrom, mol, run)` triplets to rerun. If None
-            (default), `dataset.find_incomplete_runs()` is used to rerun
-            every missing, corrupted, and truncated run.
+        only : iterable of (str, int, int) or (str, int), optional
+            For `dataset.method == 'mcmc'`: the specific `(chrom, mol,
+            run)` triplets to rerun. For `'tm'`: `(chrom, mol)` pairs --
+            TM samples live in one combined file per molecule, so
+            individual samples cannot be regenerated in isolation;
+            passing a 3-tuple for a TM dataset raises `ValueError`. If
+            None (default), `dataset.find_incomplete_runs()` is used
+            (for 'tm', reduced to the distinct incomplete molecules).
         seed : int, optional
             If None (default), each rerun reproduces the exact original
             seed via `dataset.seed_table`. If given, reruns instead use
@@ -430,7 +477,7 @@ class SimManager:
         out_type : Dump.OutputType, optional
             The output type to use. If None (default), `dataset.out_type`
             is used. Required if the dataset predates `out_type` being
-            persisted.
+            persisted. Ignored for `dataset.method == 'tm'`.
 
         Returns
         -------
@@ -442,8 +489,14 @@ class SimManager:
         ValueError
             If `out_type` is not given and `dataset.out_type` is None, or
             if `seed` is not given and `dataset.seed_table` is None --
-            both indicate the dataset predates that being persisted.
+            both indicate the dataset predates that being persisted. Also
+            raised if `only` contains a 3-tuple for a `'tm'` dataset.
         """
+        if dataset.method == "tm":
+            return self._rerun_tm(
+                dataset, meth_prob=meth_prob, only=only, seed=seed
+            )
+
         resolved_out_type = (
             out_type if out_type is not None else dataset.out_type
         )
@@ -527,6 +580,125 @@ class SimManager:
         dataset.save()
 
         return dataset
+
+    def _rerun_tm(
+        self,
+        dataset: SimDataset,
+        *,
+        meth_prob: np.ndarray | Mapping[str, np.ndarray | pd.DataFrame],
+        only: Iterable[tuple[str, int]] | None,
+        seed: int | None,
+    ) -> SimDataset:
+        """Regenerate a TM dataset's exact samples, at molecule
+        granularity (see `rerun`'s docstring for why)."""
+        if only is None:
+            incomplete = dataset.find_incomplete_runs()
+            triplets = incomplete["missing"] + incomplete["corrupted"]
+            targets = sorted({(chrom, mol) for chrom, mol, _ in triplets})
+        else:
+            targets = list(only)
+            for target in targets:
+                if len(target) != 2:
+                    raise ValueError(
+                        "For a 'tm' dataset, 'only' must contain "
+                        "(chrom, mol) pairs, not (chrom, mol, run) "
+                        "triplets -- TM samples are regenerated at "
+                        "molecule granularity."
+                    )
+
+        nsim = dataset.nsim
+        chroms = dataset.chroms
+
+        if seed is None and dataset.seed_table is None:
+            raise ValueError(
+                "dataset predates seed persistence; pass seed= explicitly"
+            )
+
+        # Normalize methylation data the same way run() does
+        if isinstance(meth_prob, np.ndarray):
+            if not len(chroms) == 1:
+                raise TypeError(
+                    "Methylation probability array 'meth_prob' "
+                    "provided but dataset has multiple chroms."
+                )
+            meth_prob = {chroms[0]: meth_prob}
+        elif isinstance(meth_prob, Mapping):
+            meth_prob = {chrom: meth_prob[chrom] for chrom in chroms}
+        else:
+            raise TypeError("'meth_prob' must be a numpy array or a mapping.")
+        for chrom in chroms:
+            if isinstance(meth_prob[chrom], pd.DataFrame):
+                meth_prob[chrom] = meth_prob[chrom].to_numpy()
+            meth_prob[chrom] = np.atleast_2d(meth_prob[chrom])
+
+        settings = SimSettings(**dict(dataset.settings))
+
+        def tm_rerun_param_generator():
+            for chrom, mol in targets:
+                eseq = np.asarray(
+                    logit(meth_prob[chrom][mol, :]), dtype=np.float64
+                ).tobytes()
+                for run in range(nsim):
+                    if seed is None:
+                        run_seed = int(dataset.seed_table[chrom][mol, run])
+                    else:
+                        run_seed = SimManager._job_seed(
+                            seed, chroms.index(chrom), mol, run
+                        )
+                    yield SimRun(
+                        chrom=chrom,
+                        mol=mol,
+                        run=run,
+                        method="tm",
+                        settings=settings,
+                        seed=run_seed,
+                        seq_energy=eseq,
+                        out_type=None,
+                        out_file=dataset.mcmc_file(chrom, mol, run),
+                    )
+
+        self._dispatch(
+            dataset,
+            tm_rerun_param_generator(),
+            len(targets) * nsim,
+            progress_desc="[cyan]Regenerating exact samples ...",
+        )
+
+        self._consolidate_tm_molecules(dataset, targets, nsim)
+        dataset.save()
+
+        return dataset
+
+    def _consolidate_tm_molecules(
+        self,
+        dataset: SimDataset,
+        targets: Iterable[tuple[str, int]],
+        nsim: int,
+    ) -> None:
+        """
+        Merge each (chrom, mol)'s per-run temp files (as written by
+        `_run_job` in TM mode) into one combined file via
+        `_consolidate_tm_samples`, then delete the temp files. A
+        molecule with zero successfully-generated samples is left
+        without a combined file (reported as 'missing' by
+        `find_incomplete_runs`, matching the pre-consolidation state).
+        """
+        for chrom, mol in targets:
+            temp_files = [
+                dataset.mcmc_file(chrom, mol, run) for run in range(nsim)
+            ]
+            existing = [f for f in temp_files if f.exists()]
+            if not existing:
+                continue
+            combined = dataset.tm_file(chrom, mol)
+            combined.parent.mkdir(parents=True, exist_ok=True)
+            _consolidate_tm_samples(existing, combined)
+            for f in existing:
+                f.unlink()
+            try:
+                temp_files[0].parent.rmdir()
+            except OSError:
+                pass
 
     def _dispatch(
         self,
@@ -625,7 +797,6 @@ class SimManager:
     @staticmethod
     def _run_job(p: SimRun):
         settings = p.settings
-        cool_option = SimSettings._cool_map[settings.cool_option]
         try:
             # Create the output directory
             sim_dir = Path(p.out_file).parents[0]
@@ -633,29 +804,55 @@ class SimManager:
             # Initialize the methylation energy landscape
             eseq_list = np.frombuffer(p.seq_energy, dtype=np.float64).tolist()
             nbp = len(eseq_list)
-            # Create the cpp backend Monte Carlo simulation model
-            model = NucPosMCMC(
-                settings.nucbp,
-                nbp,
-                settings.llink,
-                settings.elink,
-                settings.mu,
-                p.seed,
-            )
-            model.setEnergy(eseq_list, settings.emax)
-            # For tracking all simulation data
-            model.addTracker(
-                sim.createDump(
-                    settings.print_freq, str(p.out_file), p.out_type
+            if p.method == "tm":
+                model = NucPosTM(
+                    settings.nucbp,
+                    nbp,
+                    settings.llink,
+                    settings.elink,
+                    settings.mu,
+                    p.seed,
                 )
-            )
-            # Run the simulation
-            model.run(
-                settings.nsweep,
-                settings.start_temp,
-                settings.end_temp,
-                cool_option,
-            )
+                model.setEnergy(eseq_list, settings.emax)
+                model.solve(settings.end_temp)
+                positions, energy = model.sampleConfig()
+                _write_tm_file(
+                    p.out_file,
+                    nucbp=settings.nucbp,
+                    nbp=nbp,
+                    llink=settings.llink,
+                    elink=settings.elink,
+                    mu=settings.mu,
+                    seed=p.seed,
+                    position=np.asarray(positions, dtype=np.int32),
+                    energy=energy,
+                    logz=model.getLogZ(),
+                )
+            else:
+                cool_option = SimSettings._cool_map[settings.cool_option]
+                # Create the cpp backend Monte Carlo simulation model
+                model = NucPosMCMC(
+                    settings.nucbp,
+                    nbp,
+                    settings.llink,
+                    settings.elink,
+                    settings.mu,
+                    p.seed,
+                )
+                model.setEnergy(eseq_list, settings.emax)
+                # For tracking all simulation data
+                model.addTracker(
+                    sim.createDump(
+                        settings.print_freq, str(p.out_file), p.out_type
+                    )
+                )
+                # Run the simulation
+                model.run(
+                    settings.nsweep,
+                    settings.start_temp,
+                    settings.end_temp,
+                    cool_option,
+                )
             return (p.chrom, p.mol, p.run, True, None)
         except Exception as e:  # noqa: BLE001
             return (p.chrom, p.mol, p.run, False, str(e))

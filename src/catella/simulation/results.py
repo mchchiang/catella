@@ -1196,9 +1196,11 @@ class SimDataset:
                 gmeta.create_dataset("nbp", data=nbp_arr)
                 gset = gmeta.create_group("settings")
                 for field in fields(self._settings):
-                    gset.attrs[field.name] = getattr(
-                        self._settings, field.name
-                    )
+                    # h5py cannot store None as an attribute; omitting
+                    # it lets SimSettings fall back to its own default.
+                    value = getattr(self._settings, field.name)
+                    if value is not None:
+                        gset.attrs[field.name] = value
                 if self._eseq is not None:
                     geseq = gmeta.create_group("eseq")
                     for chrom in self._chroms:

@@ -1766,6 +1766,20 @@ class SimDataset:
         return MappingProxyType(self._view_eseq)
 
     @property
+    def has_eseq(self) -> bool:
+        """
+        Whether the dataset stores a per-molecule energy landscape.
+
+        Returns
+        -------
+        bool
+            True if the dataset was created with `store_eseq=True`,
+            False otherwise (in which case `eseq` holds NaN
+            placeholders, not real energy landscapes).
+        """
+        return self._eseq is not None
+
+    @property
     def out_type(self) -> Any | None:
         """
         The format or scope of data recorded for each simulation run.

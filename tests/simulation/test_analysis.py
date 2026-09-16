@@ -305,3 +305,238 @@ class TestSortByLinkage:
         orig_rows = sorted(map(tuple, np.nan_to_num(occup).tolist()))
         got_rows = sorted(map(tuple, np.nan_to_num(sorted_arr).tolist()))
         assert orig_rows == got_rows
+
+
+def _make_tm_settings(**overrides):
+    defaults = {
+        "nucbp": 3,
+        "llink": 2,
+        "elink": 1.0,
+        "mu": 0.5,
+        "end_temp": 1.0,
+        "emax": 5.0,
+    }
+    defaults.update(overrides)
+    return SimSettings(**defaults)
+
+
+def _make_tm_dataset(tmp_path, *, nmol=3, nbp=20, seed=1, **kwargs):
+    rng = np.random.default_rng(seed)
+    meth_prob = rng.random((nmol, nbp))
+    manager = SimManager(nworker=1, verbose=False)
+    return manager.run(
+        chroms="chr1",
+        nsim=0,
+        method="tm",
+        settings=_make_tm_settings(),
+        meth_prob=meth_prob,
+        out_dir=tmp_path / "tm_dataset",
+        seed=seed,
+        **kwargs,
+    )
+
+
+def _brute_force_occup_meann(nucbp, llink, elink, mu, eseq, temp=1.0):
+    """Minimal brute-force reference, matching the one in
+    test_tm_bruteforce.py, duplicated here per this file's existing
+    convention of self-contained helpers."""
+    import math
+
+    nbp = len(eseq)
+    npos = nbp - nucbp
+
+    def erep(gap):
+        i = gap - nucbp
+        if i >= llink:
+            return 0.0
+        sr6 = (llink / (i + 1.0)) ** 6 - 1.0
+        return elink * sr6 * sr6
+
+    total_weight = 0.0
+    start_weight = [0.0] * npos
+
+    def recurse(idx, placed):
+        nonlocal total_weight
+        if idx == npos:
+            w = 1.0
+            for i, x in enumerate(placed):
+                w *= math.exp(-(eseq[x] - mu) / temp)
+                if i > 0:
+                    w *= math.exp(-erep(x - placed[i - 1]) / temp)
+            total_weight += w
+            for x in placed:
+                start_weight[x] += w
+            return
+        recurse(idx + 1, placed)
+        if not placed or idx - placed[-1] >= nucbp:
+            recurse(idx + 1, [*placed, idx])
+
+    recurse(0, [])
+    start_prob = [w / total_weight for w in start_weight]
+    occup = [0.0] * nbp
+    for x in range(npos):
+        for y in range(x, min(x + nucbp, nbp)):
+            occup[y] += start_prob[x]
+    mean_n = sum(start_prob)
+    return np.array(occup), mean_n
+
+
+class TestComputeOccupTM:
+    def test_matches_brute_force(self, tmp_path):
+        settings = _make_tm_settings()
+        dataset = _make_tm_dataset(tmp_path, nmol=2, nbp=16, seed=3)
+        ana = SimAnalysis()
+        ana.compute_occup(dataset=dataset)
+        occup_arr = dataset.analysis["chr1"]["occup"].to_numpy()
+        for mol in range(2):
+            eseq = dataset.eseq["chr1"][mol]
+            expected_occup, _ = _brute_force_occup_meann(
+                settings.nucbp,
+                settings.llink,
+                settings.elink,
+                settings.mu,
+                eseq,
+                temp=settings.end_temp,
+            )
+            np.testing.assert_allclose(
+                occup_arr[mol], expected_occup, atol=1e-8
+            )
+
+    def test_time_raises_for_tm(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=1, nbp=16)
+        ana = SimAnalysis()
+        with pytest.raises(ValueError):
+            ana.compute_occup(dataset=dataset, time=5)
+
+    def test_requires_eseq(self, tmp_path):
+        rng = np.random.default_rng(1)
+        meth_prob = rng.random((2, 16))
+        manager = SimManager(nworker=1, verbose=False)
+        dataset = manager.run(
+            chroms="chr1",
+            nsim=0,
+            method="tm",
+            settings=_make_tm_settings(),
+            meth_prob=meth_prob,
+            out_dir=tmp_path / "no_eseq",
+            seed=1,
+            store_eseq=False,
+        )
+        ana = SimAnalysis()
+        with pytest.raises(ValueError):
+            ana.compute_occup(dataset=dataset)
+
+
+class TestComputeMeanNnucTM:
+    def test_matches_brute_force(self, tmp_path):
+        settings = _make_tm_settings()
+        dataset = _make_tm_dataset(tmp_path, nmol=2, nbp=16, seed=4)
+        ana = SimAnalysis()
+        ana.compute_mean_nnuc(dataset=dataset)
+        df = dataset.analysis["chr1"]["mean_nnuc"]
+        for mol in range(2):
+            eseq = dataset.eseq["chr1"][mol]
+            _, expected_mean = _brute_force_occup_meann(
+                settings.nucbp,
+                settings.llink,
+                settings.elink,
+                settings.mu,
+                eseq,
+                temp=settings.end_temp,
+            )
+            assert df.iloc[mol, 0] == pytest.approx(expected_mean, rel=1e-6)
+
+    def test_time_raises_for_tm(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=1, nbp=16)
+        ana = SimAnalysis()
+        with pytest.raises(ValueError):
+            ana.compute_mean_nnuc(dataset=dataset, record_time=True)
+
+
+class TestComputeAccessTM:
+    def test_matches_one_minus_occup(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=2, nbp=16, seed=5)
+        ana = SimAnalysis()
+        ana.compute_access(dataset=dataset)
+        occup = dataset.analysis["chr1"]["occup"].to_numpy()
+        access = dataset.analysis["chr1"]["access"].to_numpy()
+        np.testing.assert_allclose(access, 1.0 - occup)
+
+
+class TestComputeVarNnuc:
+    def test_matches_brute_force_variance(self, tmp_path):
+        import math
+
+        settings = _make_tm_settings()
+        dataset = _make_tm_dataset(tmp_path, nmol=1, nbp=14, seed=6)
+        ana = SimAnalysis()
+        ana.compute_var_nnuc(dataset=dataset)
+        df = dataset.analysis["chr1"]["var_nnuc"]
+
+        eseq = dataset.eseq["chr1"][0]
+        nucbp, llink, elink, mu = (
+            settings.nucbp,
+            settings.llink,
+            settings.elink,
+            settings.mu,
+        )
+        nbp = len(eseq)
+        npos = nbp - nucbp
+
+        def erep(gap):
+            i = gap - nucbp
+            if i >= llink:
+                return 0.0
+            sr6 = (llink / (i + 1.0)) ** 6 - 1.0
+            return elink * sr6 * sr6
+
+        total_weight = 0.0
+        mean_n_num = 0.0
+        mean_n2_num = 0.0
+
+        def recurse(idx, placed):
+            nonlocal total_weight, mean_n_num, mean_n2_num
+            if idx == npos:
+                w = 1.0
+                for i, x in enumerate(placed):
+                    w *= math.exp(-(eseq[x] - mu))
+                    if i > 0:
+                        w *= math.exp(-erep(x - placed[i - 1]))
+                total_weight += w
+                n = len(placed)
+                mean_n_num += w * n
+                mean_n2_num += w * n * n
+                return
+            recurse(idx + 1, placed)
+            if not placed or idx - placed[-1] >= nucbp:
+                recurse(idx + 1, [*placed, idx])
+
+        recurse(0, [])
+        mean_n = mean_n_num / total_weight
+        expected_var = mean_n2_num / total_weight - mean_n * mean_n
+
+        assert df.iloc[0, 0] == pytest.approx(expected_var, rel=1e-4)
+
+    def test_requires_tm_method(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=2, nbp=20)
+        ana = SimAnalysis()
+        with pytest.raises(ValueError):
+            ana.compute_var_nnuc(dataset=dataset)
+
+
+class TestComputeVarOccup:
+    def test_matches_bernoulli_closed_form(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=2, nbp=16, seed=7)
+        ana = SimAnalysis()
+        ana.compute_occup(dataset=dataset)
+        ana.compute_var_occup(dataset=dataset)
+        occup = dataset.analysis["chr1"]["occup"].to_numpy()
+        var_occup = dataset.analysis["chr1"]["var_occup"].to_numpy()
+        expected = occup * (1.0 - occup)
+        np.testing.assert_allclose(var_occup, expected, atol=1e-10)
+
+    def test_requires_tm_method(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=2, nbp=20)
+        ana = SimAnalysis()
+        with pytest.raises(ValueError):
+            ana.compute_var_occup(dataset=dataset)

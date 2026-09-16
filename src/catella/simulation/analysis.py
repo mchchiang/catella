@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
+from catella_cpp import NucPosTM
 
 from catella import utils
 from catella.h5_array import H5Array
@@ -145,6 +146,30 @@ class SimAnalysis:
     analysis map.
     """
 
+    def _require_tm_eseq(self, dataset: SimDataset):
+        if not dataset.has_eseq:
+            raise ValueError(
+                "Exact computation requires the per-molecule energy "
+                "landscape; recreate the dataset with store_eseq=True."
+            )
+
+    def _solved_tm(self, dataset: SimDataset, chrom: str, mol: int):
+        """Build and solve a NucPosTM for one molecule, at the
+        temperature settings.end_temp evaluates the exact equilibrium
+        distribution at."""
+        settings = dataset.settings
+        tm = NucPosTM(
+            settings["nucbp"],
+            dataset.nbp[chrom],
+            settings["llink"],
+            settings["elink"],
+            settings["mu"],
+            1,
+        )
+        tm.setEnergy(dataset.eseq[chrom][mol].tolist(), settings["emax"])
+        tm.solve(settings["end_temp"])
+        return tm
+
     def compute_occup(
         self,
         dataset: SimDataset,
@@ -156,14 +181,15 @@ class SimAnalysis:
         batch_size: int = 20000,
     ):
         """
-        Calculate nucleosome occupancy at a specific time point.
+        Calculate nucleosome occupancy.
 
-        Occupancy is defined as the fraction of simulation runs where a
-        base pair is covered by a nucleosome. Molecules are processed in
-        batches and streamed to a disk-backed array so that peak memory
-        scales with `batch_size` rather than the total number of
-        molecules. Molecules with no simulation files on disk are
-        filled with NaN rather than raising an error.
+        For `dataset.method == "mcmc"`, occupancy is the fraction of
+        simulation runs where a base pair is covered by a nucleosome,
+        at a specific time point. For `"tm"`, occupancy is computed
+        exactly via the transfer-matrix solver, with no time axis.
+        Molecules are processed in batches and streamed to a
+        disk-backed array so that peak memory scales with `batch_size`
+        rather than the total number of molecules.
 
         Parameters
         ----------
@@ -171,7 +197,8 @@ class SimAnalysis:
             The dataset containing the raw simulation results.
         time : int, optional
             The simulation time point (snapshot) to analyze. If None, the
-            final time frame will be used.
+            final time frame will be used. `mcmc` only; must be None for
+            `dataset.method == "tm"`.
         chroms : str or iterable of str, optional
             The chromosome(s) to process. If None (default), all chromosomes
             in the dataset are analyzed.
@@ -180,11 +207,39 @@ class SimAnalysis:
             `dataset.analysis`.
         record_time : bool, default False
             If True, the time point is appended to the storage name
-            (e.g., "occup_t_100").
+            (e.g., "occup_t_100"). `mcmc` only.
         batch_size : int, default 20000
             Number of molecules processed (and held in memory) per batch.
+
+        Raises
+        ------
+        ValueError
+            If `time` or `record_time` is given for a `"tm"` dataset, or
+            (for `"tm"`) if the dataset has no stored energy landscape.
         """
         chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)
+        if dataset.method == "tm":
+            if time is not None or record_time:
+                raise ValueError(
+                    "'time'/'record_time' are not meaningful for "
+                    "method='tm' datasets (no time axis)."
+                )
+            self._compute_occup_tm(
+                dataset, chroms=chroms, name=name, batch_size=batch_size
+            )
+            return
+        self._compute_occup_mcmc(
+            dataset,
+            time=time,
+            chroms=chroms,
+            name=name,
+            record_time=record_time,
+            batch_size=batch_size,
+        )
+
+    def _compute_occup_mcmc(
+        self, dataset, *, time, chroms, name, record_time, batch_size
+    ):
         nuc_map = {
             chrom: NucFiberMap(dataset.settings["nucbp"], dataset.nbp[chrom])
             for chrom in chroms
@@ -227,6 +282,22 @@ class SimAnalysis:
                 )
             dataset.analysis[chrom][name] = out
 
+    def _compute_occup_tm(self, dataset, *, chroms, name, batch_size):
+        self._require_tm_eseq(dataset)
+        tmp_dir = dataset.resolve_tmp_dir()
+        for chrom in chroms:
+            nmol = dataset.nmol[chrom]
+            nbp = dataset.nbp[chrom]
+            out = H5Array.create((nmol, nbp), dtype=np.float64, dir=tmp_dir)
+            for start in range(0, nmol, batch_size):
+                stop = min(start + batch_size, nmol)
+                block = np.empty((stop - start, nbp), dtype=np.float64)
+                for i, mol in enumerate(range(start, stop)):
+                    tm = self._solved_tm(dataset, chrom, mol)
+                    block[i] = tm.getOccup()
+                out.write_batch(start, stop, block)
+            dataset.analysis[chrom][name] = out
+
     def compute_access(
         self,
         dataset: SimDataset,
@@ -243,9 +314,9 @@ class SimAnalysis:
 
         Accessibility (A) is defined as 1.0 minus Occupancy (O). This
         method automatically triggers occupancy computation if the
-        required data is not found in the dataset. Molecules with no
-        occupancy data (NaN, e.g. missing simulation files) remain
-        NaN in the result.
+        required data is not found in the dataset. For
+        `dataset.method == "mcmc"`, molecules with no occupancy data
+        (NaN, e.g. missing simulation files) remain NaN in the result.
 
         Parameters
         ----------
@@ -253,7 +324,8 @@ class SimAnalysis:
             The dataset containing the raw simulation results.
         time : int, optional
             The simulation time point (snapshot) to analyse. If None, the
-            final time frame will be used.
+            final time frame will be used. `mcmc` only; must be None for
+            `dataset.method == "tm"`.
         chroms : str or iterable of str, optional
             The chromosome(s) to process.
         occup_name : str, default "occup"
@@ -263,16 +335,28 @@ class SimAnalysis:
             `H5Array` in `dataset.analysis`.
         record_time : bool, default False
             If True, the time point is appended to the storage name
-            (e.g., "access_t_100").
+            (e.g., "access_t_100"). `mcmc` only.
         batch_size : int, default 20000
             Number of molecules processed (and held in memory) per batch.
+
+        Raises
+        ------
+        ValueError
+            If `time` or `record_time` is given for a `"tm"` dataset.
         """
         chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)
-        if time is None:
-            time = dataset.raw[chroms[0], 0, 0].time[-1]
-        if record_time:
-            access_name = f"{access_name}_t_{time}"
-            occup_name = f"{occup_name}_t_{time}"
+        if dataset.method == "tm":
+            if time is not None or record_time:
+                raise ValueError(
+                    "'time'/'record_time' are not meaningful for "
+                    "method='tm' datasets (no time axis)."
+                )
+        else:
+            if time is None:
+                time = dataset.raw[chroms[0], 0, 0].time[-1]
+            if record_time:
+                access_name = f"{access_name}_t_{time}"
+                occup_name = f"{occup_name}_t_{time}"
         # Compute nucleosome occupancy if not done so
         has_occup = True
         for chrom in chroms:
@@ -318,7 +402,12 @@ class SimAnalysis:
         record_time: bool = False,
     ):
         """
-        Calculate the mean number of nucleosomes at a specific time point.
+        Calculate the mean number of nucleosomes.
+
+        For `dataset.method == "mcmc"`, this is a Monte Carlo average
+        over simulation runs at a specific time point. For `"tm"`, it
+        is computed exactly via the transfer-matrix solver, with no
+        time axis.
 
         Parameters
         ----------
@@ -326,7 +415,8 @@ class SimAnalysis:
             The dataset containing the raw simulation results.
         time : int, optional
             The simulation time point (snapshot) to analyze. If None, the
-            final time frame will be used.
+            final time frame will be used. `mcmc` only; must be None for
+            `dataset.method == "tm"`.
         chroms : str or iterable of str, optional
             The chromosome(s) to process. If None (default), all chromosomes
             in the dataset are analyzed.
@@ -335,9 +425,34 @@ class SimAnalysis:
             `dataset.analysis`.
         record_time : bool, default False
             If True, the time point is appended to the storage name
-            (e.g., "mean_nnuc_t_100").
+            (e.g., "mean_nnuc_t_100"). `mcmc` only.
+
+        Raises
+        ------
+        ValueError
+            If `time` or `record_time` is given for a `"tm"` dataset, or
+            (for `"tm"`) if the dataset has no stored energy landscape.
         """
         chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)
+        if dataset.method == "tm":
+            if time is not None or record_time:
+                raise ValueError(
+                    "'time'/'record_time' are not meaningful for "
+                    "method='tm' datasets (no time axis)."
+                )
+            self._compute_mean_nnuc_tm(dataset, chroms=chroms, name=name)
+            return
+        self._compute_mean_nnuc_mcmc(
+            dataset,
+            time=time,
+            chroms=chroms,
+            name=name,
+            record_time=record_time,
+        )
+
+    def _compute_mean_nnuc_mcmc(
+        self, dataset, *, time, chroms, name, record_time
+    ):
         if time is None:
             time = dataset.raw[chroms[0], 0, 0].time[-1]
 
@@ -356,6 +471,115 @@ class SimAnalysis:
             name = f"{name}_t_{time}"
         for chrom in chroms:
             dataset.analysis[chrom][name] = pd.DataFrame(mean_nnuc[chrom])
+
+    def _compute_mean_nnuc_tm(self, dataset, *, chroms, name):
+        self._require_tm_eseq(dataset)
+        for chrom in chroms:
+            nmol = dataset.nmol[chrom]
+            values = np.empty(nmol, dtype=np.float64)
+            for mol in range(nmol):
+                tm = self._solved_tm(dataset, chrom, mol)
+                values[mol] = tm.getMeanN()
+            dataset.analysis[chrom][name] = pd.DataFrame(values)
+
+    def compute_var_nnuc(
+        self,
+        dataset: SimDataset,
+        *,
+        chroms: str | Iterable[str] | None = None,
+        name: str = "var_nnuc",
+    ):
+        """
+        Calculate the exact variance of the nucleosome count.
+
+        Uncertainty has no MCMC equivalent computed here; only
+        available for `dataset.method == "tm"` datasets.
+
+        Parameters
+        ----------
+        dataset : SimDataset
+            The dataset containing the stored energy landscape.
+        chroms : str or iterable of str, optional
+            The chromosome(s) to process. If None (default), all chromosomes
+            in the dataset are analyzed.
+        name : str, default "var_nnuc"
+            The key name used to store the resulting DataFrame in
+            `dataset.analysis`.
+
+        Raises
+        ------
+        ValueError
+            If `dataset.method != "tm"`, or the dataset has no stored
+            energy landscape.
+        """
+        if dataset.method != "tm":
+            raise ValueError(
+                "compute_var_nnuc requires a method='tm' dataset."
+            )
+        self._require_tm_eseq(dataset)
+        chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)
+        for chrom in chroms:
+            nmol = dataset.nmol[chrom]
+            values = np.empty(nmol, dtype=np.float64)
+            for mol in range(nmol):
+                tm = self._solved_tm(dataset, chrom, mol)
+                values[mol] = tm.getVarN()
+            dataset.analysis[chrom][name] = pd.DataFrame(values)
+
+    def compute_var_occup(
+        self,
+        dataset: SimDataset,
+        *,
+        chroms: str | Iterable[str] | None = None,
+        name: str = "var_occup",
+        batch_size: int = 20000,
+    ):
+        """
+        Calculate the exact per-bp variance of nucleosome occupancy.
+
+        Closed form (occup*(1-occup)): a bp can be covered by at most
+        one nucleosome, so occupancy there is Bernoulli. Uncertainty
+        has no MCMC equivalent computed here; only available for
+        `dataset.method == "tm"` datasets.
+
+        Parameters
+        ----------
+        dataset : SimDataset
+            The dataset containing the stored energy landscape.
+        chroms : str or iterable of str, optional
+            The chromosome(s) to process. If None (default), all chromosomes
+            in the dataset are analyzed.
+        name : str, default "var_occup"
+            The key name used to store the resulting `H5Array` in
+            `dataset.analysis`.
+        batch_size : int, default 20000
+            Number of molecules processed (and held in memory) per batch.
+
+        Raises
+        ------
+        ValueError
+            If `dataset.method != "tm"`, or the dataset has no stored
+            energy landscape.
+        """
+        if dataset.method != "tm":
+            raise ValueError(
+                "compute_var_occup requires a method='tm' dataset."
+            )
+        self._require_tm_eseq(dataset)
+        chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)
+        tmp_dir = dataset.resolve_tmp_dir()
+        for chrom in chroms:
+            nmol = dataset.nmol[chrom]
+            nbp = dataset.nbp[chrom]
+            out = H5Array.create((nmol, nbp), dtype=np.float64, dir=tmp_dir)
+            for start in range(0, nmol, batch_size):
+                stop = min(start + batch_size, nmol)
+                block = np.empty((stop - start, nbp), dtype=np.float64)
+                for i, mol in enumerate(range(start, stop)):
+                    tm = self._solved_tm(dataset, chrom, mol)
+                    block[i] = tm.getVarOccup()
+                out.write_batch(start, stop, block)
+            dataset.analysis[chrom][name] = out
 
     def sort_by_linkage(
         self,

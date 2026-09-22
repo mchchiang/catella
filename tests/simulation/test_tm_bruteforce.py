@@ -23,7 +23,7 @@ def _brute_force(nucbp, llink, elink, mu, eseq, temp=1.0):
     var_n), each computed exactly.
     """
     nbp = len(eseq)
-    npos = nbp - nucbp
+    npos = nbp - nucbp + 1
     total_weight = 0.0
     start_weight = [0.0] * npos
     mean_n_num = 0.0
@@ -143,7 +143,7 @@ class TestSampling:
         exact_start = np.asarray(tm.getStartProb())
 
         n_samples = 20000
-        npos = nbp - nucbp
+        npos = nbp - nucbp + 1
         counts = np.zeros(npos)
         for _ in range(n_samples):
             positions, _energy = tm.sampleConfig()

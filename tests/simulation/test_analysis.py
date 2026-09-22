@@ -343,7 +343,7 @@ def _brute_force_occup_meann(nucbp, llink, elink, mu, eseq, temp=1.0):
     import math
 
     nbp = len(eseq)
-    npos = nbp - nucbp
+    npos = nbp - nucbp + 1
 
     def erep(gap):
         i = gap - nucbp
@@ -481,7 +481,7 @@ class TestComputeVarNnuc:
             settings.mu,
         )
         nbp = len(eseq)
-        npos = nbp - nucbp
+        npos = nbp - nucbp + 1
 
         def erep(gap):
             i = gap - nucbp

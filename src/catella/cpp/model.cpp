@@ -90,7 +90,7 @@ int NucPosModel::nbp() const { return params.nbp; }
 int NucPosModel::llink() const { return params.llink; }
 double NucPosModel::elink() const { return params.elink; }
 double NucPosModel::mu() const { return params.mu; }
-int NucPosModel::npos() const { return params.nbp - params.nucbp; }
+int NucPosModel::npos() const { return params.nbp - params.nucbp + 1; }
 
 const vector<double>& NucPosModel::eseq() const { return siteEnergy; }
 

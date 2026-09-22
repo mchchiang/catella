@@ -97,9 +97,9 @@ contributions:
 
 .. math::
 
-   H_0(\mathcal{C}) = E_{\text{rep}}(\mathcal{C}) - \mu N \;.
+   H_0(\mathcal{C}) = E^{(\text{rep})}(\mathcal{C}) - \mu N \;.
 
-Here, the first term :math:`E_{\text{rep}}(\mathcal{C})` represents the
+Here, the first term :math:`E^{(\text{rep})}(\mathcal{C})` represents the
 steric repulsion between nucleosomes (i.e., their footprints on the DNA
 cannot overlap), and the second term takes into account the changes in
 the number of nucleosomes along the fiber, tuned by the chemical
@@ -111,12 +111,12 @@ model the linker length:
 
 .. math::
 
-   E_{\text{rep}}(x_{ij}) =
+   E^{(\text{rep})}(x_{ij}) =
    \begin{cases}
      \infty & \text{if } x_{ij} < \ell_{\text{nuc}} \\
      \epsilon_{\text{link}}\left[\left(\frac{\ell_{\text{link}}}
-     {x_{ij}-\ell_{\text{nuc}}}\right)^6 - 1\right]^2 &
-     \text{if } \ell_{\text{nuc}} \leq x_{ij} \leq
+     {x_{ij}-\ell_{\text{nuc}}+1}\right)^6 - 1\right]^2 &
+     \text{if } \ell_{\text{nuc}} \leq x_{ij} <
      \ell_{\text{nuc}}+\ell_{\text{link}} \\
      0 & \text{otherwise} \;,
    \end{cases}
@@ -130,7 +130,7 @@ interactions are effective and so
 
 .. math::
 
-   E_{\text{rep}} = \sum_{i=0}^{N-2}E_{\text{rep}}^{i,i+1}
+   E^{(\text{rep})} = \sum_{i=1}^{N-1}E^{(\text{rep})}(x_{i+1},x_i)
 
 for :math:`N \geq 2` and 0 otherwise.
 
@@ -296,7 +296,7 @@ running the simulations, and the full Hamiltonian now reads as
 .. math::
 
    \beta H(\mathcal{C},\vec{\theta}) = -\Lambda(\mathcal{C},\vec{\theta}) +
-   \beta \left[E_{\text{rep}}(\mathcal{C}) - \mu N\right] + \text{const.}
+   \beta \left[E^{(\text{rep})}(\mathcal{C}) - \mu N\right] + \text{const.}
    \;,
 
 where the constant at the end now includes the term
@@ -707,15 +707,15 @@ write
 
 .. math::
 
-   H(\mathcal C) = E_\text{data}(\mathcal C) + E_\text{rep}(\mathcal C) -
-   \mu N \;,
+   H(\mathcal C) = E^{(\text{data})}(\mathcal C) +
+   E^{(\text{rep})}(\mathcal C) - \mu N \;,
 
-where :math:`E_\text{data}(\mathcal C)` depends on which likelihood model
+where :math:`E^{(\text{data})}(\mathcal C)` depends on which likelihood model
 is used:
 
 .. math::
 
-   E_\text{data}(\mathcal C) =
+   E^{(\text{data})}(\mathcal C) =
    \begin{cases}
      \displaystyle -k_BT\,\Lambda(\mathcal C,\vec\theta) =
      -k_BT\sum_{i=1}^N \lambda_i(\vec\theta) &
@@ -724,7 +724,7 @@ is used:
      \text{(empirical alternative)} \;.
    \end{cases}
 
-In both cases, :math:`E_\text{data}` is a sum of one-body contributions,
+In both cases, :math:`E^{(\text{data})}` is a sum of one-body contributions,
 one per nucleosome, that depend only on that nucleosome's own position
 :math:`x_i` and can therefore be precomputed for a given molecule before
 the simulation starts: in the statistical model, the contribution
@@ -777,10 +777,10 @@ using :math:`\log[p/(1-p)] = -\lambda(x;\vec\theta)` for
    \text{(statistical model)} \;.
 
 Comparing this with the Hamiltonian :math:`\beta H =
--\Lambda(\mathcal C,\vec\theta)+\beta[E_\text{rep}(\mathcal C)-\mu N]+
+-\Lambda(\mathcal C,\vec\theta)+\beta[E^{(\text{rep})}(\mathcal C)-\mu N]+
 \text{const.}` above, we see that using the emission-model likelihood is,
 up to the additive constant already noted there, the same as taking
-:math:`E_\text{data}(\mathcal C) = -k_BT\,\Lambda(\mathcal C,\vec\theta) =
+:math:`E^{(\text{data})}(\mathcal C) = -k_BT\,\Lambda(\mathcal C,\vec\theta) =
 -k_BT\sum_{i=1}^N\lambda_i(\vec\theta)` -- except that each one-body term
 is now clipped to :math:`\pm E_\text{max}` before being summed, precisely
 as in the empirical alternative. This detail was left implicit above:
@@ -788,9 +788,9 @@ without it, an occasional site with an extreme log-odds ratio
 :math:`\lambda(x;\vec\theta)` (e.g., from a run of highly confident
 calls) could otherwise dominate the Hamiltonian and destabilize the
 sampling, so both likelihood routes cap their one-body contribution the
-same way before it enters :math:`E_\text{data}(\mathcal C)`.
+same way before it enters :math:`E^{(\text{data})}(\mathcal C)`.
 
-In both cases, :math:`E_\text{data}` is therefore a sum of
+In both cases, :math:`E^{(\text{data})}` is therefore a sum of
 identically-structured one-body contributions, one per nucleosome, that
 depend only on that nucleosome's own position :math:`x_i` (and the
 choice of likelihood model used to obtain :math:`p^{(\text{meth})}_{x,
@@ -798,8 +798,8 @@ choice of likelihood model used to obtain :math:`p^{(\text{meth})}_{x,
 simulation starts. This is the Hamiltonian we sample in the Monte Carlo
 simulations described next.
 
-Sampling dynamics -- Markov Chain Monte Carlo
-------------------------------------------------
+Sampling the posterior
+-----------------------
 
 Having assembled the full Hamiltonian :math:`H(\mathcal C)` above, we now
 turn to how nucleosome configurations are sampled from the posterior.
@@ -813,24 +813,32 @@ probability
    P(\mathcal C) = \frac1Z \exp[-\beta H(\mathcal C)] \;,
 
 :math:`Z` being the partition function and :math:`\beta=1/(k_BT)`. We
-sample this distribution with a Markov Chain Monte Carlo (MCMC)
+discuss two approaches for sampling this distribution: (1) running a
+Markov Chain Monte Carlo procedure, or (2) using the transfer matrix
+method to compute :math:`Z` exactly and derive the relevant marginal
+statistics directly, without drawing any samples at all.
+
+Markov Chain Monte Carlo
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+We sample this distribution with a Markov Chain Monte Carlo (MCMC)
 procedure, performing one of the following three moves at each step.
 
-1. **Shifting a nucleosome.** We randomly select the :math:`i`-th
+1. **Shift a nucleosome.** We randomly select the :math:`i`-th
    nucleosome and propose to move it by one bp, :math:`x_i\to
    x_i'=x_i\pm1`. The move is accepted with probability
 
    .. math::
 
-      p(x_i\to x_i') = \min\Big\{1, \exp[-\beta(\Delta E_\text{data}+
-      \Delta E_\text{rep})]\Big\} \;,
+      p(x_i\to x_i') = \min\Big\{1, \exp[-\beta(\Delta E^{(\text{data})}+
+      \Delta E^{(\text{rep})})]\Big\} \;,
 
-   where :math:`\Delta E_\text{data}` and :math:`\Delta E_\text{rep}` are
-   the changes in the data and repulsion energies caused by the move (the
-   number of nucleosomes, and hence the :math:`-\mu N` term, is
-   unchanged).
+   where :math:`\Delta E^{(\text{data})}` and
+   :math:`\Delta E^{(\text{rep})}` are the changes in the data and
+   repulsion energies caused by the move (the number of nucleosomes,
+   and hence the :math:`-\mu N` term, is unchanged).
 
-2. **Adding a nucleosome.** We randomly select a candidate position
+2. **Add a nucleosome.** We randomly select a candidate position
    :math:`x` from the :math:`n_\text{pos}=L-\ell_{\text{nuc}}+1` possible
    (left-aligned) positions on the fiber [#f2]_. The move is accepted
    with probability
@@ -838,26 +846,26 @@ procedure, performing one of the following three moves at each step.
    .. math::
 
       p(\text{add at }x) = \min\left\{1,\frac{n_\text{pos}}{N+1}
-      \exp[\beta\mu-\beta\Delta E_\text{add}(x)]\right\} \;,
+      \exp[\beta\mu-\beta\Delta E^{(\text{add})}(x)]\right\} \;,
 
-   where :math:`\Delta E_\text{add}(x) = E_\text{data}(x)+
-   \Delta E_\text{rep}` is the change in the data and repulsion energies
+   where :math:`\Delta E^{(\text{add})}(x) = E^{(\text{data})}(x)+
+   \Delta E^{(\text{rep})}` is the change in the data and repulsion energies
    from placing a nucleosome at :math:`x`, and the prefactor
    :math:`n_\text{pos}/(N+1)` corrects for the asymmetry between
    proposing a new position out of :math:`n_\text{pos}` choices and
    proposing its removal out of the resulting :math:`N+1` nucleosomes.
 
-3. **Removing a nucleosome.** We randomly select the :math:`i`-th
+3. **Remove a nucleosome.** We randomly select the :math:`i`-th
    nucleosome (out of :math:`N`) for removal. The move is accepted with
    probability
 
    .. math::
 
       p(\text{remove }i) = \min\left\{1,\frac{N}{n_\text{pos}}
-      \exp[-\beta\mu-\beta\Delta E_\text{remove}(x_i)]\right\} \;,
+      \exp[-\beta\mu-\beta\Delta E^{(\text{remove})}(x_i)]\right\} \;,
 
-   where :math:`\Delta E_\text{remove}(x_i) = -E_\text{data}(x_i) +
-   \Delta E_\text{rep}` is the change in the data and repulsion energies
+   where :math:`\Delta E^{(\text{remove})}(x_i) = -E^{(\text{data})}(x_i) +
+   \Delta E^{(\text{rep})}` is the change in the data and repulsion energies
    from removing the nucleosome at :math:`x_i`.
 
 These moves satisfy detailed balance with respect to :math:`P(\mathcal
@@ -868,6 +876,380 @@ practice, we run the chain under a temperature annealing schedule, with
 value -- linearly, geometrically, or held constant -- over the course of
 the simulation, which helps the chain avoid metastable configurations
 before it settles into equilibrium at the target temperature.
+
+Transfer matrix method
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Due to the unique structure of the Hamiltonian, the transfer matrix
+method provides an alternative to MCMC for obtaining marginal statistics
+of the posterior, by computing the partition function :math:`Z` directly
+rather than sampling from it. Writing the Hamiltonian explicitly in
+terms of its one-body and nearest-neighbour pairwise terms,
+
+.. math::
+
+   H(\mathcal C) = \sum_{i=1}^N E^{(\text{data})}(x_i) +
+   \sum_{i=1}^{N-1} E^{(\text{rep})}(x_i,x_{i+1}) - \mu N \;,
+
+with :math:`E^{(\text{rep})}(x_i,x_{i+1})` the pairwise repulsion
+recalled above, the brute-force approach to computing :math:`Z` is to
+enumerate every legal configuration and sum its Boltzmann weight
+directly,
+
+.. math::
+
+   Z = \sum_{N=0}^\infty \sum_{\substack{0\leq x_1 < x_2 < \cdots <
+   x_N < n_\text{pos} \\ x_{i+1}-x_i\geq\ell_{\text{nuc}}\,\forall i}}
+   \exp\Big\{-\beta\Big[\sum_{i=1}^N E^{(\text{data})}(x_i) +
+   \sum_{i=1}^{N-1}E^{(\text{rep})}(x_i,x_{i+1}) - \mu N\Big]\Big\} \;.
+
+This sum ranges over an exponentially large collection of increasing
+subsequences [a combinatorial object whose size grows like
+:math:`\binom{n_\text{pos}}{N}`, summed over :math:`N`], which is
+infeasible to enumerate for a fiber of any realistic length. MCMC
+sidesteps this difficulty by sampling rather than summing.
+
+The restrictive, nearest-neighbour structure of the Hamiltonian
+simplifies the problem instead. Every term in the exponent is either a
+function of a single :math:`x_i` (:math:`E^{(\text{data})}`) or of a
+single adjacent pair (:math:`E^{(\text{rep})}`), with nothing coupling
+:math:`x_i` to :math:`x_j` for :math:`|i-j|\geq2`. The summand above
+therefore factorizes into a chain of local factors, one per nucleosome,
+with each depending only on that nucleosome and its immediate
+predecessor to the left,
+
+.. math::
+
+   \exp[-\beta H(\mathcal C)] = \prod_{i=2}^N g(x_i|x_{i-1})\cdot
+   g(x_1) \;,
+
+where
+
+.. math::
+
+   g(x_i|x_{i-1}) = \exp\big\{-\beta\big[E^{(\text{data})}(x_i) +
+   E^{(\text{rep})}(x_{i-1},x_i) - \mu\big]\big\} \;, \qquad
+   g(x_1) = \exp\{-\beta[E^{(\text{data})}(x_1)-\mu]\} \;.
+
+This factorization mirrors that of the 1D Ising model (or any 1D model
+with only nearest-neighbour interactions), and a factorizable summand is
+exactly the condition under which the transfer matrix method applies.
+Unlike spins in the Ising model, however, the number of nucleosomes is
+not conserved and the number of factors varies with :math:`N`; the
+system is also heterogeneous, since individual factors differ through
+the data term. Both of these make the transfer matrix method non-trivial
+to carry out here.
+
+Memory state and the transfer matrix
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+To simplify the summing process, we factorize :math:`Z` in units that
+remain constant (with no dependence on :math:`N`): the possible start
+sites for placing nucleosomes, whose total :math:`n_\text{pos} =
+L-\ell_{\text{nuc}}+1` is fixed. At each site, one faces a binary
+decision: place a new nucleosome there or not. Suppose this has already
+been decided for sites :math:`0` to :math:`x-1`; the outcome at
+:math:`x` then rests on (i) the distance from the most recent nucleosome
+on the left, and (ii) the data-derived energy :math:`E^{(\text{data})}
+(x)` for adding a nucleosome at :math:`x`. For (i), it is forbidden to
+add a nucleosome if that distance is smaller than
+:math:`\ell_{\text{nuc}}`. Crucially, the interaction
+:math:`E^{(\text{rep})}` with the previous nucleosome has a *finite*
+range :math:`W\equiv\ell_{\text{nuc}}+\ell_{\text{link}}`: at and beyond
+:math:`W`, :math:`E^{(\text{rep})}=0` regardless of the exact distance.
+This lets us perform the sum by tracking only the (capped) distance from
+the previous nucleosome (located at :math:`y`) as we step along the
+fiber, via a memory state
+
+.. math::
+
+   k_x = \min(x-y,W) \;, \qquad k_x\in\{1,\dots,W\} \;.
+
+The state :math:`k_x` is a sufficient statistic for the configurational
+history to the left of :math:`x`: whether a nucleosome can be added at
+:math:`x`, and the cost :math:`E^{(\text{rep})}` of doing so, depend on
+the previous nucleosome only via :math:`k_x`. Any two partial
+configurations with the same :math:`k_x` therefore have identical
+possible futures, and their partial Boltzmann weights can be merged
+into a single number -- this Markov property is what lets the sum over
+exponentially many configurations collapse into :math:`W` running
+totals. We define the *forward* vector :math:`\vec v(x) =
+(v_1(x),\dots,v_W(x))^\mathsf T`, representing the partial sums of the
+partition function up to position :math:`x`, with
+
+.. math::
+
+   v_k(x) = \sum_{\substack{\mathcal C'\subset\{0,\dots,x-1\}\,
+   \text{valid} \\ k_x(\mathcal C')=k}} \exp\Big\{-\beta\Big[\sum_i
+   E^{(\text{data})}(x_i) + \sum_i E^{(\text{rep})}(x_i,x_{i+1}) -
+   \mu|\mathcal C'|\Big]\Big\} \;,
+
+where :math:`\mathcal C'` ranges over valid configurations of
+nucleosome starting positions that give state :math:`k` at :math:`x`.
+To reach the full sum :math:`Z`, we need rules for obtaining
+:math:`\vec v(x+1)` from :math:`\vec v(x)`; there are two "summing
+moves" we can perform at :math:`x`:
+
+1. **Skip.** No new nucleosome is added. This shifts the memory state
+   from :math:`k` to :math:`\min(k+1,W)` for the next step at
+   :math:`x+1`; note that :math:`k=W` is a recurring state, since
+   :math:`E^{(\text{rep})}=0` there.
+2. **Add.** A new nucleosome is placed at :math:`x`. This is only
+   possible if :math:`k\geq\ell_{\text{nuc}}`, and it adds a new
+   Boltzmann factor :math:`w(x,k)` (depending on :math:`E^{(\text{rep})}`
+   and :math:`E^{(\text{data})}`) to the sum, resetting the memory state
+   to :math:`k=1` at :math:`x+1`.
+
+These moves define the transfer matrix :math:`\vec T(x)` (of dimension
+:math:`W\times W`) that advances :math:`\vec v(x)` to
+:math:`\vec v(x+1)`,
+
+.. math::
+
+   \vec v(x+1) = \vec T(x)\cdot\vec v(x) \;, \qquad
+   x=0,\dots,n_\text{pos}-1 \;,
+
+with matrix elements
+
+.. math::
+
+   T_{k'k}(x) = \begin{cases}
+     \delta_{k',\min(k+1,W)} & \text{if } 1\leq k<\ell_{\text{nuc}} \\
+     \delta_{k',\min(k+1,W)}+\delta_{k',1}\,w(x,k) &
+     \text{if } \ell_{\text{nuc}}\leq k\leq W \;,
+   \end{cases}
+
+where :math:`\delta_{x,y}` is the Kronecker delta and
+
+.. math::
+
+   w(x,k) = \exp\{-\beta[E^{(\text{data})}(x)+E^{(\text{rep})}(k)-\mu]\}
+   \;.
+
+As an example, take :math:`\ell_{\text{nuc}}=3` and
+:math:`\ell_{\text{link}}=2`, so :math:`W=5` and
+:math:`k\in\{1,2,3,4,5\}`. Here, :math:`k=1,2` represent the excluded
+state (no new nucleosome can be added), :math:`k=3,4` the interacting
+state (a nucleosome can be added but linker repulsion still applies),
+and :math:`k=5` the recurring state (no repulsion). The transfer matrix
+takes the form
+
+.. math::
+
+   T(x) = \begin{pmatrix}
+     0 & 0 & w(x,3) & w(x,4) & w(x,5) \\
+     1 & 0 & 0 & 0 & 0 \\
+     0 & 1 & 0 & 0 & 0 \\
+     0 & 0 & 1 & 0 & 0 \\
+     0 & 0 & 0 & 1 & 1
+   \end{pmatrix} \;.
+
+The first row collects every way of placing a nucleosome at :math:`x`
+(from any state that allows it); the subdiagonal 1's advance the
+current state :math:`k` by one when nothing is placed; and the
+trailing 1 in the bottom-right entry is the recurring state's
+self-loop. The matrix is sparse, with at most two nonzero entries per
+row except the first, which collects all possible additions -- so
+applying :math:`\vec T` to :math:`\vec v` costs :math:`O(W)` rather
+than :math:`O(W^2)`.
+
+To start the sum, we need an initial state :math:`\vec v(0)`. At the
+left of the fiber, where no nucleosome could have been placed
+beforehand, we must be in state :math:`k=W` (with
+:math:`E^{(\text{rep})}=0`), so :math:`\vec v(0)=\vec e_W=
+(0,\dots,1)^\mathsf T`. Since :math:`\vec v(n_\text{pos})` contains the
+total weights for all configurations ending in each memory state, the
+partition function is simply the sum over these weights,
+
+.. math::
+
+   Z = \sum_{k=1}^W v_k(n_\text{pos}) = \mathbf 1\cdot
+   \vec T(n_\text{pos}-1)\cdot\vec T(n_\text{pos}-2)\cdots
+   \vec T(1)\cdot\vec T(0)\cdot\vec e_W \;, \qquad
+   \mathbf 1=(1,\dots,1)^\mathsf T \;.
+
+This expression is the basis of how :math:`Z` is computed in the
+package, needed for the marginals derived below. In practice, the sum
+is performed via dynamic programming with dynamic rescaling to ensure
+numerical stability, since multiplying many exponential factors
+together is susceptible to underflow or overflow:
+
+1. Compute the raw product :math:`\vec v(x+1) = \vec T(x)\cdot
+   \tilde{\vec v}(x)` [:math:`\vec v(0)=\tilde{\vec v}(0)` is already
+   normalized].
+2. Rescale the product by a normalization factor :math:`c(x+1) =
+   \sum_k v_k(x+1)`, i.e., :math:`\tilde{\vec v}(x+1) =
+   \vec v(x+1)/c(x+1)`.
+3. Add :math:`\log c(x+1)` to an accumulated sum (started with
+   :math:`\log c(0)=0`), and repeat step (1) for :math:`\vec v(x+2)`
+   using the rescaled factor :math:`\tilde{\vec v}(x+1)`.
+
+We stop once :math:`x=n_\text{pos}` is reached, obtaining the last
+rescaled factor :math:`c(n_\text{pos})`, and the logarithm of the
+partition function is then
+
+.. math::
+
+   \log Z = \sum_{x=0}^{n_\text{pos}} \log c(x) \;.
+
+Obtaining marginals: occupancy profile and mean number of nucleosomes
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+With :math:`Z` (or its logarithm) computed, we can derive marginal
+statistics, such as the nucleosome occupancy profile, without running
+any simulations. We introduce the *backward* vector :math:`\vec u(x) =
+(u_1(x),\dots,u_W(x))^\mathsf T`, with :math:`u_k(x)` the partial
+Boltzmann weight of all valid completions of the fiber from :math:`x`
+onward given memory state :math:`k` at :math:`x`. By this definition,
+:math:`\vec v(x)` and :math:`\vec u(x)` obey
+
+.. math::
+
+   Z = \vec u(x)\cdot\vec v(x) \;, \qquad x = 0,\dots,n_\text{pos} \;.
+
+Applying this at :math:`x` and :math:`x+1` and using
+:math:`\vec v(x+1) = \vec T(x)\cdot\vec v(x)` gives
+:math:`\vec u(x)\cdot\vec v(x) = \vec u(x+1)\cdot\vec T(x)\cdot
+\vec v(x)`. Because :math:`\vec u(x)` depends only on the fiber from
+:math:`x` onward and not on the configuration to the left, this holds
+for any :math:`\vec v(x)` (and so component-wise), giving the backward
+recursion
+
+.. math::
+
+   \vec u(x)^\mathsf T = \vec u(x+1)\cdot\vec T(x) \qquad\text{or}
+   \qquad \vec u(x) = \vec T(x)^\mathsf T\cdot\vec u(x+1) \;,
+
+started at :math:`x=n_\text{pos}` with :math:`\vec u(n_\text{pos})=
+\mathbf 1` (since :math:`Z=\vec u(n_\text{pos})\cdot\vec v(n_\text{pos})
+= \mathbf 1\cdot\vec v(n_\text{pos})`).
+
+With the backward vector defined, we can compute the probability that a
+nucleosome starts at :math:`x`. For this, the memory state at :math:`x`
+must lie in :math:`k\in[\ell_{\text{nuc}},W]` (otherwise addition is
+prohibited), and the state at :math:`x+1` resets to :math:`k=1`, so
+that
+
+.. math::
+
+   P(\text{start at }x) = \frac{u_1(x+1)}{Z}
+   \sum_{k=\ell_{\text{nuc}}}^W w(x,k)\,v_k(x) \;,
+
+weighting each possible start state by its Boltzmann factor :math:`w`.
+An alternative derivation treats the chemical potential as
+site-dependent, :math:`\mu_x` at :math:`x` (recovering the above at
+:math:`\mu_x=\mu`): :math:`P(\text{start at }x)` is then the Boltzmann
+weight of all configurations carrying the factor
+:math:`\exp(\beta\mu_x)`, proportional to :math:`\partial Z/\partial
+\mu_x` and normalized by :math:`Z`,
+
+.. math::
+
+   P(\text{start at }x) = \frac1Z\cdot\frac1\beta
+   \frac{\partial Z}{\partial\mu_x} = \frac1\beta
+   \frac{\partial\log Z}{\partial\mu_x} \;.
+
+Only :math:`T_{k'k}(x)` depends on :math:`\mu_x`, and only for
+:math:`k\geq\ell_{\text{nuc}}`, where :math:`\partial T_{k'k}(x)/
+\partial\mu_x = \delta_{k',1}\,\beta w(x,k)`; substituting this into
+:math:`\partial Z/\partial\mu_x = \vec u(x+1)\cdot[\partial\vec T(x)/
+\partial\mu_x]\cdot\vec v(x)` recovers exactly the expression above for
+:math:`P(\text{start at }x)`.
+
+To find the mean number of nucleosomes :math:`\langle N\rangle` along
+the fiber, let :math:`n_x=1` if a nucleosome starts at :math:`x` (and
+:math:`0` otherwise), so :math:`N=\sum_x n_x`. Taking the ensemble
+average, and since :math:`\langle n_x\rangle = P(\text{start at }x)`,
+
+.. math::
+
+   \langle N\rangle = \sum_x\langle n_x\rangle =
+   \sum_x P(\text{start at }x) = \sum_x\frac1\beta
+   \frac{\partial\log Z}{\partial\mu_x} \overset{\mu_x=\mu}{=}
+   \frac1\beta\frac{\partial\log Z}{\partial\mu} \;.
+
+For the occupancy profile, recall the indicator :math:`\sigma_y` from
+above, which is unity when a nucleosome covers site :math:`y` and zero
+otherwise. Summing all :math:`n_x` whose nucleosome footprint can cover
+site :math:`y` gives
+
+.. math::
+
+   \sigma_y = \sum_{x=\max(0,y-\ell_{\text{nuc}}+1)}^
+   {\min(y,n_\text{pos}-1)} n_x \;.
+
+Because nucleosomes cannot overlap, at most one nucleosome can start
+within this window, so :math:`\sigma_y\in\{0,1\}` strictly. The
+probability of nucleosome occupancy at :math:`y` is therefore
+
+.. math::
+
+   P(\text{occupied at }y) = \langle\sigma_y\rangle =
+   \sum_{x=\max(0,y-\ell_{\text{nuc}}+1)}^{\min(y,n_\text{pos}-1)}
+   \langle n_x\rangle = \sum_{x=\max(0,y-\ell_{\text{nuc}}+1)}^
+   {\min(y,n_\text{pos}-1)} P(\text{start at }x) \;.
+
+We can also quantify the uncertainty in these observables via their
+variance. For the number of nucleosomes,
+
+.. math::
+
+   \text{Var}(N) = \langle N^2\rangle - \langle N\rangle^2 =
+   \frac1{\beta^2}\left[\frac1Z\frac{\partial^2Z}{\partial\mu^2} -
+   \frac1{Z^2}\left(\frac{\partial Z}{\partial\mu}\right)^2\right] =
+   \frac1{\beta^2}\frac{\partial^2\log Z}{\partial\mu^2} \;,
+
+which we evaluate by central finite difference,
+
+.. math::
+
+   \frac{\partial^2\log Z}{\partial\mu^2} \approx
+   \frac1{\Delta\mu^2}\left[\log Z(\mu+\Delta\mu) +
+   \log Z(\mu-\Delta\mu) - 2\log Z(\mu)\right] \;.
+
+The variance of nucleosome occupancy is simpler still. Since
+:math:`\sigma_y^2=\sigma_y`,
+
+.. math::
+
+   \text{Var}(\sigma_y) = \langle\sigma_y^2\rangle -
+   \langle\sigma_y\rangle^2 = \langle\sigma_y\rangle
+   \left(1-\langle\sigma_y\rangle\right) =
+   P(\text{occupied at }y)\cdot[1-P(\text{occupied at }y)] \;,
+
+so the occupancy profile computed above can be reused directly for
+this calculation.
+
+Exact configuration sampling
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+In addition to marginal statistics, we can draw independent
+configurations :math:`\mathcal C` that sample the posterior via
+"stochastic traceback." Starting from :math:`x=0` with state
+:math:`k=W`, at each site we compute the two branch weights implied by
+the transfer matrix,
+
+.. math::
+
+   \pi_\text{add} = w(x,k)\,u_1(x+1) \;, \qquad
+   \pi_\text{skip} = u_{\min(k+1,W)}(x+1) \;,
+
+and add a nucleosome with probability
+
+.. math::
+
+   P(\text{add at }x) = \begin{cases}
+     0 & \text{if } k<\ell_{\text{nuc}} \\
+     \dfrac{\pi_\text{add}}{\pi_\text{add}+\pi_\text{skip}} &
+     \text{otherwise} \;.
+   \end{cases}
+
+We then update :math:`k\to1` if a nucleosome is added, or
+:math:`k\to\min(k+1,W)` otherwise, and advance to site :math:`x+1`. A
+single pass over the fiber yields one exact sample. Unlike MCMC
+samples, successive draws are independent by construction (no
+autocorrelation, no burn-in, and no thinning), since each is a fresh
+traceback through the precomputed :math:`\vec u(x)`.
 
 .. rubric:: Footnotes
 

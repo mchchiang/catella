@@ -830,7 +830,7 @@ procedure, performing one of the following three moves at each step.
 
    .. math::
 
-      p(x_i\to x_i') = \min\Big\{1, \exp[-\beta(\Delta E^{(\text{data})}+
+      P(x_i\to x_i') = \min\Big\{1, \exp[-\beta(\Delta E^{(\text{data})}+
       \Delta E^{(\text{rep})})]\Big\} \;,
 
    where :math:`\Delta E^{(\text{data})}` and
@@ -845,7 +845,7 @@ procedure, performing one of the following three moves at each step.
 
    .. math::
 
-      p(\text{add at }x) = \min\left\{1,\frac{n_\text{pos}}{N+1}
+      P(\text{add at }x) = \min\left\{1,\frac{n_\text{pos}}{N+1}
       \exp[\beta\mu-\beta\Delta E^{(\text{add})}(x)]\right\} \;,
 
    where :math:`\Delta E^{(\text{add})}(x) = E^{(\text{data})}(x)+
@@ -861,7 +861,7 @@ procedure, performing one of the following three moves at each step.
 
    .. math::
 
-      p(\text{remove }i) = \min\left\{1,\frac{N}{n_\text{pos}}
+      P(\text{remove }i) = \min\left\{1,\frac{N}{n_\text{pos}}
       \exp[-\beta\mu-\beta\Delta E^{(\text{remove})}(x_i)]\right\} \;,
 
    where :math:`\Delta E^{(\text{remove})}(x_i) = -E^{(\text{data})}(x_i) +
@@ -898,10 +898,12 @@ directly,
 
 .. math::
 
-   Z = \sum_{N=0}^\infty \sum_{\substack{0\leq x_1 < x_2 < \cdots <
-   x_N < n_\text{pos} \\ x_{i+1}-x_i\geq\ell_{\text{nuc}}\,\forall i}}
-   \exp\Big\{-\beta\Big[\sum_{i=1}^N E^{(\text{data})}(x_i) +
+   \begin{split}
+   Z \;=& \sum_{N=0}^\infty \sum_{\substack{0\leq x_1 < x_2 < \cdots <
+   x_N < n_\text{pos} \\ x_{i+1}-x_i\geq\ell_{\text{nuc}}\,\forall i}} \\
+   & \exp\Big\{-\beta\Big[\sum_{i=1}^N E^{(\text{data})}(x_i) +
    \sum_{i=1}^{N-1}E^{(\text{rep})}(x_i,x_{i+1}) - \mu N\Big]\Big\} \;.
+   \end{split}
 
 This sum ranges over an exponentially large collection of increasing
 subsequences [a combinatorial object whose size grows like
@@ -982,9 +984,9 @@ partition function up to position :math:`x`, with
 .. math::
 
    \begin{split}
-   v_k(x) &= \sum_{\substack{\mathcal C'\subset\{0,\dots,x-1\}\,
+   v_k(x) \;=& \sum_{\substack{\mathcal C'\subset\{0,\dots,x-1\}\,
    \text{valid} \\ k_x(\mathcal C')=k}} \\
-   &\quad \times \exp\Big\{-\beta\Big[\sum_i E^{(\text{data})}(x_i) +
+   & \exp\Big\{-\beta\Big[\sum_i E^{(\text{data})}(x_i) +
    \sum_i E^{(\text{rep})}(x_i,x_{i+1}) - \mu|\mathcal C'|\Big]\Big\} \;,
    \end{split}
 
@@ -1068,17 +1070,16 @@ partition function is simply the sum over these weights,
 .. math::
 
    \begin{split}
-   Z &= \sum_{k=1}^W v_k(n_\text{pos}) \\
-   &= \mathbf 1\cdot\vec T(n_\text{pos}-1)\cdot\vec T(n_\text{pos}-2)
-   \cdots\vec T(1)\cdot\vec T(0)\cdot\vec e_W \;, \qquad
-   \mathbf 1=(1,\dots,1)^\mathsf T \;.
+   Z = \sum_{k=1}^W v_k(n_\text{pos})
+   = \mathbf 1\cdot\vec T(n_\text{pos}-1)\cdot\vec T(n_\text{pos}-2)
+   \cdots\vec T(1)\cdot\vec T(0)\cdot\vec e_W \;,
    \end{split}
 
-This expression is the basis of how :math:`Z` is computed in the
-package, needed for the marginals derived below. In practice, the sum
-is performed via dynamic programming with dynamic rescaling to ensure
-numerical stability, since multiplying many exponential factors
-together is susceptible to underflow or overflow:
+with :math:`\mathbf 1=(1,\dots,1)^\mathsf T`. This expression is the basis
+of how :math:`Z` is computed in the package, needed for the marginals
+derived below. In practice, the sum is performed via dynamic programming
+with dynamic rescaling to ensure numerical stability, since multiplying
+many exponential factors together is susceptible to underflow or overflow:
 
 1. Compute the raw product :math:`\vec v(x+1) = \vec T(x)\cdot
    \tilde{\vec v}(x)` [:math:`\vec v(0)=\tilde{\vec v}(0)` is already
@@ -1191,7 +1192,7 @@ probability of nucleosome occupancy at :math:`y` is therefore
 .. math::
 
    \begin{split}
-   P(\text{occupied at }y) &= \langle\sigma_y\rangle \\
+   P(\text{occupied at }y) = \langle\sigma_y\rangle
    &= \sum_{x=\max(0,y-\ell_{\text{nuc}}+1)}^{\min(y,n_\text{pos}-1)}
    \langle n_x\rangle \\
    &= \sum_{x=\max(0,y-\ell_{\text{nuc}}+1)}^{\min(y,n_\text{pos}-1)}

@@ -831,7 +831,7 @@ procedure, performing one of the following three moves at each step.
    unchanged).
 
 2. **Adding a nucleosome.** We randomly select a candidate position
-   :math:`x` from the :math:`n_\text{pos}=L-\ell_{\text{nuc}}` possible
+   :math:`x` from the :math:`n_\text{pos}=L-\ell_{\text{nuc}}+1` possible
    (left-aligned) positions on the fiber [#f2]_. The move is accepted
    with probability
 

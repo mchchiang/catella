@@ -97,9 +97,9 @@ contributions:
 
 .. math::
 
-   H_0(\mathcal{C}) = E^{(\text{rep})}(\mathcal{C}) - \mu N \;.
+   H_0(\mathcal{C}) = E^{\text{rep}}(\mathcal{C}) - \mu N \;.
 
-Here, the first term :math:`E^{(\text{rep})}(\mathcal{C})` represents the
+Here, the first term :math:`E^{\text{rep}}(\mathcal{C})` represents the
 steric repulsion between nucleosomes (i.e., their footprints on the DNA
 cannot overlap), and the second term takes into account the changes in
 the number of nucleosomes along the fiber, tuned by the chemical
@@ -111,7 +111,7 @@ model the linker length:
 
 .. math::
 
-   E^{(\text{rep})}(x_{ij}) =
+   E^{\text{rep}}(x_{ij}) =
    \begin{cases}
      \infty & \text{if } x_{ij} < \ell_{\text{nuc}} \\
      \epsilon_{\text{link}}\left[\left(\frac{\ell_{\text{link}}}
@@ -130,7 +130,7 @@ interactions are effective and so
 
 .. math::
 
-   E^{(\text{rep})} = \sum_{i=1}^{N-1}E^{(\text{rep})}(x_{i+1},x_i)
+   E^{\text{rep}} = \sum_{i=1}^{N-1}E^{\text{rep}}(x_{i+1},x_i)
 
 for :math:`N \geq 2` and 0 otherwise.
 
@@ -296,7 +296,7 @@ running the simulations, and the full Hamiltonian now reads as
 .. math::
 
    \beta H(\mathcal{C},\vec{\theta}) = -\Lambda(\mathcal{C},\vec{\theta}) +
-   \beta \left[E^{(\text{rep})}(\mathcal{C}) - \mu N\right] + \text{const.}
+   \beta \left[E^{\text{rep}}(\mathcal{C}) - \mu N\right] + \text{const.}
    \;,
 
 where the constant at the end now includes the term
@@ -622,75 +622,75 @@ experiments are available, we instead set :math:`M_{x,\alpha} =
 \widetilde S_{x,\alpha}^{(\text{test})}`.
 
 To convert :math:`M_{x,\alpha}` into a formal probability
-:math:`p^{(\text{meth})}_{x,\alpha}\in[0,1]` that site :math:`x` is
+:math:`p^{\text{meth}}_{x,\alpha}\in[0,1]` that site :math:`x` is
 methylated (i.e., accessible) on molecule :math:`\alpha`, we linearly
 rescale :math:`M_{x,\alpha}` against two percentile bounds, clipping
 values that fall outside of them:
 
 .. math::
 
-   p^{(\text{meth})}_{x,\alpha} = \text{clip}\!\left[
-   \frac{M_{x,\alpha} - M^{(\text{unmeth})}_{p=0.1\%}}
-   {M^{(\text{meth})}_{p=99.9\%} - M^{(\text{unmeth})}_{p=0.1\%}},
+   p^{\text{meth}}_{x,\alpha} = \text{clip}\!\left[
+   \frac{M_{x,\alpha} - M^{\text{unmeth}}_{p=0.1\%}}
+   {M^{\text{meth}}_{p=99.9\%} - M^{\text{unmeth}}_{p=0.1\%}},
    \,0,\,1\right] \;,
 
-where :math:`M^{(\text{unmeth})}_{p=0.1\%}` is the 0.1th percentile and
-:math:`M^{(\text{meth})}_{p=99.9\%}` the 99.9th percentile (the default
+where :math:`M^{\text{unmeth}}_{p=0.1\%}` is the 0.1th percentile and
+:math:`M^{\text{meth}}_{p=99.9\%}` the 99.9th percentile (the default
 choice used in the package) of the normalized score :math:`M_{x,\alpha}`,
 each estimated once per fiber, but deliberately from different sources:
-the lower bound :math:`M^{(\text{unmeth})}_{p=0.1\%}` is taken over a
+the lower bound :math:`M^{\text{unmeth}}_{p=0.1\%}` is taken over a
 random subsample of molecules from the unmeth control channel alone, and
-the upper bound :math:`M^{(\text{meth})}_{p=99.9\%}` over a random
+the upper bound :math:`M^{\text{meth}}_{p=99.9\%}` over a random
 subsample from the meth control channel alone, so that each bound is
 anchored to the condition it is meant to represent rather than to the
 (possibly differently distributed) test signal. Both percentiles are
 pooled over all sites :math:`x` within their respective sample rather
 than estimated separately at each site. When no controls are available,
 both bounds are instead estimated from the test channel itself, i.e.,
-:math:`M^{(\text{unmeth})}_{p=0.1\%}\to M^{(\text{test})}_{p=0.1\%}` and
-:math:`M^{(\text{meth})}_{p=99.9\%}\to M^{(\text{test})}_{p=99.9\%}`.
+:math:`M^{\text{unmeth}}_{p=0.1\%}\to M^{\text{test}}_{p=0.1\%}` and
+:math:`M^{\text{meth}}_{p=99.9\%}\to M^{\text{test}}_{p=99.9\%}`.
 
 As above, we identify the complementary probability
-:math:`p^{(\text{seq})}_{x,\alpha} = 1-p^{(\text{meth})}_{x,\alpha}` as
+:math:`p^{\text{seq}}_{x,\alpha} = 1-p^{\text{meth}}_{x,\alpha}` as
 the (empirical) probability that :math:`x` is occupied by a nucleosome on
-molecule :math:`\alpha`. To turn :math:`p^{(\text{seq})}` into an energy,
+molecule :math:`\alpha`. To turn :math:`p^{\text{seq}}` into an energy,
 we treat the site as a two-state system -- occupied, with probability
-:math:`p^{(\text{seq})}`, versus accessible, with probability
-:math:`1-p^{(\text{seq})}=p^{(\text{meth})}` -- and take their relative
-Boltzmann weight to define an energy difference :math:`E^{(\text{seq})}`
+:math:`p^{\text{seq}}`, versus accessible, with probability
+:math:`1-p^{\text{seq}}=p^{\text{meth}}` -- and take their relative
+Boltzmann weight to define an energy difference :math:`E^{\text{seq}}`
 (in units of :math:`k_BT`, i.e., setting :math:`\beta=1`):
 
 .. math::
 
-   \frac{p^{(\text{seq})}_{x,\alpha}}{1-p^{(\text{seq})}_{x,\alpha}} =
-   \exp[-E^{(\text{seq})}_{x,\alpha}] \;,
+   \frac{p^{\text{seq}}_{x,\alpha}}{1-p^{\text{seq}}_{x,\alpha}} =
+   \exp[-E^{\text{seq}}_{x,\alpha}] \;,
 
 having set the accessible state as the reference (zero-energy) state.
 Inverting this, and clipping the result to a maximum magnitude
 :math:`E_\text{max}` to prevent it from diverging as
-:math:`p^{(\text{meth})}\to\{0,1\}`, we arrive at
+:math:`p^{\text{meth}}\to\{0,1\}`, we arrive at
 
 .. math::
 
-   E^{(\text{seq})}_{x,\alpha} &= \text{clip}\!\left[ -\log
-   \frac{p^{(\text{seq})}_{x,\alpha}}{1-p^{(\text{seq})}_{x,\alpha}},
+   E^{\text{seq}}_{x,\alpha} &= \text{clip}\!\left[ -\log
+   \frac{p^{\text{seq}}_{x,\alpha}}{1-p^{\text{seq}}_{x,\alpha}},
    \,-E_\text{max},\,E_\text{max}\right] \\
    &= \text{clip}\!\left[\log
-   \frac{p^{(\text{meth})}_{x,\alpha}} {1-p^{(\text{meth})}_{x,\alpha}},
+   \frac{p^{\text{meth}}_{x,\alpha}} {1-p^{\text{meth}}_{x,\alpha}},
    \,-E_\text{max},\,E_\text{max}\right] \;,
 
-i.e., :math:`E^{(\text{seq})}` is simply the (clipped) log-odds, or
-logit, of :math:`p^{(\text{meth})}`. This differs from a naive Boltzmann
-inversion :math:`-k_BT\log p^{(\text{seq})}_x` in that it is referenced
+i.e., :math:`E^{\text{seq}}` is simply the (clipped) log-odds, or
+logit, of :math:`p^{\text{meth}}`. This differs from a naive Boltzmann
+inversion :math:`-k_BT\log p^{\text{seq}}_x` in that it is referenced
 against the complementary (accessible) state rather than against a
-hypothetical zero-energy vacuum, which keeps :math:`E^{(\text{seq})}`
+hypothetical zero-energy vacuum, which keeps :math:`E^{\text{seq}}`
 finite and antisymmetric about
-:math:`p^{(\text{meth})}=p^{(\text{seq})}=1/2` (where it is favourable
+:math:`p^{\text{meth}}=p^{\text{seq}}=1/2` (where it is favourable
 neither to bind nor not to bind); the two forms would coincide only in
-the limit :math:`p^{(\text{meth})}\ll1`. Like the statistical model
+the limit :math:`p^{\text{meth}}\ll1`. Like the statistical model
 above, this construction is applied independently to each molecule
 :math:`\alpha`, so every molecule is assigned its own empirical energy
-landscape :math:`E^{(\text{seq})}_{x,\alpha}` prior to running its Monte
+landscape :math:`E^{\text{seq}}_{x,\alpha}` prior to running its Monte
 Carlo simulation.
 
 The full Hamiltonian
@@ -707,40 +707,40 @@ write
 
 .. math::
 
-   H(\mathcal C) = E^{(\text{data})}(\mathcal C) +
-   E^{(\text{rep})}(\mathcal C) - \mu N \;,
+   H(\mathcal C) = E^{\text{data}}(\mathcal C) +
+   E^{\text{rep}}(\mathcal C) - \mu N \;,
 
-where :math:`E^{(\text{data})}(\mathcal C)` depends on which likelihood model
+where :math:`E^{\text{data}}(\mathcal C)` depends on which likelihood model
 is used:
 
 .. math::
 
-   E^{(\text{data})}(\mathcal C) =
+   E^{\text{data}}(\mathcal C) =
    \begin{cases}
      \displaystyle -k_BT\,\Lambda(\mathcal C,\vec\theta) =
      -k_BT\sum_{i=1}^N \lambda_i(\vec\theta) &
      \text{(statistical model)} \;,\\[2ex]
-     \displaystyle \sum_{i=1}^N E^{(\text{seq})}_{x_i,\alpha} &
+     \displaystyle \sum_{i=1}^N E^{\text{seq}}_{x_i,\alpha} &
      \text{(empirical alternative)} \;.
    \end{cases}
 
-In both cases, :math:`E^{(\text{data})}` is a sum of one-body contributions,
+In both cases, :math:`E^{\text{data}}` is a sum of one-body contributions,
 one per nucleosome, that depend only on that nucleosome's own position
 :math:`x_i` and can therefore be precomputed for a given molecule before
 the simulation starts: in the statistical model, the contribution
 :math:`\lambda_i(\vec\theta)` sums the site-level log-odds over the
 nucleosome's entire footprint :math:`[x_i,x_i+\ell_{\text{nuc}})`,
 whereas in the empirical alternative, the contribution
-:math:`E^{(\text{seq})}_{x_i,\alpha}` is read off directly from the
+:math:`E^{\text{seq}}_{x_i,\alpha}` is read off directly from the
 smoothed and normalized signal at the nucleosome's left edge
 :math:`x_i` alone.
 
 In fact, both routes only ever enter the Hamiltonian by way of a
-methylation probability :math:`p^{(\text{meth})}_{x,\alpha}`, which is
+methylation probability :math:`p^{\text{meth}}_{x,\alpha}`, which is
 then turned into an energy by the identical clipped log-odds transform
 above -- what differs between the two likelihood models is only how
-:math:`p^{(\text{meth})}_{x,\alpha}` itself is obtained. In the empirical
-alternative, :math:`p^{(\text{meth})}_{x,\alpha}` is the smoothed,
+:math:`p^{\text{meth}}_{x,\alpha}` itself is obtained. In the empirical
+alternative, :math:`p^{\text{meth}}_{x,\alpha}` is the smoothed,
 control-normalized, percentile-clipped score above. In the statistical
 model, we instead read it off the emission model: generalizing the
 one-body term :math:`\lambda_i(\vec\theta)` -- there defined only at an
@@ -760,7 +760,7 @@ take
 
 .. math::
 
-   p^{(\text{meth})}_{x,\alpha} = \frac{1}{1+\exp[\lambda(x;\vec\theta)]}
+   p^{\text{meth}}_{x,\alpha} = \frac{1}{1+\exp[\lambda(x;\vec\theta)]}
    \;,
 
 i.e., the emission model's log-odds ratio :math:`\lambda(x;\vec\theta)`
@@ -768,19 +768,19 @@ is itself treated as a log-odds and inverted into a probability, exactly
 as :math:`M_{x,\alpha}` is rescaled into a probability in the empirical
 route. Substituting this into the clipped log-odds transform above and
 using :math:`\log[p/(1-p)] = -\lambda(x;\vec\theta)` for
-:math:`p=p^{(\text{meth})}_{x,\alpha}`, we find
+:math:`p=p^{\text{meth}}_{x,\alpha}`, we find
 
 .. math::
 
-   E^{(\text{seq})}_{x,\alpha} = \text{clip}\!\left[-\lambda(x;\vec\theta),
+   E^{\text{seq}}_{x,\alpha} = \text{clip}\!\left[-\lambda(x;\vec\theta),
    \,-E_\text{max},\,E_\text{max}\right] \qquad
    \text{(statistical model)} \;.
 
 Comparing this with the Hamiltonian :math:`\beta H =
--\Lambda(\mathcal C,\vec\theta)+\beta[E^{(\text{rep})}(\mathcal C)-\mu N]+
+-\Lambda(\mathcal C,\vec\theta)+\beta[E^{\text{rep}}(\mathcal C)-\mu N]+
 \text{const.}` above, we see that using the emission-model likelihood is,
 up to the additive constant already noted there, the same as taking
-:math:`E^{(\text{data})}(\mathcal C) = -k_BT\,\Lambda(\mathcal C,\vec\theta) =
+:math:`E^{\text{data}}(\mathcal C) = -k_BT\,\Lambda(\mathcal C,\vec\theta) =
 -k_BT\sum_{i=1}^N\lambda_i(\vec\theta)` -- except that each one-body term
 is now clipped to :math:`\pm E_\text{max}` before being summed, precisely
 as in the empirical alternative. This detail was left implicit above:
@@ -788,12 +788,12 @@ without it, an occasional site with an extreme log-odds ratio
 :math:`\lambda(x;\vec\theta)` (e.g., from a run of highly confident
 calls) could otherwise dominate the Hamiltonian and destabilize the
 sampling, so both likelihood routes cap their one-body contribution the
-same way before it enters :math:`E^{(\text{data})}(\mathcal C)`.
+same way before it enters :math:`E^{\text{data}}(\mathcal C)`.
 
-In both cases, :math:`E^{(\text{data})}` is therefore a sum of
+In both cases, :math:`E^{\text{data}}` is therefore a sum of
 identically-structured one-body contributions, one per nucleosome, that
 depend only on that nucleosome's own position :math:`x_i` (and the
-choice of likelihood model used to obtain :math:`p^{(\text{meth})}_{x,
+choice of likelihood model used to obtain :math:`p^{\text{meth}}_{x,
 \alpha}` there) and can be precomputed for a given molecule before the
 simulation starts. This is the Hamiltonian we sample in the Monte Carlo
 simulations described next.
@@ -830,11 +830,11 @@ procedure, performing one of the following three moves at each step.
 
    .. math::
 
-      P(x_i\to x_i') = \min\Big\{1, \exp[-\beta(\Delta E^{(\text{data})}+
-      \Delta E^{(\text{rep})})]\Big\} \;,
+      P(x_i\to x_i') = \min\Big\{1, \exp[-\beta(\Delta E^{\text{data}}+
+      \Delta E^{\text{rep}})]\Big\} \;,
 
-   where :math:`\Delta E^{(\text{data})}` and
-   :math:`\Delta E^{(\text{rep})}` are the changes in the data and
+   where :math:`\Delta E^{\text{data}}` and
+   :math:`\Delta E^{\text{rep}}` are the changes in the data and
    repulsion energies caused by the move (the number of nucleosomes,
    and hence the :math:`-\mu N` term, is unchanged).
 
@@ -846,10 +846,10 @@ procedure, performing one of the following three moves at each step.
    .. math::
 
       P(\text{add at }x) = \min\left\{1,\frac{n_\text{pos}}{N+1}
-      \exp[\beta\mu-\beta\Delta E^{(\text{add})}(x)]\right\} \;,
+      \exp[\beta\mu-\beta\Delta E^{\text{add}}(x)]\right\} \;,
 
-   where :math:`\Delta E^{(\text{add})}(x) = E^{(\text{data})}(x)+
-   \Delta E^{(\text{rep})}` is the change in the data and repulsion energies
+   where :math:`\Delta E^{\text{add}}(x) = E^{\text{data}}(x)+
+   \Delta E^{\text{rep}}` is the change in the data and repulsion energies
    from placing a nucleosome at :math:`x`, and the prefactor
    :math:`n_\text{pos}/(N+1)` corrects for the asymmetry between
    proposing a new position out of :math:`n_\text{pos}` choices and
@@ -862,10 +862,10 @@ procedure, performing one of the following three moves at each step.
    .. math::
 
       P(\text{remove }i) = \min\left\{1,\frac{N}{n_\text{pos}}
-      \exp[-\beta\mu-\beta\Delta E^{(\text{remove})}(x_i)]\right\} \;,
+      \exp[-\beta\mu-\beta\Delta E^{\text{remove}}(x_i)]\right\} \;,
 
-   where :math:`\Delta E^{(\text{remove})}(x_i) = -E^{(\text{data})}(x_i) +
-   \Delta E^{(\text{rep})}` is the change in the data and repulsion energies
+   where :math:`\Delta E^{\text{remove}}(x_i) = -E^{\text{data}}(x_i) +
+   \Delta E^{\text{rep}}` is the change in the data and repulsion energies
    from removing the nucleosome at :math:`x_i`.
 
 These moves satisfy detailed balance with respect to :math:`P(\mathcal
@@ -888,10 +888,10 @@ terms of its one-body and nearest-neighbour pairwise terms,
 
 .. math::
 
-   H(\mathcal C) = \sum_{i=1}^N E^{(\text{data})}(x_i) +
-   \sum_{i=1}^{N-1} E^{(\text{rep})}(x_i,x_{i+1}) - \mu N \;,
+   H(\mathcal C) = \sum_{i=1}^N E^{\text{data}}(x_i) +
+   \sum_{i=1}^{N-1} E^{\text{rep}}(x_i,x_{i+1}) - \mu N \;,
 
-with :math:`E^{(\text{rep})}(x_i,x_{i+1})` the pairwise repulsion
+with :math:`E^{\text{rep}}(x_i,x_{i+1})` the pairwise repulsion
 recalled above, the brute-force approach to computing :math:`Z` is to
 enumerate every legal configuration and sum its Boltzmann weight
 directly,
@@ -901,8 +901,8 @@ directly,
    \begin{split}
    Z \;=& \sum_{N=0}^\infty \sum_{\substack{0\leq x_1 < x_2 < \cdots <
    x_N < n_\text{pos} \\ x_{i+1}-x_i\geq\ell_{\text{nuc}}\,\forall i}} \\
-   & \exp\Big\{-\beta\Big[\sum_{i=1}^N E^{(\text{data})}(x_i) +
-   \sum_{i=1}^{N-1}E^{(\text{rep})}(x_i,x_{i+1}) - \mu N\Big]\Big\} \;.
+   & \exp\Big\{-\beta\Big[\sum_{i=1}^N E^{\text{data}}(x_i) +
+   \sum_{i=1}^{N-1}E^{\text{rep}}(x_i,x_{i+1}) - \mu N\Big]\Big\} \;.
    \end{split}
 
 This sum ranges over an exponentially large collection of increasing
@@ -913,8 +913,8 @@ sidesteps this difficulty by sampling rather than summing.
 
 The restrictive, nearest-neighbour structure of the Hamiltonian
 simplifies the problem instead. Every term in the exponent is either a
-function of a single :math:`x_i` (:math:`E^{(\text{data})}`) or of a
-single adjacent pair (:math:`E^{(\text{rep})}`), with nothing coupling
+function of a single :math:`x_i` (:math:`E^{\text{data}}`) or of a
+single adjacent pair (:math:`E^{\text{rep}}`), with nothing coupling
 :math:`x_i` to :math:`x_j` for :math:`|i-j|\geq2`. The summand above
 therefore factorizes into a chain of local factors, one per nucleosome,
 with each depending only on that nucleosome and its immediate
@@ -930,9 +930,9 @@ where
 .. math::
 
    \begin{split}
-   g(x_i|x_{i-1}) &= \exp\big\{-\beta\big[E^{(\text{data})}(x_i) +
-   E^{(\text{rep})}(x_{i-1},x_i) - \mu\big]\big\} \;, \\
-   g(x_1) &= \exp\{-\beta[E^{(\text{data})}(x_1)-\mu]\} \;.
+   g(x_i|x_{i-1}) &= \exp\big\{-\beta\big[E^{\text{data}}(x_i) +
+   E^{\text{rep}}(x_{i-1},x_i) - \mu\big]\big\} \;, \\
+   g(x_1) &= \exp\{-\beta[E^{\text{data}}(x_1)-\mu]\} \;.
    \end{split}
 
 This factorization mirrors that of the 1D Ising model (or any 1D model
@@ -954,13 +954,13 @@ L-\ell_{\text{nuc}}+1` is fixed. At each site, one faces a binary
 decision: place a new nucleosome there or not. Suppose this has already
 been decided for sites :math:`0` to :math:`x-1`; the outcome at
 :math:`x` then rests on (i) the distance from the most recent nucleosome
-on the left, and (ii) the data-derived energy :math:`E^{(\text{data})}
+on the left, and (ii) the data-derived energy :math:`E^{\text{data}}
 (x)` for adding a nucleosome at :math:`x`. For (i), it is forbidden to
 add a nucleosome if that distance is smaller than
 :math:`\ell_{\text{nuc}}`. Crucially, the interaction
-:math:`E^{(\text{rep})}` with the previous nucleosome has a *finite*
+:math:`E^{\text{rep}}` with the previous nucleosome has a *finite*
 range :math:`W\equiv\ell_{\text{nuc}}+\ell_{\text{link}}`: at and beyond
-:math:`W`, :math:`E^{(\text{rep})}=0` regardless of the exact distance.
+:math:`W`, :math:`E^{\text{rep}}=0` regardless of the exact distance.
 This lets us perform the sum by tracking only the (capped) distance from
 the previous nucleosome (located at :math:`y`) as we step along the
 fiber, via a memory state
@@ -971,7 +971,7 @@ fiber, via a memory state
 
 The state :math:`k_x` is a sufficient statistic for the configurational
 history to the left of :math:`x`: whether a nucleosome can be added at
-:math:`x`, and the cost :math:`E^{(\text{rep})}` of doing so, depend on
+:math:`x`, and the cost :math:`E^{\text{rep}}` of doing so, depend on
 the previous nucleosome only via :math:`k_x`. Any two partial
 configurations with the same :math:`k_x` therefore have identical
 possible futures, and their partial Boltzmann weights can be merged
@@ -986,8 +986,8 @@ partition function up to position :math:`x`, with
    \begin{split}
    v_k(x) \;=& \sum_{\substack{\mathcal C'\subset\{0,\dots,x-1\}\,
    \text{valid} \\ k_x(\mathcal C')=k}} \\
-   & \exp\Big\{-\beta\Big[\sum_i E^{(\text{data})}(x_i) +
-   \sum_i E^{(\text{rep})}(x_i,x_{i+1}) - \mu|\mathcal C'|\Big]\Big\} \;,
+   & \exp\Big\{-\beta\Big[\sum_i E^{\text{data}}(x_i) +
+   \sum_i E^{\text{rep}}(x_i,x_{i+1}) - \mu|\mathcal C'|\Big]\Big\} \;,
    \end{split}
 
 where :math:`\mathcal C'` ranges over valid configurations of
@@ -999,11 +999,11 @@ moves" we can perform at :math:`x`:
 1. **Skip.** No new nucleosome is added. This shifts the memory state
    from :math:`k` to :math:`\min(k+1,W)` for the next step at
    :math:`x+1`; note that :math:`k=W` is a recurring state, since
-   :math:`E^{(\text{rep})}=0` there.
+   :math:`E^{\text{rep}}=0` there.
 2. **Add.** A new nucleosome is placed at :math:`x`. This is only
    possible if :math:`k\geq\ell_{\text{nuc}}`, and it adds a new
-   Boltzmann factor :math:`w(x,k)` (depending on :math:`E^{(\text{rep})}`
-   and :math:`E^{(\text{data})}`) to the sum, resetting the memory state
+   Boltzmann factor :math:`w(x,k)` (depending on :math:`E^{\text{rep}}`
+   and :math:`E^{\text{data}}`) to the sum, resetting the memory state
    to :math:`k=1` at :math:`x+1`.
 
 These moves define the transfer matrix :math:`\vec T(x)` (of dimension
@@ -1029,7 +1029,7 @@ where :math:`\delta_{x,y}` is the Kronecker delta and
 
 .. math::
 
-   w(x,k) = \exp\{-\beta[E^{(\text{data})}(x)+E^{(\text{rep})}(k)-\mu]\}
+   w(x,k) = \exp\{-\beta[E^{\text{data}}(x)+E^{\text{rep}}(k)-\mu]\}
    \;.
 
 As an example, take :math:`\ell_{\text{nuc}}=3` and
@@ -1062,7 +1062,7 @@ than :math:`O(W^2)`.
 To start the sum, we need an initial state :math:`\vec v(0)`. At the
 left of the fiber, where no nucleosome could have been placed
 beforehand, we must be in state :math:`k=W` (with
-:math:`E^{(\text{rep})}=0`), so :math:`\vec v(0)=\vec e_W=
+:math:`E^{\text{rep}}=0`), so :math:`\vec v(0)=\vec e_W=
 (0,\dots,1)^\mathsf T`. Since :math:`\vec v(n_\text{pos})` contains the
 total weights for all configurations ending in each memory state, the
 partition function is simply the sum over these weights,

@@ -340,9 +340,10 @@ class SimManager:
         else:  # method == "tm"
             out_type = None
 
-        # Compute the methylation energy landscape
+        # Compute the methylation energy landscape (also needed to compute
+        # the median-based chemical potential when it is not stored)
         eseq = None
-        if store_eseq:
+        if store_eseq or use_median_eseq_mu:
             eseq = {}
             for chrom in chroms:
                 model = NucPosMCMC(
@@ -392,7 +393,7 @@ class SimManager:
             nsim=nsim,
             nbp=nbp,
             settings=settings,
-            eseq=eseq,
+            eseq=eseq if store_eseq else None,
             out_dir=out_dir,
             dataset_name=dataset_name,
             method=method,

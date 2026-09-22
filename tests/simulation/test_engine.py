@@ -236,6 +236,31 @@ class TestSimManagerRun:
         assert not np.isnan(dataset.settings["mu"])
         assert dataset.settings["mu"] == np.nanmedian(dataset.eseq["chr1"])
 
+    def test_median_eseq_mu_without_store_eseq(self, tmp_path):
+        meth_prob = _make_meth_prob(nmol=2, nbp=50)
+        manager = SimManager(nworker=1, verbose=False)
+        stored = manager.run(
+            chroms="chr1",
+            nsim=1,
+            settings=_make_settings(),
+            meth_prob=meth_prob,
+            out_dir=tmp_path / "stored",
+            seed=1,
+            use_median_eseq_mu=True,
+        )
+        unstored = manager.run(
+            chroms="chr1",
+            nsim=1,
+            settings=_make_settings(),
+            meth_prob=meth_prob,
+            out_dir=tmp_path / "unstored",
+            seed=1,
+            store_eseq=False,
+            use_median_eseq_mu=True,
+        )
+        assert unstored.settings["mu"] == stored.settings["mu"]
+        assert not unstored.has_eseq
+
     def test_same_seed_gives_same_seed_table_regardless_of_mols(
         self, tmp_path
     ):

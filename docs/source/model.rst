@@ -927,9 +927,11 @@ where
 
 .. math::
 
-   g(x_i|x_{i-1}) = \exp\big\{-\beta\big[E^{(\text{data})}(x_i) +
-   E^{(\text{rep})}(x_{i-1},x_i) - \mu\big]\big\} \;, \qquad
-   g(x_1) = \exp\{-\beta[E^{(\text{data})}(x_1)-\mu]\} \;.
+   \begin{split}
+   g(x_i|x_{i-1}) &= \exp\big\{-\beta\big[E^{(\text{data})}(x_i) +
+   E^{(\text{rep})}(x_{i-1},x_i) - \mu\big]\big\} \;, \\
+   g(x_1) &= \exp\{-\beta[E^{(\text{data})}(x_1)-\mu]\} \;.
+   \end{split}
 
 This factorization mirrors that of the 1D Ising model (or any 1D model
 with only nearest-neighbour interactions), and a factorizable summand is
@@ -979,10 +981,12 @@ partition function up to position :math:`x`, with
 
 .. math::
 
-   v_k(x) = \sum_{\substack{\mathcal C'\subset\{0,\dots,x-1\}\,
-   \text{valid} \\ k_x(\mathcal C')=k}} \exp\Big\{-\beta\Big[\sum_i
-   E^{(\text{data})}(x_i) + \sum_i E^{(\text{rep})}(x_i,x_{i+1}) -
-   \mu|\mathcal C'|\Big]\Big\} \;,
+   \begin{split}
+   v_k(x) &= \sum_{\substack{\mathcal C'\subset\{0,\dots,x-1\}\,
+   \text{valid} \\ k_x(\mathcal C')=k}} \\
+   &\quad \times \exp\Big\{-\beta\Big[\sum_i E^{(\text{data})}(x_i) +
+   \sum_i E^{(\text{rep})}(x_i,x_{i+1}) - \mu|\mathcal C'|\Big]\Big\} \;,
+   \end{split}
 
 where :math:`\mathcal C'` ranges over valid configurations of
 nucleosome starting positions that give state :math:`k` at :math:`x`.
@@ -1063,10 +1067,12 @@ partition function is simply the sum over these weights,
 
 .. math::
 
-   Z = \sum_{k=1}^W v_k(n_\text{pos}) = \mathbf 1\cdot
-   \vec T(n_\text{pos}-1)\cdot\vec T(n_\text{pos}-2)\cdots
-   \vec T(1)\cdot\vec T(0)\cdot\vec e_W \;, \qquad
+   \begin{split}
+   Z &= \sum_{k=1}^W v_k(n_\text{pos}) \\
+   &= \mathbf 1\cdot\vec T(n_\text{pos}-1)\cdot\vec T(n_\text{pos}-2)
+   \cdots\vec T(1)\cdot\vec T(0)\cdot\vec e_W \;, \qquad
    \mathbf 1=(1,\dots,1)^\mathsf T \;.
+   \end{split}
 
 This expression is the basis of how :math:`Z` is computed in the
 package, needed for the marginals derived below. In practice, the sum
@@ -1184,10 +1190,13 @@ probability of nucleosome occupancy at :math:`y` is therefore
 
 .. math::
 
-   P(\text{occupied at }y) = \langle\sigma_y\rangle =
-   \sum_{x=\max(0,y-\ell_{\text{nuc}}+1)}^{\min(y,n_\text{pos}-1)}
-   \langle n_x\rangle = \sum_{x=\max(0,y-\ell_{\text{nuc}}+1)}^
-   {\min(y,n_\text{pos}-1)} P(\text{start at }x) \;.
+   \begin{split}
+   P(\text{occupied at }y) &= \langle\sigma_y\rangle \\
+   &= \sum_{x=\max(0,y-\ell_{\text{nuc}}+1)}^{\min(y,n_\text{pos}-1)}
+   \langle n_x\rangle \\
+   &= \sum_{x=\max(0,y-\ell_{\text{nuc}}+1)}^{\min(y,n_\text{pos}-1)}
+   P(\text{start at }x) \;.
+   \end{split}
 
 We can also quantify the uncertainty in these observables via their
 variance. For the number of nucleosomes,
@@ -1212,10 +1221,12 @@ The variance of nucleosome occupancy is simpler still. Since
 
 .. math::
 
-   \text{Var}(\sigma_y) = \langle\sigma_y^2\rangle -
-   \langle\sigma_y\rangle^2 = \langle\sigma_y\rangle
-   \left(1-\langle\sigma_y\rangle\right) =
-   P(\text{occupied at }y)\cdot[1-P(\text{occupied at }y)] \;,
+   \begin{split}
+   \text{Var}(\sigma_y) &= \langle\sigma_y^2\rangle -
+   \langle\sigma_y\rangle^2 \\
+   &= \langle\sigma_y\rangle\left(1-\langle\sigma_y\rangle\right) \\
+   &= P(\text{occupied at }y)\cdot[1-P(\text{occupied at }y)] \;,
+   \end{split}
 
 so the occupancy profile computed above can be reused directly for
 this calculation.

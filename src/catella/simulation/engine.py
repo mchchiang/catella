@@ -1,5 +1,7 @@
 # engine.py
 
+from __future__ import annotations
+
 import multiprocessing as mp
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait

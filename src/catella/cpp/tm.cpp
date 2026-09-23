@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <numeric>
 #include <stdexcept>
 #include <string>
@@ -61,41 +62,64 @@ void NucPosTM::solve(double t) {
   solved = true;
 }
 
+double NucPosTM::logPlaceWeight(int x, int s, double t, double mu) const {
+  return -(model.eseq()[x] + model.erep(s) - mu)/t;
+}
+
+namespace {
+
+const double NINF = -std::numeric_limits<double>::infinity();
+
+double logAdd(double a, double b) {
+  if (a < b) std::swap(a, b);
+  if (a == NINF) return NINF;
+  return a + std::log1p(std::exp(b - a));
+}
+
+double logSumExp(const vector<double>& a) {
+  double m = *std::max_element(a.begin(), a.end());
+  if (m == NINF) return NINF;
+  double sum = 0.0;
+  for (double e : a) sum += std::exp(e - m);
+  return m + std::log(sum);
+}
+
+void requireFinite(double logValue, const char* pass) {
+  if (std::isnan(logValue) || (std::isinf(logValue) && logValue > 0)) {
+    throw std::runtime_error(string("NucPosTM: ") + pass +
+			     " pass produced a non-finite weight.");
+  }
+}
+
+}
+
+void NucPosTM::forwardStep(const vector<double>& cur, vector<double>& nxt,
+			   int x, double t, double mu) const {
+  int W = model.nucbp() + model.llink();
+  int nucbp = model.nucbp();
+
+  vector<double> logPlace(W - nucbp + 1);
+  for (int k = nucbp-1; k < W; k++) {
+    logPlace[k-nucbp+1] = cur[k] + logPlaceWeight(x, k+1, t, mu);
+  }
+  nxt[0] = logSumExp(logPlace);
+  for (int k = 1; k < W-1; k++) nxt[k] = cur[k-1];
+  nxt[W-1] = logAdd(cur[W-2], cur[W-1]);
+  requireFinite(nxt[0], "forward");
+}
+
 void NucPosTM::computeForwardFull() {
   int W = model.nucbp() + model.llink();
   int npos = model.npos();
-  int nucbp = model.nucbp();
   double mu = model.mu();
-  const vector<double>& eseq = model.eseq();
 
-  v.assign(npos+1, vector<double>(W, 0.0));
-  logScaleV.assign(npos+1, 0.0);
-  v[0][W-1] = 1.0; // s = W (no nucleosome to the left)
+  logV.assign(npos+1, vector<double>(W, NINF));
+  logV[0][W-1] = 0.0; // s = W (no nucleosome to the left)
 
   for (int x = 0; x < npos; x++) {
-    const vector<double>& cur = v[x];
-    vector<double>& nxt = v[x+1];
-    for (int k = 0; k < W; k++) {
-      double val = cur[k];
-      if (val == 0.0) continue;
-      int s = k+1;
-      int kSkip = std::min(k+1, W-1);
-      nxt[kSkip] += val;
-      if (s >= nucbp) {
-	double w = std::exp(-(eseq[x] + model.erep(s) - mu)/temp);
-	nxt[0] += val * w;
-      }
-    }
-    double scale = std::accumulate(nxt.begin(), nxt.end(), 0.0);
-    if (!(scale > 0.0)) {
-      throw std::runtime_error("NucPosTM: forward pass underflowed to "
-			       "zero.");
-    }
-    for (double& e : nxt) e /= scale;
-    logScaleV[x+1] = logScaleV[x] + std::log(scale);
+    forwardStep(logV[x], logV[x+1], x, temp, mu);
   }
-  logZ = logScaleV[npos] +
-    std::log(std::accumulate(v[npos].begin(), v[npos].end(), 0.0));
+  logZ = logSumExp(logV[npos]);
 }
 
 void NucPosTM::computeBackwardAndMarginals() {
@@ -103,45 +127,26 @@ void NucPosTM::computeBackwardAndMarginals() {
   int npos = model.npos();
   int nucbp = model.nucbp();
   double mu = model.mu();
-  const vector<double>& eseq = model.eseq();
 
-  u.assign(npos+1, vector<double>(W));
-  logScaleU.assign(npos+1, 0.0);
-  std::fill(u[npos].begin(), u[npos].end(), 1.0/W);
-  logScaleU[npos] = std::log(static_cast<double>(W));
-
+  logU.assign(npos+1, vector<double>(W, 0.0));
   startProb.assign(npos, 0.0);
+  vector<double> logW(W, NINF);
+  vector<double> logStart(W - nucbp + 1);
 
   for (int x = npos-1; x >= 0; x--) {
-    // Combine v[x] with u[x+1] to get the marginal start probability.
-    double sumTerm = 0.0;
+    const vector<double>& nxtU = logU[x+1];
     for (int k = nucbp-1; k < W; k++) {
-      int s = k+1;
-      double w = std::exp(-(eseq[x] + model.erep(s) - mu)/temp);
-      sumTerm += v[x][k] * w;
+      logW[k] = logPlaceWeight(x, k+1, temp, mu);
+      logStart[k-nucbp+1] = logV[x][k] + logW[k];
     }
-    double logCombined = logScaleU[x+1] + logScaleV[x] - logZ;
-    startProb[x] = std::exp(logCombined) * u[x+1][0] * sumTerm;
+    startProb[x] = std::exp(logSumExp(logStart) + nxtU[0] - logZ);
 
-    // Step u backward from x+1 to x.
-    vector<double>& nxt = u[x];
+    vector<double>& cur = logU[x];
     for (int k = 0; k < W; k++) {
-      int s = k+1;
-      int kSkip = std::min(k+1, W-1);
-      double val = u[x+1][kSkip];
-      if (s >= nucbp) {
-	double w = std::exp(-(eseq[x] + model.erep(s) - mu)/temp);
-	val += w * u[x+1][0];
-      }
-      nxt[k] = val;
+      cur[k] = nxtU[std::min(k+1, W-1)];
+      if (k+1 >= nucbp) cur[k] = logAdd(cur[k], logW[k] + nxtU[0]);
     }
-    double scale = std::accumulate(nxt.begin(), nxt.end(), 0.0);
-    if (!(scale > 0.0)) {
-      throw std::runtime_error("NucPosTM: backward pass underflowed to "
-			       "zero.");
-    }
-    for (double& e : nxt) e /= scale;
-    logScaleU[x] = logScaleU[x+1] + std::log(scale);
+    requireFinite(cur[W-1], "backward");
   }
 }
 
@@ -165,37 +170,16 @@ void NucPosTM::computeOccupFromStartProb() {
 double NucPosTM::forwardLogZOnly(double t, double muOverride) const {
   int W = model.nucbp() + model.llink();
   int npos = model.npos();
-  int nucbp = model.nucbp();
-  const vector<double>& eseq = model.eseq();
 
-  vector<double> cur(W, 0.0);
-  cur[W-1] = 1.0;
+  vector<double> cur(W, NINF);
+  cur[W-1] = 0.0;
   vector<double> nxt(W);
-  double logScale = 0.0;
 
   for (int x = 0; x < npos; x++) {
-    std::fill(nxt.begin(), nxt.end(), 0.0);
-    for (int k = 0; k < W; k++) {
-      double val = cur[k];
-      if (val == 0.0) continue;
-      int s = k+1;
-      int kSkip = std::min(k+1, W-1);
-      nxt[kSkip] += val;
-      if (s >= nucbp) {
-	double w = std::exp(-(eseq[x] + model.erep(s) - muOverride)/t);
-	nxt[0] += val * w;
-      }
-    }
-    double scale = std::accumulate(nxt.begin(), nxt.end(), 0.0);
-    if (!(scale > 0.0)) {
-      throw std::runtime_error("NucPosTM: forward pass underflowed to "
-			       "zero.");
-    }
-    for (double& e : nxt) e /= scale;
-    logScale += std::log(scale);
+    forwardStep(cur, nxt, x, t, muOverride);
     std::swap(cur, nxt);
   }
-  return logScale + std::log(std::accumulate(cur.begin(), cur.end(), 0.0));
+  return logSumExp(cur);
 }
 
 double NucPosTM::getLogZ() const {
@@ -257,19 +241,17 @@ std::pair<vector<int>, double> NucPosTM::sampleConfig() {
   int npos = model.npos();
   int nucbp = model.nucbp();
   double mu = model.mu();
-  const vector<double>& eseq = model.eseq();
 
   vector<int> positions;
   int s = W;
   for (int x = 0; x < npos; x++) {
     bool placed = false;
     if (s >= nucbp) {
-      double w = std::exp(-(eseq[x] + model.erep(s) - mu)/temp);
-      double piPlace = w * u[x+1][0];
-      int kSkip = std::min(s, W-1);
-      double piSkip = u[x+1][kSkip];
+      double logPlace = logPlaceWeight(x, s, temp, mu) + logU[x+1][0];
+      double logSkip = logU[x+1][std::min(s, W-1)];
+      double pPlace = 1.0/(1.0 + std::exp(logSkip - logPlace));
       double r = rand(mt);
-      if (r < piPlace/(piPlace+piSkip)) placed = true;
+      if (r < pPlace) placed = true;
     }
     if (placed) {
       positions.push_back(x);

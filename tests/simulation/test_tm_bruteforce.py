@@ -62,6 +62,38 @@ def _brute_force(nucbp, llink, elink, mu, eseq, temp=1.0):
     return logz, start_prob, occup, mean_n, var_n
 
 
+def _brute_force_log(nucbp, llink, elink, mu, eseq, temp):
+    nbp = len(eseq)
+    npos = nbp - nucbp + 1
+    configs = []
+
+    def recurse(idx, placed):
+        if idx == npos:
+            configs.append(placed)
+            return
+        recurse(idx + 1, placed)
+        if not placed or idx - placed[-1] >= nucbp:
+            recurse(idx + 1, [*placed, idx])
+
+    recurse(0, [])
+    logw = []
+    for placed in configs:
+        energy = sum(eseq[x] - mu for x in placed)
+        energy += sum(
+            _erep(b - a, nucbp, llink, elink)
+            for a, b in zip(placed, placed[1:])
+        )
+        logw.append(-energy / temp)
+    logw = np.asarray(logw)
+    logz = logw.max() + math.log(np.exp(logw - logw.max()).sum())
+    probs = np.exp(logw - logz)
+    start_prob = np.zeros(npos)
+    for p, placed in zip(probs, configs):
+        start_prob[placed] += p
+    ground = configs[int(np.argmax(logw))]
+    return logz, start_prob, ground
+
+
 def _tm(nucbp, llink, elink, mu, eseq, temp=1.0, seed=1):
     tm = NucPosTM(nucbp, len(eseq), llink, elink, mu, seed)
     tm.setEnergy(list(eseq), 1e9)
@@ -169,6 +201,49 @@ class TestSampling:
                     )
             expected -= mu * len(positions)
             assert energy == pytest.approx(expected, rel=1e-8, abs=1e-8)
+
+
+class TestLowTemperature:
+    @pytest.mark.parametrize("seed", [0, 1, 2])
+    def test_matches_log_space_brute_force(self, seed):
+        rng = np.random.default_rng(seed)
+        nucbp, llink, elink, mu, nbp, temp = 3, 2, 1.0, 0.5, 16, 0.01
+        eseq = (10.0 * rng.normal(size=nbp)).tolist()
+        logz_bf, start_bf, _ = _brute_force_log(
+            nucbp, llink, elink, mu, eseq, temp
+        )
+        tm = _tm(nucbp, llink, elink, mu, eseq, temp=temp)
+
+        assert tm.getLogZ() == pytest.approx(logz_bf, rel=1e-8)
+        np.testing.assert_allclose(tm.getStartProb(), start_bf, atol=1e-8)
+        occup = np.asarray(tm.getOccup())
+        assert np.all(occup >= -1e-12) and np.all(occup <= 1 + 1e-12)
+        assert np.isfinite(tm.getVarN())
+
+    def test_samples_ground_state(self):
+        rng = np.random.default_rng(3)
+        nucbp, llink, elink, mu, nbp, temp = 3, 2, 1.0, 0.5, 16, 0.01
+        eseq = (-10.0 + rng.normal(size=nbp)).tolist()
+        _, _, ground = _brute_force_log(nucbp, llink, elink, mu, eseq, temp)
+        tm = _tm(nucbp, llink, elink, mu, eseq, temp=temp, seed=4)
+        for _ in range(10):
+            positions, _energy = tm.sampleConfig()
+            assert list(positions) == ground
+
+    @pytest.mark.parametrize("scale", [1.0, 10.0])
+    def test_long_fiber_marginals_are_valid(self, scale):
+        rng = np.random.default_rng(5)
+        eseq = np.clip(scale * rng.normal(size=2000) - 5.0, -10.0, 10.0)
+        tm = _tm(147, 50, 1.0, 0.0, eseq.tolist(), temp=0.01)
+        start_prob = np.asarray(tm.getStartProb())
+        occup = np.asarray(tm.getOccup())
+
+        assert np.isfinite(tm.getLogZ())
+        assert np.all(start_prob >= 0.0)
+        assert np.all(start_prob <= 1 + 1e-9)
+        assert np.all(occup >= -1e-12) and np.all(occup <= 1 + 1e-9)
+        assert start_prob.sum() == pytest.approx(tm.getMeanN(), rel=1e-8)
+        assert tm.getMeanN() > 0.0
 
 
 class TestRequireSolve:

@@ -55,13 +55,10 @@ private:
   double temp;
   bool solved;
 
-  // v[x][k] / u[x][k]: rescaled forward/backward vectors, k=0..W-1
-  // representing renewal state s=k+1 (s=0 never occurs). True vector
-  // is v[x][k] * exp(logScaleV[x]).
-  std::vector<std::vector<double> > v;
-  std::vector<std::vector<double> > u;
-  std::vector<double> logScaleV;
-  std::vector<double> logScaleU;
+  // logV[x][k] / logU[x][k]: log forward/backward vectors, k=0..W-1
+  // representing renewal state s=k+1 (s=0 never occurs).
+  std::vector<std::vector<double> > logV;
+  std::vector<std::vector<double> > logU;
 
   double logZ;
   double meanN;
@@ -75,6 +72,10 @@ private:
   void computeBackwardAndMarginals();
   void computeOccupFromStartProb();
   double forwardLogZOnly(double t, double muOverride) const;
+  double logPlaceWeight(int x, int s, double t, double mu) const;
+  void forwardStep(const std::vector<double>& cur,
+		   std::vector<double>& nxt, int x, double t,
+		   double mu) const;
   double configEnergy(const std::vector<int>& positions) const;
   void requireSolved() const;
 };

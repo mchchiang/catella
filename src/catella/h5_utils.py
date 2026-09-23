@@ -2,7 +2,9 @@
 
 import atexit
 import os
+import re
 import shutil
+import socket
 import tempfile
 import uuid
 from datetime import UTC, datetime
@@ -10,6 +12,10 @@ from datetime import UTC, datetime
 import h5py
 import numpy as np
 import pandas as pd
+
+
+def _host_tag():
+    return re.sub(r"[^A-Za-z0-9-]", "-", socket.gethostname())[:32]
 
 
 def fresh_tmp_dir(base_dir=None):
@@ -29,12 +35,14 @@ def fresh_tmp_dir(base_dir=None):
     -------
     str
         Path to the newly created scratch directory, named
-        `catella_<timestamp>_<hex>`.
+        `catella_<timestamp>_<host>_<pid>_<hex>`, where `<host>` and
+        `<pid>` identify the owning process.
     """
     base = str(base_dir) if base_dir is not None else tempfile.gettempdir()
     stamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     suffix = uuid.uuid4().hex[:8]
-    path = os.path.join(base, f"catella_{stamp}_{suffix}")
+    name = f"catella_{stamp}_{_host_tag()}_{os.getpid()}_{suffix}"
+    path = os.path.join(base, name)
     os.makedirs(path)
     atexit.register(shutil.rmtree, path, ignore_errors=True)
     return path

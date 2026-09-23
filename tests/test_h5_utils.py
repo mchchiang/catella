@@ -1,6 +1,7 @@
 # test_h5_utils.py
 
 import os
+import re
 import shutil
 from unittest.mock import patch
 
@@ -60,3 +61,12 @@ class TestFreshTmpDir:
             )
         finally:
             shutil.rmtree(path, ignore_errors=True)
+
+    def test_name_encodes_host_and_pid(self, tmp_path):
+        path = h5_utils.fresh_tmp_dir(base_dir=tmp_path)
+        name = os.path.basename(path)
+        assert os.path.dirname(path) == str(tmp_path)
+        assert re.fullmatch(
+            r"catella_\d{8}_\d{6}_[A-Za-z0-9-]+_\d+_[0-9a-f]{8}", name
+        )
+        assert f"_{h5_utils._host_tag()}_{os.getpid()}_" in name

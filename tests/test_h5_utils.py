@@ -3,11 +3,14 @@
 import os
 import re
 import shutil
+import subprocess
+import sys
 from unittest.mock import patch
 
 import h5py
 import numpy as np
 import pandas as pd
+import pytest
 from catella import h5_utils
 
 
@@ -70,3 +73,56 @@ class TestFreshTmpDir:
             r"catella_\d{8}_\d{6}_[A-Za-z0-9-]+_\d+_[0-9a-f]{8}", name
         )
         assert f"_{h5_utils._host_tag()}_{os.getpid()}_" in name
+
+
+def _dead_pid():
+    proc = subprocess.Popen([sys.executable, "-c", "pass"])
+    proc.wait()
+    return proc.pid
+
+
+def _make(base, host, pid):
+    path = base / f"catella_20260101_000000_{host}_{pid}_0123abcd"
+    path.mkdir()
+    return path
+
+
+class TestSweepStale:
+    @pytest.fixture(autouse=True)
+    def _fresh_swept(self, monkeypatch):
+        monkeypatch.setattr(h5_utils, "_SWEPT", set())
+
+    def test_removes_dead_pid_same_host(self, tmp_path):
+        stale = _make(tmp_path, h5_utils._host_tag(), _dead_pid())
+        h5_utils.fresh_tmp_dir(base_dir=tmp_path)
+        assert not stale.exists()
+
+    def test_keeps_live_pid(self, tmp_path):
+        live = _make(tmp_path, h5_utils._host_tag(), os.getppid())
+        h5_utils.fresh_tmp_dir(base_dir=tmp_path)
+        assert live.exists()
+
+    def test_keeps_other_host(self, tmp_path):
+        other = _make(tmp_path, "some-other-host", _dead_pid())
+        h5_utils.fresh_tmp_dir(base_dir=tmp_path)
+        assert other.exists()
+
+    def test_keeps_legacy_and_unrelated_dirs(self, tmp_path):
+        legacy = tmp_path / "catella_20260916_201042_a4f8f4ed"
+        unrelated = tmp_path / "not_catella"
+        legacy.mkdir()
+        unrelated.mkdir()
+        h5_utils.fresh_tmp_dir(base_dir=tmp_path)
+        assert legacy.exists()
+        assert unrelated.exists()
+
+    def test_sweeps_once_per_base(self, tmp_path):
+        h5_utils.fresh_tmp_dir(base_dir=tmp_path)
+        stale = _make(tmp_path, h5_utils._host_tag(), _dead_pid())
+        h5_utils.fresh_tmp_dir(base_dir=tmp_path)
+        assert stale.exists()
+
+    def test_scandir_error_is_swallowed(self, tmp_path):
+        with patch("catella.h5_utils.os.scandir", side_effect=OSError):
+            path = h5_utils.fresh_tmp_dir(base_dir=tmp_path)
+        assert os.path.isdir(path)

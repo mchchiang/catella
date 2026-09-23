@@ -13,9 +13,48 @@ import h5py
 import numpy as np
 import pandas as pd
 
+_NAME_RE = re.compile(
+    r"^catella_\d{8}_\d{6}_(?P<host>[A-Za-z0-9-]+)_(?P<pid>\d+)_[0-9a-f]{8}$"
+)
+_SWEPT = set()
+
 
 def _host_tag():
     return re.sub(r"[^A-Za-z0-9-]", "-", socket.gethostname())[:32]
+
+
+def _pid_alive(pid):
+    if pid <= 0:
+        return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _sweep_stale(base):
+    # Remove scratch dirs left behind by dead processes on this host
+    key = os.path.realpath(base)
+    if key in _SWEPT:
+        return
+    _SWEPT.add(key)
+    host, me = _host_tag(), os.getpid()
+    try:
+        with os.scandir(base) as it:
+            for entry in it:
+                m = _NAME_RE.match(entry.name)
+                if m is None or m["host"] != host:
+                    continue
+                pid = int(m["pid"])
+                if pid == me or _pid_alive(pid):
+                    continue
+                if entry.is_dir(follow_symlinks=False):
+                    shutil.rmtree(entry.path, ignore_errors=True)
+    except OSError:
+        pass
 
 
 def fresh_tmp_dir(base_dir=None):
@@ -23,7 +62,8 @@ def fresh_tmp_dir(base_dir=None):
     Create a fresh scratch directory for temporary HDF5 files.
 
     Registers an atexit fallback that removes the directory, in case
-    the caller is interrupted before setting up its own cleanup.
+    the caller is interrupted before setting up its own cleanup. Also
+    removes stale scratch directories left by dead processes.
 
     Parameters
     ----------
@@ -39,6 +79,7 @@ def fresh_tmp_dir(base_dir=None):
         `<pid>` identify the owning process.
     """
     base = str(base_dir) if base_dir is not None else tempfile.gettempdir()
+    _sweep_stale(base)
     stamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     suffix = uuid.uuid4().hex[:8]
     name = f"catella_{stamp}_{_host_tag()}_{os.getpid()}_{suffix}"

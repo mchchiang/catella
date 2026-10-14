@@ -529,46 +529,68 @@ of the data relative to our prior model. By default, the package sets
 While :math:`\eta=1` is a reasonable default in the absence of further
 information, it can also be estimated directly from the data by
 quantifying how strongly :math:`\lambda_x` is autocorrelated along the
-fiber. If assayable sites were independent, :math:`\text{Var}(\Lambda)`
-would simply be :math:`\sum_{x\in\mathcal A}\text{Var}(\lambda_x)`;
-correlation between nearby sites inflates this variance, and
-:math:`\eta` is chosen to undo that inflation. Treating
-:math:`\{\lambda_x\}_{x\in\mathcal A}` as an (approximately) stationary
-sequence along the fiber with common variance
-:math:`\sigma^2=\text{Var}(\lambda_x)`, the variance of the sum is
+fiber. Denote by :math:`\lambda_{x,\alpha}` the log-likelihood ratio at
+site :math:`x` on molecule :math:`\alpha`, by :math:`\mathcal
+A_\alpha\subseteq\mathcal A` the assayable sites that are called on
+:math:`\alpha`, and by :math:`\Lambda_\alpha = \sum_{x\in\mathcal
+A_\alpha}\lambda_{x,\alpha}` the molecule's total. If assayable sites
+were independent, the variance of :math:`\sum_\alpha\Lambda_\alpha`
+would simply be :math:`n\sigma^2`, with :math:`n=\sum_\alpha|\mathcal
+A_\alpha|` the total number of called sites and
+:math:`\sigma^2=\text{Var}(\lambda_{x,\alpha})` their common variance.
+Correlation between nearby sites inflates this variance, and
+:math:`\eta` is chosen to undo that inflation. Since molecules are
+independent, only sites on the same molecule covary, and grouping pairs
+of sites by their separation :math:`k` (in bp) gives
 
 .. math::
 
-   \text{Var}(\Lambda) = \sum_{x,x'\in\mathcal A}
-   \text{Cov}(\lambda_x,\lambda_{x'}) = n\sigma^2\left[1+2\sum_{k=1}^{n-1}
-   \left(1-\frac{k}{n}\right)\rho(k)\right] \;,
+   \text{Var}\Big(\sum_\alpha\Lambda_\alpha\Big) =
+   \sum_\alpha\sum_{x,x'\in\mathcal A_\alpha}
+   \text{Cov}(\lambda_{x,\alpha},\lambda_{x',\alpha})
+   = n\sigma^2\left[1+2\sum_{k=1}^{\infty}\rho(k)\right] \;,
 
-where :math:`n=|\mathcal A|` is the number of assayable, called sites,
-and
-
-.. math::
-
-   \rho(k) = \frac{\displaystyle\sum_{\substack{x,x+k\in\mathcal A}}
-   (\lambda_x-\bar\lambda)(\lambda_{x+k}-\bar\lambda)}
-   {\displaystyle\sum_{x\in\mathcal A}(\lambda_x-\bar\lambda)^2}
-
-is the (sample) lag-:math:`k` autocorrelation of :math:`\lambda_x`, with
-:math:`\bar\lambda = n^{-1}\sum_{x\in\mathcal A}\lambda_x` and the
-numerator summed over pairs of assayable sites exactly :math:`k` bp
-apart. The bracketed factor above is the familiar variance-inflation
-factor from correlated sampling, and it reduces the effective number of
-independent sites from :math:`n` to :math:`n_\text{eff}=n/V`, with
-:math:`V` the bracketed term. Choosing
+where
 
 .. math::
 
-   \eta = \frac1V = \left[1+2\sum_{k=1}^{n-1}\left(1-\frac{k}{n}\right)
-   \rho(k)\right]^{-1}
+   \rho(k) = \frac{1}{n\sigma^2}\sum_\alpha
+   \sum_{\substack{x,x+k\in\mathcal A_\alpha}}
+   \text{Cov}(\lambda_{x,\alpha},\lambda_{x+k,\alpha})
 
-therefore rescales :math:`\Lambda` so that its variance matches that of a
-sum over :math:`n_\text{eff}` independent sites, correcting for the
-oversampling described above. In practice, :math:`\rho(k)` is estimated
-only up to a small cutoff lag (`eta_max_lag`) beyond which it is
+is the lag-:math:`k` autocorrelation, with the inner sum running over
+pairs of called sites on the same molecule exactly :math:`k` bp apart
+(:math:`\rho(k)=0` if there are none). Note that the sum over :math:`k`
+is not truncated at :math:`n-1` and carries no :math:`(1-k/n)` factor
+as for an evenly sampled series, since sites are not evenly spaced and
+not every site is called; the number of pairs at each lag is instead
+accounted for inside :math:`\rho(k)`. We estimate :math:`\rho(k)` by
+replacing the covariance and :math:`\sigma^2` with their sample
+counterparts,
+
+.. math::
+
+   \hat\rho(k) = \frac{\displaystyle\sum_\alpha
+   \sum_{\substack{x,x+k\in\mathcal A_\alpha}}
+   (\lambda_{x,\alpha}-\bar\lambda)(\lambda_{x+k,\alpha}-\bar\lambda)}
+   {\displaystyle\sum_\alpha\sum_{x\in\mathcal A_\alpha}
+   (\lambda_{x,\alpha}-\bar\lambda)^2} \;,
+
+with :math:`\bar\lambda = n^{-1}\sum_\alpha\sum_{x\in\mathcal
+A_\alpha}\lambda_{x,\alpha}`. The bracketed factor above is the familiar
+variance-inflation factor :math:`V` from correlated sampling, and it
+reduces the effective number of independent sites from :math:`n` to
+:math:`n_\text{eff}=n/V`. Choosing
+
+.. math::
+
+   \eta = \frac1V = \left[1+2\sum_{k=1}^{\infty}\hat\rho(k)\right]^{-1}
+
+therefore rescales each :math:`\Lambda_\alpha` so that its variance
+matches that of a sum over :math:`n_\text{eff}` independent sites,
+correcting for the oversampling described above. In practice,
+:math:`\hat\rho(k)` is computed only up to a small cutoff lag
+(`eta_max_lag`) beyond which it is
 indistinguishable from sampling noise, since crosstalk is expected to
 decay quickly with separation (e.g., the palindromic CpG/GpC correlation
 above spans just :math:`k=1` bp). When multiple MTase channels are in

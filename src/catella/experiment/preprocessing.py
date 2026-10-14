@@ -848,7 +848,6 @@ def _finalize_channel_eta(stats, max_lag, min_n=None):
     """
     if min_n is None:
         min_n = max_lag
-    k = np.arange(1, max_lag + 1)
     eta = {}
     rho = {}
     for c, st in stats.items():
@@ -867,7 +866,8 @@ def _finalize_channel_eta(stats, max_lag, min_n=None):
             pprod - bar * st["psumA"] - bar * st["psumB"] + npair * bar * bar
         )
         rho_c = np.where(npair > 0, numerator / denom, 0.0)
-        v = 1.0 + 2.0 * np.sum((1.0 - k / n) * rho_c)
+        # pair counts per lag are already in rho_c, so no (1 - k/n) factor
+        v = 1.0 + 2.0 * np.sum(rho_c)
         eta[c] = 1.0 / max(v, 1e-3)
         rho[c] = rho_c
     return eta, rho

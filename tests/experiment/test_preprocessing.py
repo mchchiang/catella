@@ -1398,6 +1398,25 @@ class TestModelProbStoreRho:
         assert list(rho["lag"]) == [1, 2, 3, 4, 5]
         assert {"rho_A", "rho_GCH", "rho_HCG", "rho_GCG"} <= set(rho.columns)
 
+    def test_eta_is_inverse_inflation_factor_of_stored_rho(self):
+        from catella.experiment.preprocessing import A
+
+        exp = _make_footprint_experiment(
+            with_controls=True,
+            planted_edges=(30,),
+            lnuc=30,
+            corr_source="meth",
+            corr_channel=A,
+            corr_lag=1,
+        )
+        ana = MethPrintAnalysis()
+        ana.model_prob(
+            exp=exp, lnuc=30, batch_size=7, eta_max_lag=5, store_rho=True
+        )
+        rho = exp.global_analysis["meth_prob_rho"]
+        expected = 1.0 / (1.0 + 2.0 * rho["rho_A"].sum())
+        assert _eta_from(exp)["A"] == pytest.approx(expected, rel=1e-12)
+
     def test_pinned_channel_excluded_from_rho(self):
         exp = _make_footprint_experiment(
             with_controls=True, planted_edges=(30,), lnuc=30

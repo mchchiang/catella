@@ -140,6 +140,8 @@ mathjax4_config = {
         "tags":     "ams",
         "tagSide":  "right",
         "tagAlign": "center",
+        # match the notes, which render vectors in bold
+        "macros": {"vec": [r"\boldsymbol{#1}", 1]},
     },
 }
 numfig         = False

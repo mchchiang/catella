@@ -12,7 +12,8 @@ length :math:`L` base pair (bp), storing the confidence score in calling
 individual bases methylated. The output of the model is a set of likely
 nucleosome positions for each molecule based on the methylation data. We
 use Bayesian inference and biophysical modeling to sample the nucleosome
-positions by running Monte Carlo simulations.
+positions by means of running Monte Carlo simulations or using the
+transfer matrix method.
 
 Model
 -------
@@ -45,9 +46,8 @@ configuration :math:`P(\mathcal{C})`. By Bayes' theorem, we have
 
 Here, :math:`P(\text{data})` is the *evidence* of observing the
 methylation footprinting data. To make the connection with statistical
-mechanics, we take the logarithm and exponentiate the right-hand side
-(RHS) of the equation to rewrite the posterior as a Boltzmann
-distribution:
+mechanics, we take the logarithm and exponentiate the right-hand side of
+the equation to rewrite the posterior as a Boltzmann distribution:
 
 .. math::
 
@@ -57,22 +57,26 @@ distribution:
 where :math:`\beta = 1/(k_BT)` is the inverse temperature, and
 :math:`\vec{\theta} = (\theta_1,\theta_2,\dots)` is a vector of any
 additional model parameters we use to link between the configuration and
-methylation data. Moreover, one can identify the normalization factor
-(i.e., partition function) :math:`Z` being proportional to the evidence
-:math:`P(\text{data})` and the effective Hamiltonian taking the form
+methylation data. Additionally, :math:`Z =
+\sum_{\mathcal{C}}\exp[-\beta H(\mathcal{C})]` is a normalization factor
+(i.e., partition function) and :math:`H` is an effective Hamiltonian
+taking the form
 
 .. math::
 
    \beta H(\mathcal{C},\vec{\theta}) = -\left[\log
    P(\text{data}|\mathcal{C},\vec{\theta}) + \log P(\mathcal{C}) +
-   \text{const.}\right] \;.
+   \text{const.}\right] \;,
 
-This link between Bayes' theorem and statistical mechanics provides the
-foundation of our sampling framework. We seek to find an ensemble of
-nucleosome configurations that satisfies the posterior, and we have just
-demonstrated that this is equivalent to sampling a Boltzmann distribution
-with an effective Hamiltonian, which can be done via Monte Carlo
-simulations. We will now discuss in turn how we model the prior
+where the constant contains any terms that do not depend on the
+configuration and thus is irrelevant for sampling, such as the evidence
+:math:`P(\text{data})`. This link between Bayes' theorem and statistical
+mechanics provides the foundation of our sampling framework. We seek to
+find an ensemble of nucleosome configurations that satisfies the
+posterior, and we have just demonstrated that this is equivalent to
+sampling a Boltzmann distribution with an effective Hamiltonian, which
+can be done via Monte Carlo simulations or by direct calculation of the
+partition function :math:`Z`. We will now discuss in turn how we model the prior
 :math:`P(\mathcal{C})` and the likelihood
 :math:`P(\text{data}|\mathcal{C})`, before explaining in more detail the
 sampling algorithm.
@@ -111,7 +115,7 @@ model the linker length:
 
 .. math::
 
-   E^{\text{rep}}(x_{ij}) =
+   E^{\text{rep}}(x_i,x_j) =
    \begin{cases}
      \infty & \text{if } x_{ij} < \ell_{\text{nuc}} \\
      \epsilon_{\text{link}}\left[\left(\frac{\ell_{\text{link}}}
@@ -130,7 +134,7 @@ interactions are effective and so
 
 .. math::
 
-   E^{\text{rep}} = \sum_{i=1}^{N-1}E^{\text{rep}}(x_{i+1},x_i)
+   E^{\text{rep}}(\mathcal{C}) = \sum_{i=1}^{N-1}E^{\text{rep}}(x_{i+1},x_i)
 
 for :math:`N \geq 2` and 0 otherwise.
 
@@ -151,7 +155,8 @@ fiber, there are three key observables:
 
    \sigma_x \rightarrow m_x \rightarrow s_x \;.
 
-Here, :math:`\sigma_x` is the nucleosome occupancy state, indicating
+Here, :math:`\sigma_x` is the nucleosome occupancy state at :math:`x`,
+indicating
 whether a nucleosome is covering the site (:math:`\sigma_x = 1`) or not
 (:math:`\sigma_x = 0`). Next, :math:`m_x` is the methylation state,
 representing whether the DNA methyltransferase (MTase) has marked the
@@ -174,7 +179,7 @@ likelihood is then the product of this conditional across all
    p(s_x|\sigma_x(\mathcal{C})) \;.
 
 In doing so, we have made the assumption that the methylation calling of
-individual sites are independent. This is a simplification that we
+individual sites is independent. This is a simplification that we
 revisit below, as MTase processivity correlates nearby events. We
 introduce two model parameters :math:`\vec{\theta} = (\theta_P,\theta_A)`
 to help us calculate the conditional :math:`p(s_x|\sigma_x)`. We let
@@ -188,7 +193,8 @@ than the FPR. Letting
 
 .. math::
 
-   \theta_{\sigma_x} = \sigma_x\theta_P + (1-\sigma_x)\theta_A \;,
+   \theta_{\sigma_x} = \sigma_x\theta_P + (1-\sigma_x)\theta_A =
+   p(m_x = 1|\sigma_x) \;,
 
 we can now write down the conditional :math:`p(s_x|\sigma_x)` as follows:
 
@@ -209,7 +215,7 @@ Hence, the overall data likelihood can be written as
 When sampling the posterior, it is more useful to compare the data
 likelihood of a given configuration with that for a reference state,
 which we take to be the null configuration :math:`\emptyset` where there
-is no nucleosome occupying the fiber. In this null configuration, the
+is no nucleosome occupying the fiber. In the null configuration, the
 likelihood :math:`P(\text{data}|\emptyset,\vec{\theta})` is the same as
 above but with :math:`\theta_{\sigma_x} = \theta_A`, as all sites are
 accessible. Therefore, the ratio of the likelihoods becomes
@@ -323,7 +329,7 @@ We perform two control experiments to estimate :math:`\vec{\theta}`:
 (b) An experiment without MTase so that all assayable sites remain
     unmethylated.
 
-The first experiment allows us to estimate :math:`\theta_A` -- the
+The first experiment (a) allows us to estimate :math:`\theta_A` -- the
 probability of an assayable site being accessible and called methylated.
 This is because we have a bare DNA fiber where all bases are accessible,
 and the assayable ones are all methylated due to the saturated level of
@@ -343,7 +349,8 @@ estimator of :math:`\theta_A` as
    \frac{1}{N_{\text{site}}}\sum_{x\in\mathcal{A}}
    \sum_{\alpha=1}^{N_{\text{mol}}}\frac{q_{x,\alpha}^{(a)}}{N_x} \;,
 
-where :math:`N_{\text{site}}` is the total number of assayable sites
+where :math:`N_{\text{site}} = |\mathcal{A}|` is the total number of
+assayable sites
 along the fiber. We have introduced a regularization component in this
 fraction so that when the number of molecules is low, :math:`\theta_A(x)`
 tends towards its mean across all :math:`x\in\mathcal{A}`, i.e.,
@@ -351,7 +358,7 @@ tends towards its mean across all :math:`x\in\mathcal{A}`, i.e.,
 by :math:`\nu`, the number of molecules present before variation in
 :math:`\theta_A` across :math:`x` becomes favoured.
 
-The second experiment tells us about the false positive rate (FPR).
+The second experiment (b) tells us about the false positive rate (FPR).
 Since there is no MTase present, none of the sites should have been
 called methylated; yet, the base caller may still emit a call for some
 sites by chance, producing false positives. The FPR can be estimated in
@@ -520,9 +527,9 @@ introducing a weighting factor :math:`\eta`, i.e.,
 .. math::
 
    \Lambda(\mathcal{C},\{\vec{\theta}_c\}) \to
-   \eta\,\Lambda(\mathcal{C},\{\vec{\theta}_c\}) \;,
+   \eta\,\Lambda(\mathcal{C},\{\vec{\theta}_c\}) \;.
 
-and one can think of :math:`\eta` as a dial that controls the importance
+One can think of :math:`\eta` as a dial that controls the importance
 of the data relative to our prior model. By default, the package sets
 :math:`\eta = 1`.
 
@@ -560,11 +567,7 @@ where
 
 is the lag-:math:`k` autocorrelation, with the inner sum running over
 pairs of called sites on the same molecule exactly :math:`k` bp apart
-(:math:`\rho(k)=0` if there are none). Note that the sum over :math:`k`
-is not truncated at :math:`n-1` and carries no :math:`(1-k/n)` factor
-as for an evenly sampled series, since sites are not evenly spaced and
-not every site is called; the number of pairs at each lag is instead
-accounted for inside :math:`\rho(k)`. We estimate :math:`\rho(k)` by
+[:math:`\rho(k)=0` if there is none]. We estimate :math:`\rho(k)` by
 replacing the covariance and :math:`\sigma^2` with their sample
 counterparts,
 
@@ -604,15 +607,11 @@ An empirical alternative to the likelihood
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 We provide here an alternative approach to estimate the likelihood that
-does not involve statistical modeling, which may not be suitable for
-conditions where single-molecule footprinting data are not available.
-One such scenario is when there are only bulk accessibility data, such as
-those based on MNase-seq.
-
-For a molecule :math:`\alpha`, we start from the raw footprinting signal
-:math:`S_{x,\alpha}` (e.g., the confidence score :math:`q_{x,\alpha}`
-used above) and smooth it with a left-aligned rolling average of bin
-size :math:`\ell_\text{bin}`:
+does not involve statistical modeling. For a molecule :math:`\alpha`, we
+start from the raw footprinting signal :math:`S_{x,\alpha}` (e.g., the
+confidence score :math:`q_{x,\alpha}` used in the emission model above)
+and smooth it with a left-aligned rolling average of bin size
+:math:`\ell_\text{bin}`:
 
 .. math::
 
@@ -625,29 +624,29 @@ so that :math:`\widetilde S_{x,\alpha}` depends only on sites
 
 Averaging :math:`\widetilde S_{x,\alpha}` over all molecules of a given
 experimental condition :math:`Y\in\{\text{test},\text{meth},
-\text{unmeth}\}` (cf. the saturated-MTase and no-MTase control
+\text{unmeth}\}` (see the saturated-MTase and no-MTase control
 experiments above) gives :math:`\widetilde S_x^{(Y)} =
 \big(N_\text{mol}^{(Y)}\big)^{-1}\sum_\alpha \widetilde
 S_{x,\alpha}^{(Y)}`. When both controls are available, we normalize the
-(molecule-level) test signal relative to them,
+(molecule-level) test signal relative to them:
 
 .. math::
 
-   M_{x,\alpha} = \frac{\widetilde S_{x,\alpha}^{(\text{test})} -
-   \widetilde S_x^{(\text{unmeth})}}{\widetilde S_x^{(\text{meth})} -
-   \widetilde S_x^{(\text{unmeth})}} \;,
+   M_{x,\alpha} = \frac{\widetilde S_{x,\alpha}^{\text{test}} -
+   \widetilde S_x^{\text{unmeth}}}{\widetilde S_x^{\text{meth}} -
+   \widetilde S_x^{\text{unmeth}}} \;.
 
-so that :math:`M_{x,\alpha}` tends towards 0 where the test molecule
+As such, :math:`M_{x,\alpha}` tends towards 0 where the test molecule
 resembles the unmethylated (protected) control and towards 1 where it
 resembles the fully methylated (accessible) control. If no control
-experiments are available, we instead set :math:`M_{x,\alpha} =
-\widetilde S_{x,\alpha}^{(\text{test})}`.
+experiments are available, we set :math:`M_{x,\alpha} = \widetilde
+S_{x,\alpha}^{\text{test}}`.
 
 To convert :math:`M_{x,\alpha}` into a formal probability
 :math:`p^{\text{meth}}_{x,\alpha}\in[0,1]` that site :math:`x` is
-methylated (i.e., accessible) on molecule :math:`\alpha`, we linearly
-rescale :math:`M_{x,\alpha}` against two percentile bounds, clipping
-values that fall outside of them:
+methylated on molecule :math:`\alpha`, we linearly rescale
+:math:`M_{x,\alpha}` against two percentile bounds, clipping values that
+fall outside of them:
 
 .. math::
 
@@ -672,103 +671,83 @@ both bounds are instead estimated from the test channel itself, i.e.,
 :math:`M^{\text{unmeth}}_{p=0.1\%}\to M^{\text{test}}_{p=0.1\%}` and
 :math:`M^{\text{meth}}_{p=99.9\%}\to M^{\text{test}}_{p=99.9\%}`.
 
-As above, we identify the complementary probability
-:math:`p^{\text{seq}}_{x,\alpha} = 1-p^{\text{meth}}_{x,\alpha}` as
-the (empirical) probability that :math:`x` is occupied by a nucleosome on
-molecule :math:`\alpha`. To turn :math:`p^{\text{seq}}` into an energy,
-we treat the site as a two-state system -- occupied, with probability
-:math:`p^{\text{seq}}`, versus accessible, with probability
-:math:`1-p^{\text{seq}}=p^{\text{meth}}` -- and take their relative
-Boltzmann weight to define an energy difference :math:`E^{\text{seq}}`
-(in units of :math:`k_BT`, i.e., setting :math:`\beta=1`):
+We consider the complementary probability
+:math:`p^{\text{nuc}}_{x,\alpha} = 1-p^{\text{meth}}_{x,\alpha}` as the
+(empirical) probability that :math:`x` is occupied by a nucleosome on
+molecule :math:`\alpha`. To turn this into an energy, we consider the
+ratio of the probabilities in the occupied and accessible states, i.e.,
 
 .. math::
 
-   \frac{p^{\text{seq}}_{x,\alpha}}{1-p^{\text{seq}}_{x,\alpha}} =
-   \exp[-E^{\text{seq}}_{x,\alpha}] \;,
+   \frac{p^{\text{nuc}}_{x,\alpha}}{1-p^{\text{nuc}}_{x,\alpha}} =
+   \exp[-\beta E^{\text{data}}_\alpha(x)] \;.
 
-having set the accessible state as the reference (zero-energy) state.
-Inverting this, and clipping the result to a maximum magnitude
-:math:`E_\text{max}` to prevent it from diverging as
-:math:`p^{\text{meth}}\to\{0,1\}`, we arrive at
+Inverting this and clipping the result to a maximum magnitude
+:math:`\epsilon_\text{max}` (`emax` in the package) to prevent it from
+diverging as :math:`p^{\text{meth}}_{x,\alpha}\to\{0,1\}`, we arrive at
 
 .. math::
 
-   E^{\text{seq}}_{x,\alpha} &= \text{clip}\!\left[ -\log
-   \frac{p^{\text{seq}}_{x,\alpha}}{1-p^{\text{seq}}_{x,\alpha}},
-   \,-E_\text{max},\,E_\text{max}\right] \\
-   &= \text{clip}\!\left[\log
+   E^{\text{data}}_\alpha(x) &= \text{clip}\!\left[ -k_BT\log
+   \frac{p^{\text{nuc}}_{x,\alpha}}{1-p^{\text{nuc}}_{x,\alpha}},
+   \,-\epsilon_\text{max},\,\epsilon_\text{max}\right] \\
+   &= \text{clip}\!\left[k_BT\log
    \frac{p^{\text{meth}}_{x,\alpha}} {1-p^{\text{meth}}_{x,\alpha}},
-   \,-E_\text{max},\,E_\text{max}\right] \;,
+   \,-\epsilon_\text{max},\,\epsilon_\text{max}\right] \;.
 
-i.e., :math:`E^{\text{seq}}` is simply the (clipped) log-odds, or
-logit, of :math:`p^{\text{meth}}`. This differs from a naive Boltzmann
-inversion :math:`-k_BT\log p^{\text{seq}}_x` in that it is referenced
-against the complementary (accessible) state rather than against a
-hypothetical zero-energy vacuum, which keeps :math:`E^{\text{seq}}`
-finite and antisymmetric about
-:math:`p^{\text{meth}}=p^{\text{seq}}=1/2` (where it is favourable
-neither to bind nor not to bind); the two forms would coincide only in
-the limit :math:`p^{\text{meth}}\ll1`. Like the statistical model
-above, this construction is applied independently to each molecule
-:math:`\alpha`, so every molecule is assigned its own empirical energy
-landscape :math:`E^{\text{seq}}_{x,\alpha}` prior to running its Monte
-Carlo simulation.
+With this definition of the energy, :math:`E^{\text{data}}_\alpha(x) = 0`
+when :math:`p^{\text{meth}}_{x,\alpha} = p^{\text{nuc}}_{x,\alpha} =
+1/2`, where it is favorable neither to bind nor not to bind. Similar to
+the statistical model above, this likelihood construction is applied
+independently to each molecule :math:`\alpha`, so every molecule is
+assigned its own empirical energy landscape :math:`E^{\text{data}}_
+\alpha(x)` prior to sampling nucleosome positions.
 
 The full Hamiltonian
 ~~~~~~~~~~~~~~~~~~~~~~
 
-We can now combine the prior above with either likelihood model
-discussed above (the statistical, emission-based likelihood, or the
-empirical alternative) into a single effective Hamiltonian for use in
-the Monte Carlo sampling. Recalling that the posterior takes the
-Boltzmann form :math:`P(\mathcal C|\text{data})\propto
-\exp[-\beta H(\mathcal C)]`, and that the repulsion and
-chemical-potential terms of the prior enter :math:`H` unchanged, we
+We now combine the prior with either likelihood model discussed above
+(i.e., the statistical, emission-based likelihood, or the empirical
+alternative) into a single effective Hamiltonian for sampling. Recalling
+that the posterior takes the Boltzmann form :math:`P(\mathcal
+C|\text{data})\propto\exp[-\beta H(\mathcal C)]`, and that the repulsion
+and chemical potential terms of the prior enter :math:`H` unchanged, we
 write
 
 .. math::
 
-   H(\mathcal C) = E^{\text{data}}(\mathcal C) +
-   E^{\text{rep}}(\mathcal C) - \mu N \;,
+   H(\mathcal{C}) = E^{\text{data}}(\mathcal{C}) +
+   E^{\text{rep}}(\mathcal{C}) - \mu N \;, \qquad
+   E^{\text{data}}(\mathcal{C}) = \sum_{i=1}^N E^{\text{data}}(x_i) \;,
 
-where :math:`E^{\text{data}}(\mathcal C)` depends on which likelihood model
-is used:
+with :math:`E^{\text{data}}(x)` the one-body energy described above (note
+that we have dropped the molecule index :math:`\alpha` for notational
+compactness, but :math:`E^{\text{data}}` is always defined per molecule;
+it is stored as `eseq` in the package). We use this same formula
+regardless of which likelihood model is used. The motivation is to
+standardize how the two likelihood models enter the Hamiltonian, so that
+both produce one-body energies of the same form and can be swapped
+freely in the sampling, and both share the same safeguard against
+extreme values (i.e., the clip at :math:`\pm\epsilon_\text{max}`). To
+this end, the package builds :math:`E^{\text{data}}` from either model
+by one common recipe:
 
-.. math::
+1. at the left edge :math:`x` of every candidate nucleosome position,
+   obtain a probability :math:`p^{\text{meth}}_x` that the footprint
+   starting there is accessible;
+2. convert it into an energy with the clipped log-odds transform above;
+3. sum over nucleosomes as in :math:`E^{\text{data}}(\mathcal{C})`
+   above.
 
-   E^{\text{data}}(\mathcal C) =
-   \begin{cases}
-     \displaystyle -k_BT\,\Lambda(\mathcal C,\vec\theta) =
-     -k_BT\sum_{i=1}^N \lambda_i(\vec\theta) &
-     \text{(statistical model)} \;,\\[2ex]
-     \displaystyle \sum_{i=1}^N E^{\text{seq}}_{x_i,\alpha} &
-     \text{(empirical alternative)} \;.
-   \end{cases}
+Out of these steps, only step (1) depends on the likelihood model.
 
-In both cases, :math:`E^{\text{data}}` is a sum of one-body contributions,
-one per nucleosome, that depend only on that nucleosome's own position
-:math:`x_i` and can therefore be precomputed for a given molecule before
-the simulation starts: in the statistical model, the contribution
-:math:`\lambda_i(\vec\theta)` sums the site-level log-odds over the
-nucleosome's entire footprint :math:`[x_i,x_i+\ell_{\text{nuc}})`,
-whereas in the empirical alternative, the contribution
-:math:`E^{\text{seq}}_{x_i,\alpha}` is read off directly from the
-smoothed and normalized signal at the nucleosome's left edge
-:math:`x_i` alone.
-
-In fact, both routes only ever enter the Hamiltonian by way of a
-methylation probability :math:`p^{\text{meth}}_{x,\alpha}`, which is
-then turned into an energy by the identical clipped log-odds transform
-above -- what differs between the two likelihood models is only how
-:math:`p^{\text{meth}}_{x,\alpha}` itself is obtained. In the empirical
-alternative, :math:`p^{\text{meth}}_{x,\alpha}` is the smoothed,
-control-normalized, percentile-clipped score above. In the statistical
-model, we instead read it off the emission model: generalizing the
-one-body term :math:`\lambda_i(\vec\theta)` -- there defined only at an
-existing nucleosome's index :math:`i`, summing the site-level log-odds
-over its footprint :math:`[x_i,x_i+\ell_{\text{nuc}})` -- to an arbitrary
-candidate position :math:`x`,
+In the empirical alternative, :math:`p^{\text{meth}}_x` is the smoothed,
+control-normalized, percentile-clipped score above, and the recipe is
+exactly what was described there. In the statistical model, we instead
+read :math:`p^{\text{meth}}_x` off the emission model. To do so, we first
+extend the one-body term :math:`\lambda_i(\vec\theta)`, which was defined
+only at an existing nucleosome :math:`i`, to an arbitrary candidate
+position :math:`x`:
 
 .. math::
 
@@ -777,118 +756,110 @@ candidate position :math:`x`,
    \log\left(\frac{L_{x'}(q_{x'},\pi_0)\,\theta_P + 1-\theta_P}
    {L_{x'}(q_{x'},\pi_0)\,\theta_A + 1-\theta_A}\right) \;,
 
-so that :math:`\lambda_i(\vec\theta) \equiv \lambda(x_i;\vec\theta)`, we
-take
+so that :math:`\lambda_i(\vec\theta) \equiv \lambda(x_i;\vec\theta)`.
+Since :math:`\lambda(x;\vec\theta)` is the log-likelihood ratio of the
+footprint being protected versus accessible, we have
 
 .. math::
 
-   p^{\text{meth}}_{x,\alpha} = \frac{1}{1+\exp[\lambda(x;\vec\theta)]}
-   \;,
+   \lambda(x;\vec\theta) =
+   \log\left(\frac{1-p^{\text{meth}}_x}{p^{\text{meth}}_x}\right)
+   \quad\implies\quad
+   p^{\text{meth}}_x = \frac{1}{1+\exp[\lambda(x;\vec\theta)]} \;.
 
-i.e., the emission model's log-odds ratio :math:`\lambda(x;\vec\theta)`
-is itself treated as a log-odds and inverted into a probability, exactly
-as :math:`M_{x,\alpha}` is rescaled into a probability in the empirical
-route. Substituting this into the clipped log-odds transform above and
-using :math:`\log[p/(1-p)] = -\lambda(x;\vec\theta)` for
-:math:`p=p^{\text{meth}}_{x,\alpha}`, we find
+Feeding this into step (2) gives
 
 .. math::
 
-   E^{\text{seq}}_{x,\alpha} = \text{clip}\!\left[-\lambda(x;\vec\theta),
-   \,-E_\text{max},\,E_\text{max}\right] \qquad
+   E^{\text{data}}(x) = \text{clip}\!\left[-\lambda(x;\vec\theta),
+   \,-\epsilon_\text{max},\,\epsilon_\text{max}\right] \qquad
    \text{(statistical model)} \;.
 
-Comparing this with the Hamiltonian :math:`\beta H =
--\Lambda(\mathcal C,\vec\theta)+\beta[E^{\text{rep}}(\mathcal C)-\mu N]+
-\text{const.}` above, we see that using the emission-model likelihood is,
-up to the additive constant already noted there, the same as taking
-:math:`E^{\text{data}}(\mathcal C) = -k_BT\,\Lambda(\mathcal C,\vec\theta) =
--k_BT\sum_{i=1}^N\lambda_i(\vec\theta)` -- except that each one-body term
-is now clipped to :math:`\pm E_\text{max}` before being summed, precisely
-as in the empirical alternative. This detail was left implicit above:
-without it, an occasional site with an extreme log-odds ratio
+Without the clip, step (3) would return :math:`E^{\text{data}}(\mathcal
+C) = -k_BT\sum_{i=1}^N\lambda_i(\vec\theta) = -k_BT\,\Lambda(\mathcal
+C,\vec\theta)`, exactly the data term in the emission model Hamiltonian
+derived above. Routing the statistical model through the common recipe
+therefore changes nothing except that the one-body term is now capped
+at :math:`\pm\epsilon_\text{max}`, as in the empirical alternative. This
+cap is important; without it, an occasional footprint with an extreme
 :math:`\lambda(x;\vec\theta)` (e.g., from a run of highly confident
-calls) could otherwise dominate the Hamiltonian and destabilize the
-sampling, so both likelihood routes cap their one-body contribution the
-same way before it enters :math:`E^{\text{data}}(\mathcal C)`.
-
-In both cases, :math:`E^{\text{data}}` is therefore a sum of
-identically-structured one-body contributions, one per nucleosome, that
-depend only on that nucleosome's own position :math:`x_i` (and the
-choice of likelihood model used to obtain :math:`p^{\text{meth}}_{x,
-\alpha}` there) and can be precomputed for a given molecule before the
-simulation starts. This is the Hamiltonian we sample in the Monte Carlo
-simulations described next.
+calls) could dominate the Hamiltonian and destabilize the sampling.
 
 Sampling the posterior
 -----------------------
 
-Having assembled the full Hamiltonian :math:`H(\mathcal C)` above, we now
-turn to how nucleosome configurations are sampled from the posterior.
-Since we allow the number of nucleosomes :math:`N` to vary, the natural
-statistical ensemble is the **grand canonical ensemble**, in which, at
-thermal equilibrium, a configuration :math:`\mathcal C` is observed with
-probability
+Having assembled the full Hamiltonian :math:`H(\mathcal C)`, we now turn
+to how nucleosome configurations :math:`\mathcal{C}` are sampled from the
+posterior, which we recall is given by
 
 .. math::
 
-   P(\mathcal C) = \frac1Z \exp[-\beta H(\mathcal C)] \;,
+   P(\mathcal C|\text{data}) = \frac1Z \exp[-\beta H(\mathcal C)] \;,
 
-:math:`Z` being the partition function and :math:`\beta=1/(k_BT)`. We
-discuss two approaches for sampling this distribution: (1) running a
-Markov Chain Monte Carlo procedure, or (2) using the transfer matrix
-method to compute :math:`Z` exactly and derive the relevant marginal
-statistics directly, without drawing any samples at all.
+where :math:`Z` is the partition function. In the following, we discuss
+two approaches for sampling this distribution: (i) running Markov Chain
+Monte Carlo simulations or (ii) using transfer matrix methods to compute
+the partition function numerically and then derive the relevant marginal
+statistics.
 
-Markov Chain Monte Carlo
-~~~~~~~~~~~~~~~~~~~~~~~~~
+Markov chain Monte Carlo method
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-We sample this distribution with a Markov Chain Monte Carlo (MCMC)
-procedure, performing one of the following three moves at each step.
+The Markov Chain Monte Carlo (MCMC) method provides a way to sample
+configurations that satisfy the posterior without needing to compute
+:math:`Z` directly. It involves starting with an initial configuration
+and then performing "moves" that alter the configuration, forming a
+chain or history of configurations. These moves can be accepted or
+rejected so that the ensemble of accepted configurations should
+statistically obey the posterior distribution after some equilibration
+(or "burn in") period.
 
-1. **Shift a nucleosome.** We randomly select the :math:`i`-th
-   nucleosome and propose to move it by one bp, :math:`x_i\to
+In the package, we initialize the fiber to be in the null configuration
+with no nucleosomes. We perform one of the following three moves at each
+Monte Carlo step:
+
+1. **Shift a nucleosome.** We randomly select a nucleosome (say the
+   :math:`i`-th one) and propose to move it by one bp, :math:`x_i\to
    x_i'=x_i\pm1`. The move is accepted with probability
 
    .. math::
 
-      P(x_i\to x_i') = \min\Big\{1, \exp[-\beta(\Delta E^{\text{data}}+
+      p(x_i\to x_i') = \min\Big\{1, \exp[-\beta(\Delta E^{\text{data}}+
       \Delta E^{\text{rep}})]\Big\} \;,
 
    where :math:`\Delta E^{\text{data}}` and
    :math:`\Delta E^{\text{rep}}` are the changes in the data and
-   repulsion energies caused by the move (the number of nucleosomes,
-   and hence the :math:`-\mu N` term, is unchanged).
+   repulsion energies caused by the move. Note that the number of
+   nucleosomes, and hence the :math:`-\mu N` term, is unchanged.
 
 2. **Add a nucleosome.** We randomly select a candidate position
    :math:`x` from the :math:`n_\text{pos}=L-\ell_{\text{nuc}}+1` possible
-   (left-aligned) positions on the fiber [#f2]_. The move is accepted
-   with probability
+   positions on the fiber [#f2]_. The move is accepted with probability
 
    .. math::
 
-      P(\text{add at }x) = \min\left\{1,\frac{n_\text{pos}}{N+1}
+      p(\text{add at }x) = \min\left\{1,\frac{n_\text{pos}}{N+1}
       \exp[\beta\mu-\beta\Delta E^{\text{add}}(x)]\right\} \;,
 
-   where :math:`\Delta E^{\text{add}}(x) = E^{\text{data}}(x)+
-   \Delta E^{\text{rep}}` is the change in the data and repulsion energies
-   from placing a nucleosome at :math:`x`, and the prefactor
+   where :math:`\Delta E^{\text{add}}(x)` is the resulting change in
+   :math:`E^{\text{data}}(\mathcal C)+E^{\text{rep}}(\mathcal C)` from
+   placing a nucleosome at :math:`x`, and the prefactor
    :math:`n_\text{pos}/(N+1)` corrects for the asymmetry between
    proposing a new position out of :math:`n_\text{pos}` choices and
    proposing its removal out of the resulting :math:`N+1` nucleosomes.
 
-3. **Remove a nucleosome.** We randomly select the :math:`i`-th
-   nucleosome (out of :math:`N`) for removal. The move is accepted with
-   probability
+3. **Remove a nucleosome.** We randomly select a nucleosome (again say
+   the :math:`i`-th one, out of :math:`N`) for removal. The move is
+   accepted with probability
 
    .. math::
 
-      P(\text{remove }i) = \min\left\{1,\frac{N}{n_\text{pos}}
+      p(\text{remove }i) = \min\left\{1,\frac{N}{n_\text{pos}}
       \exp[-\beta\mu-\beta\Delta E^{\text{remove}}(x_i)]\right\} \;,
 
-   where :math:`\Delta E^{\text{remove}}(x_i) = -E^{\text{data}}(x_i) +
-   \Delta E^{\text{rep}}` is the change in the data and repulsion energies
-   from removing the nucleosome at :math:`x_i`.
+   where :math:`\Delta E^{\text{remove}}(x_i)` is the resulting change in
+   :math:`E^{\text{data}}(\mathcal C)+E^{\text{rep}}(\mathcal C)` from
+   removing the nucleosome at :math:`x_i`.
 
 These moves satisfy detailed balance with respect to :math:`P(\mathcal
 C)` and together define a **Metropolis algorithm** that drives the
@@ -899,13 +870,21 @@ value -- linearly, geometrically, or held constant -- over the course of
 the simulation, which helps the chain avoid metastable configurations
 before it settles into equilibrium at the target temperature.
 
+The package stores the chain of accepted configurations in the
+simulation for each molecule. To further improve coverage of the
+possible configurations, we perform multiple simulations for each
+molecule and use the final configuration of each simulation to compute
+marginal statistics, such as the average nucleosome occupancy profile
+and the mean number of nucleosomes for each molecule.
+
 Transfer matrix method
 ~~~~~~~~~~~~~~~~~~~~~~~
 
 Due to the unique structure of the Hamiltonian, the transfer matrix
 method provides an alternative to MCMC for obtaining marginal statistics
-of the posterior, by computing the partition function :math:`Z` directly
-rather than sampling from it. Writing the Hamiltonian explicitly in
+of the posterior, by computing the partition function :math:`Z =
+\sum_{\mathcal{C}}\exp[-\beta H(\mathcal{C})]` directly rather than
+sampling from it. Writing the Hamiltonian explicitly in
 terms of its one-body and nearest-neighbour pairwise terms,
 
 .. math::
@@ -1076,10 +1055,10 @@ The first row collects every way of placing a nucleosome at :math:`x`
 (from any state that allows it); the subdiagonal 1's advance the
 current state :math:`k` by one when nothing is placed; and the
 trailing 1 in the bottom-right entry is the recurring state's
-self-loop. The matrix is sparse, with at most two nonzero entries per
-row except the first, which collects all possible additions -- so
-applying :math:`\vec T` to :math:`\vec v` costs :math:`O(W)` rather
-than :math:`O(W^2)`.
+self-loop. Note that the matrix is sparse; hence, by carrying out only
+the non-trivial element multiplications, we can keep the cost of
+applying :math:`\vec T` to :math:`\vec v` at :math:`O(W)` instead of
+:math:`O(W^2)`.
 
 To start the sum, we need an initial state :math:`\vec v(0)`. At the
 left of the fiber, where no nucleosome could have been placed
@@ -1291,11 +1270,12 @@ traceback through the precomputed :math:`\vec u(x)`.
 	 (any window containing at least one valid site yields a defined
 	 average). A gap wide enough to leave :math:`\widetilde
 	 S_{x,\alpha}` undefined over an interior stretch (bounded by
-	 valid smoothed values on both sides) is filled with the
-	 neutral, no-evidence probability of 0.5, while the
-	 :math:`\ell_\text{bin}-1` trailing sites, where the window runs
-	 off the fiber, are handled separately and by default left
-	 undefined (a fixed value can be substituted instead).
+	 valid smoothed values on both sides) is filled -- by the
+	 molecule's mean smoothed signal or by linear interpolation
+	 (`nan_method`) -- while the :math:`\ell_\text{bin}-1` trailing
+	 sites, where the window runs off the fiber, are handled
+	 separately and by default left undefined (a fixed or
+	 mean-filled value can be substituted instead).
 
 .. [#f2] This is the exact count of valid left-aligned starting
 	 positions on a fiber of length :math:`L`; a common

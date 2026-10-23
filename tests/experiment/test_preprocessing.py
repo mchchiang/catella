@@ -16,6 +16,7 @@ from catella.experiment.preprocessing import (
     _read_sites,
     _reference_contexts,
     _strand_assay_masks,
+    _warn_call_frac_mismatch,
 )
 from catella.h5_array import H5Array
 
@@ -2261,3 +2262,36 @@ class TestModelProbMissingCalls:
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             MethPrintAnalysis().model_prob(exp=exp, lnuc=30)
+
+
+class TestWarnCallFracMismatch:
+    def _info(self, test, meth, unmeth):
+        return {
+            "call_frac_test_A": test,
+            "call_frac_meth_A": meth,
+            "call_frac_unmeth_A": unmeth,
+        }
+
+    @pytest.mark.parametrize("test", [0.80, 0.89, 0.97])
+    def test_silent_within_control_range(self, test):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            _warn_call_frac_mismatch("c", self._info(test, 0.82, 0.93), [A])
+
+    def test_warns_toward_protection_below_range(self):
+        with pytest.warns(UserWarning, match="toward protection"):
+            _warn_call_frac_mismatch("c", self._info(0.70, 0.82, 0.93), [A])
+
+    def test_warns_toward_accessibility_above_range(self):
+        with pytest.warns(UserWarning, match="toward accessibility"):
+            _warn_call_frac_mismatch("c", self._info(0.95, 0.82, 0.85), [A])
+
+    def test_skips_implicit_channel(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            _warn_call_frac_mismatch("c", self._info(0.3, 0.5, 0.02), [A])
+
+    def test_skips_without_controls(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            _warn_call_frac_mismatch("c", {"call_frac_test_A": 0.3}, [A])

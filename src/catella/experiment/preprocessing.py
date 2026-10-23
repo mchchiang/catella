@@ -75,7 +75,8 @@ _UNMAPPED_STRAND_MSG = (
 
 # Call-fraction check in model_prob: channels whose controls both have
 # at least _EXPLICIT_MIN_CALL_FRAC are taken as explicit-mode, and warn
-# when the test fraction is off by more than _CALL_FRAC_WARN_GAP.
+# when the test fraction lies more than _CALL_FRAC_WARN_GAP outside the
+# range spanned by the two controls.
 _CALL_SOURCES = ("test", "meth", "unmeth")
 _EXPLICIT_MIN_CALL_FRAC = 0.5
 _CALL_FRAC_WARN_GAP = 0.05
@@ -1223,8 +1224,15 @@ def _call_frac_info(call_stats, channels):
 
 def _warn_call_frac_mismatch(chrom, info, channels):
     """
-    Warn when the test call fraction of a channel differs from that of
-    the controls, for channels whose controls look explicit-mode.
+    Warn when the test call fraction of a channel lies outside the
+    range spanned by the controls, for channels whose controls look
+    explicit-mode.
+
+    The probability of emitting a call may depend on the methylation
+    state, so the controls can differ, and a test sample, which mixes
+    both states, is expected to lie between them. A test fraction
+    outside this range (beyond `_CALL_FRAC_WARN_GAP`) means that calls
+    are missed at a different rate than in the controls.
 
     In implicit mode, a base without a call is canonical, so the call
     fraction tracks the methylation level and is low in the
@@ -1246,18 +1254,20 @@ def _warn_call_frac_mismatch(chrom, info, channels):
         if any(v is None for v in vals):
             continue
         test, meth, unmeth = vals
-        if min(meth, unmeth) < _EXPLICIT_MIN_CALL_FRAC:
+        lo, hi = min(meth, unmeth), max(meth, unmeth)
+        if lo < _EXPLICIT_MIN_CALL_FRAC:
             continue
-        gap = max(abs(test - meth), abs(test - unmeth))
-        if gap > _CALL_FRAC_WARN_GAP:
-            warnings.warn(
-                f"Channel {name} on chrom '{chrom}': the fraction of read "
-                f"sites with a call is {test:.2f} in the test sample but "
-                f"{meth:.2f}/{unmeth:.2f} in the meth/unmeth controls. "
-                "Missing calls are treated as unmethylated, so the test "
-                "sample may be biased toward protection.",
-                stacklevel=3,
-            )
+        if lo - _CALL_FRAC_WARN_GAP <= test <= hi + _CALL_FRAC_WARN_GAP:
+            continue
+        bias = "protection" if test < lo else "accessibility"
+        warnings.warn(
+            f"Channel {name} on chrom '{chrom}': the fraction of read "
+            f"sites with a call is {test:.2f} in the test sample, outside "
+            f"the range {lo:.2f}-{hi:.2f} of the meth/unmeth controls. "
+            "Missing calls are treated as unmethylated, so the test "
+            f"sample may be biased toward {bias}.",
+            stacklevel=3,
+        )
 
 
 def _frac_informative_by_context(ctx, informative, channels=None):
@@ -2323,8 +2333,8 @@ class MethPrintAnalysis:
             pairs disagree on context (folded to no context there),
             or if, for a channel whose controls report a call at most
             read sites (explicit-mode base calling), the fraction of
-            read sites with a call in the test sample differs from
-            that of the controls by more than 0.05.
+            read sites with a call in the test sample lies more than
+            0.05 outside the range spanned by the two controls.
 
         Notes
         -----

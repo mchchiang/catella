@@ -385,8 +385,8 @@ def compute_model_prob(
     Warns
     -----
     UserWarning
-        If the fraction of read sites with a call differs between the
-        test sample and explicit-mode controls. See
+        If the fraction of read sites with a call in the test sample
+        lies outside the range spanned by explicit-mode controls. See
         `MethPrintAnalysis.model_prob`.
 
     Notes

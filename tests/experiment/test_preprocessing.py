@@ -2072,7 +2072,7 @@ class TestReadSites:
         bases = np.array(list(seq))
         np.testing.assert_array_equal(masks["+"], bases == "A")
         np.testing.assert_array_equal(masks["-"], bases == "T")
-        np.testing.assert_array_equal(masks["."], masks["+"] | masks["-"])
+        assert not masks["."].any()
 
     def test_strand_assay_masks_ignore_strand_uses_both(self):
         exp = _make_footprint_experiment(mtase=("A",))
@@ -2139,3 +2139,88 @@ class TestModelProbMissingCalls:
             self._em_calib(),
             atol=0.05,
         )
+
+    def _prob_and_eta(self, with_controls, **kwargs):
+        exp = _make_footprint_experiment(
+            with_controls=with_controls,
+            nmol=60,
+            planted_edges=(30, 120, 200),
+            lnuc=30,
+            strand_of=self._strand_of,
+            own_strand_only=True,
+            **kwargs,
+        )
+        MethPrintAnalysis().model_prob(exp=exp, lnuc=30, batch_size=11)
+        prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
+        eta = exp.global_analysis["meth_prob_eta"].to_numpy(dtype=float)
+        return prob, eta
+
+    def test_dropped_zero_rows_give_same_output_without_controls(self):
+        prob_full, eta_full = self._prob_and_eta(False)
+        prob_drop, eta_drop = self._prob_and_eta(False, drop_zero_rows=True)
+        np.testing.assert_allclose(prob_drop, prob_full, equal_nan=True)
+        np.testing.assert_allclose(eta_drop, eta_full)
+
+    def test_dropped_zero_rows_give_close_output_with_controls(self):
+        prob_full, eta_full = self._prob_and_eta(True)
+        prob_drop, eta_drop = self._prob_and_eta(True, drop_zero_rows=True)
+        np.testing.assert_allclose(
+            prob_drop, prob_full, atol=0.02, equal_nan=True
+        )
+        np.testing.assert_allclose(eta_drop, eta_full, rtol=1e-3)
+
+    def test_rejects_unknown_span(self):
+        exp = _make_footprint_experiment(with_controls=True, lnuc=30)
+        with pytest.raises(ValueError):
+            MethPrintAnalysis().model_prob(exp=exp, lnuc=30, span="bad")
+
+    def test_calls_span_runs_and_records_span(self):
+        exp = _make_footprint_experiment(
+            with_controls=True, lnuc=30, own_strand_only=True
+        )
+        MethPrintAnalysis().model_prob(exp=exp, lnuc=30, span="calls")
+        params = exp.global_analysis["meth_prob_params"]
+        assert params["span"].iloc[0] == "calls"
+        prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
+        assert np.isfinite(prob[:, : prob.shape[1] - 29]).all()
+
+    def _with_test_data(self, edit):
+        exp = _make_footprint_experiment(
+            with_controls=True,
+            nmol=4,
+            lnuc=30,
+            strand_of=self._strand_of,
+            own_strand_only=True,
+        )
+        raw = exp.raw["chr1"]
+        new_raw = MethPrintData._create(
+            chrom="chr1",
+            nbp=raw.nbp,
+            refseq=raw.refseq,
+            test_mol_id=raw.test_mol_id,
+            test_data=edit(raw.test_data),
+            meth_mol_id=raw.meth_mol_id,
+            meth_data=raw.meth_data,
+            unmeth_mol_id=raw.unmeth_mol_id,
+            unmeth_data=raw.unmeth_data,
+        )
+        exp = MethPrintExperiment._create(_raw_data={"chr1": new_raw})
+        MethPrintAnalysis().model_prob(exp=exp, lnuc=30)
+        return exp.analysis["chr1"]["meth_prob"].to_numpy()
+
+    def test_molecule_with_one_uncalled_row_is_scored(self):
+        def edit(df):
+            first = df[df["mol_index"] == 0]["pos"].min()
+            keep = (df["mol_index"] != 0) | (df["pos"] == first)
+            df = df[keep].copy()
+            df.loc[df["mol_index"] == 0, "mod_qual"] = 0.0
+            return df
+
+        prob = self._with_test_data(edit)
+        assert np.isfinite(prob[0, : prob.shape[1] - 29]).all()
+        assert np.nanmax(prob[0]) < 0.5
+
+    def test_molecule_without_rows_is_not_scored(self):
+        prob = self._with_test_data(lambda df: df[df["mol_index"] != 0])
+        assert np.isnan(prob[0]).all()
+        assert np.isfinite(prob[1, : prob.shape[1] - 29]).all()

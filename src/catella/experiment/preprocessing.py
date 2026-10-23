@@ -3,6 +3,7 @@
 import warnings
 from collections.abc import Iterable
 from contextlib import closing
+from typing import NamedTuple
 
 import numpy as np
 import pandas as pd
@@ -141,8 +142,9 @@ def _strand_assay_masks(exp, chrom, ctx):
     Returns
     -------
     dict of str to np.ndarray
-        "+", "-", and "." (unmapped, the union of both strands) ->
-        bool, length L.
+        "+", "-", and "." -> bool, length L. "." (unmapped strand) is
+        all False, since the sites of a molecule of unknown strand
+        cannot be told; such a molecule reads only its called sites.
     """
     seq = exp.raw[chrom].refseq
     labels = exp.mtase if exp.mtase is not None else tuple(_MTASE_CHANNELS)
@@ -161,7 +163,7 @@ def _strand_assay_masks(exp, chrom, ctx):
         full = {s: m[:L] | m[length - L :][::-1] for s, m in full.items()}
     ok = ctx != NONE
     masks = {s: m[:L] & ok for s, m in full.items()}
-    masks["."] = masks["+"] | masks["-"]
+    masks["."] = np.zeros(L, dtype=bool)
     return masks
 
 
@@ -222,12 +224,61 @@ def _read_sites(batch, assay_rows, ctx_ok, span="full"):
     return q, read
 
 
+class _ReadBatch(NamedTuple):
+    """One batch of read-site data from `_iter_read_sites`."""
+
+    start: int
+    stop: int
+    keep: np.ndarray
+    labels: np.ndarray
+    q: np.ndarray
+    read: np.ndarray
+    blank: np.ndarray
+    frac: dict
+
+
+def _read_weights(b, assay, strand=None):
+    """
+    Per-site read weights of a batch, for one strand or pooled.
+
+    A blank molecule (kept, unknown strand, no call) reads the sites
+    of strand `s` with weight `b.frac[s]`, its expected membership.
+
+    Parameters
+    ----------
+    b : _ReadBatch
+        From `_iter_read_sites`.
+    assay : dict of str to np.ndarray
+        From `_strand_assay_masks`.
+    strand : {"+", "-"}, optional
+        Restrict to the molecules of this strand. None pools both.
+
+    Returns
+    -------
+    np.ndarray
+        float64, (stop - start, L).
+    """
+    if strand is None:
+        w = b.read.astype(np.float64)
+        fill = b.frac["+"] * assay["+"] + b.frac["-"] * assay["-"]
+    else:
+        w = (b.read & (b.labels == strand)[:, None]).astype(np.float64)
+        fill = b.frac[strand] * assay[strand]
+    w[b.blank] = fill
+    return w
+
+
 def _iter_read_sites(
     exp, chrom, which, ctx, assay, *, batch_size, mask_name, span="full"
 ):
     """
     Stream one raw source in batches as read-site confidence scores
     (see `_read_sites`), with dropped molecules reading no site.
+
+    A kept molecule with no call has no strand label, so the sites it
+    reads are unknown; it is flagged as blank, and `_read_weights`
+    spreads it over the strands by their fractions among the kept
+    molecules with a strand.
 
     Parameters
     ----------
@@ -251,18 +302,19 @@ def _iter_read_sites(
 
     Yields
     ------
-    start, stop : int
-        Row range of the batch.
-    keep : np.ndarray
-        bool, (stop - start,), molecules kept.
-    labels : np.ndarray
-        str, (stop - start,), strand label per molecule.
-    q, read : np.ndarray
-        As returned by `_read_sites`; all nan / False on rows that are
-        not kept.
+    _ReadBatch
+        `start`/`stop`, the row range of the batch; `keep`, bool per
+        molecule; `labels`, strand label per molecule; `q`/`read`, as
+        returned by `_read_sites` (all nan / False on rows not kept);
+        `blank`, bool per molecule, kept molecules with neither a
+        strand nor a call (only with `span="full"`); and `frac`, the
+        fraction of kept stranded molecules on each strand ("+"/"-").
     """
     keep_all = _mol_keep(exp, chrom, which, mask_name)
     labels_all = _mol_strand(exp, chrom, which)
+    n_strand = {s: (keep_all & (labels_all == s)).sum() for s in "+-"}
+    total = n_strand["+"] + n_strand["-"]
+    frac = {s: n_strand[s] / total if total else 0.5 for s in "+-"}
     code = np.where(labels_all == "+", 0, np.where(labels_all == "-", 1, 2))
     stacked = np.stack([assay["+"], assay["-"], assay["."]])
     ctx_ok = ctx != NONE
@@ -281,9 +333,13 @@ def _iter_read_sites(
                 arr[start:stop, :], stacked[code[start:stop]], ctx_ok, span
             )
             keep = keep_all[start:stop]
+            labels = labels_all[start:stop]
             q[~keep] = np.nan
             read[~keep] = False
-            yield start, stop, keep, labels_all[start:stop], q, read
+            blank = keep & (labels == ".") & ~read.any(axis=1)
+            if span != "full":
+                blank[:] = False
+            yield _ReadBatch(start, stop, keep, labels, q, read, blank, frac)
     finally:
         arr.close()
 
@@ -344,13 +400,14 @@ def _streamed_call_count(
     assay,
     batch_size,
     mask_name,
-    row_masks=None,
+    by_strand=False,
     span="full",
 ):
     """
     Per-position summed methylation-calling confidence and read count
     for one raw source, streamed in batches so peak memory is
-    O(batch_size x L) rather than O(n_mol x L).
+    O(batch_size x L) rather than O(n_mol x L). Blank molecules count
+    with their expected strand weights (see `_read_weights`).
 
     Parameters
     ----------
@@ -368,12 +425,9 @@ def _streamed_call_count(
         Number of molecules processed per batch.
     mask_name : str or None
         Forwarded to `_iter_read_sites`.
-    row_masks : dict of str to np.ndarray, optional
-        Named boolean row masks (e.g. strand labels), each length
-        `n_mol`, aligned to the source's `to_dense` row order. If
-        given, counts are accumulated separately per key from a
-        single streamed pass, and the return value is keyed
-        accordingly.
+    by_strand : bool, default False
+        If True, counts are accumulated separately per strand from a
+        single streamed pass, and the return value is keyed by strand.
     span : {"full", "calls"}, default "full"
         Forwarded to `_iter_read_sites`.
 
@@ -382,16 +436,16 @@ def _streamed_call_count(
     k : np.ndarray
         float64, length L, per-position sum of `mod_qual` confidence
         scores, with a read site without a call counting as 0. Only if
-        `row_masks` is None.
+        `by_strand` is False.
     n : np.ndarray
-        float64, length L, per-position number of kept molecules
-        reading the position. Only if `row_masks` is None.
+        float64, length L, per-position (expected) number of kept
+        molecules reading the position. Only if `by_strand` is False.
     counts : dict of str to (k, n)
-        One `(k, n)` pair per `row_masks` key. Only if `row_masks` is
-        given.
+        One `(k, n)` pair per strand ("+"/"-"). Only if `by_strand` is
+        True.
     """
     L = len(ctx)
-    keys = list(row_masks) if row_masks is not None else [None]
+    keys = ["+", "-"] if by_strand else [None]
     acc = {key: [np.zeros(L), np.zeros(L)] for key in keys}
     batches = _iter_read_sites(
         exp,
@@ -404,16 +458,12 @@ def _streamed_call_count(
         span=span,
     )
     with closing(batches):
-        for start, stop, _, _, q, read in batches:
+        for b in batches:
             for key in keys:
-                if key is None:
-                    q_k, read_k = q, read
-                else:
-                    sel = row_masks[key][start:stop]
-                    q_k, read_k = q[sel], read[sel]
-                acc[key][0] += np.nansum(q_k, axis=0)
-                acc[key][1] += read_k.sum(axis=0)
-    if row_masks is None:
+                q = b.q if key is None else b.q[b.labels == key]
+                acc[key][0] += np.nansum(q, axis=0)
+                acc[key][1] += _read_weights(b, assay, key).sum(axis=0)
+    if not by_strand:
         return tuple(acc[None])
     return {key: tuple(acc[key]) for key in keys}
 
@@ -514,7 +564,7 @@ def _streamed_window_count(
     n_min,
     batch_size,
     mask_name,
-    row_masks=None,
+    by_strand=False,
     channels=None,
     span="full",
 ):
@@ -526,7 +576,9 @@ def _streamed_window_count(
     Windows are non-overlapping. A window's trial count on a read is
     its number of sites read by that read (see `_read_sites`), so it
     varies by read, and a read site without a call is a trial with
-    confidence 0. Read-windows below `n_min` read sites are dropped.
+    confidence 0. A blank read counts its sites with their expected
+    strand weights (see `_read_weights`). Read-windows below `n_min`
+    read sites are dropped.
 
     Parameters
     ----------
@@ -547,12 +599,10 @@ def _streamed_window_count(
         Number of molecules processed per batch.
     mask_name : str or None
         Forwarded to `_iter_read_sites`.
-    row_masks : dict of str to np.ndarray, optional
-        Named boolean row masks (e.g. strand labels), each length
-        `n_mol`, aligned to the test source's `to_dense` row order.
-        If given, `K`/`N`/`codes` are accumulated separately per key
-        from a single streamed pass, and the return value is keyed
-        accordingly.
+    by_strand : bool, default False
+        If True, `K`/`N`/`codes` are accumulated separately per strand
+        from a single streamed pass, and the return value is keyed by
+        strand.
     channels : iterable of int, optional
         Context channels eligible to be counted. Defaults to all of
         `_ALL_CHANNELS`.
@@ -564,21 +614,21 @@ def _streamed_window_count(
     K, N : np.ndarray
         float64, (n_ctx, n_kept), over the kept read-windows in
         read-major order. `K` is the sum of `mod_qual` confidence
-        scores and `N` the number of read sites, per context. Only if
-        `row_masks` is None.
+        scores and `N` the (expected) number of read sites, per
+        context. Only if `by_strand` is False.
     codes : list of int
         Channels from `channels` present in `ctx`, in the same order
-        as `K`/`N`'s first axis. Only if `row_masks` is None.
+        as `K`/`N`'s first axis. Only if `by_strand` is False.
     counts : dict of str to (K, N, codes)
-        One `(K, N, codes)` triple per `row_masks` key. Only if
-        `row_masks` is given.
+        One `(K, N, codes)` triple per strand ("+"/"-"). Only if
+        `by_strand` is True.
 
     Raises
     ------
     ValueError
         If `ctx` has no assayable contexts within `channels`, or too
-        few read-windows have `n_min` read sites (per key, when
-        `row_masks` is given).
+        few read-windows have `n_min` read sites (per strand, when
+        `by_strand` is True).
     """
     if channels is None:
         channels = _ALL_CHANNELS
@@ -589,7 +639,7 @@ def _streamed_window_count(
     width = n_win * lnuc
     in_code = np.stack([ctx[:width] == c for c in codes])[:, None, :]
 
-    keys = list(row_masks) if row_masks is not None else [None]
+    keys = ["+", "-"] if by_strand else [None]
     K_batches = {key: [] for key in keys}
     N_batches = {key: [] for key in keys}
     batches = _iter_read_sites(
@@ -603,22 +653,21 @@ def _streamed_window_count(
         span=span,
     )
     with closing(batches):
-        for start, stop, keep, _, q, read in batches:
+        for b in batches:
             for key in keys:
-                sel = keep
-                if key is not None:
-                    sel = sel & row_masks[key][start:stop]
+                sel = b.keep if key is None else b.keep & (b.labels == key)
+                sel = sel | b.blank
                 m = int(sel.sum())
                 if m == 0 or n_win == 0:
                     continue
                 shape = (len(codes), m, n_win, lnuc)
-                q_k = np.nan_to_num(q[sel, :width], nan=0.0)[None]
-                r_k = read[sel, :width][None]
+                q_k = np.nan_to_num(b.q[sel, :width], nan=0.0)[None]
+                w_k = _read_weights(b, assay, key)[sel, :width][None]
                 K = (q_k * in_code).reshape(shape).sum(axis=3)
-                N = (r_k & in_code).reshape(shape).sum(axis=3)
+                N = (w_k * in_code).reshape(shape).sum(axis=3)
                 ok = N.sum(axis=0) >= n_min
                 K_batches[key].append(K[:, ok])
-                N_batches[key].append(N[:, ok].astype(np.float64))
+                N_batches[key].append(N[:, ok])
 
     def _build(key):
         if sum(b.shape[1] for b in N_batches[key]) < 10:
@@ -630,7 +679,7 @@ def _streamed_window_count(
         N = np.concatenate(N_batches[key], axis=1)
         return K, N, codes
 
-    if row_masks is None:
+    if not by_strand:
         return _build(None)
     return {key: _build(key) for key in keys}
 
@@ -927,8 +976,9 @@ def _accumulate_autocorr_stats(
         float64, (n_mol, L), raw (`eta=1`) per-position log-odds from
         `_per_base_log_odds`.
     called : np.ndarray
-        bool, (n_mol, L). True where a site was both informative and
-        actually called (i.e. `informative[None, :] & ~np.isnan(q)`).
+        bool, (n_mol, L). True where a site is both informative and
+        read by the molecule (see `_read_sites`), with or without a
+        call.
     ctx : np.ndarray
         int8, length L, context code per position.
     max_lag : int
@@ -1025,6 +1075,7 @@ def _accumulate_eta_source(
     chrom,
     which,
     ctx,
+    assay,
     theta_prot,
     theta_acc,
     informative,
@@ -1035,11 +1086,12 @@ def _accumulate_eta_source(
     max_lag,
     channels,
     norm_by_strand=False,
-    strand_labels=None,
+    span="full",
 ):
     """
     Stream one raw source and feed its raw (`eta=1`) per-read
-    log-odds into `_accumulate_autocorr_stats`.
+    log-odds over the sites each read reads into
+    `_accumulate_autocorr_stats`.
 
     Parameters
     ----------
@@ -1056,12 +1108,14 @@ def _accumulate_eta_source(
         From `_chrom_calibration`; plain arrays, or (if
         `norm_by_strand`) `{"+": ..., "-": ...}` dicts of such
         arrays.
+    assay : dict of str to np.ndarray
+        From `_chrom_calibration` (see `_strand_assay_masks`).
     pi0 : float
         Forwarded to `_per_base_log_odds`.
     batch_size : int
         Number of molecules processed per batch.
     mask_name : str or None
-        Forwarded to `exp.to_dense`.
+        Forwarded to `_iter_read_sites`.
     stats : dict
         Per-channel accumulators, updated in place. Both strands'
         contributions are folded into the same accumulator, so eta
@@ -1073,58 +1127,40 @@ def _accumulate_eta_source(
     norm_by_strand : bool, default False
         Whether `theta_prot`/`theta_acc`/`informative` are per-strand
         dicts requiring a per-strand log-odds computation.
-    strand_labels : np.ndarray, optional
-        Length `n_mol` strand label ('+'/'-') per molecule of
-        `which`'s source, aligned to `to_dense`'s row order. Required
-        if `norm_by_strand` is True.
+    span : {"full", "calls"}, default "full"
+        Forwarded to `_iter_read_sites`.
     """
-    arr = exp.to_dense(
+    batches = _iter_read_sites(
+        exp,
         chrom,
-        which=which,
-        as_h5array=True,
+        which,
+        ctx,
+        assay,
         batch_size=batch_size,
         mask_name=mask_name,
+        span=span,
     )
-    try:
-        n_total, _ = arr.shape
-        ctx_ok = ctx[None, :] != NONE
-        for start in range(0, n_total, batch_size):
-            stop = min(start + batch_size, n_total)
-            batch = arr[start:stop, :]
-            q = np.where(ctx_ok, batch, np.nan)
-            if norm_by_strand:
-                labels = strand_labels[start:stop]
-                for s in ("+", "-"):
-                    sel = labels == s
-                    if not sel.any():
-                        continue
-                    log_odds = _per_base_log_odds(
-                        q[sel],
-                        theta_prot[s],
-                        theta_acc[s],
-                        informative[s],
-                        pi0=pi0,
-                        eta=1.0,
-                    )
-                    called = informative[s][None, :] & ~np.isnan(q[sel])
-                    _accumulate_autocorr_stats(
-                        stats,
-                        log_odds,
-                        called,
-                        ctx,
-                        max_lag,
-                        channels=channels,
-                    )
-            else:
+    with closing(batches):
+        for b in batches:
+            strands = ("+", "-") if norm_by_strand else (None,)
+            for s in strands:
+                sel = b.keep if s is None else b.keep & (b.labels == s)
+                if not sel.any():
+                    continue
+                prot = theta_prot if s is None else theta_prot[s]
+                acc = theta_acc if s is None else theta_acc[s]
+                info = informative if s is None else informative[s]
                 log_odds = _per_base_log_odds(
-                    q, theta_prot, theta_acc, informative, pi0=pi0, eta=1.0
+                    b.q[sel], prot, acc, info, pi0=pi0, eta=1.0
                 )
-                called = informative[None, :] & ~np.isnan(q)
                 _accumulate_autocorr_stats(
-                    stats, log_odds, called, ctx, max_lag, channels=channels
+                    stats,
+                    log_odds,
+                    info[None, :] & b.read[sel],
+                    ctx,
+                    max_lag,
+                    channels=channels,
                 )
-    finally:
-        arr.close()
 
 
 def _frac_informative_by_context(ctx, informative, channels=None):
@@ -1287,8 +1323,6 @@ def _chrom_calibration(
 
     if has_controls:
         if norm_by_strand:
-            meth_strand = _mol_strand(exp, chrom, "meth")
-            unmeth_strand = _mol_strand(exp, chrom, "unmeth")
             meth_counts = _streamed_call_count(
                 exp,
                 chrom,
@@ -1297,7 +1331,7 @@ def _chrom_calibration(
                 assay,
                 batch_size,
                 mask_name,
-                row_masks={"+": meth_strand == "+", "-": meth_strand == "-"},
+                by_strand=True,
                 span=span,
             )
             unmeth_counts = _streamed_call_count(
@@ -1308,10 +1342,7 @@ def _chrom_calibration(
                 assay,
                 batch_size,
                 mask_name,
-                row_masks={
-                    "+": unmeth_strand == "+",
-                    "-": unmeth_strand == "-",
-                },
+                by_strand=True,
                 span=span,
             )
             theta_prot, theta_acc, informative = {}, {}, {}
@@ -1374,7 +1405,6 @@ def _chrom_calibration(
             }
     else:
         if norm_by_strand:
-            test_strand = _mol_strand(exp, chrom, "test")
             win_counts = _streamed_window_count(
                 exp,
                 chrom,
@@ -1384,7 +1414,7 @@ def _chrom_calibration(
                 n_min,
                 batch_size,
                 mask_name,
-                row_masks={"+": test_strand == "+", "-": test_strand == "-"},
+                by_strand=True,
                 channels=channels,
                 span=span,
             )
@@ -2046,6 +2076,7 @@ class MethPrintAnalysis:
         tol: float = 1e-8,
         fill_edge: float = np.nan,
         norm_by_strand: bool = False,
+        span: str = "full",
         batch_size: int = 20000,
         mask_name: str | None = None,
     ):
@@ -2148,6 +2179,16 @@ class MethPrintAnalysis:
             pooled across strands, since the crosstalk it corrects for
             is an assay-chemistry property rather than a strand-
             specific one.
+        span : {"full", "calls"}, default "full"
+            Extent of each molecule, within which every assayable site
+            on the molecule's strand is read, and a read site without a
+            call is treated as unmethylated. "full" assumes every
+            molecule covers the whole fiber, as for artificial
+            constructs or native fragments filtered to fully cover the
+            region. "calls" restricts each molecule to its first to
+            last call, for data with partial reads; with base callers
+            that omit confident canonical calls, this trims protected
+            ends of the molecule.
         batch_size : int, default 20000
             Number of molecules processed (and held in memory) per
             batch.
@@ -2162,9 +2203,10 @@ class MethPrintAnalysis:
         ValueError
             If a chromosome has no reference sequence (`refseq`), if
             the no-controls path cannot find enough windows with
-            `n_min` context-eligible sites, if `eta` is a dict with an
-            unrecognized channel name, or if `norm_by_strand` is True
-            but molecules with unmapped strands ('.') exist.
+            `n_min` read sites, if `eta` is a dict with an
+            unrecognized channel name, if `span` is not recognized, or
+            if `norm_by_strand` is True but molecules with unmapped
+            strands ('.') exist.
         KeyError
             If `mask_name` is given but no matching mask is found for
             some source/chromosome.
@@ -2198,6 +2240,10 @@ class MethPrintAnalysis:
         """
         from scipy.special import expit, logit
 
+        if span not in _VALID_SPAN:
+            raise ValueError(
+                f"span must be one of {sorted(_VALID_SPAN)}, got {span!r}"
+            )
         tmp_dir = exp.resolve_tmp_dir()
         log_odds_fill = -logit(fill_edge)
 
@@ -2220,6 +2266,7 @@ class MethPrintAnalysis:
             "mask_name": mask_name,
             "norm_by_strand": norm_by_strand,
             "channels": channels,
+            "span": span,
         }
         _strand_suffix = {"+": "pos", "-": "neg"}
 
@@ -2281,17 +2328,12 @@ class MethPrintAnalysis:
                 # meth control isolates the crosstalk artifact from
                 # real, occupancy-driven correlation in the test data
                 source = "meth" if has_controls else "test"
-                strand_labels = None
-                if norm_by_strand:
-                    raw = exp.raw[chrom]
-                    src_df = getattr(raw, f"{source}_data")
-                    src_mol_id = getattr(raw, f"{source}_mol_id")
-                    strand_labels = _strand_of_mol(src_df, len(src_mol_id))
                 _accumulate_eta_source(
                     exp,
                     chrom,
                     source,
                     ctx,
+                    assay,
                     theta_prot,
                     theta_acc,
                     informative,
@@ -2302,7 +2344,7 @@ class MethPrintAnalysis:
                     eta_max_lag,
                     need_auto,
                     norm_by_strand=norm_by_strand,
-                    strand_labels=strand_labels,
+                    span=span,
                 )
             estimated, rho_by_channel = _finalize_channel_eta(
                 stats, eta_max_lag
@@ -2341,6 +2383,7 @@ class MethPrintAnalysis:
                     "tol": tol,
                     "fill_edge": fill_edge,
                     "norm_by_strand": norm_by_strand,
+                    "span": span,
                     "mask_name": mask_name or "",
                 }
             ]
@@ -2390,30 +2433,23 @@ class MethPrintAnalysis:
             out = H5Array.create(
                 (nmol, raw.nbp), dtype=np.float64, dir=tmp_dir
             )
-            test_arr = exp.to_dense(
+            batches = _iter_read_sites(
+                exp,
                 chrom,
-                which="test",
-                as_h5array=True,
+                "test",
+                ctx,
+                assay,
                 batch_size=batch_size,
                 mask_name=mask_name,
+                span=span,
             )
-            try:
-                ctx_ok = ctx[None, :] != NONE
-                test_strand = None
-                if norm_by_strand:
-                    test_strand = _strand_of_mol(raw.test_data, nmol)
-                for start in range(0, nmol, batch_size):
-                    stop = min(start + batch_size, nmol)
-                    batch = test_arr[start:stop, :]
-                    # mask_name marks dropped molecules as all-nan rows
-                    # (see _apply_keep_mask); propagate that to the
-                    # output too.
-                    masked = np.isnan(batch).all(axis=1)
-                    q = np.where(ctx_ok, batch, np.nan)
+            with closing(batches):
+                for start, stop, keep, labels, q, read, _, _ in batches:
+                    masked = ~keep | ~read.any(axis=1)
                     if norm_by_strand:
-                        labels = test_strand[start:stop]
                         pos, neg = labels == "+", labels == "-"
-                        log_odds = np.empty_like(q)
+                        masked |= ~(pos | neg)
+                        log_odds = np.zeros_like(q)
                         log_odds[pos] = _per_base_log_odds(
                             q[pos],
                             theta_prot["+"],
@@ -2445,8 +2481,6 @@ class MethPrintAnalysis:
                     prob = expit(-log_odds_win)
                     prob[masked, :] = np.nan
                     out.write_batch(start, stop, prob)
-            finally:
-                test_arr.close()
             exp.analysis[chrom][prob_name] = out
 
         exp.global_analysis[f"{prob_name}_calib"] = pd.DataFrame(calib_records)

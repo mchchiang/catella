@@ -2254,9 +2254,10 @@ class MethPrintAnalysis:
             window size (no-controls path) and the output window-sum
             size.
         n_min : int, default 10
-            Minimum number of context-eligible sites a window must have
-            to be used in the no-controls expectation-maximization fit.
-            Used only when no meth/unmeth controls are available.
+            Minimum number of sites a read must read in a window for
+            that read-window to be used in the no-controls
+            expectation-maximization fit. Used only when no meth/unmeth
+            controls are available.
         max_iters : int, default 200
             Maximum number of expectation-maximization iterations for
             the no-controls rate fit.

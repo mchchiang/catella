@@ -540,9 +540,7 @@ def compute_model_prob(
     ] = 147,
     n_min: Annotated[
         int,
-        typer.Option(
-            help="Min context-eligible sites per window (no-controls fit)"
-        ),
+        typer.Option(help="Min read sites per read-window (no-controls fit)"),
     ] = 10,
     max_iters: Annotated[
         int, typer.Option(help="Max EM iterations (no-controls fit)")
@@ -564,6 +562,13 @@ def compute_model_prob(
     norm_by_strand: Annotated[
         bool | None, typer.Option(help="Normalize by strand")
     ] = False,
+    span: Annotated[
+        str,
+        typer.Option(
+            help="Molecule extent for reading uncalled sites: 'full' "
+            "(whole fiber) or 'calls' (first to last call)"
+        ),
+    ] = "full",
     batch_size: Annotated[
         int, typer.Option(help="Molecules processed per batch")
     ] = 20000,
@@ -611,6 +616,7 @@ def compute_model_prob(
         tol=tol,
         fill_edge=fill_edge,
         norm_by_strand=norm_by_strand,
+        span=span,
         batch_size=batch_size,
         mask_name=mask_name,
     )
@@ -738,9 +744,7 @@ def analyze(
     ] = "mean_nnuc",
     compute_var: Annotated[
         bool,
-        typer.Option(
-            help="Also compute exact variance (method='tm' only)"
-        ),
+        typer.Option(help="Also compute exact variance (method='tm' only)"),
     ] = False,
     var_nnuc_name: Annotated[
         str, typer.Option(help="Key to store nucleosome count variance")

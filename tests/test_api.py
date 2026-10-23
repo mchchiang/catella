@@ -404,6 +404,38 @@ class TestComputeModelProb:
                 expected.global_analysis["meth_prob_rho"],
             )
 
+    def test_span_propagates(self, tmp_path):
+        rows = [
+            (f"m{m}", p, "chr1", "+", 0.5, "a")
+            for m in range(5)
+            for p in range(5, len(_MODEL_SEQ) - 5)
+        ]
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": len(_MODEL_SEQ)})
+        fasta_file = tmp_path / "ref.fa"
+        _write_fasta(fasta_file, {"chr1": _MODEL_SEQ})
+
+        exp = catella.load_raw(
+            chromsize=chromsize, test_file=test_file, fasta_file=fasta_file
+        )
+        expected = catella.load_raw(
+            chromsize=chromsize, test_file=test_file, fasta_file=fasta_file
+        )
+
+        catella.compute_model_prob(exp=exp, lnuc=30, n_min=3, span="calls")
+        MethPrintAnalysis().model_prob(
+            exp=expected, lnuc=30, n_min=3, span="calls"
+        )
+
+        assert exp.global_analysis["meth_prob_params"]["span"][0] == "calls"
+        np.testing.assert_allclose(
+            exp.analysis["chr1"]["meth_prob"].to_numpy(),
+            expected.analysis["chr1"]["meth_prob"].to_numpy(),
+            equal_nan=True,
+        )
+
 
 class TestEstimateStartTemp:
     def test_returns_percentile_of_abs_logit(self):

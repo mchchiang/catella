@@ -255,6 +255,7 @@ def compute_model_prob(
     tol: float = 1e-8,
     fill_edge: float = np.nan,
     norm_by_strand: bool = False,
+    span: str = "full",
     batch_size: int = 20000,
     mask_name: str | None = None,
 ) -> MethPrintExperiment:
@@ -320,9 +321,10 @@ def compute_model_prob(
         window size (no-controls path) and the output window-sum
         size.
     n_min : int, default 10
-        Minimum number of context-eligible sites a window must have
-        to be used in the no-controls expectation-maximization fit.
-        Used only when no meth/unmeth controls are available.
+        Minimum number of sites a read must read in a window for that
+        read-window to be used in the no-controls
+        expectation-maximization fit. Used only when no meth/unmeth
+        controls are available.
     max_iters : int, default 200
         Maximum number of expectation-maximization iterations for
         the no-controls rate fit.
@@ -348,6 +350,15 @@ def compute_model_prob(
         calibration. `eta` is still auto-estimated pooled across
         strands, since the crosstalk it corrects for is an
         assay-chemistry property rather than a strand-specific one.
+    span : {"full", "calls"}, default "full"
+        Extent of each molecule, within which every assayable site on
+        the molecule's strand is read, and a read site without a call
+        is treated as unmethylated. "full" assumes every molecule
+        covers the whole fiber, as for artificial constructs or native
+        fragments filtered to fully cover the region. "calls"
+        restricts each molecule to its first to last call, for data
+        with partial reads; with base callers that omit confident
+        canonical calls, this trims protected ends of the molecule.
     batch_size : int, default 20000
         Number of molecules processed (and held in memory) per
         batch.
@@ -366,16 +377,24 @@ def compute_model_prob(
     ValueError
         If a chromosome has no reference sequence, if the
         no-controls path cannot find enough windows with `n_min`
-        context-eligible sites, if `eta` is a dict with an
-        unrecognized channel name, or if `norm_by_strand` is True but
-        molecules with unmapped strands ('.') exist. See
+        read sites, if `eta` is a dict with an unrecognized channel
+        name, if `span` is not recognized, or if `norm_by_strand` is
+        True but molecules with unmapped strands ('.') exist. See
+        `MethPrintAnalysis.model_prob`.
+
+    Warns
+    -----
+    UserWarning
+        If the fraction of read sites with a call differs between the
+        test sample and explicit-mode controls. See
         `MethPrintAnalysis.model_prob`.
 
     Notes
     -----
     Per-chromosome (and, if `norm_by_strand`, per-strand) calibration
     diagnostics -- whether controls were used, fraction of informative
-    positions per context, and (no-controls path only) actual EM
+    positions per context, fraction of read sites carrying a call per
+    source and context, and (no-controls path only) actual EM
     iterations run, final log-likelihood, fitted mixing fraction, and
     fitted theta_prot/theta_acc per context -- are stored in
     `exp.global_analysis[f"{prob_name}_calib"]`. The full per-position
@@ -403,6 +422,7 @@ def compute_model_prob(
         tol=tol,
         fill_edge=fill_edge,
         norm_by_strand=norm_by_strand,
+        span=span,
         batch_size=batch_size,
         mask_name=mask_name,
     )

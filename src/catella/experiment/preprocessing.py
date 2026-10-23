@@ -73,6 +73,13 @@ _UNMAPPED_STRAND_MSG = (
     "Cannot do normalization by strand with unmapped strands '.'."
 )
 
+# Call-fraction check in model_prob: channels whose controls both have
+# at least _EXPLICIT_MIN_CALL_FRAC are taken as explicit-mode, and warn
+# when the test fraction is off by more than _CALL_FRAC_WARN_GAP.
+_CALL_SOURCES = ("test", "meth", "unmeth")
+_EXPLICIT_MIN_CALL_FRAC = 0.5
+_CALL_FRAC_WARN_GAP = 0.05
+
 
 def _reference_contexts(seq):
     """
@@ -233,8 +240,22 @@ class _ReadBatch(NamedTuple):
     labels: np.ndarray
     q: np.ndarray
     read: np.ndarray
+    called: np.ndarray
     blank: np.ndarray
     frac: dict
+
+
+def _accumulate_call_frac(stats, b, assay, ctx, channels):
+    """
+    Add one batch's per-channel call and read-site counts to `stats`,
+    a dict of channel code -> [n_called, n_read], in place.
+    """
+    w = _read_weights(b, assay)
+    for c in channels:
+        sel = ctx == c
+        st = stats.setdefault(c, [0.0, 0.0])
+        st[0] += b.called[:, sel].sum()
+        st[1] += w[:, sel].sum()
 
 
 def _read_weights(b, assay, strand=None):
@@ -306,6 +327,7 @@ def _iter_read_sites(
         `start`/`stop`, the row range of the batch; `keep`, bool per
         molecule; `labels`, strand label per molecule; `q`/`read`, as
         returned by `_read_sites` (all nan / False on rows not kept);
+        `called`, bool (n_mol, L), read sites with a call;
         `blank`, bool per molecule, kept molecules with neither a
         strand nor a call (only with `span="full"`); and `frac`, the
         fraction of kept stranded molecules on each strand ("+"/"-").
@@ -329,17 +351,21 @@ def _iter_read_sites(
         n_total = arr.shape[0]
         for start in range(0, n_total, batch_size):
             stop = min(start + batch_size, n_total)
+            batch = arr[start:stop, :]
             q, read = _read_sites(
-                arr[start:stop, :], stacked[code[start:stop]], ctx_ok, span
+                batch, stacked[code[start:stop]], ctx_ok, span
             )
             keep = keep_all[start:stop]
             labels = labels_all[start:stop]
             q[~keep] = np.nan
             read[~keep] = False
+            called = read & ~np.isnan(batch)
             blank = keep & (labels == ".") & ~read.any(axis=1)
             if span != "full":
                 blank[:] = False
-            yield _ReadBatch(start, stop, keep, labels, q, read, blank, frac)
+            yield _ReadBatch(
+                start, stop, keep, labels, q, read, called, blank, frac
+            )
     finally:
         arr.close()
 
@@ -402,6 +428,7 @@ def _streamed_call_count(
     mask_name,
     by_strand=False,
     span="full",
+    call_stats=None,
 ):
     """
     Per-position summed methylation-calling confidence and read count
@@ -430,6 +457,9 @@ def _streamed_call_count(
         single streamed pass, and the return value is keyed by strand.
     span : {"full", "calls"}, default "full"
         Forwarded to `_iter_read_sites`.
+    call_stats : dict, optional
+        If given, per-channel call and read-site counts are added to
+        it in place (see `_accumulate_call_frac`), over all channels.
 
     Returns
     -------
@@ -463,6 +493,8 @@ def _streamed_call_count(
                 q = b.q if key is None else b.q[b.labels == key]
                 acc[key][0] += np.nansum(q, axis=0)
                 acc[key][1] += _read_weights(b, assay, key).sum(axis=0)
+            if call_stats is not None:
+                _accumulate_call_frac(call_stats, b, assay, ctx, _ALL_CHANNELS)
     if not by_strand:
         return tuple(acc[None])
     return {key: tuple(acc[key]) for key in keys}
@@ -1163,6 +1195,71 @@ def _accumulate_eta_source(
                 )
 
 
+def _call_frac_info(call_stats, channels):
+    """
+    Fraction of read sites carrying a call, per source and channel.
+
+    Parameters
+    ----------
+    call_stats : dict of str to dict
+        Source name -> per-channel `[n_called, n_read]` counts, as
+        accumulated by `_accumulate_call_frac`.
+    channels : iterable of int
+        Channel codes to report.
+
+    Returns
+    -------
+    dict of str to float
+        `f"call_frac_{source}_{CONTEXT_NAMES[c]}"` -> fraction, for
+        every source and channel with read sites.
+    """
+    return {
+        f"call_frac_{source}_{CONTEXT_NAMES[c]}": float(st[c][0] / st[c][1])
+        for source, st in call_stats.items()
+        for c in channels
+        if c in st and st[c][1] > 0
+    }
+
+
+def _warn_call_frac_mismatch(chrom, info, channels):
+    """
+    Warn when the test call fraction of a channel differs from that of
+    the controls, for channels whose controls look explicit-mode.
+
+    In implicit mode, a base without a call is canonical, so the call
+    fraction tracks the methylation level and is low in the
+    unmethylated control; such channels are skipped.
+
+    Parameters
+    ----------
+    chrom : str
+        Chromosome identifier, for the message.
+    info : dict
+        Holds `call_frac_{test,meth,unmeth}_{channel}` entries (see
+        `_call_frac_info`).
+    channels : iterable of int
+        Channel codes to check.
+    """
+    for c in channels:
+        name = CONTEXT_NAMES[c]
+        vals = [info.get(f"call_frac_{s}_{name}") for s in _CALL_SOURCES]
+        if any(v is None for v in vals):
+            continue
+        test, meth, unmeth = vals
+        if min(meth, unmeth) < _EXPLICIT_MIN_CALL_FRAC:
+            continue
+        gap = max(abs(test - meth), abs(test - unmeth))
+        if gap > _CALL_FRAC_WARN_GAP:
+            warnings.warn(
+                f"Channel {name} on chrom '{chrom}': the fraction of read "
+                f"sites with a call is {test:.2f} in the test sample but "
+                f"{meth:.2f}/{unmeth:.2f} in the meth/unmeth controls. "
+                "Missing calls are treated as unmethylated, so the test "
+                "sample may be biased toward protection.",
+                stacklevel=3,
+            )
+
+
 def _frac_informative_by_context(ctx, informative, channels=None):
     """
     Fraction of `informative` positions within each context's own sites.
@@ -1322,6 +1419,7 @@ def _chrom_calibration(
             raise ValueError(_UNMAPPED_STRAND_MSG)
 
     if has_controls:
+        call_stats = {"meth": {}, "unmeth": {}}
         if norm_by_strand:
             meth_counts = _streamed_call_count(
                 exp,
@@ -1333,6 +1431,7 @@ def _chrom_calibration(
                 mask_name,
                 by_strand=True,
                 span=span,
+                call_stats=call_stats["meth"],
             )
             unmeth_counts = _streamed_call_count(
                 exp,
@@ -1344,6 +1443,7 @@ def _chrom_calibration(
                 mask_name,
                 by_strand=True,
                 span=span,
+                call_stats=call_stats["unmeth"],
             )
             theta_prot, theta_acc, informative = {}, {}, {}
             calib_info = {}
@@ -1364,6 +1464,7 @@ def _chrom_calibration(
                     **_frac_informative_by_context(
                         ctx, informative[s], channels=channels
                     ),
+                    **_call_frac_info(call_stats, channels),
                 }
         else:
             meth_k, meth_n = _streamed_call_count(
@@ -1375,6 +1476,7 @@ def _chrom_calibration(
                 batch_size,
                 mask_name,
                 span=span,
+                call_stats=call_stats["meth"],
             )
             unmeth_k, unmeth_n = _streamed_call_count(
                 exp,
@@ -1385,6 +1487,7 @@ def _chrom_calibration(
                 batch_size,
                 mask_name,
                 span=span,
+                call_stats=call_stats["unmeth"],
             )
             theta_prot, theta_acc, informative = _calibrate_from_controls(
                 meth_k,
@@ -1402,6 +1505,7 @@ def _chrom_calibration(
                 **_frac_informative_by_context(
                     ctx, informative, channels=channels
                 ),
+                **_call_frac_info(call_stats, channels),
             }
     else:
         if norm_by_strand:
@@ -2215,7 +2319,11 @@ class MethPrintAnalysis:
         -----
         UserWarning
             If `exp.wrap` is True and many wrap-mirrored position
-            pairs disagree on context (folded to no context there).
+            pairs disagree on context (folded to no context there),
+            or if, for a channel whose controls report a call at most
+            read sites (explicit-mode base calling), the fraction of
+            read sites with a call in the test sample differs from
+            that of the controls by more than 0.05.
 
         Notes
         -----
@@ -2229,7 +2337,9 @@ class MethPrintAnalysis:
         Per-chromosome (and, if `norm_by_strand`, per-strand)
         calibration diagnostics -- whether controls were used,
         fraction of informative positions per context (only channels
-        actually assayed by `exp.mtase`, or all four if unset), and
+        actually assayed by `exp.mtase`, or all four if unset), fraction
+        of read sites carrying a call per source and context
+        (`call_frac_{source}_{context}`, pooled over strands), and
         (no-controls path only) actual EM iterations run, final
         log-likelihood, fitted mixing fraction, and fitted
         theta_prot/theta_acc per context -- are stored in
@@ -2279,7 +2389,7 @@ class MethPrintAnalysis:
                     {
                         k: v
                         for k, v in sub.items()
-                        if k.startswith("frac_informative_")
+                        if k.startswith(("frac_informative_", "call_frac_"))
                     }
                 )
                 if strand is not None:
@@ -2443,8 +2553,11 @@ class MethPrintAnalysis:
                 mask_name=mask_name,
                 span=span,
             )
+            test_stats = {}
             with closing(batches):
-                for start, stop, keep, labels, q, read, _, _ in batches:
+                for b in batches:
+                    start, stop, keep, labels, q, read = b[:6]
+                    _accumulate_call_frac(test_stats, b, assay, ctx, channels)
                     masked = ~keep | ~read.any(axis=1)
                     if norm_by_strand:
                         pos, neg = labels == "+", labels == "-"
@@ -2482,6 +2595,13 @@ class MethPrintAnalysis:
                     prob[masked, :] = np.nan
                     out.write_batch(start, stop, prob)
             exp.analysis[chrom][prob_name] = out
+
+            test_frac = _call_frac_info({"test": test_stats}, channels)
+            rows = [r for r in calib_records if r["chrom"] == chrom]
+            for row in rows:
+                row.update(test_frac)
+            if rows:
+                _warn_call_frac_mismatch(chrom, rows[0], channels)
 
         exp.global_analysis[f"{prob_name}_calib"] = pd.DataFrame(calib_records)
 

@@ -2184,10 +2184,10 @@ class TestModelProbMissingCalls:
         prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
         assert np.isfinite(prob[:, : prob.shape[1] - 29]).all()
 
-    def _with_test_data(self, edit):
+    def _with_test_data(self, edit, nmol=4):
         exp = _make_footprint_experiment(
             with_controls=True,
-            nmol=4,
+            nmol=nmol,
             lnuc=30,
             strand_of=self._strand_of,
             own_strand_only=True,
@@ -2204,9 +2204,7 @@ class TestModelProbMissingCalls:
             unmeth_mol_id=raw.unmeth_mol_id,
             unmeth_data=raw.unmeth_data,
         )
-        exp = MethPrintExperiment._create(_raw_data={"chr1": new_raw})
-        MethPrintAnalysis().model_prob(exp=exp, lnuc=30)
-        return exp.analysis["chr1"]["meth_prob"].to_numpy()
+        return MethPrintExperiment._create(_raw_data={"chr1": new_raw})
 
     def test_molecule_with_one_uncalled_row_is_scored(self):
         def edit(df):
@@ -2216,11 +2214,50 @@ class TestModelProbMissingCalls:
             df.loc[df["mol_index"] == 0, "mod_qual"] = 0.0
             return df
 
-        prob = self._with_test_data(edit)
+        exp = self._with_test_data(edit)
+        with pytest.warns(UserWarning, match="fraction of read sites"):
+            MethPrintAnalysis().model_prob(exp=exp, lnuc=30)
+        prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
         assert np.isfinite(prob[0, : prob.shape[1] - 29]).all()
         assert np.nanmax(prob[0]) < 0.5
 
     def test_molecule_without_rows_is_not_scored(self):
-        prob = self._with_test_data(lambda df: df[df["mol_index"] != 0])
+        exp = self._with_test_data(lambda df: df[df["mol_index"] != 0])
+        with pytest.warns(UserWarning, match="fraction of read sites"):
+            MethPrintAnalysis().model_prob(exp=exp, lnuc=30)
+        prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
         assert np.isnan(prob[0]).all()
         assert np.isfinite(prob[1, : prob.shape[1] - 29]).all()
+
+    def test_records_call_fractions(self):
+        exp = self._with_test_data(lambda df: df, nmol=20)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            MethPrintAnalysis().model_prob(exp=exp, lnuc=30)
+        calib = exp.global_analysis["meth_prob_calib"].iloc[0]
+        for source in ("test", "meth", "unmeth"):
+            assert calib[f"call_frac_{source}_A"] == pytest.approx(1.0)
+
+    def test_warns_when_test_misses_explicit_calls(self):
+        rng = np.random.default_rng(1)
+        exp = self._with_test_data(
+            lambda df: df[rng.random(len(df)) > 0.2], nmol=20
+        )
+        with pytest.warns(UserWarning, match="fraction of read sites") as rec:
+            MethPrintAnalysis().model_prob(exp=exp, lnuc=30)
+        assert any("Channel A " in str(w.message) for w in rec)
+        calib = exp.global_analysis["meth_prob_calib"].iloc[0]
+        assert calib["call_frac_test_A"] == pytest.approx(0.8, abs=0.03)
+
+    def test_no_warning_for_implicit_channels(self):
+        exp = _make_footprint_experiment(
+            with_controls=True,
+            nmol=20,
+            lnuc=30,
+            strand_of=self._strand_of,
+            own_strand_only=True,
+            drop_zero_rows=True,
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            MethPrintAnalysis().model_prob(exp=exp, lnuc=30)

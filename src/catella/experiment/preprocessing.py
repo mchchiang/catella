@@ -2,6 +2,7 @@
 
 import warnings
 from collections.abc import Iterable
+from contextlib import closing
 
 import numpy as np
 import pandas as pd
@@ -392,7 +393,7 @@ def _streamed_call_count(
     L = len(ctx)
     keys = list(row_masks) if row_masks is not None else [None]
     acc = {key: [np.zeros(L), np.zeros(L)] for key in keys}
-    for start, stop, _, _, q, read in _iter_read_sites(
+    batches = _iter_read_sites(
         exp,
         chrom,
         which,
@@ -401,15 +402,17 @@ def _streamed_call_count(
         batch_size=batch_size,
         mask_name=mask_name,
         span=span,
-    ):
-        for key in keys:
-            if key is None:
-                q_k, read_k = q, read
-            else:
-                sel = row_masks[key][start:stop]
-                q_k, read_k = q[sel], read[sel]
-            acc[key][0] += np.nansum(q_k, axis=0)
-            acc[key][1] += read_k.sum(axis=0)
+    )
+    with closing(batches):
+        for start, stop, _, _, q, read in batches:
+            for key in keys:
+                if key is None:
+                    q_k, read_k = q, read
+                else:
+                    sel = row_masks[key][start:stop]
+                    q_k, read_k = q[sel], read[sel]
+                acc[key][0] += np.nansum(q_k, axis=0)
+                acc[key][1] += read_k.sum(axis=0)
     if row_masks is None:
         return tuple(acc[None])
     return {key: tuple(acc[key]) for key in keys}
@@ -506,22 +509,24 @@ def _streamed_window_count(
     exp,
     chrom,
     ctx,
+    assay,
     lnuc,
     n_min,
     batch_size,
     mask_name,
     row_masks=None,
     channels=None,
+    span="full",
 ):
     """
     Per-window, per-read summed methylation-calling confidence and
     trial counts for the test sample, streamed in batches so peak
     memory is O(batch_size x L) rather than O(n_mol x L).
 
-    Windows are non-overlapping. A window's trial count (its count of
-    context-eligible sites) never varies by read, since coverage is
-    assumed complete, so windows below `n_min` are dropped up front,
-    before any read data is touched.
+    Windows are non-overlapping. A window's trial count on a read is
+    its number of sites read by that read (see `_read_sites`), so it
+    varies by read, and a read site without a call is a trial with
+    confidence 0. Read-windows below `n_min` read sites are dropped.
 
     Parameters
     ----------
@@ -531,32 +536,36 @@ def _streamed_window_count(
         Chromosome identifier.
     ctx : np.ndarray
         int8, length L, context code per position.
+    assay : dict of str to np.ndarray
+        From `_strand_assay_masks`.
     lnuc : int
         Nucleosome footprint size (bp), used as the window size.
     n_min : int
-        Minimum context-eligible sites (summed over all contexts) a
-        window needs to be kept.
+        Minimum read sites (summed over all contexts) a read-window
+        needs to be kept.
     batch_size : int
         Number of molecules processed per batch.
     mask_name : str or None
-        Forwarded to `exp.to_dense`.
+        Forwarded to `_iter_read_sites`.
     row_masks : dict of str to np.ndarray, optional
         Named boolean row masks (e.g. strand labels), each length
         `n_mol`, aligned to the test source's `to_dense` row order.
         If given, `K`/`N`/`codes` are accumulated separately per key
         from a single streamed pass, and the return value is keyed
-        accordingly. Window geometry (`n_min`-eligibility) is shared
-        across keys, since it depends only on `ctx`.
+        accordingly.
     channels : iterable of int, optional
         Context channels eligible to be counted. Defaults to all of
         `_ALL_CHANNELS`.
+    span : {"full", "calls"}, default "full"
+        Forwarded to `_iter_read_sites`.
 
     Returns
     -------
     K, N : np.ndarray
-        float64, (n_ctx, n_mol * n_kept_windows). `K` is the per-window,
-        per-read sum of `mod_qual` confidence scores (nan/no-call
-        positions excluded). Only if `row_masks` is None.
+        float64, (n_ctx, n_kept), over the kept read-windows in
+        read-major order. `K` is the sum of `mod_qual` confidence
+        scores and `N` the number of read sites, per context. Only if
+        `row_masks` is None.
     codes : list of int
         Channels from `channels` present in `ctx`, in the same order
         as `K`/`N`'s first axis. Only if `row_masks` is None.
@@ -568,95 +577,62 @@ def _streamed_window_count(
     ------
     ValueError
         If `ctx` has no assayable contexts within `channels`, or too
-        few windows have `n_min` context-eligible sites (per key, when
+        few read-windows have `n_min` read sites (per key, when
         `row_masks` is given).
     """
     if channels is None:
         channels = _ALL_CHANNELS
-    arr = exp.to_dense(
+    codes = [c for c in channels if (ctx == c).any()]
+    if not codes:
+        raise ValueError("no assayable contexts in ctx")
+    n_win = len(ctx) // lnuc
+    width = n_win * lnuc
+    in_code = np.stack([ctx[:width] == c for c in codes])[:, None, :]
+
+    keys = list(row_masks) if row_masks is not None else [None]
+    K_batches = {key: [] for key in keys}
+    N_batches = {key: [] for key in keys}
+    batches = _iter_read_sites(
+        exp,
         chrom,
-        which="test",
-        as_h5array=True,
+        "test",
+        ctx,
+        assay,
         batch_size=batch_size,
         mask_name=mask_name,
+        span=span,
     )
-    try:
-        n_total, L = arr.shape
-        starts = np.arange(0, L - lnuc + 1, lnuc)
-        codes = [c for c in channels if (ctx == c).any()]
-        if not codes:
-            raise ValueError("no assayable contexts in ctx")
-
-        n_win = {
-            c: np.array([(ctx[s : s + lnuc] == c).sum() for s in starts])
-            for c in codes
-        }
-        total_win = sum(n_win[c] for c in codes)
-        keep = total_win >= n_min
-        if not keep.any():
-            raise ValueError(
-                "too few windows with >= n_min context-eligible sites"
-            )
-        kept_starts = starts[keep]
-
-        ctx_ok = ctx != NONE
-        keys = list(row_masks) if row_masks is not None else [None]
-        K_batches = {key: {c: [] for c in codes} for key in keys}
-        n_mol = {key: 0 for key in keys}
-
-        for start in range(0, n_total, batch_size):
-            stop = min(start + batch_size, n_total)
-            batch = arr[start:stop, :]
-            # mask_name marks dropped molecules as all-nan rows (see
-            # _apply_keep_mask); exclude them so they don't inflate
-            # n_mol.
-            kept_rows = ~np.isnan(batch).all(axis=1)
-            batch = batch[kept_rows]
-            q_full = np.where(ctx_ok[None, :], batch, np.nan)
+    with closing(batches):
+        for start, stop, keep, _, q, read in batches:
             for key in keys:
-                if key is None:
-                    q = q_full
-                else:
-                    strand_sel = row_masks[key][start:stop][kept_rows]
-                    q = q_full[strand_sel]
-                n_mol[key] += q.shape[0]
-                for c in codes:
-                    sel = ctx == c
-                    k_c = np.stack(
-                        [
-                            np.nansum(
-                                q[:, s : s + lnuc][:, sel[s : s + lnuc]],
-                                axis=1,
-                            )
-                            for s in kept_starts
-                        ],
-                        axis=1,
-                    )
-                    K_batches[key][c].append(k_c)
+                sel = keep
+                if key is not None:
+                    sel = sel & row_masks[key][start:stop]
+                m = int(sel.sum())
+                if m == 0 or n_win == 0:
+                    continue
+                shape = (len(codes), m, n_win, lnuc)
+                q_k = np.nan_to_num(q[sel, :width], nan=0.0)[None]
+                r_k = read[sel, :width][None]
+                K = (q_k * in_code).reshape(shape).sum(axis=3)
+                N = (r_k & in_code).reshape(shape).sum(axis=3)
+                ok = N.sum(axis=0) >= n_min
+                K_batches[key].append(K[:, ok])
+                N_batches[key].append(N[:, ok].astype(np.float64))
 
-        def _build(key):
-            if n_mol[key] * keep.sum() < 10:
-                suffix = "" if key is None else f" for strand {key!r}"
-                raise ValueError(
-                    "too few windows with >= n_min "
-                    f"context-eligible sites{suffix}"
-                )
-            K = np.array(
-                [
-                    np.concatenate(K_batches[key][c], axis=0).ravel()
-                    for c in codes
-                ]
-            ).astype(np.float64)
-            N = np.array(
-                [np.tile(n_win[c][keep], n_mol[key]) for c in codes]
-            ).astype(np.float64)
-            return K, N, codes
+    def _build(key):
+        if sum(b.shape[1] for b in N_batches[key]) < 10:
+            suffix = "" if key is None else f" for strand {key!r}"
+            raise ValueError(
+                f"too few windows with >= n_min read sites{suffix}"
+            )
+        K = np.concatenate(K_batches[key], axis=1)
+        N = np.concatenate(N_batches[key], axis=1)
+        return K, N, codes
 
-        if row_masks is None:
-            return _build(None)
-        return {key: _build(key) for key in keys}
-    finally:
-        arr.close()
+    if row_masks is None:
+        return _build(None)
+    return {key: _build(key) for key in keys}
 
 
 def _calibrate_from_data(
@@ -1398,17 +1374,19 @@ def _chrom_calibration(
             }
     else:
         if norm_by_strand:
-            test_strand = _strand_of_mol(raw.test_data, len(raw.test_mol_id))
+            test_strand = _mol_strand(exp, chrom, "test")
             win_counts = _streamed_window_count(
                 exp,
                 chrom,
                 ctx,
+                assay,
                 lnuc,
                 n_min,
                 batch_size,
                 mask_name,
                 row_masks={"+": test_strand == "+", "-": test_strand == "-"},
                 channels=channels,
+                span=span,
             )
             theta_prot, theta_acc, informative = {}, {}, {}
             calib_info = {}
@@ -1439,11 +1417,13 @@ def _chrom_calibration(
                 exp,
                 chrom,
                 ctx,
+                assay,
                 lnuc,
                 n_min,
                 batch_size,
                 mask_name,
                 channels=channels,
+                span=span,
             )
             theta_prot, theta_acc, informative, em_diag = _calibrate_from_data(
                 K,

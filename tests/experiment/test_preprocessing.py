@@ -2112,3 +2112,30 @@ class TestModelProbMissingCalls:
         full = self._theta_acc(own_strand_only=True)
         dropped = self._theta_acc(own_strand_only=True, drop_zero_rows=True)
         np.testing.assert_allclose(dropped, full)
+
+    def _em_calib(self, **kwargs):
+        exp = _make_footprint_experiment(
+            with_controls=False,
+            nmol=120,
+            planted_edges=(30, 120, 200),
+            lnuc=30,
+            strand_of=self._strand_of,
+            **kwargs,
+        )
+        MethPrintAnalysis().model_prob(exp=exp, lnuc=30, batch_size=17)
+        calib = exp.global_analysis["meth_prob_calib"]
+        cols = [c for c in calib.columns if c.startswith("theta_acc_")]
+        return calib[cols].to_numpy(dtype=float)
+
+    def test_dropped_zero_rows_give_same_em_rates(self):
+        np.testing.assert_allclose(
+            self._em_calib(own_strand_only=True, drop_zero_rows=True),
+            self._em_calib(own_strand_only=True),
+        )
+
+    def test_em_rates_are_not_diluted_by_other_strand(self):
+        np.testing.assert_allclose(
+            self._em_calib(own_strand_only=True),
+            self._em_calib(),
+            atol=0.05,
+        )

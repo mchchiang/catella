@@ -10,8 +10,12 @@ from catella import utils
 from catella.experiment.methdata import MethPrintData, MethPrintExperiment
 from catella.experiment.preprocessing import (
     NONE,
+    A,
     MethPrintAnalysis,
+    _context_prior_rate,
+    _read_sites,
     _reference_contexts,
+    _strand_assay_masks,
 )
 from catella.h5_array import H5Array
 
@@ -970,6 +974,8 @@ def _make_footprint_experiment(
     strand_call_bias=None,
     unmapped_test_mol=None,
     mtase=None,
+    own_strand_only=False,
+    drop_zero_rows=False,
 ):
     # Synthetic multi-channel footprinting experiment with a known
     # planted "protected" region, for testing model_prob end to end.
@@ -995,6 +1001,15 @@ def _make_footprint_experiment(
     ctx = _reference_contexts(seq)
     L = len(seq)
     site = ctx != NONE
+
+    from catella.experiment.methdata import _methylatable_positions
+
+    strand_site = {".": site}
+    for s in ("+", "-"):
+        m = np.zeros(L, dtype=bool)
+        for label in ("A", "CG", "GC"):
+            m |= _methylatable_positions(seq, label, s)
+        strand_site[s] = (m & site) if own_strand_only else site
 
     true_acc = np.zeros(L)
     true_fpr = np.zeros(L)
@@ -1053,7 +1068,9 @@ def _make_footprint_experiment(
                 )
             else:
                 qual = calls.astype(float)
-            for pos in np.where(site)[0]:
+            for pos in np.where(strand_site[strand])[0]:
+                if drop_zero_rows and qual[pos] == 0.0:
+                    continue
                 rows.append((m, int(pos), strand, float(qual[pos]), 0))
         return pd.DataFrame(
             rows,
@@ -1992,3 +2009,106 @@ class TestModelProbTheta:
             "informative_neg",
         }
         assert set(theta.columns) == expected
+
+
+class TestReadSites:
+    def test_context_prior_rate_divides_by_reads_per_position(self):
+        ctx = np.array([A, A, A, NONE])
+        k = np.array([1.0, 2.0, 0.0, 0.0])
+        n = np.array([2.0, 4.0, 0.0, 0.0])
+        theta = _context_prior_rate(k, n, ctx, nu=0.0, eps=0.0)
+        np.testing.assert_allclose(theta[:2], [0.5, 0.5])
+        assert np.isnan(theta[2]) and np.isnan(theta[3])
+
+    def test_context_prior_rate_shrinks_to_pooled_mean(self):
+        ctx = np.array([A, A])
+        k = np.array([3.0, 0.0])
+        n = np.array([4.0, 0.0])
+        theta = _context_prior_rate(k, n, ctx, nu=2.0, eps=0.0)
+        np.testing.assert_allclose(theta, [0.75, 0.75])
+
+    def test_fills_uncalled_read_sites_with_zero(self):
+        batch = np.array([[0.7, np.nan, np.nan, np.nan]])
+        assay = np.array([[True, True, False, True]])
+        ctx_ok = np.array([True, True, True, False])
+        q, read = _read_sites(batch, assay, ctx_ok)
+        np.testing.assert_array_equal(read, [[True, True, False, False]])
+        np.testing.assert_array_equal(q[read], [0.7, 0.0])
+        assert np.isnan(q[~read]).all()
+
+    def test_keeps_calls_outside_assay_mask(self):
+        batch = np.array([[np.nan, 0.4]])
+        q, read = _read_sites(
+            batch, np.array([[False, False]]), np.array([True, True])
+        )
+        np.testing.assert_array_equal(read, [[False, True]])
+        assert q[0, 1] == 0.4
+
+    def test_calls_span_trims_to_first_and_last_call(self):
+        batch = np.array([[np.nan, 0.2, np.nan, 0.9, np.nan]])
+        assay = np.ones((1, 5), dtype=bool)
+        q, read = _read_sites(batch, assay, np.ones(5, bool), span="calls")
+        np.testing.assert_array_equal(read, [[False, True, True, True, False]])
+        np.testing.assert_array_equal(q[read], [0.2, 0.0, 0.9])
+
+    def test_calls_span_reads_nothing_without_calls(self):
+        batch = np.full((1, 3), np.nan)
+        assay = np.ones((1, 3), dtype=bool)
+        _, read = _read_sites(batch, assay, np.ones(3, bool), span="calls")
+        assert not read.any()
+
+    def test_full_span_reads_molecule_without_calls(self):
+        batch = np.full((1, 3), np.nan)
+        assay = np.ones((1, 3), dtype=bool)
+        q, read = _read_sites(batch, assay, np.ones(3, bool))
+        assert read.all()
+        np.testing.assert_array_equal(q, 0.0)
+
+    def test_strand_assay_masks_follow_mtase_strand(self):
+        exp = _make_footprint_experiment(mtase=("A",))
+        seq = exp.raw["chr1"].refseq
+        ctx = _reference_contexts(seq)
+        masks = _strand_assay_masks(exp, "chr1", ctx)
+        bases = np.array(list(seq))
+        np.testing.assert_array_equal(masks["+"], bases == "A")
+        np.testing.assert_array_equal(masks["-"], bases == "T")
+        np.testing.assert_array_equal(masks["."], masks["+"] | masks["-"])
+
+    def test_strand_assay_masks_ignore_strand_uses_both(self):
+        exp = _make_footprint_experiment(mtase=("A",))
+        exp._ignore_strand = True
+        seq = exp.raw["chr1"].refseq
+        masks = _strand_assay_masks(exp, "chr1", _reference_contexts(seq))
+        bases = np.array(list(seq))
+        both = (bases == "A") | (bases == "T")
+        np.testing.assert_array_equal(masks["+"], both)
+        np.testing.assert_array_equal(masks["-"], both)
+
+
+class TestModelProbMissingCalls:
+    _strand_of = staticmethod(lambda m: "+" if m % 2 == 0 else "-")
+
+    def _theta_acc(self, **kwargs):
+        exp = _make_footprint_experiment(
+            with_controls=True,
+            nmol=10,
+            meth_nmol=80,
+            unmeth_nmol=80,
+            strand_of=self._strand_of,
+            **kwargs,
+        )
+        MethPrintAnalysis().model_prob(exp=exp, lnuc=30, batch_size=7)
+        seq = exp.raw["chr1"].refseq
+        site = _reference_contexts(seq) != NONE
+        theta = exp.analysis["chr1"]["meth_prob_theta"]["theta_acc"]
+        return theta.to_numpy()[site]
+
+    def test_pooled_rates_are_not_diluted_by_other_strand(self):
+        both = self._theta_acc()
+        own = self._theta_acc(own_strand_only=True)
+        assert own.mean() == pytest.approx(both.mean(), abs=0.03)
+
+    def test_dropped_zero_rows_give_same_control_rates(self):
+        full = self._theta_acc(own_strand_only=True)
+        dropped = self._theta_acc(own_strand_only=True, drop_zero_rows=True)
+        np.testing.assert_allclose(dropped, full)

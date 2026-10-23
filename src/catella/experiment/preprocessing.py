@@ -10,6 +10,7 @@ from catella import utils
 from catella.experiment.methdata import (
     MethPrintExperiment,
     _apply_keep_mask,
+    _methylatable_positions,
     _strand_of_mol,
 )
 from catella.h5_array import H5Array
@@ -115,7 +116,178 @@ def _reference_contexts(seq):
     return ctx
 
 
-def _context_prior_rate(k, n_mol, ctx, nu=10.0, eps=1e-4, channels=None):
+_VALID_SPAN = {"full", "calls"}
+
+
+def _strand_assay_masks(exp, chrom, ctx):
+    """
+    Positions a molecule can read, per strand label.
+
+    A position is readable on a strand if it has a context in `ctx` and
+    is methylatable on that strand by one of `exp.mtase` (all mtase
+    labels if unset), following the row filter of `load_raw`.
+
+    Parameters
+    ----------
+    exp : MethPrintExperiment
+        The experiment object containing raw data and analysis maps.
+    chrom : str
+        Chromosome identifier.
+    ctx : np.ndarray
+        int8, length L, context code per position (folded if
+        `exp.wrap`).
+
+    Returns
+    -------
+    dict of str to np.ndarray
+        "+", "-", and "." (unmapped, the union of both strands) ->
+        bool, length L.
+    """
+    seq = exp.raw[chrom].refseq
+    labels = exp.mtase if exp.mtase is not None else tuple(_MTASE_CHANNELS)
+    full = {}
+    for s in ("+", "-"):
+        m = np.zeros(len(seq), dtype=bool)
+        for label in labels:
+            m |= _methylatable_positions(seq, label, s)
+        full[s] = m
+    if exp.ignore_strand:
+        both = full["+"] | full["-"]
+        full = {"+": both, "-": both}
+    L = len(ctx)
+    if exp.wrap:
+        length = len(seq)
+        full = {s: m[:L] | m[length - L :][::-1] for s, m in full.items()}
+    ok = ctx != NONE
+    masks = {s: m[:L] & ok for s, m in full.items()}
+    masks["."] = masks["+"] | masks["-"]
+    return masks
+
+
+def _mol_keep(exp, chrom, which, mask_name):
+    """Per-molecule keep flags of `which`; all True without a mask."""
+    nmol = len(getattr(exp.raw[chrom], f"{which}_mol_id"))
+    if mask_name is None:
+        return np.ones(nmol, dtype=bool)
+    return np.asarray(_lookup_mask(exp, chrom, which, mask_name), dtype=bool)
+
+
+def _mol_strand(exp, chrom, which):
+    """Per-molecule strand labels ('+'/'-'/'.') of `which`."""
+    raw = exp.raw[chrom]
+    return _strand_of_mol(
+        getattr(raw, f"{which}_data"), len(getattr(raw, f"{which}_mol_id"))
+    )
+
+
+def _read_sites(batch, assay_rows, ctx_ok, span="full"):
+    """
+    Confidence scores over the sites each molecule reads, with a
+    missing call at a read site treated as unmethylated.
+
+    Parameters
+    ----------
+    batch : np.ndarray
+        float64, (n_mol, L), `mod_qual` per position; nan where the
+        molecule has no row.
+    assay_rows : np.ndarray
+        bool, (n_mol, L), positions readable on each molecule's strand
+        (see `_strand_assay_masks`).
+    ctx_ok : np.ndarray
+        bool, length L, positions with a context.
+    span : {"full", "calls"}, default "full"
+        Extent of each molecule: the whole fiber, or from its first to
+        its last row.
+
+    Returns
+    -------
+    q : np.ndarray
+        float64, (n_mol, L). The row's `mod_qual` where present, 0 at
+        read sites without a row, nan elsewhere.
+    read : np.ndarray
+        bool, (n_mol, L), the sites each molecule reads.
+    """
+    called = ~np.isnan(batch) & ctx_ok[None, :]
+    read = assay_rows & ctx_ok[None, :]
+    if span == "calls":
+        L = batch.shape[1]
+        first = np.argmax(called, axis=1)
+        last = L - 1 - np.argmax(called[:, ::-1], axis=1)
+        idx = np.arange(L)[None, :]
+        in_span = (idx >= first[:, None]) & (idx <= last[:, None])
+        read = read & in_span & called.any(axis=1)[:, None]
+    read = read | called
+    q = np.where(read, np.where(called, batch, 0.0), np.nan)
+    return q, read
+
+
+def _iter_read_sites(
+    exp, chrom, which, ctx, assay, *, batch_size, mask_name, span="full"
+):
+    """
+    Stream one raw source in batches as read-site confidence scores
+    (see `_read_sites`), with dropped molecules reading no site.
+
+    Parameters
+    ----------
+    exp : MethPrintExperiment
+        The experiment object containing raw data and analysis maps.
+    chrom : str
+        Chromosome identifier.
+    which : {"test", "meth", "unmeth"}
+        Which raw table to read.
+    ctx : np.ndarray
+        int8, length L, context code per position.
+    assay : dict of str to np.ndarray
+        From `_strand_assay_masks`.
+    batch_size : int
+        Number of molecules processed per batch.
+    mask_name : str or None
+        If given, molecules flagged as dropout by
+        `filter_dropout(mask_name=mask_name)` are not kept.
+    span : {"full", "calls"}, default "full"
+        Forwarded to `_read_sites`.
+
+    Yields
+    ------
+    start, stop : int
+        Row range of the batch.
+    keep : np.ndarray
+        bool, (stop - start,), molecules kept.
+    labels : np.ndarray
+        str, (stop - start,), strand label per molecule.
+    q, read : np.ndarray
+        As returned by `_read_sites`; all nan / False on rows that are
+        not kept.
+    """
+    keep_all = _mol_keep(exp, chrom, which, mask_name)
+    labels_all = _mol_strand(exp, chrom, which)
+    code = np.where(labels_all == "+", 0, np.where(labels_all == "-", 1, 2))
+    stacked = np.stack([assay["+"], assay["-"], assay["."]])
+    ctx_ok = ctx != NONE
+    arr = exp.to_dense(
+        chrom,
+        which=which,
+        as_h5array=True,
+        batch_size=batch_size,
+        mask_name=mask_name,
+    )
+    try:
+        n_total = arr.shape[0]
+        for start in range(0, n_total, batch_size):
+            stop = min(start + batch_size, n_total)
+            q, read = _read_sites(
+                arr[start:stop, :], stacked[code[start:stop]], ctx_ok, span
+            )
+            keep = keep_all[start:stop]
+            q[~keep] = np.nan
+            read[~keep] = False
+            yield start, stop, keep, labels_all[start:stop], q, read
+    finally:
+        arr.close()
+
+
+def _context_prior_rate(k, n, ctx, nu=10.0, eps=1e-4, channels=None):
     """
     Per-position call rate, shrunk toward its context group's mean.
 
@@ -126,12 +298,13 @@ def _context_prior_rate(k, n_mol, ctx, nu=10.0, eps=1e-4, channels=None):
     Parameters
     ----------
     k : np.ndarray
-        float64, length L, per-position count of methylated calls,
-        summed across every molecule in the sample. Build this with
-        `_streamed_call_count` so the full sample never needs to be
-        held in memory at once.
-    n_mol : int
-        Molecule count in the sample.
+        float64, length L, per-position sum of `mod_qual` confidence
+        scores across every molecule reading the position. Build this
+        with `_streamed_call_count` so the full sample never needs to
+        be held in memory at once.
+    n : np.ndarray
+        float64, length L, per-position number of molecules reading
+        the position, whether or not they carry a call there.
     ctx : np.ndarray
         int8, length L, context code per position.
     nu : float, default 10.0
@@ -145,26 +318,37 @@ def _context_prior_rate(k, n_mol, ctx, nu=10.0, eps=1e-4, channels=None):
     Returns
     -------
     np.ndarray
-        float64, length L, in [eps, 1 - eps], nan outside `channels`.
+        float64, length L, in [eps, 1 - eps], nan outside `channels`
+        and where `n + nu` is 0.
     """
     if channels is None:
         channels = _ALL_CHANNELS
     theta = np.full(len(ctx), np.nan)
     for code in channels:
         sel = ctx == code
-        if not sel.any() or n_mol == 0:
+        n_sel = n[sel].sum()
+        if not sel.any() or n_sel == 0:
             continue
-        p0 = k[sel].sum() / (n_mol * sel.sum())
-        theta[sel] = (k[sel] + nu * p0) / (n_mol + nu)
+        p0 = k[sel].sum() / n_sel
+        with np.errstate(invalid="ignore", divide="ignore"):
+            theta[sel] = (k[sel] + nu * p0) / (n[sel] + nu)
     return np.clip(theta, eps, 1 - eps)
 
 
 def _streamed_call_count(
-    exp, chrom, which, ctx, batch_size, mask_name, row_masks=None
+    exp,
+    chrom,
+    which,
+    ctx,
+    assay,
+    batch_size,
+    mask_name,
+    row_masks=None,
+    span="full",
 ):
     """
-    Per-position summed methylation-calling confidence and molecule
-    count for one raw source, streamed in batches so peak memory is
+    Per-position summed methylation-calling confidence and read count
+    for one raw source, streamed in batches so peak memory is
     O(batch_size x L) rather than O(n_mol x L).
 
     Parameters
@@ -177,71 +361,58 @@ def _streamed_call_count(
         Which raw table to read, forwarded to `exp.to_dense`.
     ctx : np.ndarray
         int8, length L, context code per position.
+    assay : dict of str to np.ndarray
+        From `_strand_assay_masks`.
     batch_size : int
         Number of molecules processed per batch.
     mask_name : str or None
-        Forwarded to `exp.to_dense`.
+        Forwarded to `_iter_read_sites`.
     row_masks : dict of str to np.ndarray, optional
         Named boolean row masks (e.g. strand labels), each length
         `n_mol`, aligned to the source's `to_dense` row order. If
         given, counts are accumulated separately per key from a
         single streamed pass, and the return value is keyed
         accordingly.
+    span : {"full", "calls"}, default "full"
+        Forwarded to `_iter_read_sites`.
 
     Returns
     -------
     k : np.ndarray
         float64, length L, per-position sum of `mod_qual` confidence
-        scores across every molecule in the sample (nan/no-call
-        positions excluded). Only if `row_masks` is None.
-    n_mol : int
-        Molecule count in the sample. Only if `row_masks` is None.
-    counts : dict of str to (k, n_mol)
-        One `(k, n_mol)` pair per `row_masks` key. Only if
-        `row_masks` is given.
+        scores, with a read site without a call counting as 0. Only if
+        `row_masks` is None.
+    n : np.ndarray
+        float64, length L, per-position number of kept molecules
+        reading the position. Only if `row_masks` is None.
+    counts : dict of str to (k, n)
+        One `(k, n)` pair per `row_masks` key. Only if `row_masks` is
+        given.
     """
-    arr = exp.to_dense(
+    L = len(ctx)
+    keys = list(row_masks) if row_masks is not None else [None]
+    acc = {key: [np.zeros(L), np.zeros(L)] for key in keys}
+    for start, stop, _, _, q, read in _iter_read_sites(
+        exp,
         chrom,
-        which=which,
-        as_h5array=True,
+        which,
+        ctx,
+        assay,
         batch_size=batch_size,
         mask_name=mask_name,
-    )
-    try:
-        n_total, L = arr.shape
-        ctx_ok = ctx != NONE
-
-        if row_masks is None:
-            k = np.zeros(L, dtype=np.float64)
-            n_mol = 0
-            for start in range(0, n_total, batch_size):
-                stop = min(start + batch_size, n_total)
-                batch = arr[start:stop, :]
-                # mask_name marks dropped molecules as all-nan rows
-                # (see _apply_keep_mask); exclude them so they don't
-                # inflate n_mol.
-                kept = ~np.isnan(batch).all(axis=1)
-                q = np.where(ctx_ok[None, :], batch[kept], np.nan)
-                k += np.nansum(q, axis=0)
-                n_mol += int(kept.sum())
-            return k, n_mol
-
-        acc = {
-            key: {"k": np.zeros(L, dtype=np.float64), "n_mol": 0}
-            for key in row_masks
-        }
-        for start in range(0, n_total, batch_size):
-            stop = min(start + batch_size, n_total)
-            batch = arr[start:stop, :]
-            kept = ~np.isnan(batch).all(axis=1)
-            for key, mask in row_masks.items():
-                sel = kept & mask[start:stop]
-                q = np.where(ctx_ok[None, :], batch[sel], np.nan)
-                acc[key]["k"] += np.nansum(q, axis=0)
-                acc[key]["n_mol"] += int(sel.sum())
-        return {key: (acc[key]["k"], acc[key]["n_mol"]) for key in row_masks}
-    finally:
-        arr.close()
+        span=span,
+    ):
+        for key in keys:
+            if key is None:
+                q_k, read_k = q, read
+            else:
+                sel = row_masks[key][start:stop]
+                q_k, read_k = q[sel], read[sel]
+            acc[key][0] += np.nansum(q_k, axis=0)
+            acc[key][1] += read_k.sum(axis=0)
+    if row_masks is None:
+        return tuple(acc[None])
+    return {key: tuple(acc[key]) for key in keys}
 
 
 def _leak_interpolated_rate(theta_acc, fpr, rho_leak=0.1, eps=1e-4):
@@ -298,9 +469,9 @@ def _calibrate_from_controls(
 
     Parameters
     ----------
-    meth_k, meth_n : np.ndarray, int
+    meth_k, meth_n : np.ndarray
         From `_streamed_call_count` on the fully-methylated control.
-    unmeth_k, unmeth_n : np.ndarray, int
+    unmeth_k, unmeth_n : np.ndarray
         From `_streamed_call_count` on the unmethylated control.
     ctx : np.ndarray
         int8, length L, context code per position.
@@ -1027,6 +1198,7 @@ def _chrom_calibration(
     mask_name,
     norm_by_strand=False,
     channels=None,
+    span="full",
 ):
     """
     Classify `chrom`'s reference into contexts and calibrate
@@ -1056,11 +1228,15 @@ def _chrom_calibration(
     channels : iterable of int, optional
         Context channels actually assayed, from `_active_channels`.
         Defaults to all of `_ALL_CHANNELS`.
+    span : {"full", "calls"}, default "full"
+        Forwarded to the streamed counting helpers.
 
     Returns
     -------
     ctx : np.ndarray
         int8, length L, context code per position.
+    assay : dict of str to np.ndarray
+        From `_strand_assay_masks`.
     theta_prot, theta_acc : np.ndarray or dict of str to np.ndarray
         float64, length L, or (if `norm_by_strand`) a `{"+": ...,
         "-": ...}` dict of such arrays.
@@ -1121,6 +1297,7 @@ def _chrom_calibration(
             )
     else:
         ctx = full_ctx
+    assay = _strand_assay_masks(exp, chrom, ctx)
     has_controls = raw.meth_data is not None and raw.unmeth_data is not None
 
     if norm_by_strand:
@@ -1134,30 +1311,32 @@ def _chrom_calibration(
 
     if has_controls:
         if norm_by_strand:
-            meth_strand = _strand_of_mol(raw.meth_data, len(raw.meth_mol_id))
-            unmeth_strand = _strand_of_mol(
-                raw.unmeth_data, len(raw.unmeth_mol_id)
-            )
+            meth_strand = _mol_strand(exp, chrom, "meth")
+            unmeth_strand = _mol_strand(exp, chrom, "unmeth")
             meth_counts = _streamed_call_count(
                 exp,
                 chrom,
                 "meth",
                 ctx,
+                assay,
                 batch_size,
                 mask_name,
                 row_masks={"+": meth_strand == "+", "-": meth_strand == "-"},
+                span=span,
             )
             unmeth_counts = _streamed_call_count(
                 exp,
                 chrom,
                 "unmeth",
                 ctx,
+                assay,
                 batch_size,
                 mask_name,
                 row_masks={
                     "+": unmeth_strand == "+",
                     "-": unmeth_strand == "-",
                 },
+                span=span,
             )
             theta_prot, theta_acc, informative = {}, {}, {}
             calib_info = {}
@@ -1181,10 +1360,24 @@ def _chrom_calibration(
                 }
         else:
             meth_k, meth_n = _streamed_call_count(
-                exp, chrom, "meth", ctx, batch_size, mask_name
+                exp,
+                chrom,
+                "meth",
+                ctx,
+                assay,
+                batch_size,
+                mask_name,
+                span=span,
             )
             unmeth_k, unmeth_n = _streamed_call_count(
-                exp, chrom, "unmeth", ctx, batch_size, mask_name
+                exp,
+                chrom,
+                "unmeth",
+                ctx,
+                assay,
+                batch_size,
+                mask_name,
+                span=span,
             )
             theta_prot, theta_acc, informative = _calibrate_from_controls(
                 meth_k,
@@ -1270,7 +1463,15 @@ def _chrom_calibration(
                 ),
                 **em_diag,
             }
-    return ctx, theta_prot, theta_acc, informative, has_controls, calib_info
+    return (
+        ctx,
+        assay,
+        theta_prot,
+        theta_acc,
+        informative,
+        has_controls,
+        calib_info,
+    )
 
 
 class MethPrintAnalysis:
@@ -2082,13 +2283,20 @@ class MethPrintAnalysis:
             for chrom in exp.chroms:
                 (
                     ctx,
+                    assay,
                     theta_prot,
                     theta_acc,
                     informative,
                     has_controls,
                     calib_info,
                 ) = _chrom_calibration(exp, chrom, **calib_kwargs)
-                calib_cache[chrom] = (ctx, theta_prot, theta_acc, informative)
+                calib_cache[chrom] = (
+                    ctx,
+                    assay,
+                    theta_prot,
+                    theta_acc,
+                    informative,
+                )
                 calib_records.extend(_calib_rows(chrom, calib_info))
                 # meth control isolates the crosstalk artifact from
                 # real, occupancy-driven correlation in the test data
@@ -2161,11 +2369,19 @@ class MethPrintAnalysis:
         for chrom in exp.chroms:
             raw = exp.raw[chrom]
             if chrom in calib_cache:
-                ctx, theta_prot, theta_acc, informative = calib_cache[chrom]
+                ctx, assay, theta_prot, theta_acc, informative = calib_cache[
+                    chrom
+                ]
             else:
-                (ctx, theta_prot, theta_acc, informative, _, calib_info) = (
-                    _chrom_calibration(exp, chrom, **calib_kwargs)
-                )
+                (
+                    ctx,
+                    assay,
+                    theta_prot,
+                    theta_acc,
+                    informative,
+                    _,
+                    calib_info,
+                ) = _chrom_calibration(exp, chrom, **calib_kwargs)
                 calib_records.extend(_calib_rows(chrom, calib_info))
 
             if norm_by_strand:

@@ -7,6 +7,10 @@ import numpy as np
 from catella.experiment._contexts import NONE
 from catella.experiment._dropout import _strand_of_mol
 
+_UNMAPPED_STRAND_MSG = (
+    "Cannot do normalization by strand with unmapped strands '.'."
+)
+
 
 def _lookup_mask(exp, chrom, source, mask_name):
     """Fetch a filter_dropout() 'keep' array, or raise KeyError."""
@@ -34,6 +38,17 @@ def _mol_strand(exp, chrom, which):
     return _strand_of_mol(
         getattr(raw, f"{which}_data"), len(getattr(raw, f"{which}_mol_id"))
     )
+
+
+def _check_mapped_strands(raw, has_controls):
+    """
+    Raise ValueError if the test data, or the controls when
+    `has_controls`, have rows with an unmapped strand ('.').
+    """
+    sources = ("test", "meth", "unmeth") if has_controls else ("test",)
+    for src in sources:
+        if (getattr(raw, f"{src}_data")["strand"] == ".").any():
+            raise ValueError(_UNMAPPED_STRAND_MSG)
 
 
 def _read_sites(batch, assay_rows, ctx_ok, span="full"):

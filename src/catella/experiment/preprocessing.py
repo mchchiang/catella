@@ -23,8 +23,14 @@ from catella.experiment._contexts import (
     A,
     _active_channels,
 )
-from catella.experiment._dropout import _apply_keep_mask
-from catella.experiment._empirical import _smooth_source
+from catella.experiment._dropout import _strand_of_mol
+from catella.experiment._empirical import (
+    _clip_bounds,
+    _control_means,
+    _masked_smoothed,
+    _smooth_source,
+    _write_empirical_prob,
+)
 from catella.experiment._eta import (
     _accumulate_eta_source,
     _finalize_channel_eta,
@@ -33,6 +39,7 @@ from catella.experiment._eta import (
 )
 from catella.experiment._reads import (
     _accumulate_call_frac,
+    _check_mapped_strands,
     _iter_read_sites,
     _lookup_mask,
 )
@@ -283,50 +290,105 @@ class MethPrintAnalysis:
         scratch files from the same experiment.
         """
 
-        # Some helper functions
-        def strands(df):
-            pve = df[df["strand"] == "+"]["mol_index"].unique()
-            nve = df[df["strand"] == "-"]["mol_index"].unique()
-            uni = df[df["strand"] == "."]["mol_index"].unique()
-            return pve, nve, uni
-
-        def strand_of_mol(df, nmol):
-            # One strand label per molecule, looked up by mol_index
-            labels = np.full(nmol, ".", dtype="<U1")
-            first = df.drop_duplicates("mol_index")[["mol_index", "strand"]]
-            idx = first["mol_index"].to_numpy().astype(np.int64)
-            labels[idx] = first["strand"].to_numpy()
-            return labels
-
-        def streamed_nanmean(arr, row_mask=None):
-            # Per-position mean over molecules (rows), streamed in
-            # batches, delegating to H5Array's shared reduction logic
-            return arr._streamed_reduce(
-                "mean", 0, batch_size, row_mask=row_mask
-            )
-
-        def apply_norm(test_batch, meth_avg, unmeth_avg):
-            denom = meth_avg - unmeth_avg
-            # Avoid division by zero
-            denom = np.where(
-                np.abs(denom) < self._EPSILON, self._EPSILON, denom
-            )
-            return (test_batch - unmeth_avg) / denom
-
         tmp_dir = exp.resolve_tmp_dir()
+        lnuc = self._ensure_smoothed(
+            exp, lnuc, smoothed_name, resmooth, batch_size, mask_name
+        )
+        end_idx = -(lnuc - 1) if lnuc > 1 else None
+        sample_kw = {
+            "sample_size": percentile_sample_size,
+            "batch_size": batch_size,
+            "end_idx": end_idx,
+            "rng": np.random.default_rng(seed),
+            "eps": self._EPSILON,
+        }
 
-        # Check for cached lnuc, or perform (or re-verify) smoothing.
-        # Smoothing always runs with nan_method="none" here: this
-        # method's own fill_edge (applied to the final probabilities
-        # below) is the only missing-data handling in effect.
+        for chrom in exp.chroms:
+            raw = exp.raw[chrom]
+            has_controls = (
+                raw.meth_data is not None and raw.unmeth_data is not None
+            )
+            srcs = ("test", "meth", "unmeth") if has_controls else ("test",)
+            arrs = {
+                src: _masked_smoothed(
+                    exp, chrom, src, smoothed_name, mask_name, batch_size
+                )
+                for src in srcs
+            }
+            labels = dict.fromkeys(srcs)
+            means = None
+            if has_controls:
+                if norm_by_strand:
+                    _check_mapped_strands(raw, has_controls)
+                    labels = {
+                        src: _strand_of_mol(
+                            getattr(raw, f"{src}_data"), arrs[src].shape[0]
+                        )
+                        for src in srcs
+                    }
+                means = _control_means(
+                    arrs, labels, norm_by_strand, batch_size
+                )
+
+            vmin, vmax = _clip_bounds(
+                arrs,
+                labels,
+                means,
+                clip_low=clip_low,
+                clip_high=clip_high,
+                **sample_kw,
+            )
+            exp.analysis[chrom][prob_name] = _write_empirical_prob(
+                arrs["test"],
+                labels["test"],
+                means,
+                vmin,
+                vmax,
+                end_idx=end_idx,
+                fill_edge=fill_edge,
+                batch_size=batch_size,
+                tmp_dir=tmp_dir,
+                eps=self._EPSILON,
+            )
+
+    def _ensure_smoothed(
+        self, exp, lnuc, smoothed_name, resmooth, batch_size, mask_name
+    ):
+        """
+        Smooth with `nan_method="none"` unless a matching cached result
+        exists, and return the window size actually used.
+
+        Parameters
+        ----------
+        exp : MethPrintExperiment
+            The experiment object containing raw data and analysis maps.
+        lnuc : int or None
+            Requested window size; None uses the cached one.
+        smoothed_name, resmooth, batch_size, mask_name
+            As in `empirical_prob`.
+
+        Returns
+        -------
+        int
+            The window size of `test_{smoothed_name}`.
+
+        Raises
+        ------
+        ValueError
+            If smoothing is needed but no `lnuc` is known, or the cached
+            result was made with a different `lnuc` or `nan_method`.
+        """
         already_smoothed = (
             f"test_{smoothed_name}" in exp.analysis[exp.chroms[0]]
         )
         cached_params = exp.global_analysis.get(f"{smoothed_name}_params")
+        cached_lnuc = None
+        if cached_params is not None:
+            cached_lnuc = int(cached_params["lnuc"].iloc[0])
 
         if resmooth or not already_smoothed:
-            if lnuc is None and cached_params is not None:
-                lnuc = int(cached_params["lnuc"].iloc[0])
+            if lnuc is None:
+                lnuc = cached_lnuc
             if lnuc is None:
                 raise ValueError(
                     "'lnuc' must be specified if data are not already "
@@ -340,17 +402,16 @@ class MethPrintAnalysis:
                 batch_size=batch_size,
                 mask_name=mask_name,
             )
-        elif cached_params is not None:
-            row = cached_params.iloc[0]
+            return lnuc
+
+        if cached_params is not None:
             mismatched = []
-            if lnuc is not None and lnuc != int(row["lnuc"]):
+            if lnuc is not None and lnuc != cached_lnuc:
                 mismatched.append("lnuc")
-            if row["nan_method"] != "none":
+            if cached_params["nan_method"].iloc[0] != "none":
                 mismatched.append("nan_method")
-            # mask_name is *not* compared here: unlike lnuc/
-            # nan_method, it's reapplied fresh to the output on every
-            # call via _apply_keep_mask below, regardless of what (if
-            # any) mask_name smooth() itself used.
+            # mask_name is not compared: it is reapplied to the output
+            # on every call.
             if mismatched:
                 raise ValueError(
                     f"'{smoothed_name}' was already smoothed with "
@@ -358,208 +419,8 @@ class MethPrintAnalysis:
                     "resmooth=True to recompute, or use a "
                     "different 'smoothed_name'."
                 )
-
-        # lnuc may still be unset if smoothing was skipped and the
-        # caller didn't pass it; downstream code needs the real value.
-        if lnuc is None and cached_params is not None:
-            lnuc = int(cached_params["lnuc"].iloc[0])
-
-        rng = np.random.default_rng(seed)
-
-        for chrom in exp.chroms:
-            raw = exp.raw[chrom]
-            ana = exp.analysis[chrom]
-            test_arr = ana[f"test_{smoothed_name}"]
-            if mask_name is not None:
-                test_arr = _apply_keep_mask(
-                    test_arr,
-                    _lookup_mask(exp, chrom, "test", mask_name),
-                    batch_size,
-                )
-            nmol, nbp = test_arr.shape
-
-            has_controls = (
-                raw.meth_data is not None and raw.unmeth_data is not None
-            )
-            test_strand = None
-            meth_avg = unmeth_avg = None
-            meth_avg_pos = meth_avg_neg = None
-            unmeth_avg_pos = unmeth_avg_neg = None
-
-            if has_controls:
-                meth_arr = ana[f"meth_{smoothed_name}"]
-                unmeth_arr = ana[f"unmeth_{smoothed_name}"]
-                if mask_name is not None:
-                    meth_arr = _apply_keep_mask(
-                        meth_arr,
-                        _lookup_mask(exp, chrom, "meth", mask_name),
-                        batch_size,
-                    )
-                    unmeth_arr = _apply_keep_mask(
-                        unmeth_arr,
-                        _lookup_mask(exp, chrom, "unmeth", mask_name),
-                        batch_size,
-                    )
-                if norm_by_strand:
-                    _, _, tu = strands(raw.test_data)
-                    _, _, mu = strands(raw.meth_data)
-                    _, _, uu = strands(raw.unmeth_data)
-                    if len(tu) > 0 or len(mu) > 0 or len(uu) > 0:
-                        raise ValueError(
-                            "Cannot do normalization by strand "
-                            "with unmapped strands '.'."
-                        )
-                    test_strand = strand_of_mol(raw.test_data, nmol)
-                    meth_strand = strand_of_mol(
-                        raw.meth_data, meth_arr.shape[0]
-                    )
-                    unmeth_strand = strand_of_mol(
-                        raw.unmeth_data, unmeth_arr.shape[0]
-                    )
-                    meth_avg_pos = streamed_nanmean(
-                        meth_arr, meth_strand == "+"
-                    )
-                    meth_avg_neg = streamed_nanmean(
-                        meth_arr, meth_strand == "-"
-                    )
-                    unmeth_avg_pos = streamed_nanmean(
-                        unmeth_arr, unmeth_strand == "+"
-                    )
-                    unmeth_avg_neg = streamed_nanmean(
-                        unmeth_arr, unmeth_strand == "-"
-                    )
-                else:
-                    meth_avg = streamed_nanmean(meth_arr)
-                    unmeth_avg = streamed_nanmean(unmeth_arr)
-
-            def normalized_batch(
-                start,
-                stop,
-                test_arr=test_arr,
-                has_controls=has_controls,
-                norm_by_strand=norm_by_strand,
-                test_strand=test_strand,
-                meth_avg_pos=meth_avg_pos,
-                meth_avg_neg=meth_avg_neg,
-                unmeth_avg_pos=unmeth_avg_pos,
-                unmeth_avg_neg=unmeth_avg_neg,
-                meth_avg=meth_avg,
-                unmeth_avg=unmeth_avg,
-            ):
-                batch = test_arr[start:stop, :]
-                if not has_controls:
-                    return batch
-                if norm_by_strand:
-                    labels = test_strand[start:stop]
-                    out = np.empty_like(batch)
-                    pos, neg = labels == "+", labels == "-"
-                    out[pos] = apply_norm(
-                        batch[pos], meth_avg_pos, unmeth_avg_pos
-                    )
-                    out[neg] = apply_norm(
-                        batch[neg], meth_avg_neg, unmeth_avg_neg
-                    )
-                    return out
-                return apply_norm(batch, meth_avg, unmeth_avg)
-
-            # Normalize the data so that all values are between 0 and 1
-            # Exclude trailing edge created by rolling window
-            end_idx = -(lnuc - 1) if lnuc > 1 else None
-
-            def normalized_sample(
-                arr,
-                strand_labels,
-                has_controls=has_controls,
-                norm_by_strand=norm_by_strand,
-                meth_avg_pos=meth_avg_pos,
-                meth_avg_neg=meth_avg_neg,
-                unmeth_avg_pos=unmeth_avg_pos,
-                unmeth_avg_neg=unmeth_avg_neg,
-                meth_avg=meth_avg,
-                unmeth_avg=unmeth_avg,
-                end_idx=end_idx,
-            ):
-                # Random subsample of an array's molecules, normalized
-                # the same way as `normalized_batch` when controls are
-                # available (or left raw otherwise), sampled
-                # proportionally within each contiguously-read batch.
-                n_total = arr.shape[0]
-                sample_size = min(percentile_sample_size, n_total)
-                sample_frac = sample_size / n_total
-                chunks = []
-                for start in range(0, n_total, batch_size):
-                    stop = min(start + batch_size, n_total)
-                    batch = arr[start:stop, :]
-                    if has_controls:
-                        if norm_by_strand:
-                            labels = strand_labels[start:stop]
-                            normed = np.empty_like(batch)
-                            pos, neg = labels == "+", labels == "-"
-                            normed[pos] = apply_norm(
-                                batch[pos], meth_avg_pos, unmeth_avg_pos
-                            )
-                            normed[neg] = apply_norm(
-                                batch[neg], meth_avg_neg, unmeth_avg_neg
-                            )
-                            batch = normed
-                        else:
-                            batch = apply_norm(batch, meth_avg, unmeth_avg)
-                    n_take = min(
-                        stop - start,
-                        max(1, round((stop - start) * sample_frac)),
-                    )
-                    rows = rng.choice(stop - start, size=n_take, replace=False)
-                    chunks.append(batch[rows, :end_idx])
-                return np.concatenate(chunks, axis=0)
-
-            # Estimate vmin/vmax from the normalized control sources
-            # when available, so bounds depend only on the controls
-            # (and are therefore comparable across test conditions
-            # sharing the same controls) rather than on the test
-            # signal's own, condition-dependent dynamic range. Fall
-            # back to the test signal itself when there are no controls.
-            if has_controls:
-                unmeth_sample = normalized_sample(
-                    unmeth_arr, unmeth_strand if norm_by_strand else None
-                )
-                meth_sample = normalized_sample(
-                    meth_arr, meth_strand if norm_by_strand else None
-                )
-                vmin = np.nanpercentile(unmeth_sample, clip_low)
-                vmax = np.nanpercentile(meth_sample, clip_high)
-            else:
-                test_sample = normalized_sample(test_arr, None)
-                vmin = np.nanpercentile(test_sample, clip_low)
-                vmax = np.nanpercentile(test_sample, clip_high)
-
-            # Use the difference between percentiles as the scaling factor
-            denom = np.maximum(vmax - vmin, self._EPSILON)
-
-            # Map to probability [0,1] and stream the result to disk.
-            # Clip to ensure that outliers outside the percentile bounds
-            # do not result in probabilities < 0 or > 1.
-            out = H5Array.create((nmol, nbp), dtype=np.float64, dir=tmp_dir)
-            for start in range(0, nmol, batch_size):
-                stop = min(start + batch_size, nmol)
-                batch = normalized_batch(start, stop)
-                # mask_name marks dropped molecules as all-nan rows
-                # (see _apply_keep_mask); keep them excluded from the
-                # output rather than neutral-filling them below.
-                masked = np.isnan(batch).all(axis=1)
-                prob = np.clip((batch - vmin) / denom, 0.0, 1.0)
-                # Interior gaps carry no evidence either way, so they
-                # are filled with 0.5 (logit(0.5) == 0), the same
-                # neutral value model_prob gives uninformative
-                # positions. The trailing lnuc-1 columns have no
-                # full window at all and are filled with fill_edge
-                # instead, mirroring model_prob's own edge handling.
-                interior = prob[:, :end_idx]
-                prob[:, :end_idx] = np.where(np.isnan(interior), 0.5, interior)
-                if end_idx is not None:
-                    prob[:, end_idx:] = fill_edge
-                prob[masked, :] = np.nan
-                out.write_batch(start, stop, prob)
-            ana[prob_name] = out
+            return cached_lnuc
+        return lnuc
 
     def model_prob(
         self,

@@ -19,14 +19,11 @@ from catella.experiment._em import (
     _calibrate_from_data,
     _streamed_window_count,
 )
+from catella.experiment._reads import _UNMAPPED_STRAND_MSG
 
 # Warn (not raise) if more than this fraction of wrap-mirrored position
 # pairs disagree on context when folding ctx in model_prob.
 _WRAP_CTX_DISAGREE_WARN_FRAC = 0.02
-
-_UNMAPPED_STRAND_MSG = (
-    "Cannot do normalization by strand with unmapped strands '.'."
-)
 
 # Call-fraction check in model_prob: channels whose controls both have
 # at least _EXPLICIT_MIN_CALL_FRAC are taken as explicit-mode, and warn

@@ -7,6 +7,10 @@ import numpy as np
 import pandas as pd
 import pytest
 from catella import utils
+from catella.experiment._contexts import (
+    _reference_contexts,
+    _strand_assay_masks,
+)
 from catella.experiment.methdata import MethPrintData, MethPrintExperiment
 from catella.experiment.preprocessing import (
     NONE,
@@ -14,8 +18,6 @@ from catella.experiment.preprocessing import (
     MethPrintAnalysis,
     _context_prior_rate,
     _read_sites,
-    _reference_contexts,
-    _strand_assay_masks,
     _warn_call_frac_mismatch,
 )
 from catella.h5_array import H5Array
@@ -985,13 +987,13 @@ def _make_footprint_experiment(
     # strand_of/strand_call_bias plant a strand-correlated call-rate
     # bias, for testing norm_by_strand. mtase sets exp.mtase, for
     # testing model_prob's channel restriction.
+    from catella.experiment._contexts import _reference_contexts
     from catella.experiment.preprocessing import (
         GCG,
         GCH,
         HCG,
         NONE,
         A,
-        _reference_contexts,
     )
 
     if strand_of is None:

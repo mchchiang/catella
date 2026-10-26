@@ -24,6 +24,7 @@ from catella.experiment._contexts import (
     _active_channels,
 )
 from catella.experiment._dropout import _apply_keep_mask
+from catella.experiment._empirical import _smooth_source
 from catella.experiment._eta import (
     _accumulate_eta_source,
     _finalize_channel_eta,
@@ -143,93 +144,30 @@ class MethPrintAnalysis:
                 }
             ]
         )
-        tmp_dir = exp.resolve_tmp_dir()
-
-        # Some helper functions
-        def smooth_df(df, nbp, nmol, keep):
-            if not isinstance(fill_edge, str) and not np.isnan(fill_edge):
-                vmin, vmax = df["mod_qual"].min(), df["mod_qual"].max()
-                if not (vmin <= fill_edge <= vmax):
-                    raise ValueError(
-                        f"'fill_edge'={fill_edge} is outside the data "
-                        f"range [{vmin}, {vmax}]."
-                    )
-
-            all_pos = pd.Index(range(nbp))
-            df = df.sort_values("mol_index", kind="stable")
-            mol_index = df["mol_index"].to_numpy()
-            out = H5Array.create((nmol, nbp), dtype=np.float64, dir=tmp_dir)
-
-            for start in range(0, nmol, batch_size):
-                stop = min(start + batch_size, nmol)
-                lo, hi = np.searchsorted(mol_index, [start, stop])
-                batch_df = df.iloc[lo:hi]
-
-                # Pivot and reindex to ensure all positions are represented
-                df_piv = batch_df.pivot(
-                    index="pos", columns="mol_index", values="mod_qual"
-                ).reindex(all_pos)
-
-                # Rolling mean centered by shifting and store the results
-                # in a left-aligned manner
-                res = (
-                    df_piv.rolling(window=lnuc, min_periods=1)
-                    .mean()
-                    .shift(-(lnuc - 1))
-                )
-
-                # Interior nans (bounded by valid data on both sides) are
-                # filled per nan_method; interpolate() with
-                # limit_area="inside" only fills those, leaving edge nans
-                # untouched so they can be probed for below. "none"
-                # leaves interior nans as-is too.
-                if nan_method == "none":
-                    pass
-                elif nan_method == "interpolate":
-                    res = res.interpolate(method="linear", limit_area="inside")
-                else:
-                    interior_interp = res.interpolate(
-                        method="linear", limit_area="inside"
-                    )
-                    interior_mask = res.isna() & interior_interp.notna()
-                    res = res.where(~interior_mask, res.fillna(res.mean()))
-
-                # Fill remaining edge nans independently of nan_method
-                if isinstance(fill_edge, str) and fill_edge == "mean":
-                    res = res.fillna(res.mean())
-                else:
-                    res = res.fillna(fill_edge)
-
-                out_batch = res.to_numpy().T
-                if keep is not None:
-                    out_batch = _apply_keep_mask(out_batch, keep[start:stop])
-                out.write_batch(start, stop, out_batch)
-            return out
-
+        smooth_kwargs = {
+            "lnuc": lnuc,
+            "nan_method": nan_method,
+            "fill_edge": fill_edge,
+            "batch_size": batch_size,
+            "tmp_dir": exp.resolve_tmp_dir(),
+        }
         for chrom in exp.chroms:
             raw = exp.raw[chrom]
-            nbp = raw.nbp
-
-            def src_keep(src, chrom=chrom):
-                return (
+            for src in ("test", "meth", "unmeth"):
+                df = getattr(raw, f"{src}_data")
+                if df is None:
+                    continue
+                keep = (
                     _lookup_mask(exp, chrom, src, mask_name)
                     if mask_name is not None
                     else None
                 )
-
-            exp.analysis[chrom][f"test_{name}"] = smooth_df(
-                raw.test_data, nbp, len(raw.test_mol_id), src_keep("test")
-            )
-            if raw.meth_data is not None:
-                exp.analysis[chrom][f"meth_{name}"] = smooth_df(
-                    raw.meth_data, nbp, len(raw.meth_mol_id), src_keep("meth")
-                )
-            if raw.unmeth_data is not None:
-                exp.analysis[chrom][f"unmeth_{name}"] = smooth_df(
-                    raw.unmeth_data,
-                    nbp,
-                    len(raw.unmeth_mol_id),
-                    src_keep("unmeth"),
+                exp.analysis[chrom][f"{src}_{name}"] = _smooth_source(
+                    df,
+                    raw.nbp,
+                    len(getattr(raw, f"{src}_mol_id")),
+                    keep,
+                    **smooth_kwargs,
                 )
 
     def empirical_prob(

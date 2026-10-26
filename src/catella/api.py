@@ -11,9 +11,10 @@ import pandas as pd
 from scipy.special import logit
 
 from catella import utils
+from catella.experiment._reads import _lookup_mask
 from catella.experiment.methdata import MethPrintExperiment
 from catella.experiment.plot import MethPlot
-from catella.experiment.preprocessing import MethPrintAnalysis, _lookup_mask
+from catella.experiment.preprocessing import MethPrintAnalysis
 from catella.h5_array import H5Array
 from catella.simulation.analysis import SimAnalysis
 from catella.simulation.config import SimSettings

@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from catella import utils
+from catella.experiment._calibration import _warn_call_frac_mismatch
 from catella.experiment._contexts import (
     _reference_contexts,
     _strand_assay_masks,
@@ -18,7 +19,6 @@ from catella.experiment.preprocessing import (
     NONE,
     A,
     MethPrintAnalysis,
-    _warn_call_frac_mismatch,
 )
 from catella.h5_array import H5Array
 
@@ -1471,7 +1471,7 @@ class TestModelProbWrap:
         nbp = len(half)
         rng = np.random.default_rng(0)
 
-        from catella.experiment.preprocessing import NONE, _reference_contexts
+        from catella.experiment._contexts import NONE, _reference_contexts
 
         site = np.where(_reference_contexts(seq)[:nbp] != NONE)[0]
 

@@ -1003,7 +1003,7 @@ def _make_footprint_experiment(
     L = len(seq)
     site = ctx != NONE
 
-    from catella.experiment.methdata import _methylatable_positions
+    from catella.experiment._ingest import _methylatable_positions
 
     strand_site = {".": site}
     for s in ("+", "-"):

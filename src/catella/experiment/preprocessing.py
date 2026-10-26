@@ -9,12 +9,9 @@ import numpy as np
 import pandas as pd
 
 from catella import utils
-from catella.experiment.methdata import (
-    MethPrintExperiment,
-    _apply_keep_mask,
-    _methylatable_positions,
-    _strand_of_mol,
-)
+from catella.experiment._dropout import _apply_keep_mask, _strand_of_mol
+from catella.experiment._ingest import _methylatable_positions
+from catella.experiment.methdata import MethPrintExperiment
 from catella.h5_array import H5Array
 
 

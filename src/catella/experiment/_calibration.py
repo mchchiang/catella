@@ -19,7 +19,7 @@ from catella.experiment._em import (
     _calibrate_from_data,
     _streamed_window_count,
 )
-from catella.experiment._reads import _UNMAPPED_STRAND_MSG
+from catella.experiment._reads import _check_mapped_strands
 
 # Warn (not raise) if more than this fraction of wrap-mirrored position
 # pairs disagree on context when folding ctx in model_prob.
@@ -225,6 +225,227 @@ def _frac_informative_by_context(ctx, informative, channels=None):
     }
 
 
+def _fold_contexts(exp, chrom):
+    """
+    Context code per position of `chrom`, folded to `nbp` if `exp.wrap`.
+
+    Wrap-mirrored positions that disagree on context are set to NONE.
+
+    Parameters
+    ----------
+    exp : MethPrintExperiment
+        The experiment object containing raw data and analysis maps.
+    chrom : str
+        Chromosome identifier.
+
+    Returns
+    -------
+    np.ndarray
+        int8, length L.
+
+    Raises
+    ------
+    ValueError
+        If `chrom` has no reference sequence.
+
+    Warns
+    -----
+    UserWarning
+        If more than `_WRAP_CTX_DISAGREE_WARN_FRAC` of the mirrored
+        position pairs disagree.
+    """
+    raw = exp.raw[chrom]
+    if raw.refseq is None:
+        raise ValueError(
+            f"No reference sequence for chrom '{chrom}'; "
+            "model_prob needs 'fasta_file' at load_raw."
+        )
+    full_ctx = _reference_contexts(raw.refseq)
+    if not exp.wrap:
+        return full_ctx
+    nbp = raw.nbp
+    length = len(raw.refseq)
+    lower = full_ctx[:nbp]
+    upper = full_ctx[length - nbp :][::-1]
+    agree = lower == upper
+    frac_disagree = 1.0 - agree.mean()
+    if frac_disagree > _WRAP_CTX_DISAGREE_WARN_FRAC:
+        warnings.warn(
+            f"refseq for chrom '{chrom}' disagrees on "
+            f"context at {(~agree).sum()}/{nbp} "
+            f"({frac_disagree:.1%}) wrap-mirrored position "
+            "pairs (folded to NONE there); this may "
+            "indicate the wrong chromsize length or a "
+            "non-symmetric reference, rather than a small "
+            "loop/junction region.",
+            stacklevel=4,
+        )
+    return np.where(agree, lower, NONE).astype(lower.dtype)
+
+
+def _controls_calibration(
+    exp,
+    chrom,
+    ctx,
+    assay,
+    strata,
+    *,
+    nu,
+    rho_leak,
+    min_gap,
+    batch_size,
+    mask_name,
+    channels,
+    span,
+):
+    """
+    Calibrate each stratum from the meth/unmeth controls.
+
+    Parameters
+    ----------
+    exp : MethPrintExperiment
+        The experiment object containing raw data and analysis maps.
+    chrom : str
+        Chromosome identifier.
+    ctx : np.ndarray
+        int8, length L, context code per position.
+    assay : dict of str to np.ndarray
+        From `_strand_assay_masks`.
+    strata : tuple
+        `("+", "-")` to calibrate each strand, or `(None,)` to pool.
+    nu, rho_leak, min_gap, batch_size, mask_name, channels, span
+        As in `_chrom_calibration`.
+
+    Returns
+    -------
+    dict
+        Stratum -> `(theta_prot, theta_acc, informative, calib_info)`.
+    """
+    by_strand = strata != (None,)
+    call_stats = {"meth": {}, "unmeth": {}}
+    counts = {}
+    for src in ("meth", "unmeth"):
+        c = _streamed_call_count(
+            exp,
+            chrom,
+            src,
+            ctx,
+            assay,
+            batch_size,
+            mask_name,
+            by_strand=by_strand,
+            span=span,
+            call_stats=call_stats[src],
+        )
+        counts[src] = c if by_strand else {None: c}
+
+    results = {}
+    for s in strata:
+        theta_prot, theta_acc, informative = _calibrate_from_controls(
+            *counts["meth"][s],
+            *counts["unmeth"][s],
+            ctx,
+            nu=nu,
+            rho_leak=rho_leak,
+            min_gap=min_gap,
+            channels=channels,
+        )
+        calib_info = {
+            "has_controls": True,
+            **_frac_informative_by_context(
+                ctx, informative, channels=channels
+            ),
+            **_call_frac_info(call_stats, channels),
+        }
+        results[s] = (theta_prot, theta_acc, informative, calib_info)
+    return results
+
+
+def _em_calibration(
+    exp,
+    chrom,
+    ctx,
+    assay,
+    strata,
+    *,
+    lnuc,
+    n_min,
+    max_iters,
+    init_prot,
+    init_acc,
+    tol,
+    min_gap,
+    batch_size,
+    mask_name,
+    channels,
+    span,
+):
+    """
+    Calibrate each stratum by expectation-maximization on the test data.
+
+    Parameters
+    ----------
+    exp : MethPrintExperiment
+        The experiment object containing raw data and analysis maps.
+    chrom : str
+        Chromosome identifier.
+    ctx : np.ndarray
+        int8, length L, context code per position.
+    assay : dict of str to np.ndarray
+        From `_strand_assay_masks`.
+    strata : tuple
+        `("+", "-")` to calibrate each strand, or `(None,)` to pool.
+    lnuc, n_min, max_iters, init_prot, init_acc, tol, min_gap,
+    batch_size, mask_name, channels, span
+        As in `_chrom_calibration`.
+
+    Returns
+    -------
+    dict
+        Stratum -> `(theta_prot, theta_acc, informative, calib_info)`.
+    """
+    by_strand = strata != (None,)
+    counts = _streamed_window_count(
+        exp,
+        chrom,
+        ctx,
+        assay,
+        lnuc,
+        n_min,
+        batch_size,
+        mask_name,
+        by_strand=by_strand,
+        channels=channels,
+        span=span,
+    )
+    if not by_strand:
+        counts = {None: counts}
+
+    results = {}
+    for s in strata:
+        K, N, codes = counts[s]
+        theta_prot, theta_acc, informative, em_diag = _calibrate_from_data(
+            K,
+            N,
+            ctx,
+            codes,
+            max_iters=max_iters,
+            init_prot=init_prot,
+            init_acc=init_acc,
+            tol=tol,
+            min_gap=min_gap,
+        )
+        calib_info = {
+            "has_controls": False,
+            **_frac_informative_by_context(
+                ctx, informative, channels=channels
+            ),
+            **em_diag,
+        }
+        results[s] = (theta_prot, theta_acc, informative, calib_info)
+    return results
+
+
 def _chrom_calibration(
     exp,
     chrom,
@@ -314,204 +535,44 @@ def _chrom_calibration(
     if channels is None:
         channels = _ALL_CHANNELS
     raw = exp.raw[chrom]
-    if raw.refseq is None:
-        raise ValueError(
-            f"No reference sequence for chrom '{chrom}'; "
-            "model_prob needs 'fasta_file' at load_raw."
-        )
-    full_ctx = _reference_contexts(raw.refseq)
-    if exp.wrap:
-        nbp = raw.nbp
-        length = len(raw.refseq)
-        lower = full_ctx[:nbp]
-        upper = full_ctx[length - nbp :][::-1]
-        agree = lower == upper
-        ctx = np.where(agree, lower, NONE).astype(lower.dtype)
-        frac_disagree = 1.0 - agree.mean()
-        if frac_disagree > _WRAP_CTX_DISAGREE_WARN_FRAC:
-            warnings.warn(
-                f"refseq for chrom '{chrom}' disagrees on "
-                f"context at {(~agree).sum()}/{nbp} "
-                f"({frac_disagree:.1%}) wrap-mirrored position "
-                "pairs (folded to NONE there); this may "
-                "indicate the wrong chromsize length or a "
-                "non-symmetric reference, rather than a small "
-                "loop/junction region.",
-                stacklevel=3,
-            )
-    else:
-        ctx = full_ctx
+    ctx = _fold_contexts(exp, chrom)
     assay = _strand_assay_masks(exp, chrom, ctx)
     has_controls = raw.meth_data is not None and raw.unmeth_data is not None
-
     if norm_by_strand:
-        if (raw.test_data["strand"] == ".").any():
-            raise ValueError(_UNMAPPED_STRAND_MSG)
-        if has_controls and (
-            (raw.meth_data["strand"] == ".").any()
-            or (raw.unmeth_data["strand"] == ".").any()
-        ):
-            raise ValueError(_UNMAPPED_STRAND_MSG)
+        _check_mapped_strands(raw, has_controls)
 
+    strata = ("+", "-") if norm_by_strand else (None,)
+    common = {
+        "min_gap": min_gap,
+        "batch_size": batch_size,
+        "mask_name": mask_name,
+        "channels": channels,
+        "span": span,
+    }
     if has_controls:
-        call_stats = {"meth": {}, "unmeth": {}}
-        if norm_by_strand:
-            meth_counts = _streamed_call_count(
-                exp,
-                chrom,
-                "meth",
-                ctx,
-                assay,
-                batch_size,
-                mask_name,
-                by_strand=True,
-                span=span,
-                call_stats=call_stats["meth"],
-            )
-            unmeth_counts = _streamed_call_count(
-                exp,
-                chrom,
-                "unmeth",
-                ctx,
-                assay,
-                batch_size,
-                mask_name,
-                by_strand=True,
-                span=span,
-                call_stats=call_stats["unmeth"],
-            )
-            theta_prot, theta_acc, informative = {}, {}, {}
-            calib_info = {}
-            for s in ("+", "-"):
-                theta_prot[s], theta_acc[s], informative[s] = (
-                    _calibrate_from_controls(
-                        *meth_counts[s],
-                        *unmeth_counts[s],
-                        ctx,
-                        nu=nu,
-                        rho_leak=rho_leak,
-                        min_gap=min_gap,
-                        channels=channels,
-                    )
-                )
-                calib_info[s] = {
-                    "has_controls": has_controls,
-                    **_frac_informative_by_context(
-                        ctx, informative[s], channels=channels
-                    ),
-                    **_call_frac_info(call_stats, channels),
-                }
-        else:
-            meth_k, meth_n = _streamed_call_count(
-                exp,
-                chrom,
-                "meth",
-                ctx,
-                assay,
-                batch_size,
-                mask_name,
-                span=span,
-                call_stats=call_stats["meth"],
-            )
-            unmeth_k, unmeth_n = _streamed_call_count(
-                exp,
-                chrom,
-                "unmeth",
-                ctx,
-                assay,
-                batch_size,
-                mask_name,
-                span=span,
-                call_stats=call_stats["unmeth"],
-            )
-            theta_prot, theta_acc, informative = _calibrate_from_controls(
-                meth_k,
-                meth_n,
-                unmeth_k,
-                unmeth_n,
-                ctx,
-                nu=nu,
-                rho_leak=rho_leak,
-                min_gap=min_gap,
-                channels=channels,
-            )
-            calib_info = {
-                "has_controls": has_controls,
-                **_frac_informative_by_context(
-                    ctx, informative, channels=channels
-                ),
-                **_call_frac_info(call_stats, channels),
-            }
+        results = _controls_calibration(
+            exp, chrom, ctx, assay, strata, nu=nu, rho_leak=rho_leak, **common
+        )
     else:
-        if norm_by_strand:
-            win_counts = _streamed_window_count(
-                exp,
-                chrom,
-                ctx,
-                assay,
-                lnuc,
-                n_min,
-                batch_size,
-                mask_name,
-                by_strand=True,
-                channels=channels,
-                span=span,
-            )
-            theta_prot, theta_acc, informative = {}, {}, {}
-            calib_info = {}
-            for s in ("+", "-"):
-                K, N, codes = win_counts[s]
-                theta_prot[s], theta_acc[s], informative[s], em_diag = (
-                    _calibrate_from_data(
-                        K,
-                        N,
-                        ctx,
-                        codes,
-                        max_iters=max_iters,
-                        init_prot=init_prot,
-                        init_acc=init_acc,
-                        tol=tol,
-                        min_gap=min_gap,
-                    )
-                )
-                calib_info[s] = {
-                    "has_controls": has_controls,
-                    **_frac_informative_by_context(
-                        ctx, informative[s], channels=channels
-                    ),
-                    **em_diag,
-                }
-        else:
-            K, N, codes = _streamed_window_count(
-                exp,
-                chrom,
-                ctx,
-                assay,
-                lnuc,
-                n_min,
-                batch_size,
-                mask_name,
-                channels=channels,
-                span=span,
-            )
-            theta_prot, theta_acc, informative, em_diag = _calibrate_from_data(
-                K,
-                N,
-                ctx,
-                codes,
-                max_iters=max_iters,
-                init_prot=init_prot,
-                init_acc=init_acc,
-                tol=tol,
-                min_gap=min_gap,
-            )
-            calib_info = {
-                "has_controls": has_controls,
-                **_frac_informative_by_context(
-                    ctx, informative, channels=channels
-                ),
-                **em_diag,
-            }
+        results = _em_calibration(
+            exp,
+            chrom,
+            ctx,
+            assay,
+            strata,
+            lnuc=lnuc,
+            n_min=n_min,
+            max_iters=max_iters,
+            init_prot=init_prot,
+            init_acc=init_acc,
+            tol=tol,
+            **common,
+        )
+
+    fields = [dict(zip(strata, f)) for f in zip(*results.values())]
+    if not norm_by_strand:
+        fields = [f[None] for f in fields]
+    theta_prot, theta_acc, informative, calib_info = fields
     return (
         ctx,
         assay,

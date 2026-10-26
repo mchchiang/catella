@@ -1,18 +1,17 @@
 # preprocessing.py
 
 from collections.abc import Iterable
-from contextlib import closing
 
 import numpy as np
 import pandas as pd
 
 from catella import utils
 from catella.experiment._calibration import (
+    _calib_rows,
     _call_frac_info,
     _chrom_calibration,
-    _per_base_log_odds,
+    _theta_frame,
     _warn_call_frac_mismatch,
-    _window_sum_log_odds,
 )
 from catella.experiment._contexts import (
     CONTEXT_NAMES,
@@ -32,17 +31,11 @@ from catella.experiment._empirical import (
     _write_empirical_prob,
 )
 from catella.experiment._eta import (
-    _accumulate_eta_source,
-    _finalize_channel_eta,
-    _init_autocorr_stats,
+    _estimate_channel_eta,
     _resolve_eta_overrides,
 )
-from catella.experiment._reads import (
-    _accumulate_call_frac,
-    _check_mapped_strands,
-    _iter_read_sites,
-    _lookup_mask,
-)
+from catella.experiment._reads import _check_mapped_strands, _lookup_mask
+from catella.experiment._scoring import _score_test_reads
 from catella.experiment.methdata import MethPrintExperiment
 from catella.h5_array import H5Array
 
@@ -611,14 +604,11 @@ class MethPrintAnalysis:
         score each chromosome are stored in
         `exp.analysis[chrom][f"{prob_name}_theta"]`.
         """
-        from scipy.special import expit, logit
-
         if span not in _VALID_SPAN:
             raise ValueError(
                 f"span must be one of {sorted(_VALID_SPAN)}, got {span!r}"
             )
         tmp_dir = exp.resolve_tmp_dir()
-        log_odds_fill = -logit(fill_edge)
 
         channels = _active_channels(exp)
         overrides = _resolve_eta_overrides(eta)
@@ -641,86 +631,14 @@ class MethPrintAnalysis:
             "channels": channels,
             "span": span,
         }
-        _strand_suffix = {"+": "pos", "-": "neg"}
-
-        def _calib_rows(chrom, info):
-            strata = info.items() if norm_by_strand else [(None, info)]
-            rows = []
-            for strand, sub in strata:
-                row = {"chrom": chrom, "has_controls": sub["has_controls"]}
-                row.update(
-                    {
-                        k: v
-                        for k, v in sub.items()
-                        if k.startswith(("frac_informative_", "call_frac_"))
-                    }
-                )
-                if strand is not None:
-                    row["strand"] = strand
-                if "n_iter" in sub:
-                    row["iters"] = sub["n_iter"]
-                    row["log_likelihood"] = sub["log_likelihood"]
-                    row["frac_protected"] = sub["frac_protected"]
-                    row.update(
-                        {
-                            f"theta_prot_{CONTEXT_NAMES[c]}": v
-                            for c, v in zip(sub["codes"], sub["theta_prot"])
-                        }
-                    )
-                    row.update(
-                        {
-                            f"theta_acc_{CONTEXT_NAMES[c]}": v
-                            for c, v in zip(sub["codes"], sub["theta_acc"])
-                        }
-                    )
-                rows.append(row)
-            return rows
 
         calib_cache = {}
         calib_records = []
         if need_auto:
-            stats = _init_autocorr_stats(eta_max_lag)
-            for chrom in exp.chroms:
-                (
-                    ctx,
-                    assay,
-                    theta_prot,
-                    theta_acc,
-                    informative,
-                    has_controls,
-                    calib_info,
-                ) = _chrom_calibration(exp, chrom, **calib_kwargs)
-                calib_cache[chrom] = (
-                    ctx,
-                    assay,
-                    theta_prot,
-                    theta_acc,
-                    informative,
+            estimated, rho_by_channel, calib_cache, calib_records = (
+                _estimate_channel_eta(
+                    exp, calib_kwargs, need_auto, pi0=pi0, max_lag=eta_max_lag
                 )
-                calib_records.extend(_calib_rows(chrom, calib_info))
-                # meth control isolates the crosstalk artifact from
-                # real, occupancy-driven correlation in the test data
-                source = "meth" if has_controls else "test"
-                _accumulate_eta_source(
-                    exp,
-                    chrom,
-                    source,
-                    ctx,
-                    assay,
-                    theta_prot,
-                    theta_acc,
-                    informative,
-                    pi0,
-                    batch_size,
-                    mask_name,
-                    stats,
-                    eta_max_lag,
-                    need_auto,
-                    norm_by_strand=norm_by_strand,
-                    span=span,
-                )
-            estimated, rho_by_channel = _finalize_channel_eta(
-                stats, eta_max_lag
             )
             channel_eta.update({c: estimated[c] for c in need_auto})
 
@@ -763,101 +681,34 @@ class MethPrintAnalysis:
         )
 
         for chrom in exp.chroms:
-            raw = exp.raw[chrom]
             if chrom in calib_cache:
-                ctx, assay, theta_prot, theta_acc, informative = calib_cache[
-                    chrom
-                ]
+                calib = calib_cache[chrom]
             else:
-                (
-                    ctx,
-                    assay,
-                    theta_prot,
-                    theta_acc,
-                    informative,
-                    _,
-                    calib_info,
-                ) = _chrom_calibration(exp, chrom, **calib_kwargs)
-                calib_records.extend(_calib_rows(chrom, calib_info))
-
-            if norm_by_strand:
-                theta_cols = {}
-                for s in ("+", "-"):
-                    suffix = _strand_suffix[s]
-                    theta_cols[f"theta_prot_{suffix}"] = theta_prot[s]
-                    theta_cols[f"theta_acc_{suffix}"] = theta_acc[s]
-                    theta_cols[f"informative_{suffix}"] = informative[s]
-                theta_df = pd.DataFrame(theta_cols)
-            else:
-                theta_df = pd.DataFrame(
-                    {
-                        "theta_prot": theta_prot,
-                        "theta_acc": theta_acc,
-                        "informative": informative,
-                    }
+                *calib, _, calib_info = _chrom_calibration(
+                    exp, chrom, **calib_kwargs
                 )
-            exp.analysis[chrom][f"{prob_name}_theta"] = theta_df
-
-            eta_by_pos = np.ones(len(ctx))
-            for c in channels:
-                eta_by_pos[ctx == c] = channel_eta[c]
-
-            nmol = len(raw.test_mol_id)
-            out = H5Array.create(
-                (nmol, raw.nbp), dtype=np.float64, dir=tmp_dir
+                calib_records.extend(
+                    _calib_rows(chrom, calib_info, norm_by_strand)
+                )
+            exp.analysis[chrom][f"{prob_name}_theta"] = _theta_frame(
+                *calib[2:], norm_by_strand
             )
-            batches = _iter_read_sites(
+            prob, test_stats = _score_test_reads(
                 exp,
                 chrom,
-                "test",
-                ctx,
-                assay,
+                *calib,
+                channel_eta=channel_eta,
+                channels=channels,
+                pi0=pi0,
+                lnuc=lnuc,
+                fill_edge=fill_edge,
+                norm_by_strand=norm_by_strand,
                 batch_size=batch_size,
                 mask_name=mask_name,
                 span=span,
+                tmp_dir=tmp_dir,
             )
-            test_stats = {}
-            with closing(batches):
-                for b in batches:
-                    start, stop, keep, labels, q, read = b[:6]
-                    _accumulate_call_frac(test_stats, b, assay, ctx, channels)
-                    masked = ~keep | ~read.any(axis=1)
-                    if norm_by_strand:
-                        pos, neg = labels == "+", labels == "-"
-                        masked |= ~(pos | neg)
-                        log_odds = np.zeros_like(q)
-                        log_odds[pos] = _per_base_log_odds(
-                            q[pos],
-                            theta_prot["+"],
-                            theta_acc["+"],
-                            informative["+"],
-                            pi0=pi0,
-                            eta=eta_by_pos,
-                        )
-                        log_odds[neg] = _per_base_log_odds(
-                            q[neg],
-                            theta_prot["-"],
-                            theta_acc["-"],
-                            informative["-"],
-                            pi0=pi0,
-                            eta=eta_by_pos,
-                        )
-                    else:
-                        log_odds = _per_base_log_odds(
-                            q,
-                            theta_prot,
-                            theta_acc,
-                            informative,
-                            pi0=pi0,
-                            eta=eta_by_pos,
-                        )
-                    log_odds_win = _window_sum_log_odds(
-                        log_odds, lnuc, fill_edge=log_odds_fill
-                    )
-                    prob = expit(-log_odds_win)
-                    prob[masked, :] = np.nan
-                    out.write_batch(start, stop, prob)
-            exp.analysis[chrom][prob_name] = out
+            exp.analysis[chrom][prob_name] = prob
 
             test_frac = _call_frac_info({"test": test_stats}, channels)
             rows = [r for r in calib_records if r["chrom"] == chrom]

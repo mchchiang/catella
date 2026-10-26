@@ -2,8 +2,12 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
-from catella.experiment._calibration import _fold_contexts
-from catella.experiment._contexts import NONE, _reference_contexts
+from catella.experiment._calibration import (
+    _calib_rows,
+    _fold_contexts,
+    _theta_frame,
+)
+from catella.experiment._contexts import GCH, NONE, A, _reference_contexts
 
 
 def _exp(refseq, wrap, nbp=None):
@@ -36,3 +40,86 @@ class TestFoldContexts:
     def test_missing_refseq_raises(self):
         with pytest.raises(ValueError, match="No reference sequence"):
             _fold_contexts(_exp(None, False), "c")
+
+
+class TestThetaFrame:
+    def test_pooled_columns(self):
+        df = _theta_frame(
+            np.array([0.1, 0.2]),
+            np.array([0.8, 0.9]),
+            np.array([True, False]),
+            False,
+        )
+        assert list(df.columns) == ["theta_prot", "theta_acc", "informative"]
+        np.testing.assert_array_equal(df["theta_acc"], [0.8, 0.9])
+        np.testing.assert_array_equal(df["informative"], [True, False])
+
+    def test_by_strand_columns(self):
+        df = _theta_frame(
+            {"+": np.array([0.1]), "-": np.array([0.2])},
+            {"+": np.array([0.8]), "-": np.array([0.9])},
+            {"+": np.array([True]), "-": np.array([False])},
+            True,
+        )
+        assert list(df.columns) == [
+            "theta_prot_pos",
+            "theta_acc_pos",
+            "informative_pos",
+            "theta_prot_neg",
+            "theta_acc_neg",
+            "informative_neg",
+        ]
+        assert df["theta_prot_neg"].iloc[0] == 0.2
+        assert not df["informative_neg"].iloc[0]
+
+
+def _controls_info():
+    return {
+        "has_controls": True,
+        "frac_informative_A": 0.5,
+        "call_frac_meth_A": 0.9,
+    }
+
+
+def _em_info():
+    return {
+        "has_controls": False,
+        "frac_informative_A": 0.4,
+        "n_iter": 7,
+        "log_likelihood": -12.5,
+        "frac_protected": 0.6,
+        "codes": [A, GCH],
+        "theta_prot": np.array([0.1, 0.2]),
+        "theta_acc": np.array([0.8, 0.9]),
+    }
+
+
+class TestCalibRows:
+    def test_controls_row(self):
+        rows = _calib_rows("c", _controls_info(), False)
+        assert rows == [
+            {
+                "chrom": "c",
+                "has_controls": True,
+                "frac_informative_A": 0.5,
+                "call_frac_meth_A": 0.9,
+            }
+        ]
+
+    def test_em_row_has_fit_diagnostics(self):
+        (row,) = _calib_rows("c", _em_info(), False)
+        assert row["iters"] == 7
+        assert row["log_likelihood"] == -12.5
+        assert row["frac_protected"] == 0.6
+        assert row["theta_prot_A"] == 0.1
+        assert row["theta_prot_GCH"] == 0.2
+        assert row["theta_acc_GCH"] == 0.9
+        assert "strand" not in row
+        assert "codes" not in row
+
+    def test_by_strand_one_row_per_strand(self):
+        info = {"+": _controls_info(), "-": _em_info()}
+        rows = _calib_rows("c", info, True)
+        assert [r["strand"] for r in rows] == ["+", "-"]
+        assert "iters" not in rows[0]
+        assert rows[1]["iters"] == 7

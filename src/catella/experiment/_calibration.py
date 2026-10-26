@@ -3,6 +3,7 @@
 import warnings
 
 import numpy as np
+import pandas as pd
 
 from catella.experiment._contexts import (
     _ALL_CHANNELS,
@@ -582,3 +583,87 @@ def _chrom_calibration(
         has_controls,
         calib_info,
     )
+
+
+def _calib_rows(chrom, info, norm_by_strand):
+    """
+    Flatten `_chrom_calibration`'s `calib_info` into table rows.
+
+    Parameters
+    ----------
+    chrom : str
+        Chromosome identifier.
+    info : dict
+        `calib_info` from `_chrom_calibration`; per-strand dicts if
+        `norm_by_strand`.
+    norm_by_strand : bool
+        Whether `info` is keyed by strand.
+
+    Returns
+    -------
+    list of dict
+        One row per stratum, with `chrom`, `has_controls`, the
+        `frac_informative_*`/`call_frac_*` entries, `strand` (only if
+        `norm_by_strand`), and, for the EM path, `iters`,
+        `log_likelihood`, `frac_protected` and per-context
+        `theta_prot_*`/`theta_acc_*`.
+    """
+    strata = info.items() if norm_by_strand else [(None, info)]
+    rows = []
+    for strand, sub in strata:
+        row = {"chrom": chrom, "has_controls": sub["has_controls"]}
+        row.update(
+            {
+                k: v
+                for k, v in sub.items()
+                if k.startswith(("frac_informative_", "call_frac_"))
+            }
+        )
+        if strand is not None:
+            row["strand"] = strand
+        if "n_iter" in sub:
+            row["iters"] = sub["n_iter"]
+            row["log_likelihood"] = sub["log_likelihood"]
+            row["frac_protected"] = sub["frac_protected"]
+            for key in ("theta_prot", "theta_acc"):
+                row.update(
+                    {
+                        f"{key}_{CONTEXT_NAMES[c]}": v
+                        for c, v in zip(sub["codes"], sub[key])
+                    }
+                )
+        rows.append(row)
+    return rows
+
+
+def _theta_frame(theta_prot, theta_acc, informative, norm_by_strand):
+    """
+    Per-position calibration as a table.
+
+    Parameters
+    ----------
+    theta_prot, theta_acc, informative : np.ndarray or dict
+        From `_chrom_calibration`; per-strand dicts if `norm_by_strand`.
+    norm_by_strand : bool
+        Whether the inputs are keyed by strand.
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns `theta_prot`, `theta_acc`, `informative`, each suffixed
+        with `_pos`/`_neg` per strand if `norm_by_strand`.
+    """
+    if not norm_by_strand:
+        return pd.DataFrame(
+            {
+                "theta_prot": theta_prot,
+                "theta_acc": theta_acc,
+                "informative": informative,
+            }
+        )
+    cols = {}
+    for s, suffix in (("+", "pos"), ("-", "neg")):
+        cols[f"theta_prot_{suffix}"] = theta_prot[s]
+        cols[f"theta_acc_{suffix}"] = theta_acc[s]
+        cols[f"informative_{suffix}"] = informative[s]
+    return pd.DataFrame(cols)

@@ -11,13 +11,13 @@ from catella.experiment._contexts import (
     _reference_contexts,
     _strand_assay_masks,
 )
+from catella.experiment._controls import _context_prior_rate
 from catella.experiment._reads import _read_sites
 from catella.experiment.methdata import MethPrintData, MethPrintExperiment
 from catella.experiment.preprocessing import (
     NONE,
     A,
     MethPrintAnalysis,
-    _context_prior_rate,
     _warn_call_frac_mismatch,
 )
 from catella.h5_array import H5Array

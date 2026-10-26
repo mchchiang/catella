@@ -868,7 +868,7 @@ class TestLazyAndScratchLifecycle:
         before = set(os.listdir(tempfile.gettempdir()))
         with (
             patch(
-                "catella.experiment.methdata._stream_rows_to_staging",
+                "catella.experiment._ingest._stream_rows_to_staging",
                 side_effect=KeyboardInterrupt,
             ),
             pytest.raises(KeyboardInterrupt),

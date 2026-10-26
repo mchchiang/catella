@@ -2,6 +2,7 @@
 
 import os
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import h5py
@@ -556,7 +557,8 @@ def _ensure_chrom_data_group(graw, chrom, nbp, refseq_by_chrom):
     return gchrom.create_group("data")
 
 
-def _ingest_file(
+def _ingest_into(
+    graw,
     name,
     data_file,
     *,
@@ -575,35 +577,28 @@ def _ingest_file(
     tmp_dir,
 ):
     """
-    Resolve, scan, and stream one raw data file into its own private
-    staging HDF5 file, independent of any other source file.
-
-    Used when more than one of `test_file`/`unmeth_file`/`meth_file`
-    is given to `MethPrintExperiment.load_raw`, so each file's read
-    can proceed with zero shared mutable state, whether called
-    sequentially or concurrently from a thread pool.
+    Resolve, scan, and stream one raw data file into the `raw_data`
+    group of a staging HDF5 file.
 
     Parameters
     ----------
+    graw : h5py.Group
+        The `raw_data` group to write into.
     name : str
         Source name: `"test"`, `"unmeth"`, or `"meth"`.
+    data_file : str or pathlib.Path
+        The raw data file to be parsed.
     rng : numpy.random.Generator or None
-        Independent per file; see `MethPrintExperiment.load_raw`'s
-        `seed` parameter.
+        Random number generator for downsampling; see
+        `MethPrintExperiment.load_raw`'s `seed` parameter.
     tmp_dir : str or pathlib.Path
-        Directory for the private staging file and any decompression
-        scratch copy.
+        Directory for any decompression scratch copy.
     Other parameters are as in `MethPrintExperiment.load_raw`.
 
     Returns
     -------
-    name : str
-        Echoes the `name` argument.
-    chroms : set of str
+    set of str
         Chromosomes found in the file, already filtered to `sizes`.
-    private_path : str
-        Path to the private staging file, to be merged and removed by
-        the caller.
     """
     print(f"Reading {data_file} ...")
     scratch_path = _decompress_once(data_file, tmp_dir)
@@ -625,42 +620,266 @@ def _ingest_file(
         mol_maps = {c: m for c, m in mol_maps.items() if c in sizes}
 
         dt = h5py.string_dtype(encoding="utf-8")
-        fd, private_path = tempfile.mkstemp(suffix=f".{name}.h5", dir=tmp_dir)
-        os.close(fd)
-        with h5py.File(private_path, "w") as h5stream:
-            graw = h5stream.create_group("raw_data")
-            appenders = {}
-            for chrom, m in mol_maps.items():
-                gdata = _ensure_chrom_data_group(
-                    graw, chrom, sizes[chrom], refseq_by_chrom
-                )
-                gdata.create_dataset(
-                    f"{name}_mol_id", data=m["mol_id"], dtype=dt
-                )
-                appenders[chrom] = h5_utils.AppendableDF(
-                    gdata,
-                    f"{name}_data",
-                    columns=list(_RAW_COLUMN_SPEC),
-                    dtypes=_RAW_COLUMN_SPEC,
-                )
-
-            _stream_rows_to_staging(
-                read_path,
-                header_names,
-                name_for,
-                sep,
-                chunk_size,
-                block_size,
-                full_sizes,
-                wrap,
-                mol_maps,
-                appenders,
-                refseq_by_chrom=refseq_by_chrom,
-                mtase=mtase,
-                ignore_strand=ignore_strand,
+        appenders = {}
+        for chrom, m in mol_maps.items():
+            gdata = _ensure_chrom_data_group(
+                graw, chrom, sizes[chrom], refseq_by_chrom
             )
+            gdata.create_dataset(f"{name}_mol_id", data=m["mol_id"], dtype=dt)
+            appenders[chrom] = h5_utils.AppendableDF(
+                gdata,
+                f"{name}_data",
+                columns=list(_RAW_COLUMN_SPEC),
+                dtypes=_RAW_COLUMN_SPEC,
+            )
+
+        _stream_rows_to_staging(
+            read_path,
+            header_names,
+            name_for,
+            sep,
+            chunk_size,
+            block_size,
+            full_sizes,
+            wrap,
+            mol_maps,
+            appenders,
+            refseq_by_chrom=refseq_by_chrom,
+            mtase=mtase,
+            ignore_strand=ignore_strand,
+        )
     finally:
         if scratch_path is not None:
             os.remove(scratch_path)
+    return set(mol_maps.keys())
 
-    return name, set(mol_maps.keys()), private_path
+
+def _ingest_file(name, data_file, *, tmp_dir, **kwargs):
+    """
+    Ingest one raw data file into its own private staging HDF5 file,
+    independent of any other source file.
+
+    Used when more than one of `test_file`/`unmeth_file`/`meth_file`
+    is given to `MethPrintExperiment.load_raw`, so each file's read
+    can proceed with zero shared mutable state, whether called
+    sequentially or concurrently from a thread pool.
+
+    Parameters
+    ----------
+    name : str
+        Source name: `"test"`, `"unmeth"`, or `"meth"`.
+    data_file : str or pathlib.Path
+        The raw data file to be parsed.
+    tmp_dir : str or pathlib.Path
+        Directory for the private staging file and any decompression
+        scratch copy.
+    **kwargs
+        Forwarded to `_ingest_into`.
+
+    Returns
+    -------
+    name : str
+        Echoes the `name` argument.
+    chroms : set of str
+        Chromosomes found in the file, already filtered to `sizes`.
+    private_path : str
+        Path to the private staging file, to be merged and removed by
+        the caller.
+    """
+    fd, private_path = tempfile.mkstemp(suffix=f".{name}.h5", dir=tmp_dir)
+    os.close(fd)
+    with h5py.File(private_path, "w") as h5stream:
+        chroms = _ingest_into(
+            h5stream.create_group("raw_data"),
+            name,
+            data_file,
+            tmp_dir=tmp_dir,
+            **kwargs,
+        )
+    return name, chroms, private_path
+
+
+def _ingest_sources(files, *, nworker, seed, **kwargs):
+    """
+    Ingest several raw data files into private staging files, each
+    with an independent random number generator.
+
+    Parameters
+    ----------
+    files : list of (str, str or pathlib.Path)
+        `(name, data_file)` per source, test first.
+    nworker : int
+        Maximum number of threads reading files concurrently.
+    seed : int or None
+        Seed spawning one independent generator per file, used only
+        if `kwargs["max_nmol"]` is not None.
+    **kwargs
+        Forwarded to `_ingest_file`.
+
+    Returns
+    -------
+    list of (str, set of str, str)
+        `_ingest_file`'s result per source, in the order of `files`.
+    """
+    if kwargs["max_nmol"] is None:
+        rngs = [None] * len(files)
+    else:
+        children = np.random.SeedSequence(seed).spawn(len(files))
+        rngs = [np.random.default_rng(child) for child in children]
+    tasks = [(name, f, rng) for (name, f), rng in zip(files, rngs)]
+
+    def ingest(task):
+        name, data_file, rng = task
+        return _ingest_file(name, data_file, rng=rng, **kwargs)
+
+    if nworker > 1:
+        workers = min(nworker, len(tasks))
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            return list(executor.map(ingest, tasks))
+    return [ingest(task) for task in tasks]
+
+
+def _merge_staging(graw, ingested):
+    """
+    Copy every source's private staging data into `graw`, then remove
+    the private files.
+
+    Parameters
+    ----------
+    graw : h5py.Group
+        The `raw_data` group of the shared staging file.
+    ingested : list of (str, set of str, str)
+        From `_ingest_sources`, test first.
+
+    Raises
+    ------
+    ValueError
+        If a control file covers different chromosomes than the test
+        file.
+    """
+    test_chroms = ingested[0][1]
+    for name, chroms_found, _ in ingested[1:]:
+        if chroms_found != test_chroms:
+            raise ValueError(
+                f"Different number of chromosomes in test and {name} datasets"
+            )
+
+    handles = {name: h5py.File(path, "r") for name, _, path in ingested}
+    try:
+        for chrom in sorted(test_chroms):
+            gchrom = graw.create_group(chrom)
+            handles["test"].copy(
+                f"raw_data/{chrom}/metadata", gchrom, name="metadata"
+            )
+            gdata = gchrom.create_group("data")
+            for name, _, _ in ingested:
+                src = handles[name][f"raw_data/{chrom}/data"]
+                src.copy(f"{name}_mol_id", gdata, name=f"{name}_mol_id")
+                src.copy(f"{name}_data", gdata, name=f"{name}_data")
+    finally:
+        for h in handles.values():
+            h.close()
+    for _, _, path in ingested:
+        os.remove(path)
+
+
+def _read_chromsize(chromsize, wrap, chroms):
+    """
+    Read and validate a chromosome-size table.
+
+    Parameters
+    ----------
+    chromsize : str or pathlib.Path
+        Tab-separated file of chromosome names and lengths (bp), with
+        or without a `chrom`/`length` header row.
+    wrap : bool
+        If True, the storage lengths are halved (positions are folded
+        around the fiber center).
+    chroms : list of str or None
+        Chromosomes to keep; None keeps all of them.
+
+    Returns
+    -------
+    full_sizes : dict of str to int
+        Chromosome -> full length (bp).
+    sizes : dict of str to int
+        Chromosome -> storage length (bp), halved if `wrap`.
+
+    Raises
+    ------
+    ValueError
+        If a column is missing, chromosome names are not unique, or
+        `chroms` has a chromosome not in the table.
+    """
+    size_cols = ["chrom", "length"]
+    with open(chromsize, "r") as reader:
+        first_line = reader.readline().strip()
+    if first_line == "\t".join(size_cols):
+        df_size = pd.read_csv(chromsize, sep="\t")
+    else:
+        df_size = pd.read_csv(
+            chromsize, sep="\t", names=size_cols, header=None
+        )
+    if "chrom" not in df_size.columns:
+        raise ValueError(
+            "Column 'chrom' containing the chromosome identifier is missing."
+        )
+    if "length" not in df_size.columns:
+        raise ValueError(
+            "Column 'length' containing the chromosome length is missing."
+        )
+    if not df_size["chrom"].is_unique:
+        raise ValueError("Chromosomes must be unique in chromsize file")
+
+    full_sizes = dict(zip(df_size["chrom"], df_size["length"].astype(int)))
+    if wrap:
+        sizes = dict(
+            zip(df_size["chrom"], (df_size["length"] / 2).astype(int))
+        )
+    else:
+        sizes = full_sizes
+
+    if chroms is not None:
+        unknown = set(chroms) - set(df_size["chrom"])
+        if unknown:
+            raise ValueError(
+                f"Chromosomes not found in chromsize: {sorted(unknown)}"
+            )
+        full_sizes = {c: v for c, v in full_sizes.items() if c in chroms}
+        sizes = {c: v for c, v in sizes.items() if c in chroms}
+    return full_sizes, sizes
+
+
+def _load_refseqs(fasta_file, full_sizes):
+    """
+    Reference sequence per chromosome of `full_sizes`, checked against
+    its length.
+
+    Parameters
+    ----------
+    fasta_file : str or pathlib.Path or None
+        Multi-FASTA file; None returns an empty dict.
+    full_sizes : dict of str to int
+        Chromosome -> full length (bp).
+
+    Returns
+    -------
+    dict of str to str
+        Chromosome -> sequence, for the chromosomes found in the file.
+
+    Raises
+    ------
+    ValueError
+        If a sequence length does not match `full_sizes`.
+    """
+    if fasta_file is None:
+        return {}
+    refseq_by_chrom = _parse_fasta(fasta_file, set(full_sizes))
+    for chrom, seq in refseq_by_chrom.items():
+        if len(seq) != full_sizes[chrom]:
+            raise ValueError(
+                f"Reference sequence length for chromosome "
+                f"{chrom!r} ({len(seq)}) does not match its "
+                f"chromsize length ({full_sizes[chrom]})."
+            )
+    return refseq_by_chrom

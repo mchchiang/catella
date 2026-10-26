@@ -8,7 +8,6 @@ import weakref
 from collections import OrderedDict
 from collections.abc import Mapping
 from collections.abc import Mapping as ABCMapping
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 from types import MappingProxyType
@@ -27,16 +26,13 @@ from catella.experiment._dropout import (
     _resolve_sources,
 )
 from catella.experiment._ingest import (
-    _RAW_COLUMN_SPEC,
-    _decompress_once,
-    _ensure_chrom_data_group,
-    _ingest_file,
+    _ingest_into,
+    _ingest_sources,
+    _load_refseqs,
+    _merge_staging,
     _methylatable_positions,
     _normalize_mtase,
-    _parse_fasta,
-    _resolve_modkit_schema,
-    _scan_accepted_mols,
-    _stream_rows_to_staging,
+    _read_chromsize,
 )
 from catella.h5_array import H5Array
 
@@ -472,75 +468,32 @@ class MethPrintExperiment:
             contains an unknown or duplicate label.
         """
         mtase = _normalize_mtase(mtase)
-
-        # Read chromosome sizes
-        size_cols = ["chrom", "length"]
-        with open(chromsize, "r") as reader:
-            first_line = reader.readline().strip()
-        if first_line == "\t".join(size_cols):
-            df_size = pd.read_csv(chromsize, sep="\t")
-        else:
-            df_size = pd.read_csv(
-                chromsize, sep="\t", names=size_cols, header=None
-            )
-        if "chrom" not in df_size.columns:
-            raise ValueError(
-                "Column 'chrom' containing the chromosome "
-                "identifier is missing."
-            )
-        if "length" not in df_size.columns:
-            raise ValueError(
-                "Column 'length' containing the chromosome length is missing."
-            )
-        if not df_size["chrom"].is_unique:
-            raise ValueError("Chromosomes must be unique in chromsize file")
-
-        # Full (unhalved) chromosome lengths, needed for the wrap fold
-        # transform itself; `sizes` (below) is the *storage* length
-        # (halved under wrap, since positions are folded into that
-        # range) used for `nbp`.
-        full_sizes = dict(zip(df_size["chrom"], df_size["length"].astype(int)))
-        if wrap:
-            sizes = dict(
-                zip(df_size["chrom"], (df_size["length"] / 2).astype(int))
-            )
-        else:
-            sizes = full_sizes
-
-        if chroms is not None:
-            unknown = set(chroms) - set(df_size["chrom"])
-            if unknown:
-                raise ValueError(
-                    f"Chromosomes not found in chromsize: {sorted(unknown)}"
-                )
-            full_sizes = {c: v for c, v in full_sizes.items() if c in chroms}
-            sizes = {c: v for c, v in sizes.items() if c in chroms}
-
-        refseq_by_chrom = {}
-        if fasta_file is not None:
-            refseq_by_chrom = _parse_fasta(fasta_file, set(full_sizes))
-            for chrom, seq in refseq_by_chrom.items():
-                if len(seq) != full_sizes[chrom]:
-                    raise ValueError(
-                        f"Reference sequence length for chromosome "
-                        f"{chrom!r} ({len(seq)}) does not match its "
-                        f"chromsize length ({full_sizes[chrom]})."
-                    )
-
-        sep = "\t"
-        block_size = 64 * 1024 * 1024
+        full_sizes, sizes = _read_chromsize(chromsize, wrap, chroms)
+        refseq_by_chrom = _load_refseqs(fasta_file, full_sizes)
 
         tmp_dir = h5_utils.fresh_tmp_dir(base_dir=tmp_dir)
         fd, tmp_file = tempfile.mkstemp(suffix=".h5", dir=tmp_dir)
         os.close(fd)
-
-        dt = h5py.string_dtype(encoding="utf-8")
 
         files = [("test", test_file)]
         if unmeth_file is not None:
             files.append(("unmeth", unmeth_file))
         if meth_file is not None:
             files.append(("meth", meth_file))
+        ingest_kwargs = {
+            "sep": "\t",
+            "colidx": colidx,
+            "chunk_size": chunk_size,
+            "block_size": 64 * 1024 * 1024,
+            "sizes": sizes,
+            "full_sizes": full_sizes,
+            "wrap": wrap,
+            "refseq_by_chrom": refseq_by_chrom,
+            "mtase": mtase,
+            "ignore_strand": ignore_strand,
+            "max_nmol": max_nmol,
+            "tmp_dir": tmp_dir,
+        }
 
         try:
             with h5py.File(tmp_file, "w") as h5stream:
@@ -553,156 +506,17 @@ class MethPrintExperiment:
                 h5stream.attrs["ignore_strand"] = bool(ignore_strand)
 
                 if len(files) == 1:
-                    # Single source: write directly into h5stream.
-                    name, data_file = files[0]
                     rng = (
                         None
                         if max_nmol is None
                         else np.random.default_rng(seed)
                     )
-                    print(f"Reading {data_file} ...")
-                    scratch_path = _decompress_once(data_file, tmp_dir)
-                    read_path = scratch_path or str(data_file)
-                    try:
-                        header_names, name_for = _resolve_modkit_schema(
-                            read_path, sep, colidx
-                        )
-                        mol_maps = _scan_accepted_mols(
-                            read_path,
-                            header_names,
-                            name_for,
-                            sep,
-                            chunk_size,
-                            block_size,
-                            max_nmol,
-                            rng,
-                        )
-                        mol_maps = {
-                            c: m for c, m in mol_maps.items() if c in sizes
-                        }
-
-                        appenders = {}
-                        for chrom, m in mol_maps.items():
-                            gdata = _ensure_chrom_data_group(
-                                graw, chrom, sizes[chrom], refseq_by_chrom
-                            )
-                            gdata.create_dataset(
-                                f"{name}_mol_id", data=m["mol_id"], dtype=dt
-                            )
-                            appenders[chrom] = h5_utils.AppendableDF(
-                                gdata,
-                                f"{name}_data",
-                                columns=list(_RAW_COLUMN_SPEC),
-                                dtypes=_RAW_COLUMN_SPEC,
-                            )
-
-                        _stream_rows_to_staging(
-                            read_path,
-                            header_names,
-                            name_for,
-                            sep,
-                            chunk_size,
-                            block_size,
-                            full_sizes,
-                            wrap,
-                            mol_maps,
-                            appenders,
-                            refseq_by_chrom=refseq_by_chrom,
-                            mtase=mtase,
-                            ignore_strand=ignore_strand,
-                        )
-                    finally:
-                        if scratch_path is not None:
-                            os.remove(scratch_path)
+                    _ingest_into(graw, *files[0], rng=rng, **ingest_kwargs)
                 else:
-                    # Multiple sources: ingest each independently
-                    # (optionally concurrently) into its own private
-                    # staging file, then merge.
-                    if max_nmol is None:
-                        rngs = [None] * len(files)
-                    else:
-                        rngs = [
-                            np.random.default_rng(child)
-                            for child in np.random.SeedSequence(seed).spawn(
-                                len(files)
-                            )
-                        ]
-
-                    ingest_kwargs = {
-                        "sep": sep,
-                        "colidx": colidx,
-                        "chunk_size": chunk_size,
-                        "block_size": block_size,
-                        "sizes": sizes,
-                        "full_sizes": full_sizes,
-                        "wrap": wrap,
-                        "refseq_by_chrom": refseq_by_chrom,
-                        "mtase": mtase,
-                        "ignore_strand": ignore_strand,
-                        "max_nmol": max_nmol,
-                        "tmp_dir": tmp_dir,
-                    }
-                    tasks = [
-                        (name, data_file, rngs[i])
-                        for i, (name, data_file) in enumerate(files)
-                    ]
-
-                    if nworker > 1:
-                        with ThreadPoolExecutor(
-                            max_workers=min(nworker, len(tasks))
-                        ) as executor:
-                            ingested = list(
-                                executor.map(
-                                    lambda t: _ingest_file(
-                                        t[0], t[1], rng=t[2], **ingest_kwargs
-                                    ),
-                                    tasks,
-                                )
-                            )
-                    else:
-                        ingested = [
-                            _ingest_file(
-                                name, data_file, rng=rng, **ingest_kwargs
-                            )
-                            for name, data_file, rng in tasks
-                        ]
-
-                    test_chroms = ingested[0][1]
-                    for name, chroms_found, _ in ingested[1:]:
-                        if chroms_found != test_chroms:
-                            raise ValueError(
-                                "Different number of chromosomes in test "
-                                f"and {name} datasets"
-                            )
-
-                    handles = {
-                        name: h5py.File(path, "r")
-                        for name, _, path in ingested
-                    }
-                    try:
-                        for chrom in sorted(test_chroms):
-                            gchrom = graw.create_group(chrom)
-                            handles["test"].copy(
-                                f"raw_data/{chrom}/metadata",
-                                gchrom,
-                                name="metadata",
-                            )
-                            gdata = gchrom.create_group("data")
-                            for name, _, _ in ingested:
-                                src = handles[name][f"raw_data/{chrom}/data"]
-                                src.copy(
-                                    f"{name}_mol_id",
-                                    gdata,
-                                    name=f"{name}_mol_id",
-                                )
-                                src.copy(
-                                    f"{name}_data", gdata, name=f"{name}_data"
-                                )
-                    finally:
-                        for h in handles.values():
-                            h.close()
-                    for _, _, path in ingested:
-                        os.remove(path)
+                    ingested = _ingest_sources(
+                        files, nworker=nworker, seed=seed, **ingest_kwargs
+                    )
+                    _merge_staging(graw, ingested)
         except BaseException:
             shutil.rmtree(tmp_dir, ignore_errors=True)
             raise

@@ -156,7 +156,11 @@ def _calibrate_from_data(
 
     Fits a two-component binomial mixture (a shared latent protection
     state per window, pooled across reads), since without controls the
-    two rates must be estimated from the test sample alone.
+    two rates must be estimated from the test sample alone. The state
+    and its mixing fraction are shared by all channels, while each
+    channel has its own pair of rates. If the fit converges with the
+    labels swapped, the rates are swapped and the mixing fraction is
+    flipped to `1 - pi`.
 
     Parameters
     ----------
@@ -243,6 +247,7 @@ def _calibrate_from_data(
         ta, weights=N.sum(axis=1)
     ):
         tp, ta = ta, tp
+        pi = 1.0 - pi
 
     theta_prot = np.full(len(ctx), np.nan)
     theta_acc = np.full(len(ctx), np.nan)

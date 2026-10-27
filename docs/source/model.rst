@@ -396,7 +396,13 @@ D(x)`, where :math:`D(x) = \hat{\theta}_A(x) - \text{FPR}(x)` and
 :math:`\rho = \tau/\kappa`. The efficiency :math:`\kappa` is 1 unless
 `fit_kappa` is set (e.g., for controls run under different conditions
 than the test sample), and passing a value for `rho_leak` fixes
-:math:`\rho` instead. The default value of :math:`\nu` is 10.
+:math:`\rho` instead. By default, :math:`\nu` is estimated by empirical
+Bayes, separately for each control and channel (and strand, with
+`norm_by_strand`): treating the per-site rates as drawn from
+:math:`\text{Beta}(\nu m, \nu(1-m))`, with :math:`m` the pooled rate,
+:math:`\nu` maximizes the beta-binomial evidence of the control data
+over :math:`[10^{-2}, 10^6]`. A channel with fewer than 10 read sites
+uses :math:`\nu = 10`, and passing a value for `nu` fixes it.
 
 Estimating model parameters by maximizing data likelihood
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

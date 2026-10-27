@@ -287,7 +287,8 @@ Common ``global_analysis`` keys:
        channel.
    * - ``<prob_name>_params``
      - DataFrame (1 row) recording every ``compute_model_prob`` kwarg
-       (``pi0``, ``eta_max_lag``, ``nu``, ``rho_leak``, ``min_gap``,
+       (``pi0``, ``eta_max_lag``, ``nu``, ``rho_leak`` (nan when
+       fitted), ``fit_kappa``, ``min_gap``,
        ``lnuc``, ``lbin``, ``max_iters``, ``init_prot``,
        ``init_acc``, ``tol``, ``fill_edge``, ``norm_by_strand``,
        ``mask_name``).
@@ -295,9 +296,11 @@ Common ``global_analysis`` keys:
      - DataFrame, one row per chromosome (and, if ``norm_by_strand``,
        per strand, adding a ``strand`` column): ``chrom``,
        ``has_controls``, ``frac_informative_<channel>`` per channel,
-       and, on the no-controls EM path, also ``iters``,
-       ``log_likelihood``, ``frac_protected``, and
-       ``theta_prot_<channel>``/``theta_acc_<channel>`` per channel.
+       and, for an EM fit, also ``iters``, ``log_likelihood``,
+       ``frac_protected``, and per channel
+       ``theta_prot_<channel>``/``theta_acc_<channel>`` (no controls)
+       or ``tau_<channel>``/``kappa_<channel>``/``rho_<channel>``
+       (controls, when ``rho_leak`` is not given).
 
 Simulation output
 ~~~~~~~~~~~~~~~~~~~

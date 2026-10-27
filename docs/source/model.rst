@@ -389,8 +389,14 @@ expect :math:`\theta_P > \text{FPR}` and estimate the former as
    [\hat{\theta}_A(x) - \text{FPR}(x)] \;,
 
 where :math:`\rho` describes the level of leakage of methylation signal.
-The default values used in the simulation framework for :math:`\nu` and
-:math:`\rho` are 10 and 0.1, respectively.
+By default, :math:`\rho` is fitted per channel to the test sample by the
+expectation-maximization procedure described below, with the protected
+and accessible rates :math:`F(x) + \tau D(x)` and :math:`F(x) + \kappa
+D(x)`, where :math:`D(x) = \hat{\theta}_A(x) - \text{FPR}(x)` and
+:math:`\rho = \tau/\kappa`. The efficiency :math:`\kappa` is 1 unless
+`fit_kappa` is set (e.g., for controls run under different conditions
+than the test sample), and passing a value for `rho_leak` fixes
+:math:`\rho` instead. The default value of :math:`\nu` is 10.
 
 Estimating model parameters by maximizing data likelihood
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

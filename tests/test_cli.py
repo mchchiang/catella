@@ -637,6 +637,48 @@ class TestComputeModelProb:
         got = MethPrintExperiment.load(cli_out)
         assert got.global_analysis["meth_prob_params"]["span"][0] == "calls"
 
+    def test_lbin_option_is_forwarded(self, tmp_path):
+        rows = _make_test_rows(nmol=5, nbp=len(_MODEL_SEQ), step=1)
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": len(_MODEL_SEQ)})
+        fasta_file = tmp_path / "ref.fa"
+        _write_fasta(fasta_file, {"chr1": _MODEL_SEQ})
+        raw_file = tmp_path / "raw_exp.h5"
+        load_result = runner.invoke(
+            app,
+            [
+                "load_raw",
+                str(chromsize),
+                str(test_file),
+                str(raw_file),
+                "--fasta-file",
+                str(fasta_file),
+            ],
+        )
+        assert load_result.exit_code == 0, load_result.output
+
+        cli_out = tmp_path / "cli_exp.h5"
+        result = runner.invoke(
+            app,
+            [
+                "compute_model_prob",
+                str(raw_file),
+                "--out-file",
+                str(cli_out),
+                "--lnuc",
+                "30",
+                "--lbin",
+                "15",
+                "--n-min",
+                "3",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        got = MethPrintExperiment.load(cli_out)
+        assert got.global_analysis["meth_prob_params"]["lbin"][0] == 15
+
     def test_no_out_file_overwrites_source_file(self, tmp_path):
         rows = _make_test_rows(nmol=5, nbp=len(_MODEL_SEQ), step=1)
         test_file = tmp_path / "test.tsv"

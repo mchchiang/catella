@@ -18,7 +18,7 @@ def _streamed_window_count(
     chrom,
     ctx,
     assay,
-    lnuc,
+    lbin,
     n_min,
     batch_size,
     mask_name,
@@ -48,8 +48,8 @@ def _streamed_window_count(
         int8, length L, context code per position.
     assay : dict of str to np.ndarray
         From `_strand_assay_masks`.
-    lnuc : int
-        Nucleosome footprint size (bp), used as the window size.
+    lbin : int
+        Bin width (bp) of the non-overlapping windows.
     n_min : int
         Minimum read sites (summed over all contexts) a read-window
         needs to be kept.
@@ -93,8 +93,8 @@ def _streamed_window_count(
     codes = [c for c in channels if (ctx == c).any()]
     if not codes:
         raise ValueError("no assayable contexts in ctx")
-    n_win = len(ctx) // lnuc
-    width = n_win * lnuc
+    n_win = len(ctx) // lbin
+    width = n_win * lbin
     in_code = np.stack([ctx[:width] == c for c in codes])[:, None, :]
 
     keys = ["+", "-"] if by_strand else [None]
@@ -118,7 +118,7 @@ def _streamed_window_count(
                 m = int(sel.sum())
                 if m == 0 or n_win == 0:
                     continue
-                shape = (len(codes), m, n_win, lnuc)
+                shape = (len(codes), m, n_win, lbin)
                 q_k = np.nan_to_num(b.q[sel, :width], nan=0.0)[None]
                 w_k = _read_weights(b, assay, key)[sel, :width][None]
                 K = (q_k * in_code).reshape(shape).sum(axis=3)

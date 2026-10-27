@@ -369,7 +369,7 @@ def _em_calibration(
     assay,
     strata,
     *,
-    lnuc,
+    lbin,
     n_min,
     max_iters,
     init_prot,
@@ -396,7 +396,7 @@ def _em_calibration(
         From `_strand_assay_masks`.
     strata : tuple
         `("+", "-")` to calibrate each strand, or `(None,)` to pool.
-    lnuc, n_min, max_iters, init_prot, init_acc, tol, min_gap,
+    lbin, n_min, max_iters, init_prot, init_acc, tol, min_gap,
     batch_size, mask_name, channels, span
         As in `_chrom_calibration`.
 
@@ -411,7 +411,7 @@ def _em_calibration(
         chrom,
         ctx,
         assay,
-        lnuc,
+        lbin,
         n_min,
         batch_size,
         mask_name,
@@ -454,7 +454,7 @@ def _chrom_calibration(
     nu,
     rho_leak,
     min_gap,
-    lnuc,
+    lbin,
     n_min,
     max_iters,
     init_prot,
@@ -478,7 +478,7 @@ def _chrom_calibration(
         The experiment object containing raw data and analysis maps.
     chrom : str
         Chromosome identifier.
-    nu, rho_leak, min_gap, lnuc, n_min, max_iters, init_prot, init_acc,
+    nu, rho_leak, min_gap, lbin, n_min, max_iters, init_prot, init_acc,
     tol : as in `model_prob`.
     batch_size : int
         Number of molecules processed per batch.
@@ -561,7 +561,7 @@ def _chrom_calibration(
             ctx,
             assay,
             strata,
-            lnuc=lnuc,
+            lbin=lbin,
             n_min=n_min,
             max_iters=max_iters,
             init_prot=init_prot,

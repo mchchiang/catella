@@ -288,7 +288,7 @@ Common ``global_analysis`` keys:
    * - ``<prob_name>_params``
      - DataFrame (1 row) recording every ``compute_model_prob`` kwarg
        (``pi0``, ``eta_max_lag``, ``nu``, ``rho_leak``, ``min_gap``,
-       ``lnuc``, ``n_min``, ``max_iters``, ``init_prot``,
+       ``lnuc``, ``lbin``, ``n_min``, ``max_iters``, ``init_prot``,
        ``init_acc``, ``tol``, ``fill_edge``, ``norm_by_strand``,
        ``mask_name``).
    * - ``<prob_name>_calib``

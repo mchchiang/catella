@@ -398,11 +398,16 @@ Estimating model parameters by maximizing data likelihood
 As mentioned above, it is often not feasible to perform control
 experiments. In this scenario, we try to determine a set of parameters
 that maximize the data likelihood instead. To make progress, we divide
-the DNA into non-overlapping bins, where each bin has the size of a
-nucleosome :math:`\ell_{\text{nuc}}`. We choose non-overlapping bins
+the DNA into non-overlapping bins of width :math:`\ell_{\text{bin}}`.
+We choose non-overlapping bins
 instead of rolling-window bins because the latter inflates the number of
 observations and makes the estimated parameters look more certain than
-they actually are. We pool together all molecules so that the total
+they actually are. The bin width is chosen independently of the
+nucleosome footprint :math:`\ell_{\text{nuc}}`: a bin of width
+:math:`\ell_{\text{nuc}}` rarely covers pure linker or pure nucleosomal
+DNA, which reduces the contrast between the two fitted rates, whereas
+smaller bins contain fewer sites. The package uses
+:math:`\ell_{\text{bin}} = 30` bp by default (argument `lbin`). We pool together all molecules so that the total
 number of bins :math:`N_{\text{bin}}` is the product of the number of
 molecules :math:`N_{\text{mol}}` and the maximum number of bins per
 molecule. Each bin :math:`w = 1,2,\dots,N_{\text{bin}}` is described by
@@ -442,8 +447,9 @@ we swap the values of the two estimators and set
 :math:`\hat{\pi} \to 1-\hat{\pi}`. In the package, this fit is controlled
 by `max_iters` and `tol` (the EM iteration cap and convergence
 tolerance), `init_prot`/`init_acc` (its initial guesses for
-:math:`\theta_P`/:math:`\theta_A`), and `n_min` (the minimum number of
-context-eligible sites a bin needs to be used in the fit).
+:math:`\theta_P`/:math:`\theta_A`), `lbin` (the bin width), and `n_min`
+(the minimum number of context-eligible sites a bin needs to be used in
+the fit).
 
 Handling data with multiple methyltransferase channels
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

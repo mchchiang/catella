@@ -1913,6 +1913,57 @@ class TestModelProbCalib:
         assert "iters" not in params.columns
 
 
+class TestModelProbLbin:
+    def test_lbin_recorded_in_params(self):
+        exp = _make_footprint_experiment(
+            with_controls=True, planted_edges=(30,), lnuc=30
+        )
+        MethPrintAnalysis().model_prob(exp=exp, lnuc=30, lbin=12, batch_size=7)
+        assert exp.global_analysis["meth_prob_params"]["lbin"].iloc[0] == 12
+
+    def test_lbin_changes_no_controls_fit(self):
+        exp = _make_footprint_experiment(
+            with_controls=False,
+            nmol=120,
+            planted_edges=(30, 120, 200),
+            lnuc=30,
+        )
+        ana = MethPrintAnalysis()
+        for name, lbin in (("a", 15), ("b", 60)):
+            ana.model_prob(
+                exp=exp,
+                prob_name=name,
+                lnuc=30,
+                lbin=lbin,
+                n_min=3,
+                batch_size=17,
+            )
+        a = exp.global_analysis["a_calib"]["theta_prot_A"].iloc[0]
+        b = exp.global_analysis["b_calib"]["theta_prot_A"].iloc[0]
+        assert a != b
+
+    def test_lbin_does_not_affect_controls_path(self):
+        exp = _make_footprint_experiment(
+            with_controls=True, planted_edges=(30,), lnuc=30
+        )
+        ana = MethPrintAnalysis()
+        for name, lbin in (("a", 10), ("b", 60)):
+            ana.model_prob(
+                exp=exp, prob_name=name, lnuc=30, lbin=lbin, batch_size=7
+            )
+        np.testing.assert_array_equal(
+            exp.analysis["chr1"]["a"].to_numpy(),
+            exp.analysis["chr1"]["b"].to_numpy(),
+        )
+
+    def test_lbin_below_one_raises(self):
+        exp = _make_footprint_experiment(
+            with_controls=False, planted_edges=(30,), lnuc=30
+        )
+        with pytest.raises(ValueError, match="lbin"):
+            MethPrintAnalysis().model_prob(exp=exp, lnuc=30, lbin=0)
+
+
 class TestModelProbMtase:
     def test_mtase_a_restricts_calib_and_eta_to_m6a(self):
         exp = _make_footprint_experiment(

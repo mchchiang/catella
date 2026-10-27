@@ -249,6 +249,7 @@ def compute_model_prob(
     rho_leak: float = 0.1,
     min_gap: float = 0.05,
     lnuc: int = 147,
+    lbin: int = 30,
     n_min: int = 10,
     max_iters: int = 200,
     init_prot: float = 0.05,
@@ -318,12 +319,15 @@ def compute_model_prob(
         call rates for a position to be treated as informative;
         positions below this gap contribute no evidence.
     lnuc : int, default 147
-        Nucleosome footprint size (bp): the expectation-maximization
-        window size (no-controls path) and the output window-sum
+        Nucleosome footprint size (bp), used as the output window-sum
         size.
+    lbin : int, default 30
+        Bin width (bp) of the non-overlapping windows in the
+        no-controls expectation-maximization fit. Used only when no
+        meth/unmeth controls are available.
     n_min : int, default 10
-        Minimum number of sites a read must read in a window for that
-        read-window to be used in the no-controls
+        Minimum number of sites a read must read in a bin for that
+        read-bin to be used in the no-controls
         expectation-maximization fit. Used only when no meth/unmeth
         controls are available.
     max_iters : int, default 200
@@ -416,6 +420,7 @@ def compute_model_prob(
         rho_leak=rho_leak,
         min_gap=min_gap,
         lnuc=lnuc,
+        lbin=lbin,
         n_min=n_min,
         max_iters=max_iters,
         init_prot=init_prot,

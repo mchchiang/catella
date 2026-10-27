@@ -538,9 +538,12 @@ def compute_model_prob(
     lnuc: Annotated[
         int, typer.Option(help="Nucleosome footprint / window size (bp)")
     ] = 147,
+    lbin: Annotated[
+        int, typer.Option(help="EM bin width (bp) (no-controls fit)")
+    ] = 30,
     n_min: Annotated[
         int,
-        typer.Option(help="Min read sites per read-window (no-controls fit)"),
+        typer.Option(help="Min read sites per read-bin (no-controls fit)"),
     ] = 10,
     max_iters: Annotated[
         int, typer.Option(help="Max EM iterations (no-controls fit)")
@@ -609,6 +612,7 @@ def compute_model_prob(
         rho_leak=rho_leak,
         min_gap=min_gap,
         lnuc=lnuc,
+        lbin=lbin,
         n_min=n_min,
         max_iters=max_iters,
         init_prot=init_prot,

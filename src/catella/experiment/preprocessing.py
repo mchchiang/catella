@@ -429,7 +429,6 @@ class MethPrintAnalysis:
         min_gap: float = 0.05,
         lnuc: int = 147,
         lbin: int = 30,
-        n_min: int = 10,
         max_iters: int = 200,
         init_prot: float = 0.05,
         init_acc: float = 0.95,
@@ -513,13 +512,9 @@ class MethPrintAnalysis:
             no-controls expectation-maximization fit. Bins narrower
             than `lnuc` mix linker and nucleosomal DNA less, which
             sharpens the contrast between the fitted rates, but hold
-            fewer sites each. Used only when no meth/unmeth controls
-            are available.
-        n_min : int, default 10
-            Minimum number of sites a read must read in a bin for
-            that read-bin to be used in the no-controls
-            expectation-maximization fit. Used only when no meth/unmeth
-            controls are available.
+            fewer sites each. A read-bin without read sites is left
+            out of the fit. Used only when no meth/unmeth controls are
+            available.
         max_iters : int, default 200
             Maximum number of expectation-maximization iterations for
             the no-controls rate fit.
@@ -570,7 +565,7 @@ class MethPrintAnalysis:
         ValueError
             If `lbin` is less than 1, if a chromosome has no reference
             sequence (`refseq`), if the no-controls path cannot find
-            enough bins with `n_min` read sites, if `eta` is a dict with an
+            enough bins with read sites, if `eta` is a dict with an
             unrecognized channel name, if `span` is not recognized, or
             if `norm_by_strand` is True but molecules with unmapped
             strands ('.') exist.
@@ -629,7 +624,6 @@ class MethPrintAnalysis:
             "rho_leak": rho_leak,
             "min_gap": min_gap,
             "lbin": lbin,
-            "n_min": n_min,
             "max_iters": max_iters,
             "init_prot": init_prot,
             "init_acc": init_acc,
@@ -677,7 +671,6 @@ class MethPrintAnalysis:
                     "min_gap": min_gap,
                     "lnuc": lnuc,
                     "lbin": lbin,
-                    "n_min": n_min,
                     "max_iters": max_iters,
                     "init_prot": init_prot,
                     "init_acc": init_acc,

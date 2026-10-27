@@ -349,10 +349,10 @@ class TestComputeModelProb:
             chromsize=chromsize, test_file=test_file, fasta_file=fasta_file
         )
 
-        catella.compute_model_prob(exp=exp, lnuc=30, n_min=3)
+        catella.compute_model_prob(exp=exp, lnuc=30)
 
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=expected, lnuc=30, n_min=3)
+        ana.model_prob(exp=expected, lnuc=30)
 
         np.testing.assert_allclose(
             exp.analysis["chr1"]["meth_prob"].to_numpy(),
@@ -387,13 +387,11 @@ class TestComputeModelProb:
         )
 
         catella.compute_model_prob(
-            exp=exp, lnuc=30, n_min=3, eta_max_lag=4, store_rho=True
+            exp=exp, lnuc=30, eta_max_lag=4, store_rho=True
         )
 
         ana = MethPrintAnalysis()
-        ana.model_prob(
-            exp=expected, lnuc=30, n_min=3, eta_max_lag=4, store_rho=True
-        )
+        ana.model_prob(exp=expected, lnuc=30, eta_max_lag=4, store_rho=True)
 
         assert ("meth_prob_rho" in exp.global_analysis) == (
             "meth_prob_rho" in expected.global_analysis
@@ -424,10 +422,8 @@ class TestComputeModelProb:
             chromsize=chromsize, test_file=test_file, fasta_file=fasta_file
         )
 
-        catella.compute_model_prob(exp=exp, lnuc=30, n_min=3, span="calls")
-        MethPrintAnalysis().model_prob(
-            exp=expected, lnuc=30, n_min=3, span="calls"
-        )
+        catella.compute_model_prob(exp=exp, lnuc=30, span="calls")
+        MethPrintAnalysis().model_prob(exp=expected, lnuc=30, span="calls")
 
         assert exp.global_analysis["meth_prob_params"]["span"][0] == "calls"
         np.testing.assert_allclose(

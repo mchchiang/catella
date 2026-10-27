@@ -574,8 +574,6 @@ class TestComputeModelProb:
                 str(cli_out),
                 "--lnuc",
                 "30",
-                "--n-min",
-                "3",
             ],
         )
         assert result.exit_code == 0, result.output
@@ -587,7 +585,7 @@ class TestComputeModelProb:
             max_nmol=3,
             seed=7,
         )
-        catella.compute_model_prob(exp=expected, lnuc=30, n_min=3)
+        catella.compute_model_prob(exp=expected, lnuc=30)
 
         got = MethPrintExperiment.load(cli_out)
         np.testing.assert_allclose(
@@ -627,8 +625,6 @@ class TestComputeModelProb:
                 str(cli_out),
                 "--lnuc",
                 "30",
-                "--n-min",
-                "3",
                 "--span",
                 "calls",
             ],
@@ -671,8 +667,6 @@ class TestComputeModelProb:
                 "30",
                 "--lbin",
                 "15",
-                "--n-min",
-                "3",
             ],
         )
         assert result.exit_code == 0, result.output
@@ -713,8 +707,6 @@ class TestComputeModelProb:
                 str(raw_file),
                 "--lnuc",
                 "30",
-                "--n-min",
-                "3",
             ],
         )
         assert result.exit_code == 0, result.output
@@ -755,8 +747,6 @@ class TestComputeModelProb:
                 str(cli_out),
                 "--lnuc",
                 "30",
-                "--n-min",
-                "3",
                 "--eta-max-lag",
                 "4",
                 "--store-rho",
@@ -768,7 +758,7 @@ class TestComputeModelProb:
             chromsize=chromsize, test_file=test_file, fasta_file=fasta_file
         )
         catella.compute_model_prob(
-            exp=expected, lnuc=30, n_min=3, eta_max_lag=4, store_rho=True
+            exp=expected, lnuc=30, eta_max_lag=4, store_rho=True
         )
 
         got = MethPrintExperiment.load(cli_out)
@@ -815,8 +805,6 @@ class TestComputeModelProb:
                 str(cli_out),
                 "--lnuc",
                 "30",
-                "--n-min",
-                "3",
                 "--prob-name",
                 "custom_prob",
             ],

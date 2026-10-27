@@ -541,10 +541,6 @@ def compute_model_prob(
     lbin: Annotated[
         int, typer.Option(help="EM bin width (bp) (no-controls fit)")
     ] = 30,
-    n_min: Annotated[
-        int,
-        typer.Option(help="Min read sites per read-bin (no-controls fit)"),
-    ] = 10,
     max_iters: Annotated[
         int, typer.Option(help="Max EM iterations (no-controls fit)")
     ] = 200,
@@ -613,7 +609,6 @@ def compute_model_prob(
         min_gap=min_gap,
         lnuc=lnuc,
         lbin=lbin,
-        n_min=n_min,
         max_iters=max_iters,
         init_prot=init_prot,
         init_acc=init_acc,

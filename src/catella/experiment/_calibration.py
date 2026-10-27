@@ -370,7 +370,6 @@ def _em_calibration(
     strata,
     *,
     lbin,
-    n_min,
     max_iters,
     init_prot,
     init_acc,
@@ -396,8 +395,8 @@ def _em_calibration(
         From `_strand_assay_masks`.
     strata : tuple
         `("+", "-")` to calibrate each strand, or `(None,)` to pool.
-    lbin, n_min, max_iters, init_prot, init_acc, tol, min_gap,
-    batch_size, mask_name, channels, span
+    lbin, max_iters, init_prot, init_acc, tol, min_gap, batch_size,
+    mask_name, channels, span
         As in `_chrom_calibration`.
 
     Returns
@@ -412,7 +411,6 @@ def _em_calibration(
         ctx,
         assay,
         lbin,
-        n_min,
         batch_size,
         mask_name,
         by_strand=by_strand,
@@ -455,7 +453,6 @@ def _chrom_calibration(
     rho_leak,
     min_gap,
     lbin,
-    n_min,
     max_iters,
     init_prot,
     init_acc,
@@ -478,8 +475,8 @@ def _chrom_calibration(
         The experiment object containing raw data and analysis maps.
     chrom : str
         Chromosome identifier.
-    nu, rho_leak, min_gap, lbin, n_min, max_iters, init_prot, init_acc,
-    tol : as in `model_prob`.
+    nu, rho_leak, min_gap, lbin, max_iters, init_prot, init_acc, tol
+        As in `model_prob`.
     batch_size : int
         Number of molecules processed per batch.
     mask_name : str or None
@@ -523,7 +520,7 @@ def _chrom_calibration(
     ------
     ValueError
         If `chrom` has no reference sequence, if the no-controls
-        path cannot find enough windows with `n_min` context-eligible
+        path cannot find enough bins with context-eligible read
         sites, or if `norm_by_strand` is True but molecules with
         unmapped strands ('.') exist.
 
@@ -562,7 +559,6 @@ def _chrom_calibration(
             assay,
             strata,
             lbin=lbin,
-            n_min=n_min,
             max_iters=max_iters,
             init_prot=init_prot,
             init_acc=init_acc,

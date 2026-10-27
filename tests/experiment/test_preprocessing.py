@@ -1155,7 +1155,7 @@ class TestModelProb:
             lnuc=30,
         )
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, lnuc=30, n_min=3, batch_size=17)
+        ana.model_prob(exp=exp, lnuc=30, batch_size=17)
         prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
         planted = np.nanmean(prob[:, 30])
         background = np.nanmean(prob[:, 0])
@@ -1208,7 +1208,7 @@ class TestModelProb:
         tmp_dir = Path(exp.resolve_tmp_dir())
         before = set(tmp_dir.glob("*.h5"))
 
-        ana.model_prob(exp=exp, lnuc=30, n_min=3, batch_size=17)
+        ana.model_prob(exp=exp, lnuc=30, batch_size=17)
 
         # Only the persisted meth_prob output (one H5Array per
         # chromosome) should remain.
@@ -1232,9 +1232,9 @@ class TestModelProb:
         before = set(tmp_dir.glob("*.h5"))
 
         with pytest.raises(ValueError) as excinfo:
-            # n_min impossibly high -> _streamed_window_count raises
+            # lbin longer than the fiber -> _streamed_window_count raises
             # "too few windows" after its to_dense() array is created.
-            ana.model_prob(exp=exp, lnuc=30, n_min=10**9, batch_size=17)
+            ana.model_prob(exp=exp, lnuc=30, lbin=10**9, batch_size=17)
 
         assert set(tmp_dir.glob("*.h5")) == before
         del excinfo
@@ -1336,7 +1336,7 @@ class TestModelProbEta:
             corr_lag=1,
         )
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, lnuc=30, n_min=3, batch_size=17)
+        ana.model_prob(exp=exp, lnuc=30, batch_size=17)
         assert _eta_from(exp)["A"] < 0.8
 
     def test_float_override_applies_uniformly(self):
@@ -1784,9 +1784,7 @@ class TestModelProbStrand:
             strand_of=self._strand_of,
         )
         ana = MethPrintAnalysis()
-        ana.model_prob(
-            exp=exp, lnuc=30, n_min=3, batch_size=17, norm_by_strand=True
-        )
+        ana.model_prob(exp=exp, lnuc=30, batch_size=17, norm_by_strand=True)
         prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
         planted = np.nanmean(prob[:, 30])
         background = np.nanmean(prob[:, 0])
@@ -1834,7 +1832,7 @@ class TestModelProbCalib:
             lnuc=30,
         )
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, lnuc=30, n_min=3, batch_size=17)
+        ana.model_prob(exp=exp, lnuc=30, batch_size=17)
         calib = exp.global_analysis["meth_prob_calib"]
         assert len(calib) == 1
         row = calib.iloc[0]
@@ -1879,7 +1877,7 @@ class TestModelProbCalib:
             lnuc=30,
         )
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, lnuc=30, n_min=3, batch_size=17, max_iters=1)
+        ana.model_prob(exp=exp, lnuc=30, batch_size=17, max_iters=1)
         calib = exp.global_analysis["meth_prob_calib"]
         assert calib.iloc[0]["iters"] <= 1
 
@@ -1893,9 +1891,7 @@ class TestModelProbCalib:
             strand_of=strand_of,
         )
         ana = MethPrintAnalysis()
-        ana.model_prob(
-            exp=exp, lnuc=30, n_min=3, batch_size=17, norm_by_strand=True
-        )
+        ana.model_prob(exp=exp, lnuc=30, batch_size=17, norm_by_strand=True)
         calib = exp.global_analysis["meth_prob_calib"]
         assert len(calib) == 2
         assert set(calib["strand"]) == {"+", "-"}
@@ -1935,7 +1931,6 @@ class TestModelProbLbin:
                 prob_name=name,
                 lnuc=30,
                 lbin=lbin,
-                n_min=3,
                 batch_size=17,
             )
         a = exp.global_analysis["a_calib"]["theta_prot_A"].iloc[0]
@@ -2002,7 +1997,7 @@ class TestModelProbMtase:
             mtase=["A"],
         )
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, lnuc=30, n_min=3, batch_size=17)
+        ana.model_prob(exp=exp, lnuc=30, batch_size=17)
         calib = exp.global_analysis["meth_prob_calib"]
         assert "theta_prot_A" in calib.columns
         assert "theta_acc_A" in calib.columns
@@ -2020,7 +2015,7 @@ class TestModelProbTheta:
             lnuc=30,
         )
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, lnuc=30, n_min=3, batch_size=17)
+        ana.model_prob(exp=exp, lnuc=30, batch_size=17)
         theta = exp.analysis["chr1"]["meth_prob_theta"]
         nbp = len(exp.raw["chr1"].refseq)
         assert len(theta) == nbp

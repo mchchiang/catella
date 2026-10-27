@@ -447,9 +447,8 @@ we swap the values of the two estimators and set
 :math:`\hat{\pi} \to 1-\hat{\pi}`. In the package, this fit is controlled
 by `max_iters` and `tol` (the EM iteration cap and convergence
 tolerance), `init_prot`/`init_acc` (its initial guesses for
-:math:`\theta_P`/:math:`\theta_A`), `lbin` (the bin width), and `n_min`
-(the minimum number of context-eligible sites a bin needs to be used in
-the fit).
+:math:`\theta_P`/:math:`\theta_A`), and `lbin` (the bin width). A bin
+without read sites carries no information and is left out of the fit.
 
 Handling data with multiple methyltransferase channels
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

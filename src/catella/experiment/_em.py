@@ -19,7 +19,6 @@ def _streamed_window_count(
     ctx,
     assay,
     lbin,
-    n_min,
     batch_size,
     mask_name,
     by_strand=False,
@@ -35,8 +34,8 @@ def _streamed_window_count(
     its number of sites read by that read (see `_read_sites`), so it
     varies by read, and a read site without a call is a trial with
     confidence 0. A blank read counts its sites with their expected
-    strand weights (see `_read_weights`). Read-windows below `n_min`
-    read sites are dropped.
+    strand weights (see `_read_weights`). Read-windows without read
+    sites carry no information and are dropped.
 
     Parameters
     ----------
@@ -50,9 +49,6 @@ def _streamed_window_count(
         From `_strand_assay_masks`.
     lbin : int
         Bin width (bp) of the non-overlapping windows.
-    n_min : int
-        Minimum read sites (summed over all contexts) a read-window
-        needs to be kept.
     batch_size : int
         Number of molecules processed per batch.
     mask_name : str or None
@@ -85,8 +81,8 @@ def _streamed_window_count(
     ------
     ValueError
         If `ctx` has no assayable contexts within `channels`, or too
-        few read-windows have `n_min` read sites (per strand, when
-        `by_strand` is True).
+        few read-windows have read sites (per strand, when `by_strand`
+        is True).
     """
     if channels is None:
         channels = _ALL_CHANNELS
@@ -123,16 +119,14 @@ def _streamed_window_count(
                 w_k = _read_weights(b, assay, key)[sel, :width][None]
                 K = (q_k * in_code).reshape(shape).sum(axis=3)
                 N = (w_k * in_code).reshape(shape).sum(axis=3)
-                ok = N.sum(axis=0) >= n_min
+                ok = N.sum(axis=0) > 0
                 K_batches[key].append(K[:, ok])
                 N_batches[key].append(N[:, ok])
 
     def _build(key):
         if sum(b.shape[1] for b in N_batches[key]) < 10:
             suffix = "" if key is None else f" for strand {key!r}"
-            raise ValueError(
-                f"too few windows with >= n_min read sites{suffix}"
-            )
+            raise ValueError(f"too few windows with read sites{suffix}")
         K = np.concatenate(K_batches[key], axis=1)
         N = np.concatenate(N_batches[key], axis=1)
         return K, N, codes

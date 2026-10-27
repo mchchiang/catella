@@ -427,8 +427,8 @@ class MethPrintAnalysis:
         nu: float | None = None,
         rho_leak: float | None = None,
         fit_kappa: bool = False,
-        min_gap: float = 0.05,
         min_site_prob: float = 0.95,
+        min_rel_contrast: float = 0.2,
         lnuc: int = 147,
         lbin: int = 30,
         max_iters: int = 200,
@@ -515,18 +515,20 @@ class MethPrintAnalysis:
             kappa is 1, which suits controls run under the same
             conditions as the test sample. Requires `rho_leak` to be
             None. Used only when meth/unmeth controls are available.
-        min_gap : float, default 0.05
-            Minimum required gap between the fitted accessible and
-            protected call rates of a context for its positions to be
-            treated as informative; positions below this gap contribute
-            no evidence. Used only when no meth/unmeth controls are
-            available.
         min_site_prob : float, default 0.95
             Minimum posterior probability, from the empirical-Bayes
             rates of the two controls, that a position's
             meth-control rate exceeds its unmeth-control rate for the
             position to be treated as informative. Used only when
             meth/unmeth controls are available.
+        min_rel_contrast : float, default 0.2
+            Minimum relative contrast `(kappa - tau) / kappa` between
+            the fitted accessible and protected efficiencies of a
+            context (its call rates without controls) for its positions
+            to be treated as informative; the context must also pass a
+            BIC test of the two states against one. Applies after any
+            expectation-maximization fit. Uninformative positions
+            contribute no evidence.
         lnuc : int, default 147
             Nucleosome footprint size (bp), used as the output
             window-sum size.
@@ -587,7 +589,7 @@ class MethPrintAnalysis:
         ------
         ValueError
             If `lbin` is less than 1, if `nu` is negative, if
-            `min_site_prob` is outside [0, 1], if
+            `min_site_prob` or `min_rel_contrast` is outside [0, 1], if
             `fit_kappa` is True with a
             float `rho_leak`, if a chromosome has no reference sequence
             (`refseq`), if an expectation-maximization fit cannot find
@@ -647,10 +649,12 @@ class MethPrintAnalysis:
             raise ValueError("fit_kappa=True requires rho_leak=None")
         if nu is not None and nu < 0:
             raise ValueError(f"nu must be non-negative, got {nu}")
-        if not 0.0 <= min_site_prob <= 1.0:
-            raise ValueError(
-                f"min_site_prob must be in [0, 1], got {min_site_prob}"
-            )
+        for name, value in (
+            ("min_site_prob", min_site_prob),
+            ("min_rel_contrast", min_rel_contrast),
+        ):
+            if not 0.0 <= value <= 1.0:
+                raise ValueError(f"{name} must be in [0, 1], got {value}")
         tmp_dir = exp.resolve_tmp_dir()
 
         channels = _active_channels(exp)
@@ -662,8 +666,8 @@ class MethPrintAnalysis:
             "nu": nu,
             "rho_leak": rho_leak,
             "fit_kappa": fit_kappa,
-            "min_gap": min_gap,
             "min_site_prob": min_site_prob,
+            "min_rel_contrast": min_rel_contrast,
             "lbin": lbin,
             "max_iters": max_iters,
             "init_prot": init_prot,
@@ -710,8 +714,8 @@ class MethPrintAnalysis:
                     "nu": np.nan if nu is None else nu,
                     "rho_leak": np.nan if rho_leak is None else rho_leak,
                     "fit_kappa": fit_kappa,
-                    "min_gap": min_gap,
                     "min_site_prob": min_site_prob,
+                    "min_rel_contrast": min_rel_contrast,
                     "lnuc": lnuc,
                     "lbin": lbin,
                     "max_iters": max_iters,

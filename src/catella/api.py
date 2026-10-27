@@ -248,8 +248,8 @@ def compute_model_prob(
     nu: float | None = None,
     rho_leak: float | None = None,
     fit_kappa: bool = False,
-    min_gap: float = 0.05,
     min_site_prob: float = 0.95,
+    min_rel_contrast: float = 0.2,
     lnuc: int = 147,
     lbin: int = 30,
     max_iters: int = 200,
@@ -324,16 +324,15 @@ def compute_model_prob(
         relative to the methylated control, per channel; otherwise
         kappa is 1. Requires `rho_leak` to be None. Used only when
         meth/unmeth controls are available.
-    min_gap : float, default 0.05
-        Minimum required gap between the fitted accessible and
-        protected call rates of a context for its positions to be
-        treated as informative. Used only when no meth/unmeth controls
-        are available.
     min_site_prob : float, default 0.95
         Minimum posterior probability that a position's meth-control
         rate exceeds its unmeth-control rate for the position to be
         treated as informative. Used only when meth/unmeth controls
         are available.
+    min_rel_contrast : float, default 0.2
+        Minimum relative contrast `(kappa - tau) / kappa` of a context
+        after an expectation-maximization fit (which must also pass a
+        BIC test) for its positions to be treated as informative.
     lnuc : int, default 147
         Nucleosome footprint size (bp), used as the output window-sum
         size.
@@ -430,8 +429,8 @@ def compute_model_prob(
         nu=nu,
         rho_leak=rho_leak,
         fit_kappa=fit_kappa,
-        min_gap=min_gap,
         min_site_prob=min_site_prob,
+        min_rel_contrast=min_rel_contrast,
         lnuc=lnuc,
         lbin=lbin,
         max_iters=max_iters,

@@ -307,7 +307,8 @@ def _warn_boundary_fit(chrom, stratum, em_diag):
     if names:
         warnings.warn(
             f"{where}: tau reached its upper bound for {names}, so the "
-            f"protected and accessible states are not separable; {hint}",
+            f"protected and accessible states are not separable and "
+            f"their sites are uninformative; {hint}",
             UserWarning,
             stacklevel=5,
         )
@@ -339,6 +340,7 @@ def _controls_calibration(
     init_acc,
     tol,
     min_site_prob,
+    min_rel_contrast,
     batch_size,
     mask_name,
     channels,
@@ -365,7 +367,7 @@ def _controls_calibration(
     strata : tuple
         `("+", "-")` to calibrate each strand, or `(None,)` to pool.
     nu, rho_leak, fit_kappa, lbin, max_iters, init_prot, init_acc, tol,
-    min_site_prob, batch_size, mask_name, channels, span
+    min_site_prob, min_rel_contrast, batch_size, mask_name, channels, span
         As in `_chrom_calibration`.
 
     Returns
@@ -460,6 +462,7 @@ def _controls_calibration(
                     init_prot=init_prot,
                     init_acc=init_acc,
                     tol=tol,
+                    min_rel_contrast=min_rel_contrast,
                 )
             )
             _warn_boundary_fit(chrom, s, em_diag)
@@ -491,7 +494,7 @@ def _em_calibration(
     init_prot,
     init_acc,
     tol,
-    min_gap,
+    min_rel_contrast,
     batch_size,
     mask_name,
     channels,
@@ -512,8 +515,8 @@ def _em_calibration(
         From `_strand_assay_masks`.
     strata : tuple
         `("+", "-")` to calibrate each strand, or `(None,)` to pool.
-    lbin, max_iters, init_prot, init_acc, tol, min_gap, batch_size,
-    mask_name, channels, span
+    lbin, max_iters, init_prot, init_acc, tol, min_rel_contrast,
+    batch_size, mask_name, channels, span
         As in `_chrom_calibration`.
 
     Returns
@@ -549,7 +552,7 @@ def _em_calibration(
             init_prot=init_prot,
             init_acc=init_acc,
             tol=tol,
-            min_gap=min_gap,
+            min_rel_contrast=min_rel_contrast,
         )
         calib_info = {
             "has_controls": False,
@@ -568,7 +571,6 @@ def _chrom_calibration(
     *,
     nu,
     rho_leak,
-    min_gap,
     lbin,
     max_iters,
     init_prot,
@@ -577,6 +579,7 @@ def _chrom_calibration(
     batch_size,
     mask_name,
     min_site_prob=0.95,
+    min_rel_contrast=0.2,
     fit_kappa=False,
     norm_by_strand=False,
     channels=None,
@@ -594,9 +597,11 @@ def _chrom_calibration(
         The experiment object containing raw data and analysis maps.
     chrom : str
         Chromosome identifier.
-    nu, rho_leak, min_gap, lbin, max_iters, init_prot, init_acc, tol
+    nu, rho_leak, lbin, max_iters, init_prot, init_acc, tol
         As in `model_prob`.
     min_site_prob : float, default 0.95
+        As in `model_prob`.
+    min_rel_contrast : float, default 0.2
         As in `model_prob`.
     fit_kappa : bool, default False
         As in `model_prob`.
@@ -671,6 +676,7 @@ def _chrom_calibration(
         "init_prot": init_prot,
         "init_acc": init_acc,
         "tol": tol,
+        "min_rel_contrast": min_rel_contrast,
         "batch_size": batch_size,
         "mask_name": mask_name,
         "channels": channels,
@@ -690,9 +696,7 @@ def _chrom_calibration(
             **common,
         )
     else:
-        results = _em_calibration(
-            exp, chrom, ctx, assay, strata, min_gap=min_gap, **common
-        )
+        results = _em_calibration(exp, chrom, ctx, assay, strata, **common)
 
     fields = [dict(zip(strata, f)) for f in zip(*results.values())]
     if not norm_by_strand:
@@ -731,7 +735,8 @@ def _calib_rows(chrom, info, norm_by_strand):
         `norm_by_strand`), and, for an expectation-maximization fit,
         `iters`, `log_likelihood`, `frac_protected`, and per context
         `theta_prot_*`/`theta_acc_*` (no-controls path) or `tau_*`,
-        `kappa_*` and `rho_*` (= tau / kappa, controls path), and, on
+        `kappa_*` and `rho_*` (= tau / kappa, controls path), plus
+        `bic_margin_*` and `rel_contrast_*` (channel selection), and, on
         the controls path, per context `mean_rate_meth_*` and
         `mean_rate_unmeth_*`, plus `nu_meth_*` and `nu_unmeth_*` if nu
         was fitted.
@@ -753,8 +758,8 @@ def _calib_rows(chrom, info, norm_by_strand):
             row["iters"] = sub["n_iter"]
             row["log_likelihood"] = sub["log_likelihood"]
             row["frac_protected"] = sub["frac_protected"]
-            keys = [k for k in ("theta_prot", "theta_acc") if k in sub]
-            fitted = {k: sub[k] for k in keys}
+            keys = ("theta_prot", "theta_acc", "bic_margin", "rel_contrast")
+            fitted = {k: sub[k] for k in keys if k in sub}
             if "tau" in sub:
                 fitted.update(
                     tau=sub["tau"],

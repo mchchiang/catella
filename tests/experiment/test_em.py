@@ -3,6 +3,7 @@ from catella.experiment._contexts import GCH, A
 from catella.experiment._em import (
     _calibrate_from_data,
     _calibrate_from_profiles,
+    _channel_tests,
     _em_starts,
     _log_binom_coef_sum,
     _mixture_loglik,
@@ -130,6 +131,46 @@ class TestCalibrateFromProfiles:
         assert abs(diag["kappa"][0] - 0.7) < 0.03
         assert abs(diag["frac_protected"] - 0.4) < 0.03
         np.testing.assert_allclose(ta, 0.03 + diag["kappa"] * 0.77)
+
+
+class TestChannelTests:
+    _lo, _hi = np.full(1, 1e-3), np.full(1, 1 - 1e-3)
+
+    def test_planted_contrast_passes(self):
+        K, N = _mixture(0.4, [0.1], [0.8])
+        tp, ta = np.array([0.1]), np.array([0.8])
+        bic, rel = _channel_tests(K, N, None, tp, ta, 0.4, self._lo, self._hi)
+        assert bic[0] > 0
+        assert abs(rel[0] - 0.875) < 1e-9
+
+    def test_null_channel_fails_bic(self):
+        rng = np.random.default_rng(3)
+        N = rng.poisson(4, (1, 5000)).astype(float)
+        K = rng.binomial(N.astype(int), 0.3).astype(float)
+        _, _, _, diag = _calibrate_from_data(
+            K, N, np.array([A], dtype=np.int8), [A]
+        )
+        assert diag["bic_margin"][0] < 0
+
+    def test_profiles_planted_contrast_passes(self):
+        K, N, SF, SD = _profile_mixture(0.4, 0.2, 1.0)
+        tp, ta = np.array([0.2]), np.array([1.0])
+        bic, rel = _channel_tests(
+            K, N, (SF, SD), tp, ta, 0.4, np.zeros(1), np.ones(1)
+        )
+        assert bic[0] > 0
+        assert abs(rel[0] - 0.8) < 1e-9
+
+    def test_failing_channel_is_uninformative(self):
+        rng = np.random.default_rng(4)
+        K_a, N_a = _mixture(0.4, [0.1], [0.8], n_win=3000)
+        N_b = np.full((1, 3000), 20.0)
+        K_b = rng.binomial(20, 0.3, (1, 3000)).astype(float)
+        K, N = np.vstack([K_a, K_b]), np.vstack([N_a, N_b])
+        ctx = np.array([A, A, GCH, GCH], dtype=np.int8)
+        _, _, informative, diag = _calibrate_from_data(K, N, ctx, [A, GCH])
+        np.testing.assert_array_equal(informative, [True, True, False, False])
+        assert diag["bic_margin"][0] > 0 > diag["bic_margin"][1]
 
 
 class TestEmStarts:

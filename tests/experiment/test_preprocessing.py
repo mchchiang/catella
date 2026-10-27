@@ -1408,7 +1408,7 @@ class TestModelProbStoreRho:
 
     def test_stores_rho_for_auto_estimated_channels(self):
         exp = _make_footprint_experiment(
-            with_controls=True, planted_edges=(30,), lnuc=30
+            with_controls=True, nmol=100, planted_edges=(30,), lnuc=30
         )
         ana = MethPrintAnalysis()
         ana.model_prob(
@@ -1962,6 +1962,40 @@ class TestModelProbLbin:
         )
         with pytest.raises(ValueError, match="lbin"):
             MethPrintAnalysis().model_prob(exp=exp, lnuc=30, lbin=0)
+
+
+class TestModelProbChannelSelection:
+    def test_calib_and_params_record_channel_selection(self):
+        exp = _make_footprint_experiment(with_controls=True, nmol=200)
+        MethPrintAnalysis().model_prob(exp=exp, lnuc=30, batch_size=50)
+        row = exp.global_analysis["meth_prob_calib"].iloc[0]
+        params = exp.global_analysis["meth_prob_params"].iloc[0]
+        assert params["min_site_prob"] == 0.95
+        assert params["min_rel_contrast"] == 0.2
+        for ch in ("A", "GCH", "HCG", "GCG"):
+            assert row[f"bic_margin_{ch}"] > 0
+            assert 0 < row[f"rel_contrast_{ch}"] <= 1
+
+    def test_full_relative_contrast_drops_all_channels(self):
+        for with_controls in (True, False):
+            exp = _make_footprint_experiment(
+                with_controls=with_controls,
+                nmol=120,
+                planted_edges=(30, 120, 200),
+            )
+            MethPrintAnalysis().model_prob(
+                exp=exp, lnuc=30, min_rel_contrast=1.0, batch_size=50
+            )
+            theta = exp.analysis["chr1"]["meth_prob_theta"]
+            assert not theta["informative"].any()
+
+    @pytest.mark.parametrize(
+        "kwargs", [{"min_site_prob": 1.5}, {"min_rel_contrast": -0.1}]
+    )
+    def test_invalid_threshold_raises(self, kwargs):
+        exp = _make_footprint_experiment(with_controls=True)
+        with pytest.raises(ValueError, match="must be in"):
+            MethPrintAnalysis().model_prob(exp=exp, lnuc=30, **kwargs)
 
 
 class TestModelProbFitNu:

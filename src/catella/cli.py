@@ -544,13 +544,6 @@ def compute_model_prob(
             "(controls only)"
         ),
     ] = False,
-    min_gap: Annotated[
-        float,
-        typer.Option(
-            help="Min accessible/protected rate gap to be informative "
-            "(no controls)"
-        ),
-    ] = 0.05,
     min_site_prob: Annotated[
         float,
         typer.Option(
@@ -558,6 +551,13 @@ def compute_model_prob(
             "contrast to be informative (controls only)"
         ),
     ] = 0.95,
+    min_rel_contrast: Annotated[
+        float,
+        typer.Option(
+            help="Min relative contrast (kappa - tau) / kappa of a "
+            "context after an EM fit to be informative"
+        ),
+    ] = 0.2,
     lnuc: Annotated[
         int, typer.Option(help="Nucleosome footprint / window size (bp)")
     ] = 147,
@@ -630,8 +630,8 @@ def compute_model_prob(
         nu=nu,
         rho_leak=rho_leak,
         fit_kappa=fit_kappa,
-        min_gap=min_gap,
         min_site_prob=min_site_prob,
+        min_rel_contrast=min_rel_contrast,
         lnuc=lnuc,
         lbin=lbin,
         max_iters=max_iters,

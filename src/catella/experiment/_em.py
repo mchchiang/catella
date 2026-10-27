@@ -4,7 +4,7 @@ from contextlib import closing
 
 import numpy as np
 
-from catella.experiment._contexts import _ALL_CHANNELS, NONE
+from catella.experiment._contexts import _ALL_CHANNELS
 from catella.experiment._reads import _iter_read_sites, _read_weights
 
 # Mixing fractions outside this range mark a degenerate fit
@@ -458,6 +458,65 @@ def _fit_mixture(
     return tp, ta, pi, ll, n_iter
 
 
+def _channel_tests(K, N, prof, tp, ta, pi, lo, hi):
+    """
+    Per-channel evidence and size of the contrast between the states.
+
+    The evidence is the BIC margin `G - log n` with
+    `G = 2 (l_H1 - l_H0)`: `l_H1` is the two-state mixture likelihood of
+    the channel alone, with the mixing fraction fixed at `pi`, and
+    `l_H0` that of a single efficiency fitted to all of its bins; `n`
+    is the number of bins in which the channel has read sites. The size
+    is the relative contrast `(ta - tp) / ta`.
+
+    Parameters
+    ----------
+    K, N, prof
+        As in `_run_em`.
+    tp, ta : np.ndarray
+        float64, length n_ctx, fitted efficiencies (rates without
+        `prof`).
+    pi : float
+        Fitted mixing fraction.
+    lo, hi : np.ndarray
+        float64, length n_ctx, bounds on the single efficiency.
+
+    Returns
+    -------
+    bic_margin, rel_contrast : np.ndarray
+        float64, length n_ctx; `bic_margin` is nan for a channel without
+        read sites.
+    """
+    rp, ra = _bin_rates(N, prof, tp), _bin_rates(N, prof, ta)
+    lp = np.log(pi) + K * np.log(rp) + (N - K) * np.log1p(-rp)
+    la = np.log1p(-pi) + K * np.log(ra) + (N - K) * np.log1p(-ra)
+    m = np.maximum(lp, la)
+    l_h1 = (m + np.log(np.exp(lp - m) + np.exp(la - m))).sum(axis=1)
+
+    ones = np.ones(K.shape[1])
+    if prof is None:
+        with np.errstate(invalid="ignore", divide="ignore"):
+            scale = np.clip(K.sum(axis=1) / N.sum(axis=1), lo, hi)
+    else:
+        scale = np.clip(0.5 * (tp + ta), lo, hi)
+        for _ in range(50):
+            new = _update_scale(ones, K, N, prof, scale, lo, hi)
+            done = np.allclose(new, scale, rtol=0.0, atol=1e-10)
+            scale = new
+            if done:
+                break
+    r0 = _bin_rates(N, prof, scale)
+    l_h0 = (K * np.log(r0) + (N - K) * np.log1p(-r0)).sum(axis=1)
+
+    n_bins = (N > 0).sum(axis=1)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        bic_margin = np.where(
+            n_bins > 0, 2.0 * (l_h1 - l_h0) - np.log(n_bins), np.nan
+        )
+        rel_contrast = (ta - tp) / ta
+    return bic_margin, rel_contrast
+
+
 def _calibrate_from_data(
     K,
     N,
@@ -468,7 +527,7 @@ def _calibrate_from_data(
     init_prot=0.05,
     init_acc=0.95,
     tol=1e-8,
-    min_gap=0.05,
+    min_rel_contrast=0.2,
 ):
     """
     Fit theta_prot/theta_acc per context with expectation-maximization,
@@ -484,7 +543,9 @@ def _calibrate_from_data(
     kept, among those whose mixing fraction lies within `_PI_RANGE`
     (among all starts if none does). If the kept fit has the labels
     swapped, the rates are swapped and the mixing fraction is flipped
-    to `1 - pi`.
+    to `1 - pi`. A context is informative if `_channel_tests` gives a
+    positive BIC margin and a relative contrast of at least
+    `min_rel_contrast`.
 
     Parameters
     ----------
@@ -505,8 +566,9 @@ def _calibrate_from_data(
         Initial guess for theta_acc in the first start.
     tol : float, default 1e-8
         Relative log-likelihood convergence tolerance.
-    min_gap : float, default 0.05
-        Forwarded to the informative-mask computation.
+    min_rel_contrast : float, default 0.2
+        Minimum relative contrast `(theta_acc - theta_prot) / theta_acc`
+        of an informative context.
 
     Returns
     -------
@@ -521,34 +583,36 @@ def _calibrate_from_data(
         iterations run, capped at `max_iters`), `log_likelihood`
         (float, at the returned parameters),
         `frac_protected` (float, fitted mixing fraction of windows in
-        the protected state), `codes` (as passed in), and `theta_prot`/
+        the protected state), `codes` (as passed in), `theta_prot`/
         `theta_acc` (float64, length `len(codes)`, the final per-context
-        rates before broadcasting to `theta_prot`/`theta_acc` above).
+        rates before broadcasting to `theta_prot`/`theta_acc` above),
+        and `bic_margin`/`rel_contrast` (float64, length `len(codes)`,
+        from `_channel_tests`).
     """
+    lo, hi = np.full(len(codes), eps), np.full(len(codes), 1 - eps)
     tp, ta, pi, ll, n_iter = _fit_mixture(
         K,
         N,
         None,
         fit_acc=True,
-        lo=np.full(len(codes), eps),
-        hi=np.full(len(codes), 1 - eps),
+        lo=lo,
+        hi=hi,
         init_prot=init_prot,
         init_acc=init_acc,
         max_iters=max_iters,
         tol=tol,
     )
+    bic_margin, rel_contrast = _channel_tests(K, N, None, tp, ta, pi, lo, hi)
+    passed = (bic_margin > 0) & (rel_contrast >= min_rel_contrast)
 
     theta_prot = np.full(len(ctx), np.nan)
     theta_acc = np.full(len(ctx), np.nan)
+    informative = np.zeros(len(ctx), dtype=bool)
     for c, code in enumerate(codes):
         sel = ctx == code
         theta_prot[sel], theta_acc[sel] = tp[c], ta[c]
+        informative[sel] = passed[c]
 
-    informative = (
-        (ctx != NONE)
-        & np.isfinite(theta_acc)
-        & ((theta_acc - theta_prot) > min_gap)
-    )
     em_diag = {
         "n_iter": n_iter,
         "log_likelihood": ll,
@@ -556,6 +620,8 @@ def _calibrate_from_data(
         "codes": codes,
         "theta_prot": tp,
         "theta_acc": ta,
+        "bic_margin": bic_margin,
+        "rel_contrast": rel_contrast,
     }
     return theta_prot, theta_acc, informative, em_diag
 
@@ -577,6 +643,7 @@ def _calibrate_from_profiles(
     init_acc=0.95,
     tol=1e-8,
     eps=1e-4,
+    min_rel_contrast=0.2,
 ):
     """
     Fit tau (and optionally kappa) per context with
@@ -589,7 +656,10 @@ def _calibrate_from_profiles(
     `F` and `D` over its read sites. The latent state and its mixing
     fraction are shared by all channels, while tau and kappa are
     fitted per channel. With `fit_kappa` False, kappa is 1 and tau is
-    bounded to [0, 1], so no label swap is possible.
+    bounded to [0, 1], so no label swap is possible. Sites of a context
+    stay informative only if `_channel_tests` gives a positive BIC
+    margin and a relative contrast `(kappa - tau) / kappa` of at least
+    `min_rel_contrast`.
 
     Parameters
     ----------
@@ -604,7 +674,7 @@ def _calibrate_from_profiles(
         float64, length L, call rates of the unmeth and meth controls
         (`F` and `F + D`).
     informative : np.ndarray
-        bool, length L, returned unchanged.
+        bool, length L, the informative sites from the controls.
     fit_kappa : bool, default False
         Whether to fit kappa as well; otherwise kappa is 1.
     max_iters, init_prot, tol
@@ -613,18 +683,21 @@ def _calibrate_from_profiles(
         Starting kappa, used only if `fit_kappa`.
     eps : float, default 1e-4
         Clip bound keeping rates away from exactly 0 or 1.
+    min_rel_contrast : float, default 0.2
+        As in `_calibrate_from_data`.
 
     Returns
     -------
     theta_prot, theta_acc : np.ndarray
         float64, length L.
     informative : np.ndarray
-        bool, length L.
+        bool, length L, `informative` restricted to the contexts that
+        pass `_channel_tests`.
     em_diag : dict
-        `n_iter`, `log_likelihood`, `frac_protected` and `codes` as in
-        `_calibrate_from_data`, plus `tau`, `kappa` and `tau_max`
-        (float64, length `len(codes)`, the fitted values and the upper
-        bound on tau).
+        `n_iter`, `log_likelihood`, `frac_protected`, `codes`,
+        `bic_margin` and `rel_contrast` as in `_calibrate_from_data`,
+        plus `tau`, `kappa` and `tau_max` (float64, length
+        `len(codes)`, the fitted values and the upper bound on tau).
     """
     with np.errstate(invalid="ignore", divide="ignore"):
         f_w, d_w = SF / N, SD / N
@@ -645,15 +718,22 @@ def _calibrate_from_profiles(
         max_iters=max_iters,
         tol=tol,
     )
+    bic_margin, rel_contrast = _channel_tests(
+        K, N, (SF, SD), tau, kappa, pi, lo, np.maximum(hi, kappa)
+    )
+    passed = (bic_margin > 0) & (rel_contrast >= min_rel_contrast)
 
     D = acc_ctrl - fpr
     theta_prot = np.full(len(ctx), np.nan)
     theta_acc = acc_ctrl.copy() if not fit_kappa else np.full(len(ctx), np.nan)
+    informative = informative.copy()
     for c, code in enumerate(codes):
         sel = ctx == code
         theta_prot[sel] = fpr[sel] + tau[c] * D[sel]
         if fit_kappa:
             theta_acc[sel] = fpr[sel] + kappa[c] * D[sel]
+        if not passed[c]:
+            informative[sel] = False
     em_diag = {
         "n_iter": n_iter,
         "log_likelihood": ll,
@@ -662,6 +742,8 @@ def _calibrate_from_profiles(
         "tau": tau,
         "kappa": kappa,
         "tau_max": hi,
+        "bic_margin": bic_margin,
+        "rel_contrast": rel_contrast,
     }
     return (
         np.clip(theta_prot, eps, 1 - eps),

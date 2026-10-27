@@ -128,7 +128,7 @@ def _accumulate_autocorr_stats(
             st["psumB"][i] += (lo_right * pair).sum()
 
 
-def _finalize_channel_eta(stats, max_lag, min_n=None):
+def _finalize_channel_eta(stats, max_lag, n_min=None):
     """
     Convert accumulated autocorrelation sums into a per-channel eta,
     the inverse of the variance-inflation factor from lag-k
@@ -140,7 +140,7 @@ def _finalize_channel_eta(stats, max_lag, min_n=None):
         Per-channel accumulators from `_accumulate_autocorr_stats`.
     max_lag : int
         Maximum lag (bp) summed over.
-    min_n : int, optional
+    n_min : int, optional
         Minimum called-site count `n` a channel needs before it is
         estimated; below this, `eta_c = 1.0` (no correction) since
         there isn't enough data for a stable estimate. Defaults to
@@ -156,13 +156,13 @@ def _finalize_channel_eta(stats, max_lag, min_n=None):
         enough data to be estimated (a subset of `eta`'s keys;
         channels that fell back to `eta_c = 1.0` are omitted).
     """
-    if min_n is None:
-        min_n = max_lag
+    if n_min is None:
+        n_min = max_lag
     eta = {}
     rho = {}
     for c, st in stats.items():
         n = st["n"]
-        if n <= min_n:
+        if n <= n_min:
             eta[c] = 1.0
             continue
         bar = st["s1"] / n  # global channel mean

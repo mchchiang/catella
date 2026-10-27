@@ -527,8 +527,19 @@ def compute_model_prob(
         float, typer.Option(help="Pseudo-count shrinkage strength")
     ] = 10.0,
     rho_leak: Annotated[
-        float, typer.Option(help="Leak fraction toward accessible-state rate")
-    ] = 0.1,
+        float | None,
+        typer.Option(
+            help="Leak fraction toward accessible-state rate; fitted "
+            "if not given (controls only)"
+        ),
+    ] = None,
+    fit_kappa: Annotated[
+        bool,
+        typer.Option(
+            help="Also fit kappa, the accessible-site efficiency "
+            "(controls only)"
+        ),
+    ] = False,
     min_gap: Annotated[
         float,
         typer.Option(
@@ -606,6 +617,7 @@ def compute_model_prob(
         store_rho=store_rho,
         nu=nu,
         rho_leak=rho_leak,
+        fit_kappa=fit_kappa,
         min_gap=min_gap,
         lnuc=lnuc,
         lbin=lbin,

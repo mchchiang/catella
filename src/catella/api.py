@@ -246,7 +246,8 @@ def compute_model_prob(
     eta_max_lag: int = 10,
     store_rho: bool = False,
     nu: float = 10.0,
-    rho_leak: float = 0.1,
+    rho_leak: float | None = None,
+    fit_kappa: bool = False,
     min_gap: float = 0.05,
     lnuc: int = 147,
     lbin: int = 30,
@@ -308,11 +309,18 @@ def compute_model_prob(
         Pseudo-count strength for shrinking each position's call
         rate toward its context group's mean; larger values shrink
         harder at low depth.
-    rho_leak : float, default 0.1
+    rho_leak : float, optional
         Leak fraction in [0, 1] interpolating the protected-state
         call rate between the unmethylated control's false-positive
         rate (0 for perfect protection) and the accessible-state rate.
+        If None (default), it is fitted per channel by
+        expectation-maximization on the test sample; a float pins it.
         Used only when meth/unmeth controls are available.
+    fit_kappa : bool, default False
+        Whether to also fit kappa, the accessible-site efficiency
+        relative to the methylated control, per channel; otherwise
+        kappa is 1. Requires `rho_leak` to be None. Used only when
+        meth/unmeth controls are available.
     min_gap : float, default 0.05
         Minimum required gap between the accessible and protected
         call rates for a position to be treated as informative;
@@ -412,6 +420,7 @@ def compute_model_prob(
         store_rho=store_rho,
         nu=nu,
         rho_leak=rho_leak,
+        fit_kappa=fit_kappa,
         min_gap=min_gap,
         lnuc=lnuc,
         lbin=lbin,

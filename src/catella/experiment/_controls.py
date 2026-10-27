@@ -180,19 +180,18 @@ def _informative_mask(theta_acc, fpr, ctx, min_gap=0.05):
     )
 
 
-def _calibrate_from_controls(
+def _control_profiles(
     meth_k,
     meth_n,
     unmeth_k,
     unmeth_n,
     ctx,
     nu=10.0,
-    rho_leak=0.1,
     min_gap=0.05,
     channels=None,
 ):
     """
-    Estimate theta_prot/theta_acc/informative from meth/unmeth controls.
+    Rate profiles from the meth/unmeth controls.
 
     Parameters
     ----------
@@ -204,26 +203,25 @@ def _calibrate_from_controls(
         int8, length L, context code per position.
     nu : float, default 10.0
         Forwarded to `_context_prior_rate`.
-    rho_leak : float, default 0.1
-        Forwarded to `_leak_interpolated_rate`.
     min_gap : float, default 0.05
         Forwarded to `_informative_mask`.
     channels : iterable of int, optional
         Forwarded to `_context_prior_rate`. Defaults to all of
         `_ALL_CHANNELS`; positions outside `channels` come back
-        uninformative, since their theta_acc is left nan.
+        uninformative, since their rates are left nan.
 
     Returns
     -------
     tuple of np.ndarray
-        `(theta_prot, theta_acc, informative)`, each length L.
+        `(fpr, acc_ctrl, informative)`, each length L: the shrunk call
+        rates of the unmeth and meth controls (`F` and `F + D`), and
+        the informative mask.
     """
-    theta_acc = _context_prior_rate(
+    acc_ctrl = _context_prior_rate(
         meth_k, meth_n, ctx, nu=nu, channels=channels
     )
     fpr = _context_prior_rate(
         unmeth_k, unmeth_n, ctx, nu=nu, channels=channels
     )
-    theta_prot = _leak_interpolated_rate(theta_acc, fpr, rho_leak=rho_leak)
-    informative = _informative_mask(theta_acc, fpr, ctx, min_gap=min_gap)
-    return theta_prot, theta_acc, informative
+    informative = _informative_mask(acc_ctrl, fpr, ctx, min_gap=min_gap)
+    return fpr, acc_ctrl, informative

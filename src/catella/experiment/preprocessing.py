@@ -425,7 +425,8 @@ class MethPrintAnalysis:
         eta_max_lag: int = 10,
         store_rho: bool = False,
         nu: float = 10.0,
-        rho_leak: float = 0.1,
+        rho_leak: float | None = None,
+        fit_kappa: bool = False,
         min_gap: float = 0.05,
         lnuc: int = 147,
         lbin: int = 30,
@@ -495,11 +496,21 @@ class MethPrintAnalysis:
             Pseudo-count strength for shrinking each position's call
             rate toward its context group's mean; larger values shrink
             harder at low depth.
-        rho_leak : float, default 0.1
+        rho_leak : float, optional
             Leak fraction in [0, 1] interpolating the protected-state
             call rate between the unmethylated control's false-positive
-            rate (0 for perfect protection) and the accessible-state rate.
-            Used only when meth/unmeth controls are available.
+            rate (0 for perfect protection) and the accessible-state
+            rate. If None (default), it is fitted per channel by
+            expectation-maximization on the test sample (as tau, the
+            protected-site efficiency); a float pins it for all
+            channels. Used only when meth/unmeth controls are
+            available.
+        fit_kappa : bool, default False
+            Whether to also fit kappa, the accessible-site efficiency
+            relative to the methylated control, per channel. If False,
+            kappa is 1, which suits controls run under the same
+            conditions as the test sample. Requires `rho_leak` to be
+            None. Used only when meth/unmeth controls are available.
         min_gap : float, default 0.05
             Minimum required gap between the accessible and protected
             call rates for a position to be treated as informative;
@@ -509,24 +520,24 @@ class MethPrintAnalysis:
             window-sum size.
         lbin : int, default 30
             Bin width (bp) of the non-overlapping windows in the
-            no-controls expectation-maximization fit. Bins narrower
-            than `lnuc` mix linker and nucleosomal DNA less, which
-            sharpens the contrast between the fitted rates, but hold
-            fewer sites each. A read-bin without read sites is left
-            out of the fit. Used only when no meth/unmeth controls are
-            available.
+            expectation-maximization fit (without controls, or with
+            controls when `rho_leak` is None). Bins narrower than
+            `lnuc` mix linker and nucleosomal DNA less, which sharpens
+            the contrast between the fitted rates, but hold fewer sites
+            each. A read-bin without read sites is left out of the fit.
         max_iters : int, default 200
-            Maximum number of expectation-maximization iterations for
-            the no-controls rate fit.
+            Maximum number of expectation-maximization iterations.
         init_prot : float, default 0.05
-            Initial guess for the protected-state call rate in the
-            no-controls expectation-maximization fit.
+            Initial guess for the protected-state call rate (without
+            controls) or for tau (with controls) in the first start of
+            the expectation-maximization fit.
         init_acc : float, default 0.95
-            Initial guess for the accessible-state call rate in the
-            no-controls expectation-maximization fit.
+            Initial guess for the accessible-state call rate (without
+            controls) or for kappa (with controls, if `fit_kappa`) in
+            the first start of the expectation-maximization fit.
         tol : float, default 1e-8
-            Relative log-likelihood convergence tolerance for the
-            no-controls expectation-maximization fit.
+            Relative log-likelihood convergence tolerance of the
+            expectation-maximization fit.
         fill_edge : float, default nan
             Probability used to fill the trailing `lnuc - 1` positions
             of the result, which have no full window to summarize. The
@@ -563,8 +574,9 @@ class MethPrintAnalysis:
         Raises
         ------
         ValueError
-            If `lbin` is less than 1, if a chromosome has no reference
-            sequence (`refseq`), if the no-controls path cannot find
+            If `lbin` is less than 1, if `fit_kappa` is True with a
+            float `rho_leak`, if a chromosome has no reference sequence
+            (`refseq`), if an expectation-maximization fit cannot find
             enough bins with read sites, if `eta` is a dict with an
             unrecognized channel name, if `span` is not recognized, or
             if `norm_by_strand` is True but molecules with unmapped
@@ -581,7 +593,9 @@ class MethPrintAnalysis:
             or if, for a channel whose controls report a call at most
             read sites (explicit-mode base calling), the fraction of
             read sites with a call in the test sample lies more than
-            0.05 outside the range spanned by the two controls.
+            0.05 outside the range spanned by the two controls, or if
+            a controls fit of tau ends at a boundary (tau at its upper
+            bound, or a degenerate protected fraction).
 
         Notes
         -----
@@ -597,10 +611,11 @@ class MethPrintAnalysis:
         fraction of informative positions per context (only channels
         actually assayed by `exp.mtase`, or all four if unset), fraction
         of read sites carrying a call per source and context
-        (`call_frac_{source}_{context}`, pooled over strands), and
-        (no-controls path only) actual EM iterations run, final
-        log-likelihood, fitted mixing fraction, and fitted
-        theta_prot/theta_acc per context -- are stored in
+        (`call_frac_{source}_{context}`, pooled over strands), and,
+        for an EM fit, actual EM iterations run, final
+        log-likelihood, fitted mixing fraction, and per context the
+        fitted theta_prot/theta_acc (no controls) or tau, kappa and
+        rho = tau / kappa (controls) -- are stored in
         `exp.global_analysis[f"{prob_name}_calib"]`. The full
         per-position theta_prot/theta_acc/informative actually used to
         score each chromosome are stored in
@@ -612,6 +627,8 @@ class MethPrintAnalysis:
             )
         if lbin < 1:
             raise ValueError(f"lbin must be at least 1, got {lbin}")
+        if fit_kappa and rho_leak is not None:
+            raise ValueError("fit_kappa=True requires rho_leak=None")
         tmp_dir = exp.resolve_tmp_dir()
 
         channels = _active_channels(exp)
@@ -622,6 +639,7 @@ class MethPrintAnalysis:
         calib_kwargs = {
             "nu": nu,
             "rho_leak": rho_leak,
+            "fit_kappa": fit_kappa,
             "min_gap": min_gap,
             "lbin": lbin,
             "max_iters": max_iters,
@@ -667,7 +685,8 @@ class MethPrintAnalysis:
                     "pi0": pi0,
                     "eta_max_lag": eta_max_lag,
                     "nu": nu,
-                    "rho_leak": rho_leak,
+                    "rho_leak": np.nan if rho_leak is None else rho_leak,
+                    "fit_kappa": fit_kappa,
                     "min_gap": min_gap,
                     "lnuc": lnuc,
                     "lbin": lbin,

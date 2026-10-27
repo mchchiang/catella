@@ -1514,7 +1514,7 @@ class TestModelProbWrap:
         exp = MethPrintExperiment._create(_raw_data={"chr1": raw}, _wrap=True)
 
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, lnuc=10, batch_size=4)
+        ana.model_prob(exp=exp, lnuc=10, rho_leak=0.1, batch_size=4)
         prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
         assert prob.shape == (nmol, nbp)
 
@@ -1559,7 +1559,7 @@ class TestModelProbWrap:
         )
         exp = MethPrintExperiment._create(_raw_data={"chr1": raw}, _wrap=True)
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, lnuc=10)
+        ana.model_prob(exp=exp, lnuc=10, rho_leak=0.1)
         assert not any(issubclass(w.category, UserWarning) for w in recwarn)
 
     def test_small_disagreement_ignored_in_output(self):
@@ -1641,9 +1641,9 @@ class TestModelProbWrap:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             exp_low = make_exp(0.01)
-            ana.model_prob(exp=exp_low, lnuc=10)
+            ana.model_prob(exp=exp_low, lnuc=10, rho_leak=0.1)
             exp_high = make_exp(0.99)
-            ana.model_prob(exp=exp_high, lnuc=10)
+            ana.model_prob(exp=exp_high, lnuc=10, rho_leak=0.1)
         prob_low = exp_low.analysis["chr1"]["meth_prob"].to_numpy()
         prob_high = exp_high.analysis["chr1"]["meth_prob"].to_numpy()
         np.testing.assert_allclose(prob_low, prob_high)
@@ -1692,7 +1692,7 @@ class TestModelProbWrap:
         exp = MethPrintExperiment._create(_raw_data={"chr1": raw}, _wrap=True)
         ana = MethPrintAnalysis()
         with pytest.warns(UserWarning):
-            ana.model_prob(exp=exp, lnuc=10)
+            ana.model_prob(exp=exp, lnuc=10, rho_leak=0.1)
 
 
 class TestModelProbStrand:
@@ -1851,12 +1851,12 @@ class TestModelProbCalib:
             assert f"theta_prot_{ch}" in calib.columns
             assert f"theta_acc_{ch}" in calib.columns
 
-    def test_controls_path_row_has_no_em_diagnostics(self):
+    def test_pinned_rho_leak_row_has_no_em_diagnostics(self):
         exp = _make_footprint_experiment(
             with_controls=True, planted_edges=(30,), lnuc=30
         )
         ana = MethPrintAnalysis()
-        ana.model_prob(exp=exp, lnuc=30, batch_size=7)
+        ana.model_prob(exp=exp, lnuc=30, rho_leak=0.1, batch_size=7)
         calib = exp.global_analysis["meth_prob_calib"]
         row = calib.iloc[0]
         assert row["has_controls"] == True
@@ -1937,14 +1937,19 @@ class TestModelProbLbin:
         b = exp.global_analysis["b_calib"]["theta_prot_A"].iloc[0]
         assert a != b
 
-    def test_lbin_does_not_affect_controls_path(self):
+    def test_lbin_does_not_affect_pinned_rho_leak(self):
         exp = _make_footprint_experiment(
             with_controls=True, planted_edges=(30,), lnuc=30
         )
         ana = MethPrintAnalysis()
         for name, lbin in (("a", 10), ("b", 60)):
             ana.model_prob(
-                exp=exp, prob_name=name, lnuc=30, lbin=lbin, batch_size=7
+                exp=exp,
+                prob_name=name,
+                lnuc=30,
+                lbin=lbin,
+                rho_leak=0.1,
+                batch_size=7,
             )
         np.testing.assert_array_equal(
             exp.analysis["chr1"]["a"].to_numpy(),
@@ -1957,6 +1962,56 @@ class TestModelProbLbin:
         )
         with pytest.raises(ValueError, match="lbin"):
             MethPrintAnalysis().model_prob(exp=exp, lnuc=30, lbin=0)
+
+
+class TestModelProbFitTau:
+    def _exp(self):
+        return _make_footprint_experiment(
+            with_controls=True,
+            nmol=200,
+            planted_edges=(30, 120, 210),
+            lnuc=30,
+        )
+
+    def test_default_fits_tau_with_kappa_one(self):
+        exp = self._exp()
+        MethPrintAnalysis().model_prob(exp=exp, lnuc=30, batch_size=50)
+        row = exp.global_analysis["meth_prob_calib"].iloc[0]
+        params = exp.global_analysis["meth_prob_params"].iloc[0]
+        assert np.isnan(params["rho_leak"])
+        assert params["fit_kappa"] == False
+        assert 1 <= row["iters"] <= 200
+        for ch in ("A", "GCH", "HCG", "GCG"):
+            assert row[f"kappa_{ch}"] == 1.0
+            assert abs(row[f"tau_{ch}"] - 0.15) < 0.05
+            assert row[f"rho_{ch}"] == row[f"tau_{ch}"]
+
+    def test_float_rho_leak_skips_fit(self):
+        exp = self._exp()
+        MethPrintAnalysis().model_prob(
+            exp=exp, lnuc=30, rho_leak=0.1, batch_size=50
+        )
+        calib = exp.global_analysis["meth_prob_calib"]
+        assert not any(c.startswith("tau_") for c in calib.columns)
+
+    def test_fit_kappa_reports_kappa_and_rho(self):
+        exp = self._exp()
+        MethPrintAnalysis().model_prob(
+            exp=exp, lnuc=30, fit_kappa=True, batch_size=50
+        )
+        row = exp.global_analysis["meth_prob_calib"].iloc[0]
+        for ch in ("A", "GCH", "HCG", "GCG"):
+            assert row[f"tau_{ch}"] < row[f"kappa_{ch}"]
+            assert row[f"rho_{ch}"] == pytest.approx(
+                row[f"tau_{ch}"] / row[f"kappa_{ch}"]
+            )
+
+    def test_fit_kappa_with_float_rho_leak_raises(self):
+        exp = self._exp()
+        with pytest.raises(ValueError, match="fit_kappa"):
+            MethPrintAnalysis().model_prob(
+                exp=exp, lnuc=30, rho_leak=0.1, fit_kappa=True
+            )
 
 
 class TestModelProbMtase:

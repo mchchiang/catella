@@ -13,11 +13,14 @@ from catella.experiment._contexts import (
     _strand_assay_masks,
 )
 from catella.experiment._controls import (
-    _calibrate_from_controls,
+    _control_profiles,
+    _leak_interpolated_rate,
     _streamed_call_count,
 )
 from catella.experiment._em import (
+    _PI_RANGE,
     _calibrate_from_data,
+    _calibrate_from_profiles,
     _streamed_window_count,
 )
 from catella.experiment._reads import _check_mapped_strands
@@ -284,6 +287,42 @@ def _fold_contexts(exp, chrom):
     return np.where(agree, lower, NONE).astype(lower.dtype)
 
 
+def _warn_boundary_fit(chrom, stratum, em_diag):
+    """
+    Warn if a controls fit of tau ended at a boundary.
+
+    Parameters
+    ----------
+    chrom : str
+        Chromosome identifier.
+    stratum : str or None
+        Strand, or None if pooled.
+    em_diag : dict
+        From `_calibrate_from_profiles`.
+    """
+    where = chrom if stratum is None else f"{chrom} (strand {stratum!r})"
+    hint = "consider fit_kappa=True or a fixed rho_leak"
+    at_max = em_diag["tau"] >= em_diag["tau_max"] - 1e-6
+    names = [CONTEXT_NAMES[c] for c, m in zip(em_diag["codes"], at_max) if m]
+    if names:
+        warnings.warn(
+            f"{where}: tau reached its upper bound for {names}, so the "
+            f"protected and accessible states are not separable; {hint}",
+            UserWarning,
+            stacklevel=5,
+        )
+    lo, hi = _PI_RANGE
+    if not lo <= em_diag["frac_protected"] <= hi:
+        warnings.warn(
+            f"{where}: fitted protected fraction "
+            f"{em_diag['frac_protected']:.3f} is degenerate, e.g., the "
+            f"test sample is methylated less efficiently than the "
+            f"controls; {hint}",
+            UserWarning,
+            stacklevel=5,
+        )
+
+
 def _controls_calibration(
     exp,
     chrom,
@@ -293,6 +332,12 @@ def _controls_calibration(
     *,
     nu,
     rho_leak,
+    fit_kappa,
+    lbin,
+    max_iters,
+    init_prot,
+    init_acc,
+    tol,
     min_gap,
     batch_size,
     mask_name,
@@ -301,6 +346,11 @@ def _controls_calibration(
 ):
     """
     Calibrate each stratum from the meth/unmeth controls.
+
+    The controls give the rate profiles `F` and `D`. If `rho_leak` is
+    None, tau (and kappa if `fit_kappa`) are then fitted per channel by
+    expectation-maximization on the test sample, binned with `lbin`;
+    otherwise tau is `rho_leak` and kappa is 1.
 
     Parameters
     ----------
@@ -314,13 +364,25 @@ def _controls_calibration(
         From `_strand_assay_masks`.
     strata : tuple
         `("+", "-")` to calibrate each strand, or `(None,)` to pool.
-    nu, rho_leak, min_gap, batch_size, mask_name, channels, span
+    nu, rho_leak, fit_kappa, lbin, max_iters, init_prot, init_acc, tol,
+    min_gap, batch_size, mask_name, channels, span
         As in `_chrom_calibration`.
 
     Returns
     -------
     dict
         Stratum -> `(theta_prot, theta_acc, informative, calib_info)`.
+
+    Raises
+    ------
+    ValueError
+        If tau is fitted and the test sample has too few bins with
+        informative read sites.
+
+    Warns
+    -----
+    UserWarning
+        If a fit of tau ends at a boundary (see `_warn_boundary_fit`).
     """
     by_strand = strata != (None,)
     call_stats = {"meth": {}, "unmeth": {}}
@@ -340,23 +402,77 @@ def _controls_calibration(
         )
         counts[src] = c if by_strand else {None: c}
 
-    results = {}
-    for s in strata:
-        theta_prot, theta_acc, informative = _calibrate_from_controls(
+    profiles = {
+        s: _control_profiles(
             *counts["meth"][s],
             *counts["unmeth"][s],
             ctx,
             nu=nu,
-            rho_leak=rho_leak,
             min_gap=min_gap,
             channels=channels,
         )
+        for s in strata
+    }
+    if rho_leak is None:
+        try:
+            windows = _streamed_window_count(
+                exp,
+                chrom,
+                ctx,
+                assay,
+                lbin,
+                batch_size,
+                mask_name,
+                by_strand=by_strand,
+                channels=channels,
+                span=span,
+                profiles={
+                    s: (fpr, acc - fpr, inf)
+                    for s, (fpr, acc, inf) in profiles.items()
+                },
+            )
+        except ValueError as err:
+            raise ValueError(
+                f"{err}; pass a float rho_leak to skip fitting tau"
+            ) from err
+        if not by_strand:
+            windows = {None: windows}
+
+    results = {}
+    for s in strata:
+        fpr, acc, informative = profiles[s]
+        em_diag = {}
+        if rho_leak is None:
+            K, N, SF, SD, codes = windows[s]
+            theta_prot, theta_acc, informative, em_diag = (
+                _calibrate_from_profiles(
+                    K,
+                    N,
+                    SF,
+                    SD,
+                    codes,
+                    ctx,
+                    fpr,
+                    acc,
+                    informative,
+                    fit_kappa=fit_kappa,
+                    max_iters=max_iters,
+                    init_prot=init_prot,
+                    init_acc=init_acc,
+                    tol=tol,
+                )
+            )
+            _warn_boundary_fit(chrom, s, em_diag)
+        else:
+            theta_prot = _leak_interpolated_rate(acc, fpr, rho_leak=rho_leak)
+            theta_acc = acc
         calib_info = {
             "has_controls": True,
             **_frac_informative_by_context(
                 ctx, informative, channels=channels
             ),
             **_call_frac_info(call_stats, channels),
+            **em_diag,
         }
         results[s] = (theta_prot, theta_acc, informative, calib_info)
     return results
@@ -459,6 +575,7 @@ def _chrom_calibration(
     tol,
     batch_size,
     mask_name,
+    fit_kappa=False,
     norm_by_strand=False,
     channels=None,
     span="full",
@@ -476,6 +593,8 @@ def _chrom_calibration(
     chrom : str
         Chromosome identifier.
     nu, rho_leak, min_gap, lbin, max_iters, init_prot, init_acc, tol
+        As in `model_prob`.
+    fit_kappa : bool, default False
         As in `model_prob`.
     batch_size : int
         Number of molecules processed per batch.
@@ -512,23 +631,25 @@ def _chrom_calibration(
         Calibration diagnostics -- `{"has_controls": has_controls,
         **frac_informative_by_context}` (see
         `_frac_informative_by_context`), merged with the `em_diag`
-        dict from `_calibrate_from_data` when the no-controls path was
-        used (empty for the controls path). If `norm_by_strand`, a
-        `{"+": ..., "-": ...}` dict of such dicts.
+        dict from `_calibrate_from_data` (no-controls path) or
+        `_calibrate_from_profiles` (controls path with tau fitted),
+        plus the call fractions on the controls path. If
+        `norm_by_strand`, a `{"+": ..., "-": ...}` dict of such dicts.
 
     Raises
     ------
     ValueError
-        If `chrom` has no reference sequence, if the no-controls
-        path cannot find enough bins with context-eligible read
-        sites, or if `norm_by_strand` is True but molecules with
-        unmapped strands ('.') exist.
+        If `chrom` has no reference sequence, if an
+        expectation-maximization fit cannot find enough bins with
+        context-eligible read sites, or if `norm_by_strand` is True
+        but molecules with unmapped strands ('.') exist.
 
     Warns
     -----
     UserWarning
         If `exp.wrap` is True and many wrap-mirrored position pairs
-        disagree on context.
+        disagree on context, or if a controls fit of tau ends at a
+        boundary.
     """
     if channels is None:
         channels = _ALL_CHANNELS
@@ -541,6 +662,11 @@ def _chrom_calibration(
 
     strata = ("+", "-") if norm_by_strand else (None,)
     common = {
+        "lbin": lbin,
+        "max_iters": max_iters,
+        "init_prot": init_prot,
+        "init_acc": init_acc,
+        "tol": tol,
         "min_gap": min_gap,
         "batch_size": batch_size,
         "mask_name": mask_name,
@@ -549,22 +675,18 @@ def _chrom_calibration(
     }
     if has_controls:
         results = _controls_calibration(
-            exp, chrom, ctx, assay, strata, nu=nu, rho_leak=rho_leak, **common
-        )
-    else:
-        results = _em_calibration(
             exp,
             chrom,
             ctx,
             assay,
             strata,
-            lbin=lbin,
-            max_iters=max_iters,
-            init_prot=init_prot,
-            init_acc=init_acc,
-            tol=tol,
+            nu=nu,
+            rho_leak=rho_leak,
+            fit_kappa=fit_kappa,
             **common,
         )
+    else:
+        results = _em_calibration(exp, chrom, ctx, assay, strata, **common)
 
     fields = [dict(zip(strata, f)) for f in zip(*results.values())]
     if not norm_by_strand:
@@ -600,9 +722,10 @@ def _calib_rows(chrom, info, norm_by_strand):
     list of dict
         One row per stratum, with `chrom`, `has_controls`, the
         `frac_informative_*`/`call_frac_*` entries, `strand` (only if
-        `norm_by_strand`), and, for the EM path, `iters`,
-        `log_likelihood`, `frac_protected` and per-context
-        `theta_prot_*`/`theta_acc_*`.
+        `norm_by_strand`), and, for an expectation-maximization fit,
+        `iters`, `log_likelihood`, `frac_protected`, and per context
+        `theta_prot_*`/`theta_acc_*` (no-controls path) or `tau_*`,
+        `kappa_*` and `rho_*` (= tau / kappa, controls path).
     """
     strata = info.items() if norm_by_strand else [(None, info)]
     rows = []
@@ -621,11 +744,19 @@ def _calib_rows(chrom, info, norm_by_strand):
             row["iters"] = sub["n_iter"]
             row["log_likelihood"] = sub["log_likelihood"]
             row["frac_protected"] = sub["frac_protected"]
-            for key in ("theta_prot", "theta_acc"):
+            keys = [k for k in ("theta_prot", "theta_acc") if k in sub]
+            fitted = {k: sub[k] for k in keys}
+            if "tau" in sub:
+                fitted.update(
+                    tau=sub["tau"],
+                    kappa=sub["kappa"],
+                    rho=sub["tau"] / sub["kappa"],
+                )
+            for key, vals in fitted.items():
                 row.update(
                     {
                         f"{key}_{CONTEXT_NAMES[c]}": v
-                        for c, v in zip(sub["codes"], sub[key])
+                        for c, v in zip(sub["codes"], vals)
                     }
                 )
         rows.append(row)

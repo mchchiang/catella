@@ -288,7 +288,8 @@ Common ``global_analysis`` keys:
    * - ``<prob_name>_params``
      - DataFrame (1 row) recording every ``compute_model_prob`` kwarg
        (``pi0``, ``eta_max_lag``, ``nu`` and ``rho_leak`` (nan when
-       fitted), ``fit_kappa``, ``min_gap``,
+       fitted), ``fit_kappa``, ``min_site_prob``,
+       ``min_rel_contrast``,
        ``lnuc``, ``lbin``, ``max_iters``, ``init_prot``,
        ``init_acc``, ``tol``, ``fill_edge``, ``norm_by_strand``,
        ``mask_name``).
@@ -300,7 +301,11 @@ Common ``global_analysis`` keys:
        ``frac_protected``, and per channel
        ``theta_prot_<channel>``/``theta_acc_<channel>`` (no controls)
        or ``tau_<channel>``/``kappa_<channel>``/``rho_<channel>``
-       (controls, when ``rho_leak`` is not given). With controls, also
+       (controls, when ``rho_leak`` is not given), and the channel
+       selection ``bic_margin_<channel>`` (BIC margin of two states
+       over one; the channel is kept if positive) and
+       ``rel_contrast_<channel>`` (kept if at least
+       ``min_rel_contrast``). With controls, also
        ``mean_rate_<control>_<channel>``, the control's depth-weighted
        mean call rate that each position's rate is shrunk toward
        (:math:`m` in the model), and, when ``nu`` is not given,

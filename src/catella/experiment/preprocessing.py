@@ -424,7 +424,7 @@ class MethPrintAnalysis:
         eta: float | dict[str, float] | None = None,
         eta_max_lag: int = 10,
         store_rho: bool = False,
-        nu: float = 10.0,
+        nu: float | None = None,
         rho_leak: float | None = None,
         fit_kappa: bool = False,
         min_gap: float = 0.05,
@@ -492,10 +492,13 @@ class MethPrintAnalysis:
             channel that was actually auto-estimated (channels pinned
             via `eta`, or with too little data to estimate, are
             omitted).
-        nu : float, default 10.0
-            Pseudo-count strength for shrinking each position's call
-            rate toward its context group's mean; larger values shrink
-            harder at low depth.
+        nu : float, optional
+            Pseudo-count strength for shrinking each position's control
+            call rate toward its context group's mean; larger values
+            shrink harder at low depth. If None (default), it is
+            estimated by empirical Bayes per control and per channel
+            (and per strand if `norm_by_strand`); a float pins it.
+            Used only when meth/unmeth controls are available.
         rho_leak : float, optional
             Leak fraction in [0, 1] interpolating the protected-state
             call rate between the unmethylated control's false-positive
@@ -574,7 +577,8 @@ class MethPrintAnalysis:
         Raises
         ------
         ValueError
-            If `lbin` is less than 1, if `fit_kappa` is True with a
+            If `lbin` is less than 1, if `nu` is negative, if
+            `fit_kappa` is True with a
             float `rho_leak`, if a chromosome has no reference sequence
             (`refseq`), if an expectation-maximization fit cannot find
             enough bins with read sites, if `eta` is a dict with an
@@ -615,7 +619,9 @@ class MethPrintAnalysis:
         for an EM fit, actual EM iterations run, final
         log-likelihood, fitted mixing fraction, and per context the
         fitted theta_prot/theta_acc (no controls) or tau, kappa and
-        rho = tau / kappa (controls) -- are stored in
+        rho = tau / kappa (controls), and, if nu was fitted, the
+        fitted nu and pooled rate m per control and context -- are
+        stored in
         `exp.global_analysis[f"{prob_name}_calib"]`. The full
         per-position theta_prot/theta_acc/informative actually used to
         score each chromosome are stored in
@@ -629,6 +635,8 @@ class MethPrintAnalysis:
             raise ValueError(f"lbin must be at least 1, got {lbin}")
         if fit_kappa and rho_leak is not None:
             raise ValueError("fit_kappa=True requires rho_leak=None")
+        if nu is not None and nu < 0:
+            raise ValueError(f"nu must be non-negative, got {nu}")
         tmp_dir = exp.resolve_tmp_dir()
 
         channels = _active_channels(exp)
@@ -684,7 +692,7 @@ class MethPrintAnalysis:
                 {
                     "pi0": pi0,
                     "eta_max_lag": eta_max_lag,
-                    "nu": nu,
+                    "nu": np.nan if nu is None else nu,
                     "rho_leak": np.nan if rho_leak is None else rho_leak,
                     "fit_kappa": fit_kappa,
                     "min_gap": min_gap,

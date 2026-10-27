@@ -428,7 +428,7 @@ def _controls_calibration(
                 span=span,
                 profiles={
                     s: (fpr, acc - fpr, inf)
-                    for s, (fpr, acc, inf) in profiles.items()
+                    for s, (fpr, acc, inf, _) in profiles.items()
                 },
             )
         except ValueError as err:
@@ -440,7 +440,7 @@ def _controls_calibration(
 
     results = {}
     for s in strata:
-        fpr, acc, informative = profiles[s]
+        fpr, acc, informative, prior = profiles[s]
         em_diag = {}
         if rho_leak is None:
             K, N, SF, SD, codes = windows[s]
@@ -473,6 +473,7 @@ def _controls_calibration(
             ),
             **_call_frac_info(call_stats, channels),
             **em_diag,
+            **prior,
         }
         results[s] = (theta_prot, theta_acc, informative, calib_info)
     return results
@@ -725,7 +726,9 @@ def _calib_rows(chrom, info, norm_by_strand):
         `norm_by_strand`), and, for an expectation-maximization fit,
         `iters`, `log_likelihood`, `frac_protected`, and per context
         `theta_prot_*`/`theta_acc_*` (no-controls path) or `tau_*`,
-        `kappa_*` and `rho_*` (= tau / kappa, controls path).
+        `kappa_*` and `rho_*` (= tau / kappa, controls path), and, if
+        nu was fitted, per context `nu_meth_*`, `m_meth_*`,
+        `nu_unmeth_*` and `m_unmeth_*`.
     """
     strata = info.items() if norm_by_strand else [(None, info)]
     rows = []
@@ -759,6 +762,13 @@ def _calib_rows(chrom, info, norm_by_strand):
                         for c, v in zip(sub["codes"], vals)
                     }
                 )
+        for key in ("nu_meth", "m_meth", "nu_unmeth", "m_unmeth"):
+            row.update(
+                {
+                    f"{key}_{CONTEXT_NAMES[c]}": v
+                    for c, v in sub.get(key, {}).items()
+                }
+            )
         rows.append(row)
     return rows
 

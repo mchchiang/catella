@@ -11,6 +11,87 @@ from catella.experiment._reads import (
     _read_weights,
 )
 
+# Search bounds of the empirical-Bayes nu
+_NU_BOUNDS = (1e-2, 1e6)
+# nu used when a channel has too few sites to estimate it
+_NU_FALLBACK = 10.0
+_NU_MIN_SITES = 10
+
+
+def _fit_nu(k, n):
+    """
+    Empirical-Bayes concentration nu of a beta prior on per-site rates.
+
+    Maximizes the beta-binomial log-evidence
+    `sum_x [betaln(k_x + nu m, n_x - k_x + nu (1 - m))
+    - betaln(nu m, nu (1 - m))]` over `log nu` within `_NU_BOUNDS`,
+    with `m` fixed to the pooled rate `sum k / sum n`. `k` is a sum of
+    confidence scores, so this is a quasi-likelihood. `k` is clipped
+    to `[0, n]` per site.
+
+    Parameters
+    ----------
+    k, n : np.ndarray
+        float64, per-site summed confidence and number of reads, for
+        the sites of one channel.
+
+    Returns
+    -------
+    nu : float
+        `_NU_FALLBACK` if fewer than `_NU_MIN_SITES` sites are read or
+        `m` is 0 or 1.
+    m : float
+        Pooled rate, nan if no site is read.
+    """
+    from scipy.optimize import minimize_scalar
+    from scipy.special import betaln
+
+    read = n > 0
+    k, n = np.clip(k[read], 0.0, n[read]), n[read]
+    if not read.any():
+        return _NU_FALLBACK, np.nan
+    m = float(k.sum() / n.sum())
+    if read.sum() < _NU_MIN_SITES or not 0.0 < m < 1.0:
+        return _NU_FALLBACK, m
+
+    def neg_evidence(log_nu):
+        nu = np.exp(log_nu)
+        a, b = nu * m, nu * (1.0 - m)
+        return -(betaln(k + a, n - k + b) - betaln(a, b)).sum()
+
+    lo, hi = np.log(_NU_BOUNDS)
+    res = minimize_scalar(neg_evidence, bounds=(lo, hi), method="bounded")
+    return float(np.exp(res.x)), m
+
+
+def _fit_channel_nu(k, n, ctx, channels=None):
+    """
+    Fit nu per channel with `_fit_nu`.
+
+    Parameters
+    ----------
+    k, n : np.ndarray
+        float64, length L, from `_streamed_call_count`.
+    ctx : np.ndarray
+        int8, length L, context code per position.
+    channels : iterable of int, optional
+        Defaults to all of `_ALL_CHANNELS`.
+
+    Returns
+    -------
+    nu, m : dict of int to float
+        Channel code -> fitted nu and pooled rate, for every channel in
+        `channels` present in `ctx`.
+    """
+    if channels is None:
+        channels = _ALL_CHANNELS
+    nu, m = {}, {}
+    for code in channels:
+        sel = ctx == code
+        if sel.any():
+            nu[code], m[code] = _fit_nu(k[sel], n[sel])
+    return nu, m
+
 
 def _context_prior_rate(k, n, ctx, nu=10.0, eps=1e-4, channels=None):
     """
@@ -32,8 +113,9 @@ def _context_prior_rate(k, n, ctx, nu=10.0, eps=1e-4, channels=None):
         the position, whether or not they carry a call there.
     ctx : np.ndarray
         int8, length L, context code per position.
-    nu : float, default 10.0
-        Pseudo-count strength. 0 disables shrinkage.
+    nu : float or dict of int to float, default 10.0
+        Pseudo-count strength, for all channels or per channel code
+        (e.g., from `_fit_channel_nu`). 0 disables shrinkage.
     eps : float, default 1e-4
         Clip bound keeping rates away from exactly 0 or 1.
     channels : iterable of int, optional
@@ -55,8 +137,9 @@ def _context_prior_rate(k, n, ctx, nu=10.0, eps=1e-4, channels=None):
         if not sel.any() or n_sel == 0:
             continue
         p0 = k[sel].sum() / n_sel
+        nu_c = nu.get(code, _NU_FALLBACK) if isinstance(nu, dict) else nu
         with np.errstate(invalid="ignore", divide="ignore"):
-            theta[sel] = (k[sel] + nu * p0) / (n[sel] + nu)
+            theta[sel] = (k[sel] + nu_c * p0) / (n[sel] + nu_c)
     return np.clip(theta, eps, 1 - eps)
 
 
@@ -186,7 +269,7 @@ def _control_profiles(
     unmeth_k,
     unmeth_n,
     ctx,
-    nu=10.0,
+    nu=None,
     min_gap=0.05,
     channels=None,
 ):
@@ -201,8 +284,9 @@ def _control_profiles(
         From `_streamed_call_count` on the unmethylated control.
     ctx : np.ndarray
         int8, length L, context code per position.
-    nu : float, default 10.0
-        Forwarded to `_context_prior_rate`.
+    nu : float, optional
+        Forwarded to `_context_prior_rate`. If None, nu is fitted per
+        channel for each control separately with `_fit_channel_nu`.
     min_gap : float, default 0.05
         Forwarded to `_informative_mask`.
     channels : iterable of int, optional
@@ -212,16 +296,27 @@ def _control_profiles(
 
     Returns
     -------
-    tuple of np.ndarray
-        `(fpr, acc_ctrl, informative)`, each length L: the shrunk call
-        rates of the unmeth and meth controls (`F` and `F + D`), and
-        the informative mask.
+    fpr, acc_ctrl, informative : np.ndarray
+        Each length L: the shrunk call rates of the unmeth and meth
+        controls (`F` and `F + D`), and the informative mask.
+    prior : dict
+        If `nu` is None, `"nu_meth"`, `"m_meth"`, `"nu_unmeth"` and
+        `"m_unmeth"`, each a dict channel code -> float; else empty.
     """
+    prior = {}
+    nus = {"meth": nu, "unmeth": nu}
+    if nu is None:
+        for src, k, n in (
+            ("meth", meth_k, meth_n),
+            ("unmeth", unmeth_k, unmeth_n),
+        ):
+            nus[src], prior[f"m_{src}"] = _fit_channel_nu(k, n, ctx, channels)
+            prior[f"nu_{src}"] = nus[src]
     acc_ctrl = _context_prior_rate(
-        meth_k, meth_n, ctx, nu=nu, channels=channels
+        meth_k, meth_n, ctx, nu=nus["meth"], channels=channels
     )
     fpr = _context_prior_rate(
-        unmeth_k, unmeth_n, ctx, nu=nu, channels=channels
+        unmeth_k, unmeth_n, ctx, nu=nus["unmeth"], channels=channels
     )
     informative = _informative_mask(acc_ctrl, fpr, ctx, min_gap=min_gap)
-    return fpr, acc_ctrl, informative
+    return fpr, acc_ctrl, informative, prior

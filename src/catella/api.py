@@ -245,7 +245,7 @@ def compute_model_prob(
     eta: float | dict[str, float] | None = None,
     eta_max_lag: int = 10,
     store_rho: bool = False,
-    nu: float = 10.0,
+    nu: float | None = None,
     rho_leak: float | None = None,
     fit_kappa: bool = False,
     min_gap: float = 0.05,
@@ -305,10 +305,12 @@ def compute_model_prob(
         `exp.global_analysis[f"{prob_name}_rho"]`, one column per
         channel that was actually auto-estimated (channels pinned
         via `eta`, or with too little data to estimate, are omitted).
-    nu : float, default 10.0
-        Pseudo-count strength for shrinking each position's call
-        rate toward its context group's mean; larger values shrink
-        harder at low depth.
+    nu : float, optional
+        Pseudo-count strength for shrinking each position's control
+        call rate toward its context group's mean; larger values
+        shrink harder at low depth. If None (default), it is estimated
+        by empirical Bayes per control and per channel; a float pins
+        it. Used only when meth/unmeth controls are available.
     rho_leak : float, optional
         Leak fraction in [0, 1] interpolating the protected-state
         call rate between the unmethylated control's false-positive

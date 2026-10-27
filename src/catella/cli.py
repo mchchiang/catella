@@ -524,8 +524,12 @@ def compute_model_prob(
         ),
     ] = False,
     nu: Annotated[
-        float, typer.Option(help="Pseudo-count shrinkage strength")
-    ] = 10.0,
+        float | None,
+        typer.Option(
+            help="Pseudo-count shrinkage strength; fitted by empirical "
+            "Bayes if not given (controls only)"
+        ),
+    ] = None,
     rho_leak: Annotated[
         float | None,
         typer.Option(

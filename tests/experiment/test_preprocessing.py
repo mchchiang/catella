@@ -1964,6 +1964,31 @@ class TestModelProbLbin:
             MethPrintAnalysis().model_prob(exp=exp, lnuc=30, lbin=0)
 
 
+class TestModelProbFitNu:
+    def test_default_fits_nu_per_control_and_channel(self):
+        exp = _make_footprint_experiment(with_controls=True, nmol=200)
+        MethPrintAnalysis().model_prob(exp=exp, lnuc=30, batch_size=50)
+        row = exp.global_analysis["meth_prob_calib"].iloc[0]
+        params = exp.global_analysis["meth_prob_params"].iloc[0]
+        assert np.isnan(params["nu"])
+        for src in ("meth", "unmeth"):
+            for ch in ("A", "GCH", "HCG", "GCG"):
+                assert row[f"nu_{src}_{ch}"] > 0
+                assert 0 < row[f"m_{src}_{ch}"] < 1
+
+    def test_float_nu_skips_fit(self):
+        exp = _make_footprint_experiment(with_controls=True, nmol=200)
+        MethPrintAnalysis().model_prob(exp=exp, lnuc=30, nu=10.0)
+        calib = exp.global_analysis["meth_prob_calib"]
+        assert not any(c.startswith("nu_") for c in calib.columns)
+        assert exp.global_analysis["meth_prob_params"]["nu"].iloc[0] == 10.0
+
+    def test_negative_nu_raises(self):
+        exp = _make_footprint_experiment(with_controls=True)
+        with pytest.raises(ValueError, match="nu"):
+            MethPrintAnalysis().model_prob(exp=exp, lnuc=30, nu=-1.0)
+
+
 class TestModelProbFitTau:
     def _exp(self):
         return _make_footprint_experiment(

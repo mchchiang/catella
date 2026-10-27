@@ -338,7 +338,7 @@ def _controls_calibration(
     init_prot,
     init_acc,
     tol,
-    min_gap,
+    min_site_prob,
     batch_size,
     mask_name,
     channels,
@@ -365,7 +365,7 @@ def _controls_calibration(
     strata : tuple
         `("+", "-")` to calibrate each strand, or `(None,)` to pool.
     nu, rho_leak, fit_kappa, lbin, max_iters, init_prot, init_acc, tol,
-    min_gap, batch_size, mask_name, channels, span
+    min_site_prob, batch_size, mask_name, channels, span
         As in `_chrom_calibration`.
 
     Returns
@@ -408,7 +408,7 @@ def _controls_calibration(
             *counts["unmeth"][s],
             ctx,
             nu=nu,
-            min_gap=min_gap,
+            min_site_prob=min_site_prob,
             channels=channels,
         )
         for s in strata
@@ -576,6 +576,7 @@ def _chrom_calibration(
     tol,
     batch_size,
     mask_name,
+    min_site_prob=0.95,
     fit_kappa=False,
     norm_by_strand=False,
     channels=None,
@@ -594,6 +595,8 @@ def _chrom_calibration(
     chrom : str
         Chromosome identifier.
     nu, rho_leak, min_gap, lbin, max_iters, init_prot, init_acc, tol
+        As in `model_prob`.
+    min_site_prob : float, default 0.95
         As in `model_prob`.
     fit_kappa : bool, default False
         As in `model_prob`.
@@ -668,7 +671,6 @@ def _chrom_calibration(
         "init_prot": init_prot,
         "init_acc": init_acc,
         "tol": tol,
-        "min_gap": min_gap,
         "batch_size": batch_size,
         "mask_name": mask_name,
         "channels": channels,
@@ -684,10 +686,13 @@ def _chrom_calibration(
             nu=nu,
             rho_leak=rho_leak,
             fit_kappa=fit_kappa,
+            min_site_prob=min_site_prob,
             **common,
         )
     else:
-        results = _em_calibration(exp, chrom, ctx, assay, strata, **common)
+        results = _em_calibration(
+            exp, chrom, ctx, assay, strata, min_gap=min_gap, **common
+        )
 
     fields = [dict(zip(strata, f)) for f in zip(*results.values())]
     if not norm_by_strand:

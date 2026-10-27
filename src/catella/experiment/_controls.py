@@ -16,6 +16,9 @@ _NU_BOUNDS = (1e-2, 1e6)
 # nu used when a channel has too few sites to estimate it
 _NU_FALLBACK = 10.0
 _NU_MIN_SITES = 10
+# Exact P(X > Y) within this distance of the decision threshold
+_EXACT_WINDOW = 0.1
+_QUAD_NODES = 32
 
 
 def _fit_nu(k, n):
@@ -287,11 +290,91 @@ def _leak_interpolated_rate(theta_acc, fpr, rho_leak=0.1, eps=1e-4):
     return np.clip(theta_prot, eps, 1 - eps)
 
 
-def _informative_mask(theta_acc, fpr, ctx, min_gap=0.05):
-    """Positions the assay can discriminate; elsewhere contributes zero."""
-    return (
-        (ctx != NONE) & np.isfinite(theta_acc) & ((theta_acc - fpr) > min_gap)
-    )
+def _beta_posterior(k, n, ctx, nu, mean_rate):
+    """
+    Per-site Beta posterior parameters of a control's call rate under
+    the prior Beta(nu m, nu (1 - m)) of its channel.
+
+    Parameters
+    ----------
+    k, n : np.ndarray
+        float64, length L, from `_streamed_call_count`; `k` is clipped
+        to `[0, n]`.
+    ctx : np.ndarray
+        int8, length L, context code per position.
+    nu : float or dict of int to float
+        As in `_context_prior_rate`.
+    mean_rate : dict of int to float
+        From `_channel_mean_rate`; channels absent from it are left
+        nan.
+
+    Returns
+    -------
+    a, b : np.ndarray
+        float64, length L.
+    """
+    a = np.full(len(ctx), np.nan)
+    b = np.full(len(ctx), np.nan)
+    for code, m in mean_rate.items():
+        sel = ctx == code
+        nu_c = nu.get(code, _NU_FALLBACK) if isinstance(nu, dict) else nu
+        k_c = np.clip(k[sel], 0.0, n[sel])
+        a[sel] = k_c + nu_c * m
+        b[sel] = n[sel] - k_c + nu_c * (1.0 - m)
+    return a, b
+
+
+def _prob_greater(a_x, b_x, a_y, b_y, near=None):
+    """
+    P(X > Y) for independent X ~ Beta(a_x, b_x), Y ~ Beta(a_y, b_y).
+
+    A normal approximation of X - Y is used where its value is far from
+    `near`; elsewhere, where the approximation can err by a few percent
+    for small parameters, P is computed exactly as
+    `int_0^1 [1 - I(G_y^-1(u); a_x, b_x)] du` by `_QUAD_NODES`-point
+    Gauss-Legendre quadrature, with `I` the regularized incomplete beta
+    function and `G_y^-1` the quantile function of Y.
+
+    Parameters
+    ----------
+    a_x, b_x, a_y, b_y : np.ndarray
+        float64, same shape.
+    near : float, optional
+        Decision threshold; exact values are computed where the
+        approximation lies within `_EXACT_WINDOW` of it. If None, they
+        are computed everywhere.
+
+    Returns
+    -------
+    np.ndarray
+        float64, nan where a parameter is not positive.
+    """
+    from scipy.special import betainc, betaincinv, ndtr
+
+    params = np.stack([a_x, b_x, a_y, b_y])
+    valid = (np.isfinite(params) & (params > 0)).all(axis=0)
+
+    def mean_var(a, b):
+        s = a + b
+        return a / s, a * b / (s * s * (s + 1.0))
+
+    with np.errstate(invalid="ignore", divide="ignore"):
+        m_x, v_x = mean_var(a_x, b_x)
+        m_y, v_y = mean_var(a_y, b_y)
+        prob = ndtr((m_x - m_y) / np.sqrt(v_x + v_y))
+    prob = np.where(valid, prob, np.nan)
+
+    exact = valid
+    if near is not None:
+        with np.errstate(invalid="ignore"):
+            exact = valid & (np.abs(prob - near) < _EXACT_WINDOW)
+    if exact.any():
+        x, w = np.polynomial.legendre.leggauss(_QUAD_NODES)
+        u, w = 0.5 * (x + 1.0), 0.5 * w
+        y = betaincinv(a_y[exact, None], b_y[exact, None], u)
+        cdf_x = betainc(a_x[exact, None], b_x[exact, None], y)
+        prob[exact] = ((1.0 - cdf_x) * w).sum(axis=1)
+    return prob
 
 
 def _control_profiles(
@@ -301,7 +384,7 @@ def _control_profiles(
     unmeth_n,
     ctx,
     nu=None,
-    min_gap=0.05,
+    min_site_prob=0.95,
     channels=None,
 ):
     """
@@ -318,8 +401,10 @@ def _control_profiles(
     nu : float, optional
         Forwarded to `_context_prior_rate`. If None, nu is fitted per
         channel for each control separately with `_fit_channel_nu`.
-    min_gap : float, default 0.05
-        Forwarded to `_informative_mask`.
+    min_site_prob : float, default 0.95
+        A site is informative if the posterior probability that its
+        meth-control rate exceeds its unmeth-control rate, from
+        `_beta_posterior` and `_prob_greater`, is at least this.
     channels : iterable of int, optional
         Forwarded to `_context_prior_rate`. Defaults to all of
         `_ALL_CHANNELS`; positions outside `channels` come back
@@ -351,5 +436,17 @@ def _control_profiles(
     fpr = _context_prior_rate(
         unmeth_k, unmeth_n, ctx, nu=nus["unmeth"], channels=channels
     )
-    informative = _informative_mask(acc_ctrl, fpr, ctx, min_gap=min_gap)
+    a_acc, b_acc = _beta_posterior(
+        meth_k, meth_n, ctx, nus["meth"], prior["mean_rate_meth"]
+    )
+    a_fpr, b_fpr = _beta_posterior(
+        unmeth_k, unmeth_n, ctx, nus["unmeth"], prior["mean_rate_unmeth"]
+    )
+    prob = _prob_greater(a_acc, b_acc, a_fpr, b_fpr, near=min_site_prob)
+    informative = (
+        (ctx != NONE)
+        & np.isfinite(acc_ctrl)
+        & np.isfinite(fpr)
+        & (np.nan_to_num(prob) >= min_site_prob)
+    )
     return fpr, acc_ctrl, informative, prior

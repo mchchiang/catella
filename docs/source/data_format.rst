@@ -300,10 +300,12 @@ Common ``global_analysis`` keys:
        ``frac_protected``, and per channel
        ``theta_prot_<channel>``/``theta_acc_<channel>`` (no controls)
        or ``tau_<channel>``/``kappa_<channel>``/``rho_<channel>``
-       (controls, when ``rho_leak`` is not given), and, with controls
-       and ``nu`` not given, ``nu_<control>_<channel>`` and
-       ``m_<control>_<channel>`` (fitted nu and pooled rate, for
-       ``<control>`` ``meth`` and ``unmeth``).
+       (controls, when ``rho_leak`` is not given). With controls, also
+       ``mean_rate_<control>_<channel>``, the control's depth-weighted
+       mean call rate that each position's rate is shrunk toward
+       (:math:`m` in the model), and, when ``nu`` is not given,
+       ``nu_<control>_<channel>``, the fitted shrinkage strength; for
+       ``<control>`` ``meth`` and ``unmeth``.
 
 Simulation output
 ~~~~~~~~~~~~~~~~~~~

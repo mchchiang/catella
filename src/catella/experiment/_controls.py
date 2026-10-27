@@ -93,6 +93,37 @@ def _fit_channel_nu(k, n, ctx, channels=None):
     return nu, m
 
 
+def _channel_mean_rate(k, n, ctx, channels=None):
+    """
+    Pooled call rate `sum k / sum n` per channel, the value
+    `_context_prior_rate` shrinks each position toward.
+
+    Parameters
+    ----------
+    k, n : np.ndarray
+        float64, length L, from `_streamed_call_count`.
+    ctx : np.ndarray
+        int8, length L, context code per position.
+    channels : iterable of int, optional
+        Defaults to all of `_ALL_CHANNELS`.
+
+    Returns
+    -------
+    dict of int to float
+        Channel code -> pooled rate, for every channel in `channels`
+        with at least one read site.
+    """
+    if channels is None:
+        channels = _ALL_CHANNELS
+    rate = {}
+    for code in channels:
+        sel = ctx == code
+        n_sel = n[sel].sum()
+        if sel.any() and n_sel > 0:
+            rate[code] = float(k[sel].sum() / n_sel)
+    return rate
+
+
 def _context_prior_rate(k, n, ctx, nu=10.0, eps=1e-4, channels=None):
     """
     Per-position call rate, shrunk toward its context group's mean.
@@ -300,17 +331,19 @@ def _control_profiles(
         Each length L: the shrunk call rates of the unmeth and meth
         controls (`F` and `F + D`), and the informative mask.
     prior : dict
-        If `nu` is None, `"nu_meth"`, `"m_meth"`, `"nu_unmeth"` and
-        `"m_unmeth"`, each a dict channel code -> float; else empty.
+        `"mean_rate_meth"` and `"mean_rate_unmeth"` (from
+        `_channel_mean_rate`), and, if `nu` is None, `"nu_meth"` and
+        `"nu_unmeth"`; each a dict channel code -> float.
     """
     prior = {}
     nus = {"meth": nu, "unmeth": nu}
-    if nu is None:
-        for src, k, n in (
-            ("meth", meth_k, meth_n),
-            ("unmeth", unmeth_k, unmeth_n),
-        ):
-            nus[src], prior[f"m_{src}"] = _fit_channel_nu(k, n, ctx, channels)
+    for src, k, n in (
+        ("meth", meth_k, meth_n),
+        ("unmeth", unmeth_k, unmeth_n),
+    ):
+        prior[f"mean_rate_{src}"] = _channel_mean_rate(k, n, ctx, channels)
+        if nu is None:
+            nus[src], _ = _fit_channel_nu(k, n, ctx, channels)
             prior[f"nu_{src}"] = nus[src]
     acc_ctrl = _context_prior_rate(
         meth_k, meth_n, ctx, nu=nus["meth"], channels=channels

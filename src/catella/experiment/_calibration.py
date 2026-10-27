@@ -726,9 +726,10 @@ def _calib_rows(chrom, info, norm_by_strand):
         `norm_by_strand`), and, for an expectation-maximization fit,
         `iters`, `log_likelihood`, `frac_protected`, and per context
         `theta_prot_*`/`theta_acc_*` (no-controls path) or `tau_*`,
-        `kappa_*` and `rho_*` (= tau / kappa, controls path), and, if
-        nu was fitted, per context `nu_meth_*`, `m_meth_*`,
-        `nu_unmeth_*` and `m_unmeth_*`.
+        `kappa_*` and `rho_*` (= tau / kappa, controls path), and, on
+        the controls path, per context `mean_rate_meth_*` and
+        `mean_rate_unmeth_*`, plus `nu_meth_*` and `nu_unmeth_*` if nu
+        was fitted.
     """
     strata = info.items() if norm_by_strand else [(None, info)]
     rows = []
@@ -762,7 +763,12 @@ def _calib_rows(chrom, info, norm_by_strand):
                         for c, v in zip(sub["codes"], vals)
                     }
                 )
-        for key in ("nu_meth", "m_meth", "nu_unmeth", "m_unmeth"):
+        for key in (
+            "nu_meth",
+            "mean_rate_meth",
+            "nu_unmeth",
+            "mean_rate_unmeth",
+        ):
             row.update(
                 {
                     f"{key}_{CONTEXT_NAMES[c]}": v

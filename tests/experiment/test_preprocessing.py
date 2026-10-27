@@ -1974,13 +1974,14 @@ class TestModelProbFitNu:
         for src in ("meth", "unmeth"):
             for ch in ("A", "GCH", "HCG", "GCG"):
                 assert row[f"nu_{src}_{ch}"] > 0
-                assert 0 < row[f"m_{src}_{ch}"] < 1
+                assert 0 < row[f"mean_rate_{src}_{ch}"] < 1
 
     def test_float_nu_skips_fit(self):
         exp = _make_footprint_experiment(with_controls=True, nmol=200)
         MethPrintAnalysis().model_prob(exp=exp, lnuc=30, nu=10.0)
         calib = exp.global_analysis["meth_prob_calib"]
         assert not any(c.startswith("nu_") for c in calib.columns)
+        assert 0 < calib["mean_rate_meth_A"].iloc[0] < 1
         assert exp.global_analysis["meth_prob_params"]["nu"].iloc[0] == 10.0
 
     def test_negative_nu_raises(self):

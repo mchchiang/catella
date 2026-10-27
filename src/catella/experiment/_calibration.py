@@ -422,7 +422,7 @@ def _em_calibration(
 
     results = {}
     for s in strata:
-        K, N, codes = counts[s]
+        K, N, _, _, codes = counts[s]
         theta_prot, theta_acc, informative, em_diag = _calibrate_from_data(
             K,
             N,

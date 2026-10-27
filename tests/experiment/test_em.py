@@ -2,6 +2,7 @@ import numpy as np
 from catella.experiment._contexts import GCH, A
 from catella.experiment._em import (
     _calibrate_from_data,
+    _calibrate_from_profiles,
     _em_starts,
     _log_binom_coef_sum,
     _mixture_loglik,
@@ -52,10 +53,89 @@ class TestCalibrateFromData:
         assert abs(diag["frac_protected"] - 0.6) < 0.03
 
 
+_LO, _HI = np.full(2, 1e-3), np.full(2, 1 - 1e-3)
+
+
+def _profile_mixture(pi, tau, kappa, n_win=4000, m=20, seed=0):
+    rng = np.random.default_rng(seed)
+    z = rng.random(n_win) < pi
+    f = rng.uniform(0.01, 0.05, n_win)
+    d = rng.uniform(0.6, 0.9, n_win)
+    p = np.where(z, f + tau * d, f + kappa * d)
+    K = rng.binomial(m, p).astype(float)[None]
+    N = np.full((1, n_win), float(m))
+    return K, N, m * f[None], m * d[None]
+
+
+class TestCalibrateFromProfiles:
+    _ctx = np.array([A], dtype=np.int8)
+    _fpr = np.array([0.03])
+    _acc = np.array([0.8])
+
+    def test_constant_profiles_match_no_controls_fit(self):
+        K, N = _mixture(0.3, [0.1], [0.9])
+        _, _, _, ref = _calibrate_from_data(K, N, self._ctx, [A])
+        _, _, _, diag = _calibrate_from_profiles(
+            K,
+            N,
+            0.0 * N,
+            N.copy(),
+            [A],
+            self._ctx,
+            np.zeros(1),
+            np.ones(1),
+            np.ones(1, dtype=bool),
+            fit_kappa=True,
+        )
+        np.testing.assert_allclose(diag["tau"], ref["theta_prot"], atol=1e-4)
+        np.testing.assert_allclose(diag["kappa"], ref["theta_acc"], atol=1e-4)
+        assert abs(diag["frac_protected"] - ref["frac_protected"]) < 1e-4
+
+    def test_recovers_tau_with_kappa_fixed(self):
+        K, N, SF, SD = _profile_mixture(0.4, 0.2, 1.0)
+        tp, ta, _, diag = _calibrate_from_profiles(
+            K,
+            N,
+            SF,
+            SD,
+            [A],
+            self._ctx,
+            self._fpr,
+            self._acc,
+            np.ones(1, dtype=bool),
+        )
+        assert abs(diag["tau"][0] - 0.2) < 0.02
+        assert diag["kappa"][0] == 1.0
+        assert abs(diag["frac_protected"] - 0.4) < 0.03
+        np.testing.assert_allclose(tp, 0.03 + diag["tau"] * 0.77)
+        np.testing.assert_array_equal(ta, self._acc)
+
+    def test_fit_kappa_recovers_both(self):
+        K, N, SF, SD = _profile_mixture(0.4, 0.15, 0.7)
+        _, ta, _, diag = _calibrate_from_profiles(
+            K,
+            N,
+            SF,
+            SD,
+            [A],
+            self._ctx,
+            self._fpr,
+            self._acc,
+            np.ones(1, dtype=bool),
+            fit_kappa=True,
+            init_prot=0.9,
+            init_acc=0.1,
+        )
+        assert abs(diag["tau"][0] - 0.15) < 0.03
+        assert abs(diag["kappa"][0] - 0.7) < 0.03
+        assert abs(diag["frac_protected"] - 0.4) < 0.03
+        np.testing.assert_allclose(ta, 0.03 + diag["kappa"] * 0.77)
+
+
 class TestEmStarts:
     def test_user_start_then_ordered_data_starts(self):
         K, N = _mixture(0.5, [0.1, 0.05], [0.8, 0.4])
-        starts = _em_starts(K, N, 0.05, 0.95, 1e-3)
+        starts = _em_starts(K, N, None, 0.05, 0.95, True, _LO, _HI)
         assert [s[2] for s in starts] == [0.75, 0.25, 0.5, 0.75]
         np.testing.assert_array_equal(starts[0][0], [0.05, 0.05])
         np.testing.assert_array_equal(starts[0][1], [0.95, 0.95])
@@ -65,7 +145,7 @@ class TestEmStarts:
     def test_channel_without_sites_gets_valid_rates(self):
         K, N = _mixture(0.5, [0.1, 0.1], [0.8, 0.8])
         K[1], N[1] = 0.0, 0.0
-        for tp, ta, _ in _em_starts(K, N, 0.05, 0.95, 1e-3):
+        for tp, ta, _ in _em_starts(K, N, None, 0.05, 0.95, True, _LO, _HI):
             assert np.all((tp > 0) & (tp < 1) & (ta > 0) & (ta < 1))
 
 
@@ -76,13 +156,17 @@ class TestRunEm:
         tp, ta, pi, ll, n_iter = _run_em(
             K,
             N,
+            None,
             np.array([0.2]),
             np.array([0.7]),
             0.5,
             const,
+            fit_acc=True,
+            lo=_LO[:1],
+            hi=_HI[:1],
             max_iters=5,
-            eps=1e-3,
             tol=1e-8,
         )
         assert 1 <= n_iter <= 5
-        assert ll == _mixture_loglik(K, N, tp, ta, pi, const)[0]
+        loglik = _mixture_loglik(K, N, tp[:, None], ta[:, None], pi, const)
+        assert ll == loglik[0]

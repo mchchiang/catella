@@ -29,6 +29,11 @@ void NucPosTM::reset() {
   mt = std::mt19937(seed);
 }
 
+void NucPosTM::setSeed(ulint seed_) {
+  seed = seed_;
+  reset();
+}
+
 void NucPosTM::setEnergy(string dataFile, double emax) {
   model.setEnergy(dataFile, emax);
   solved = false;

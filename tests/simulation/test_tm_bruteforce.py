@@ -202,6 +202,41 @@ class TestSampling:
             expected -= mu * len(positions)
             assert energy == pytest.approx(expected, rel=1e-8, abs=1e-8)
 
+    def test_set_seed_matches_fresh_model(self):
+        rng = np.random.default_rng(13)
+        nucbp, llink, elink, mu, nbp = 3, 2, 1.0, 0.3, 40
+        eseq = rng.normal(size=nbp).tolist()
+        tm = _tm(nucbp, llink, elink, mu, eseq, seed=1)
+        for s in (7, 8, 9):
+            tm.setSeed(s)
+            got = tm.sampleConfig()
+            expected = _tm(nucbp, llink, elink, mu, eseq, seed=s).sampleConfig()
+            assert list(got[0]) == list(expected[0])
+            assert got[1] == expected[1]
+
+    def test_set_seed_repeats_sample(self):
+        rng = np.random.default_rng(14)
+        nucbp, llink, elink, mu, nbp = 3, 2, 1.0, 0.3, 40
+        eseq = rng.normal(size=nbp).tolist()
+        tm = _tm(nucbp, llink, elink, mu, eseq, seed=1)
+        tm.setSeed(42)
+        first = tm.sampleConfig()
+        tm.setSeed(42)
+        second = tm.sampleConfig()
+        assert list(first[0]) == list(second[0])
+        assert first[1] == second[1]
+
+    def test_reset_returns_to_set_seed(self):
+        rng = np.random.default_rng(15)
+        nucbp, llink, elink, mu, nbp = 3, 2, 1.0, 0.3, 40
+        eseq = rng.normal(size=nbp).tolist()
+        tm = _tm(nucbp, llink, elink, mu, eseq, seed=1)
+        tm.setSeed(42)
+        first = tm.sampleConfig()
+        tm.sampleConfig()
+        tm.reset()
+        assert list(tm.sampleConfig()[0]) == list(first[0])
+
 
 class TestLowTemperature:
     @pytest.mark.parametrize("seed", [0, 1, 2])

@@ -49,6 +49,9 @@ public:
   // Re-seeds the sampling RNG from the original seed.
   void reset();
 
+  // Replaces the seed and re-seeds the sampling RNG from it.
+  void setSeed(ulint seed);
+
 private:
   NucPosModel model;
   ulint seed;

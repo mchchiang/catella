@@ -57,6 +57,7 @@ PYBIND11_MODULE(catella_cpp, m) {
   tmcls.def("sampleConfig", &NucPosTM::sampleConfig);
   tmcls.def("getSeqEnergy", &NucPosTM::getSeqEnergy);
   tmcls.def("reset", &NucPosTM::reset);
+  tmcls.def("setSeed", &NucPosTM::setSeed, py::arg("seed"));
 
   py::class_<Tracker, shared_ptr<Tracker> >(m, "Tracker");
   

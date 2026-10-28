@@ -339,7 +339,6 @@ def _controls_calibration(
     init_prot,
     init_acc,
     tol,
-    min_site_prob,
     min_rel_contrast,
     batch_size,
     mask_name,
@@ -367,7 +366,7 @@ def _controls_calibration(
     strata : tuple
         `("+", "-")` to calibrate each strand, or `(None,)` to pool.
     nu, rho_leak, fit_kappa, lbin, max_iters, init_prot, init_acc, tol,
-    min_site_prob, min_rel_contrast, batch_size, mask_name, channels, span
+    min_rel_contrast, batch_size, mask_name, channels, span
         As in `_chrom_calibration`.
 
     Returns
@@ -410,7 +409,6 @@ def _controls_calibration(
             *counts["unmeth"][s],
             ctx,
             nu=nu,
-            min_site_prob=min_site_prob,
             channels=channels,
         )
         for s in strata
@@ -578,7 +576,6 @@ def _chrom_calibration(
     tol,
     batch_size,
     mask_name,
-    min_site_prob=0.95,
     min_rel_contrast=0.2,
     fit_kappa=False,
     norm_by_strand=False,
@@ -598,8 +595,6 @@ def _chrom_calibration(
     chrom : str
         Chromosome identifier.
     nu, rho_leak, lbin, max_iters, init_prot, init_acc, tol
-        As in `model_prob`.
-    min_site_prob : float, default 0.95
         As in `model_prob`.
     min_rel_contrast : float, default 0.2
         As in `model_prob`.
@@ -692,7 +687,6 @@ def _chrom_calibration(
             nu=nu,
             rho_leak=rho_leak,
             fit_kappa=fit_kappa,
-            min_site_prob=min_site_prob,
             **common,
         )
     else:

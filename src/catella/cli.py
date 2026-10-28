@@ -544,13 +544,6 @@ def compute_model_prob(
             "(controls only)"
         ),
     ] = False,
-    min_site_prob: Annotated[
-        float,
-        typer.Option(
-            help="Min posterior probability of a site's control "
-            "contrast to be informative (controls only)"
-        ),
-    ] = 0.95,
     min_rel_contrast: Annotated[
         float,
         typer.Option(
@@ -630,7 +623,6 @@ def compute_model_prob(
         nu=nu,
         rho_leak=rho_leak,
         fit_kappa=fit_kappa,
-        min_site_prob=min_site_prob,
         min_rel_contrast=min_rel_contrast,
         lnuc=lnuc,
         lbin=lbin,

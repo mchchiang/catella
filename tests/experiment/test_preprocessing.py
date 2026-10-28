@@ -1970,7 +1970,6 @@ class TestModelProbChannelSelection:
         MethPrintAnalysis().model_prob(exp=exp, lnuc=30, batch_size=50)
         row = exp.global_analysis["meth_prob_calib"].iloc[0]
         params = exp.global_analysis["meth_prob_params"].iloc[0]
-        assert params["min_site_prob"] == 0.95
         assert params["min_rel_contrast"] == 0.2
         for ch in ("A", "GCH", "HCG", "GCG"):
             assert row[f"bic_margin_{ch}"] > 0
@@ -1990,7 +1989,7 @@ class TestModelProbChannelSelection:
             assert not theta["informative"].any()
 
     @pytest.mark.parametrize(
-        "kwargs", [{"min_site_prob": 1.5}, {"min_rel_contrast": -0.1}]
+        "kwargs", [{"min_rel_contrast": 1.5}, {"min_rel_contrast": -0.1}]
     )
     def test_invalid_threshold_raises(self, kwargs):
         exp = _make_footprint_experiment(with_controls=True)

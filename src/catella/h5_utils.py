@@ -98,11 +98,21 @@ def save_df(name, df, group):
     g.create_dataset("_column_order", data=order, dtype=dt)
     g.attrs["_column_index_dtype"] = str(df.columns.dtype)
 
-    # Split numeric, bool and string data
-    num_df = df.select_dtypes(include=[np.number])
+    # Split integer, other numeric, bool and string data
+    int_cols = [
+        c
+        for c in df.columns
+        if isinstance(df[c].dtype, np.dtype)
+        and np.issubdtype(df[c].dtype, np.integer)
+    ]
+    num_df = df.select_dtypes(include=[np.number]).drop(columns=int_cols)
     bool_df = df.select_dtypes(include="bool")
     str_df = df.select_dtypes(exclude=[np.number, "bool"])
 
+    for col in int_cols:
+        g.create_dataset(
+            f"int_{col}", data=df[col].to_numpy(), compression="gzip"
+        )
     for col in bool_df.columns:
         g.create_dataset(
             f"bool_{col}", data=bool_df[col].to_numpy(), compression="gzip"
@@ -236,9 +246,11 @@ def load_df(name, group):
             ]
             df = pd.DataFrame(data, columns=cols)
 
-        # Load the bool and string data
+        # Load the integer, bool and string data
         for k in g:
-            if k.startswith("bool_"):
+            if k.startswith("int_"):
+                df[k[len("int_") :]] = g[k][:]
+            elif k.startswith("bool_"):
                 df[k[len("bool_") :]] = g[k][:].astype(bool)
             elif k.startswith("str_"):
                 values = [

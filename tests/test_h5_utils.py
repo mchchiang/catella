@@ -16,14 +16,19 @@ from catella import h5_utils
 
 class TestSaveLoadDf:
     def test_mixed_numeric_and_string_round_trip(self, tmp_path):
-        df = pd.DataFrame({"a": [1.0, 2.0, 3.0], "b": ["x", "y", "z"]})
+        df = pd.DataFrame(
+            {"a": [1.0, 2.0, 3.0], "i": [4, 5, 6], "b": ["x", "y", "z"]}
+        )
         path = tmp_path / "df.h5"
         with h5py.File(path, "w") as f:
             h5_utils.save_df("df", df, f)
         with h5py.File(path, "r") as f:
             loaded = h5_utils.load_df("df", f)
         np.testing.assert_array_equal(loaded["a"].to_numpy(), df["a"])
+        assert loaded["i"].dtype == df["i"].dtype
+        assert loaded["i"].tolist() == [4, 5, 6]
         assert loaded["b"].tolist() == df["b"].tolist()
+        assert list(loaded.columns) == ["a", "i", "b"]
 
     def test_all_string_round_trip(self, tmp_path):
         # No numeric columns at all -- save_df skips creating

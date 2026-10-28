@@ -331,8 +331,8 @@ class SimTMData:
     axis.
 
     .. note::
-       Direct instantiation is disabled. Use the factory method
-       :meth:`SimTMData.load` to create instances from HDF5 files.
+       Direct instantiation is disabled. Access samples via
+       :attr:`SimDataset.raw`.
     """
 
     nucbp: int
@@ -372,61 +372,16 @@ class SimTMData:
 
     def __init__(self, **kwargs: Any):
         if not kwargs.pop("_internal", False):
-            raise TypeError("use SimTMData.load() to instantiate this class")
+            raise TypeError(
+                "SimTMData cannot be instantiated directly; access samples "
+                "via SimDataset.raw"
+            )
 
         for f in fields(self):
             val = kwargs.get(f.name)
             if val is None:
                 val = kwargs.get(f.name.removeprefix("_frozen_"))
             object.__setattr__(self, f.name, val)
-
-    @classmethod
-    def load(cls, sim_file: str | Path) -> Self:
-        """
-        Load one exact transfer-matrix sample from a single-sample HDF5
-        file (the format written for one sampling job, before
-        consolidation into a per-molecule file).
-
-        Parameters
-        ----------
-        sim_file : str or Path
-            The HDF5 file containing the sample.
-
-        Returns
-        -------
-        SimTMData
-            A new instance populated with the loaded parameters and data.
-
-        Raises
-        ------
-        OSError
-            If the file cannot be opened or does not follow the
-            SimTMData schema.
-        """
-        with h5py.File(sim_file, "r") as f:
-            g = f["params"]
-            nucbp = g.attrs["nucbp"]
-            nbp = g.attrs["nbp"]
-            llink = g.attrs["llink"]
-            elink = g.attrs["elink"]
-            mu = g.attrs["mu"]
-            seed = g.attrs["seed"]
-
-            g = f["data"]
-            position = g["position"][()]
-            energy = g.attrs["energy"]
-            logz = g.attrs["logz"]
-            return cls._create(
-                nucbp=nucbp,
-                nbp=nbp,
-                llink=llink,
-                elink=elink,
-                mu=mu,
-                seed=seed,
-                position=position,
-                energy=energy,
-                logz=logz,
-            )
 
     @classmethod
     def _create(cls, **kwargs) -> Self:
@@ -447,129 +402,6 @@ class SimTMData:
                 public_attrs.append(attr)
         repr_str = f"{self.__class__.__name__}({', '.join(public_attrs)})"
         return repr_str
-
-
-def _write_tm_file(
-    out_file: str | Path,
-    *,
-    nucbp: int,
-    nbp: int,
-    llink: int,
-    elink: float,
-    mu: float,
-    seed: int,
-    position: np.ndarray,
-    energy: float,
-    logz: float,
-) -> None:
-    """
-    Write one exact transfer-matrix sample to a single-sample HDF5 file.
-
-    This is the per-job output format used while sampling runs in
-    parallel; :func:`_consolidate_tm_samples` later merges many of
-    these into one combined per-molecule file, at which point the
-    single-sample files are no longer needed.
-
-    Parameters
-    ----------
-    out_file : str or Path
-        Destination HDF5 file.
-    nucbp, nbp, llink, elink, mu, seed : int or float
-        Physical parameters and seed, stored as attrs on '/params'.
-    position : np.ndarray
-        The sampled nucleosome start positions.
-    energy : float
-        The exact Hamiltonian energy of the sampled configuration.
-    logz : float
-        The log partition function for this molecule.
-    """
-    with h5py.File(out_file, "w") as f:
-        gparams = f.create_group("params")
-        gparams.attrs["nucbp"] = nucbp
-        gparams.attrs["nbp"] = nbp
-        gparams.attrs["llink"] = llink
-        gparams.attrs["elink"] = elink
-        gparams.attrs["mu"] = mu
-        gparams.attrs["seed"] = seed
-
-        gdata = f.create_group("data")
-        gdata.create_dataset(
-            "position", data=np.asarray(position, dtype=np.int32)
-        )
-        gdata.attrs["energy"] = energy
-        gdata.attrs["logz"] = logz
-
-
-def _consolidate_tm_samples(
-    sample_files: Iterable[str | Path], combined_file: str | Path
-) -> None:
-    """
-    Merge many single-sample TM files into one combined per-molecule
-    file, using the same flat/offset jagged layout already used for
-    MCMC position trajectories, but indexed by sample instead of frame.
-
-    Parameters
-    ----------
-    sample_files : iterable of str or Path
-        The single-sample files to merge, as written by
-        :func:`_write_tm_file`. Order determines the sample index
-        ('run') each ends up at in the combined file.
-    combined_file : str or Path
-        Destination HDF5 file for the merged samples.
-
-    Raises
-    ------
-    ValueError
-        If `sample_files` is empty, or if the samples do not all share
-        the same physical parameters and log partition function.
-    """
-    sample_files = list(sample_files)
-    if not sample_files:
-        raise ValueError("sample_files must contain at least one file")
-
-    params = None
-    logz = None
-    positions = []
-    energies = []
-    seeds = []
-    for sf in sample_files:
-        with h5py.File(sf, "r") as f:
-            gparams = f["params"]
-            this_params = {
-                k: gparams.attrs[k]
-                for k in ("nucbp", "nbp", "llink", "elink", "mu")
-            }
-            if params is None:
-                params = this_params
-            elif params != this_params:
-                raise ValueError(
-                    "all sample files must share the same physical "
-                    "parameters"
-                )
-            seeds.append(gparams.attrs["seed"])
-
-            gdata = f["data"]
-            if logz is None:
-                logz = gdata.attrs["logz"]
-            positions.append(gdata["position"][()])
-            energies.append(gdata.attrs["energy"])
-
-    flat = np.concatenate(positions) if positions else np.array([], dtype=int)
-    offset = np.zeros(len(positions) + 1, dtype=np.uint64)
-    for i, p in enumerate(positions):
-        offset[i + 1] = offset[i] + len(p)
-
-    with h5py.File(combined_file, "w") as f:
-        gparams = f.create_group("params")
-        for k, v in params.items():
-            gparams.attrs[k] = v
-
-        gdata = f.create_group("data")
-        gdata.attrs["logz"] = logz
-        gdata.create_dataset("position_flat", data=flat.astype(np.int32))
-        gdata.create_dataset("position_offset", data=offset)
-        gdata.create_dataset("energy", data=np.asarray(energies))
-        gdata.create_dataset("seed", data=np.asarray(seeds))
 
 
 def _write_tm_samples(
@@ -647,7 +479,7 @@ def _read_tm_sample(combined_file: str | Path, run: int) -> SimTMData:
     Parameters
     ----------
     combined_file : str or Path
-        The combined file written by :func:`_consolidate_tm_samples`.
+        The combined file written by :func:`_write_tm_samples`.
     run : int
         The sample index within the combined file.
 

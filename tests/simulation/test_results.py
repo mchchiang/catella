@@ -12,9 +12,7 @@ from catella.simulation.engine import SimManager
 from catella.simulation.results import (
     SimDataset,
     SimTMData,
-    _consolidate_tm_samples,
     _read_tm_sample,
-    _write_tm_file,
     _write_tm_samples,
 )
 
@@ -210,86 +208,10 @@ class TestFindIncompleteRuns:
         assert set(serial["truncated"]) == set(parallel["truncated"])
 
 
-class TestSimTMDataRoundtrip:
-    def test_write_and_load(self, tmp_path):
-        out_file = tmp_path / "sample.h5"
-        _write_tm_file(
-            out_file,
-            nucbp=147,
-            nbp=400,
-            llink=20,
-            elink=1.0,
-            mu=-1.0,
-            seed=7,
-            position=np.array([10, 200, 350]),
-            energy=-3.5,
-            logz=12.34,
-        )
-        data = SimTMData.load(out_file)
-        assert data.nucbp == 147
-        assert data.nbp == 400
-        assert data.llink == 20
-        assert data.elink == pytest.approx(1.0)
-        assert data.mu == pytest.approx(-1.0)
-        assert data.seed == 7
-        np.testing.assert_array_equal(data.position, [10, 200, 350])
-        assert data.energy == pytest.approx(-3.5)
-        assert data.logz == pytest.approx(12.34)
-
+class TestSimTMData:
     def test_requires_internal_flag(self):
         with pytest.raises(TypeError):
             SimTMData(nucbp=1, nbp=1, llink=1, elink=1.0, mu=1.0, seed=1)
-
-
-class TestConsolidateTMSamples:
-    def test_merge_and_read_back(self, tmp_path):
-        positions_list = [[5, 20], [100], [7, 8, 9]]
-        sample_files = []
-        for i, pos in enumerate(positions_list):
-            f = tmp_path / f"sample_{i}.h5"
-            _write_tm_file(
-                f,
-                nucbp=2,
-                nbp=50,
-                llink=3,
-                elink=1.0,
-                mu=0.5,
-                seed=100 + i,
-                position=np.array(pos),
-                energy=float(i),
-                logz=9.87,
-            )
-            sample_files.append(f)
-
-        combined = tmp_path / "combined.h5"
-        _consolidate_tm_samples(sample_files, combined)
-
-        for i, pos in enumerate(positions_list):
-            sample = _read_tm_sample(combined, i)
-            np.testing.assert_array_equal(sample.position, pos)
-            assert sample.energy == pytest.approx(float(i))
-            assert sample.seed == 100 + i
-            assert sample.logz == pytest.approx(9.87)
-            assert sample.nucbp == 2
-            assert sample.nbp == 50
-
-    def test_rejects_mismatched_params(self, tmp_path):
-        f1 = tmp_path / "a.h5"
-        f2 = tmp_path / "b.h5"
-        _write_tm_file(
-            f1, nucbp=2, nbp=50, llink=3, elink=1.0, mu=0.5, seed=1,
-            position=np.array([1]), energy=0.0, logz=1.0,
-        )
-        _write_tm_file(
-            f2, nucbp=3, nbp=50, llink=3, elink=1.0, mu=0.5, seed=2,
-            position=np.array([2]), energy=0.0, logz=1.0,
-        )
-        with pytest.raises(ValueError):
-            _consolidate_tm_samples([f1, f2], tmp_path / "combined.h5")
-
-    def test_requires_at_least_one_input(self, tmp_path):
-        with pytest.raises(ValueError):
-            _consolidate_tm_samples([], tmp_path / "combined.h5")
 
 
 class TestWriteTMSamples:
@@ -394,28 +316,20 @@ class TestTMDataset:
             )
 
     def _generate_tm_samples(self, dataset, chrom, mol, positions):
-        """Stand in for Stage 6's generation+consolidation, for testing
-        the data layer independently of SimManager dispatch."""
-        sample_files = []
-        for run, pos in enumerate(positions):
-            f = dataset.mcmc_file(chrom, mol, run)
-            f.parent.mkdir(parents=True, exist_ok=True)
-            _write_tm_file(
-                f,
-                nucbp=dataset.settings["nucbp"],
-                nbp=dataset.nbp[chrom],
-                llink=dataset.settings["llink"],
-                elink=dataset.settings["elink"],
-                mu=dataset.settings["mu"],
-                seed=run + 1,
-                position=np.array(pos),
-                energy=float(run),
-                logz=5.0,
-            )
-            sample_files.append(f)
         combined = dataset.tm_file(chrom, mol)
         combined.parent.mkdir(parents=True, exist_ok=True)
-        _consolidate_tm_samples(sample_files, combined)
+        _write_tm_samples(
+            combined,
+            nucbp=dataset.settings["nucbp"],
+            nbp=dataset.nbp[chrom],
+            llink=dataset.settings["llink"],
+            elink=dataset.settings["elink"],
+            mu=dataset.settings["mu"],
+            logz=5.0,
+            positions=[np.array(pos) for pos in positions],
+            energies=[float(run) for run in range(len(positions))],
+            seeds=[run + 1 for run in range(len(positions))],
+        )
 
     def test_raw_access_after_generating_samples(self, tmp_path):
         dataset = SimDataset.create(

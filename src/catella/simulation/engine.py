@@ -25,11 +25,7 @@ from scipy.special import logit
 
 from catella import utils
 from catella.simulation.config import SimSettings
-from catella.simulation.results import (
-    SimDataset,
-    _consolidate_tm_samples,
-    _write_tm_samples,
-)
+from catella.simulation.results import SimDataset, _write_tm_samples
 from catella.utils import IndexType
 
 
@@ -736,37 +732,6 @@ class SimManager:
         dataset.save()
 
         return dataset
-
-    def _consolidate_tm_molecules(
-        self,
-        dataset: SimDataset,
-        targets: Iterable[tuple[str, int]],
-        nsim: int,
-    ) -> None:
-        """
-        Merge each (chrom, mol)'s per-run temp files (as written by
-        `_run_mcmc_job` in TM mode) into one combined file via
-        `_consolidate_tm_samples`, then delete the temp files. A
-        molecule with zero successfully-generated samples is left
-        without a combined file (reported as 'missing' by
-        `find_incomplete_runs`, matching the pre-consolidation state).
-        """
-        for chrom, mol in targets:
-            temp_files = [
-                dataset.mcmc_file(chrom, mol, run) for run in range(nsim)
-            ]
-            existing = [f for f in temp_files if f.exists()]
-            if not existing:
-                continue
-            combined = dataset.tm_file(chrom, mol)
-            combined.parent.mkdir(parents=True, exist_ok=True)
-            _consolidate_tm_samples(existing, combined)
-            for f in existing:
-                f.unlink()
-            try:
-                temp_files[0].parent.rmdir()
-            except OSError:
-                pass
 
     def _dispatch(
         self,

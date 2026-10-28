@@ -32,7 +32,7 @@ Simulation classes
 .. automodule:: catella.simulation.engine
     :members:
     :undoc-members:
-    :exclude-members: MCMCJob
+    :exclude-members: MCMCJob, TMJob
 
 .. automodule:: catella.simulation.analysis
     :members:

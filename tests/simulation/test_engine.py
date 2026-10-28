@@ -6,9 +6,10 @@ import h5py
 import numpy as np
 import pytest
 from catella.simulation.config import SimSettings
-from catella.simulation.engine import MCMCJob, SimManager
-from catella.simulation.results import SimDataset
-from catella_cpp import Dump
+from catella.simulation.engine import MCMCJob, SimManager, TMJob
+from catella.simulation.results import SimDataset, _read_tm_sample
+from catella_cpp import Dump, NucPosTM
+from scipy.special import logit
 
 
 def _make_settings(**overrides):
@@ -322,7 +323,9 @@ class TestSimManagerRun:
         manager = SimManager(nworker=2, verbose=False)
 
         with pytest.raises(TypeError, match="cannot pickle"):
-            manager._dispatch(dataset, iter([bad_run]), 1)
+            manager._dispatch(
+                dataset, iter([bad_run]), 1, SimManager._run_mcmc_job
+            )
 
         captured = capsys.readouterr()
         assert "Worker pool crashed" in captured.out
@@ -492,32 +495,65 @@ def _make_tm_settings(**overrides):
     return SimSettings(**defaults)
 
 
-class TestRunJobTM:
-    def test_success_writes_sample_file(self, tmp_path):
-        seq_energy = np.asarray(
-            _make_meth_prob(nmol=1, nbp=20)[0], dtype=np.float64
-        ).tobytes()
-        p = MCMCJob(
-            chrom="chr1",
-            mol=0,
-            run=0,
-            method="tm",
-            seed=1,
-            seq_energy=seq_energy,
-            out_type=None,
-            out_file=tmp_path / "sample.h5",
-            settings=_make_tm_settings(),
-        )
-        chrom, mol, run, success, err_msg = SimManager._run_mcmc_job(p)
-        assert (chrom, mol, run) == ("chr1", 0, 0)
-        assert success is True
-        assert err_msg is None
+def _make_tm_job(out_file, seeds=(1, 2, 3), nbp=20, **overrides):
+    seq_energy = np.asarray(
+        logit(_make_meth_prob(nmol=1, nbp=nbp)[0]), dtype=np.float64
+    ).tobytes()
+    defaults = {
+        "chrom": "chr1",
+        "mol": 0,
+        "seeds": seeds,
+        "seq_energy": seq_energy,
+        "out_file": out_file,
+        "settings": _make_tm_settings(),
+    }
+    defaults.update(overrides)
+    return TMJob(**defaults)
 
-        from catella.simulation.results import SimTMData
 
-        data = SimTMData.load(tmp_path / "sample.h5")
-        assert data.nucbp == 3
-        assert data.nbp == 20
+class TestRunTMJob:
+    def test_success_writes_all_samples(self, tmp_path):
+        out_file = tmp_path / "sub" / "mol.h5"
+        p = _make_tm_job(out_file, seeds=(4, 5, 6))
+        result = SimManager._run_tm_job(p)
+        assert result == ("chr1", 0, None, True, None)
+        for run, s in enumerate((4, 5, 6)):
+            sample = _read_tm_sample(out_file, run)
+            assert sample.seed == s
+            assert sample.nucbp == 3
+            assert sample.nbp == 20
+
+    def test_samples_match_fresh_solve_per_seed(self, tmp_path):
+        out_file = tmp_path / "mol.h5"
+        p = _make_tm_job(out_file, seeds=(11, 12, 13))
+        SimManager._run_tm_job(p)
+        settings = p.settings
+        eseq = np.frombuffer(p.seq_energy, dtype=np.float64).tolist()
+        for run, s in enumerate(p.seeds):
+            tm = NucPosTM(
+                settings.nucbp,
+                len(eseq),
+                settings.llink,
+                settings.elink,
+                settings.mu,
+                s,
+            )
+            tm.setEnergy(eseq, settings.emax)
+            tm.solve(settings.end_temp)
+            position, energy = tm.sampleConfig()
+            sample = _read_tm_sample(out_file, run)
+            np.testing.assert_array_equal(sample.position, position)
+            assert sample.energy == energy
+            assert sample.logz == tm.getLogZ()
+
+    def test_failure_reports_error_and_writes_nothing(self, tmp_path):
+        out_file = tmp_path / "mol.h5"
+        p = _make_tm_job(out_file, settings=_make_tm_settings(end_temp=0.0))
+        chrom, mol, run, success, err_msg = SimManager._run_tm_job(p)
+        assert (chrom, mol, run) == ("chr1", 0, None)
+        assert success is False
+        assert err_msg
+        assert not out_file.exists()
 
 
 class TestSimManagerRunTM:
@@ -537,6 +573,45 @@ class TestSimManagerRunTM:
         assert dataset.nsim == 0
         with pytest.raises(ValueError):
             dataset.raw["chr1", 0, 0]
+        assert not dataset.tm_file("chr1", 0).exists()
+
+    def test_samples_use_seed_table(self, tmp_path):
+        meth_prob = _make_meth_prob(nmol=2, nbp=30)
+        manager = SimManager(nworker=1, verbose=False)
+        dataset = manager.run(
+            chroms="chr1",
+            nsim=3,
+            method="tm",
+            settings=_make_tm_settings(),
+            meth_prob=meth_prob,
+            out_dir=tmp_path / "tm_seeds",
+            seed=1,
+        )
+        for mol in range(2):
+            for run in range(3):
+                sample = dataset.raw["chr1", mol, run]
+                assert sample.seed == dataset.seed_table["chr1"][mol, run]
+
+    def test_parallel_matches_serial(self, tmp_path):
+        meth_prob = _make_meth_prob(nmol=3, nbp=30)
+        datasets = [
+            SimManager(nworker=nworker, verbose=False).run(
+                chroms="chr1",
+                nsim=2,
+                method="tm",
+                settings=_make_tm_settings(),
+                meth_prob=meth_prob,
+                out_dir=tmp_path / f"tm_par{nworker}",
+                seed=1,
+            )
+            for nworker in (1, 2)
+        ]
+        for mol in range(3):
+            for run in range(2):
+                a = datasets[0].raw["chr1", mol, run]
+                b = datasets[1].raw["chr1", mol, run]
+                np.testing.assert_array_equal(a.position, b.position)
+                assert a.energy == b.energy
 
     def test_generates_and_consolidates_samples(self, tmp_path):
         from catella.simulation.results import SimTMData

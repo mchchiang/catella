@@ -15,6 +15,7 @@ from catella.simulation.results import (
     _consolidate_tm_samples,
     _read_tm_sample,
     _write_tm_file,
+    _write_tm_samples,
 )
 
 
@@ -289,6 +290,67 @@ class TestConsolidateTMSamples:
     def test_requires_at_least_one_input(self, tmp_path):
         with pytest.raises(ValueError):
             _consolidate_tm_samples([], tmp_path / "combined.h5")
+
+
+class TestWriteTMSamples:
+    def test_write_and_read_back(self, tmp_path):
+        out_file = tmp_path / "mol.h5"
+        positions = [np.array([5, 20]), np.array([], dtype=int), np.array([7])]
+        _write_tm_samples(
+            out_file,
+            nucbp=2,
+            nbp=50,
+            llink=3,
+            elink=1.0,
+            mu=0.5,
+            logz=9.87,
+            positions=positions,
+            energies=[0.0, 1.0, 2.0],
+            seeds=[100, 101, 102],
+        )
+        for i, pos in enumerate(positions):
+            sample = _read_tm_sample(out_file, i)
+            np.testing.assert_array_equal(sample.position, pos)
+            assert sample.energy == pytest.approx(float(i))
+            assert sample.seed == 100 + i
+            assert sample.logz == pytest.approx(9.87)
+            assert sample.nucbp == 2
+            assert sample.nbp == 50
+            assert sample.llink == 3
+            assert sample.elink == pytest.approx(1.0)
+            assert sample.mu == pytest.approx(0.5)
+
+    def test_zero_samples(self, tmp_path):
+        out_file = tmp_path / "mol.h5"
+        _write_tm_samples(
+            out_file,
+            nucbp=2,
+            nbp=50,
+            llink=3,
+            elink=1.0,
+            mu=0.5,
+            logz=1.0,
+            positions=[],
+            energies=[],
+            seeds=[],
+        )
+        with h5py.File(out_file, "r") as f:
+            assert len(f["data"]["energy"]) == 0
+
+    def test_rejects_mismatched_lengths(self, tmp_path):
+        with pytest.raises(ValueError):
+            _write_tm_samples(
+                tmp_path / "mol.h5",
+                nucbp=2,
+                nbp=50,
+                llink=3,
+                elink=1.0,
+                mu=0.5,
+                logz=1.0,
+                positions=[np.array([1])],
+                energies=[0.0, 1.0],
+                seeds=[1],
+            )
 
 
 class TestTMDataset:

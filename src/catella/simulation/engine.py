@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import multiprocessing as mp
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from dataclasses import dataclass, replace
 from itertools import islice
@@ -28,7 +28,7 @@ from catella.simulation.config import SimSettings
 from catella.simulation.results import (
     SimDataset,
     _consolidate_tm_samples,
-    _write_tm_file,
+    _write_tm_samples,
 )
 from catella.utils import IndexType
 
@@ -37,12 +37,12 @@ from catella.utils import IndexType
 @dataclass(frozen=True, kw_only=True)
 class MCMCJob:
     """
-    The complete execution manifest for a single chromatin fiber simulation.
+    Inputs for one MCMC run of a single molecule.
 
-    This class combines the physical 'recipe' (SimSettings) with specific
-    identifying metadata for a unique simulation run. All fields are
-    self-contained so an instance can be sent as-is to a freshly spawned
-    worker process.
+    Combines the physical parameters and annealing protocol
+    (SimSettings) with the identifiers of the run. All fields are
+    self-contained so an instance can be sent as-is to a freshly
+    spawned worker process.
     """
 
     chrom: str
@@ -56,9 +56,6 @@ class MCMCJob:
     """The iteration or replica index for this specific molecule-chromosome
     pair."""
 
-    method: str = "mcmc"
-    """Which engine to run: 'mcmc' or 'tm'."""
-
     seed: int
     """The specific random seed used for this execution. Note: This may differ
     from the batch seed if per-run offsets are applied.
@@ -68,10 +65,9 @@ class MCMCJob:
     """Binary representation of the sequence-specific nucleosome binding
     energy derived from the methylation data."""
 
-    out_type: Dump.OutputType | None
+    out_type: Dump.OutputType
     """The format or scope of data to be recorded (e.g., Energy, Position,
-    All). Unused (None) for method='tm', which has no trajectory to
-    select fields from."""
+    All)."""
 
     out_file: Path
     """The HDF5 file where the simulation results are stored."""
@@ -85,6 +81,38 @@ class MCMCJob:
         "temp": Dump.OutputType.Temp,
         "all": Dump.OutputType.All,
     }
+
+
+@dataclass(frozen=True, kw_only=True)
+class TMJob:
+    """
+    Inputs for the exact sampling of a single molecule.
+
+    One transfer-matrix solve, followed by one exact sample per entry
+    of `seeds`. All fields are self-contained so an instance can be
+    sent as-is to a freshly spawned worker process.
+    """
+
+    chrom: str
+    """The name or identifier of the chromosome being simulated."""
+
+    mol: int
+    """The index or identifier of the specific molecule within the
+    chromosome."""
+
+    seeds: tuple[int, ...]
+    """One seed per sample; sample `i` is drawn after re-seeding the
+    sampler with `seeds[i]`."""
+
+    seq_energy: bytes
+    """Binary representation of the sequence-specific nucleosome binding
+    energy derived from the methylation data."""
+
+    out_file: Path
+    """The HDF5 file where all of the molecule's samples are stored."""
+
+    settings: SimSettings
+    """The physical constants used for this molecule."""
 
 
 class SimManager:
@@ -258,10 +286,10 @@ class SimManager:
             raise TypeError("'mols' must be an IndexType or a mapping")
 
         # Check that the molecule indices are valid and compute total number
-        # of simulations required
+        # of molecules to simulate
         nmol = {}
         nbp = {}
-        total_sim = 0
+        total_mol = 0
         for chrom in chroms:
             # Determine the maximum number of molecules and all molecule ids
             size = meth_prob[chrom].shape[0]
@@ -281,7 +309,7 @@ class SimManager:
                     raise ValueError(
                         f"selection 'mols' for chromosome '{chrom}' is empty"
                     )
-                total_sim += text_idx.size * nsim
+                total_mol += text_idx.size
             except IndexError as e:
                 raise IndexError(
                     f"mols index for chromosome '{chrom}': {e}"
@@ -403,40 +431,56 @@ class SimManager:
         )
         dataset.save()
 
-        # Generate the parameter list
-        def params_generator(settings):
+        # Generate the jobs: one per run for MCMC, one per molecule for TM
+        def molecules():
             for chrom in chroms:
                 molidxs = np.arange(nmol[chrom])[mols[chrom]]
                 for molidx in molidxs:
-                    idx = int(molidx)
                     eseq = np.asarray(
                         logit(meth_prob[chrom][molidx, :]), dtype=np.float64
                     ).tobytes()
-                    for run in range(nsim):
-                        sim_file = dataset.mcmc_file(chrom, idx, run)
-                        yield MCMCJob(
-                            chrom=chrom,
-                            mol=idx,
-                            run=run,
-                            method=method,
-                            settings=settings,
-                            seed=int(seed_table[chrom][idx, run]),
-                            seq_energy=eseq,
-                            out_type=out_type,
-                            out_file=sim_file,
-                        )
+                    yield chrom, int(molidx), eseq
 
-        param_gen = params_generator(settings)
+        def mcmc_jobs():
+            for chrom, idx, eseq in molecules():
+                for run in range(nsim):
+                    yield MCMCJob(
+                        chrom=chrom,
+                        mol=idx,
+                        run=run,
+                        settings=settings,
+                        seed=int(seed_table[chrom][idx, run]),
+                        seq_energy=eseq,
+                        out_type=out_type,
+                        out_file=dataset.mcmc_file(chrom, idx, run),
+                    )
 
-        self._dispatch(dataset, param_gen, total_sim)
+        def tm_jobs():
+            for chrom, idx, eseq in molecules():
+                yield TMJob(
+                    chrom=chrom,
+                    mol=idx,
+                    seeds=tuple(int(s) for s in seed_table[chrom][idx, :]),
+                    seq_energy=eseq,
+                    out_file=dataset.tm_file(chrom, idx),
+                    settings=settings,
+                )
 
-        if method == "tm" and nsim > 0:
-            targets = [
-                (chrom, int(molidx))
-                for chrom in chroms
-                for molidx in np.arange(nmol[chrom])[mols[chrom]]
-            ]
-            self._consolidate_tm_molecules(dataset, targets, nsim)
+        if method == "mcmc":
+            self._dispatch(
+                dataset,
+                mcmc_jobs(),
+                total_mol * nsim,
+                SimManager._run_mcmc_job,
+            )
+        elif nsim > 0:
+            self._dispatch(
+                dataset,
+                tm_jobs(),
+                total_mol,
+                SimManager._run_tm_job,
+                progress_desc="[cyan]Solving molecules ...",
+            )
 
         # Save the dataset to file
         dataset.save()
@@ -575,7 +619,7 @@ class SimManager:
                 meth_prob[chrom] = meth_prob[chrom].to_numpy()
             meth_prob[chrom] = np.atleast_2d(meth_prob[chrom])
 
-        def rerun_param_generator():
+        def mcmc_jobs():
             for chrom, mol, run in targets:
                 eseq = np.asarray(
                     logit(meth_prob[chrom][mol, :]), dtype=np.float64
@@ -593,8 +637,9 @@ class SimManager:
 
         self._dispatch(
             dataset,
-            rerun_param_generator(),
+            mcmc_jobs(),
             len(targets),
+            SimManager._run_mcmc_job,
             progress_desc="[cyan]Rerunning simulations ...",
         )
 
@@ -654,38 +699,40 @@ class SimManager:
 
         settings = SimSettings(**dict(dataset.settings))
 
-        def tm_rerun_param_generator():
+        def tm_jobs():
             for chrom, mol in targets:
                 eseq = np.asarray(
                     logit(meth_prob[chrom][mol, :]), dtype=np.float64
                 ).tobytes()
-                for run in range(nsim):
-                    if seed is None:
-                        run_seed = int(dataset.seed_table[chrom][mol, run])
-                    else:
-                        run_seed = SimManager._job_seed(
+                if seed is None:
+                    seeds = tuple(
+                        int(s) for s in dataset.seed_table[chrom][mol, :]
+                    )
+                else:
+                    seeds = tuple(
+                        SimManager._job_seed(
                             seed, chroms.index(chrom), mol, run
                         )
-                    yield MCMCJob(
-                        chrom=chrom,
-                        mol=mol,
-                        run=run,
-                        method="tm",
-                        settings=settings,
-                        seed=run_seed,
-                        seq_energy=eseq,
-                        out_type=None,
-                        out_file=dataset.mcmc_file(chrom, mol, run),
+                        for run in range(nsim)
                     )
+                yield TMJob(
+                    chrom=chrom,
+                    mol=mol,
+                    seeds=seeds,
+                    seq_energy=eseq,
+                    out_file=dataset.tm_file(chrom, mol),
+                    settings=settings,
+                )
 
-        self._dispatch(
-            dataset,
-            tm_rerun_param_generator(),
-            len(targets) * nsim,
-            progress_desc="[cyan]Regenerating exact samples ...",
-        )
+        if nsim > 0:
+            self._dispatch(
+                dataset,
+                tm_jobs(),
+                len(targets),
+                SimManager._run_tm_job,
+                progress_desc="[cyan]Regenerating exact samples ...",
+            )
 
-        self._consolidate_tm_molecules(dataset, targets, nsim)
         dataset.save()
 
         return dataset
@@ -724,26 +771,36 @@ class SimManager:
     def _dispatch(
         self,
         dataset: SimDataset,
-        param_gen: Iterator[MCMCJob],
+        param_gen: Iterator[MCMCJob | TMJob],
         total: int,
+        run_job: Callable[[MCMCJob | TMJob], tuple],
         progress_desc: str = "[cyan]Running simulations ...",
     ) -> None:
         """
-        Dispatch a stream of `MCMCJob` jobs and report progress/errors.
+        Dispatch a stream of jobs and report progress/errors.
 
         Parameters
         ----------
         dataset : SimDataset
             The dataset being populated. Used only to classify runs that
             were still in flight if the worker pool crashes.
-        param_gen : Iterator[MCMCJob]
+        param_gen : Iterator[MCMCJob] or Iterator[TMJob]
             A (possibly lazy) generator of jobs to execute.
         total : int
             The total number of jobs `param_gen` will yield, used for the
             progress bar.
+        run_job : callable
+            Executes one job (`SimManager._run_mcmc_job` or
+            `SimManager._run_tm_job`), returning `(chrom, mol, run,
+            success, err_msg)`; `run` is None for per-molecule jobs.
         progress_desc : str, default "[cyan]Running simulations ..."
             The label shown next to the progress bar.
         """
+
+        def _label(chrom, mol, run):
+            label = f"chrom={chrom}, mol={mol}"
+            return label if run is None else f"{label}, run={run}"
+
         # Progress bar
         progress = Progress(
             SpinnerColumn(),
@@ -762,8 +819,7 @@ class SimManager:
                 if not success:
                     progress.console.print(
                         "[red]Error[/red] Simulation failed "
-                        f"(chrom={chrom}, mol={mol}, run={run}): "
-                        f"{err_msg}"
+                        f"({_label(chrom, mol, run)}): {err_msg}"
                     )
                 progress.update(main_task, advance=1)
 
@@ -775,9 +831,7 @@ class SimManager:
                 ) as executor:
                     in_flight = {}
                     for param in islice(param_gen, window):
-                        future = executor.submit(
-                            SimManager._run_mcmc_job, param
-                        )
+                        future = executor.submit(run_job, param)
                         in_flight[future] = param
                     while in_flight:
                         done, _ = wait(in_flight, return_when=FIRST_COMPLETED)
@@ -791,32 +845,31 @@ class SimManager:
                                     "aborting the remaining batch."
                                 )
                                 for p in in_flight.values():
+                                    run = getattr(p, "run", None)
                                     try:
                                         status = (
                                             dataset._classify_run(
-                                                p.chrom, p.mol, p.run
+                                                p.chrom, p.mol, run or 0
                                             )
                                             or "ok"
                                         )
                                     except Exception:  # noqa: BLE001
                                         status = "unknown"
                                     progress.console.print(
-                                        f"  chrom={p.chrom} mol={p.mol} "
-                                        f"run={p.run}: {status}"
+                                        f"  {_label(p.chrom, p.mol, run)}: "
+                                        f"{status}"
                                     )
                                 raise
                             del in_flight[future]
                             _handle_result(result)
                         for param in islice(param_gen, len(done)):
-                            future = executor.submit(
-                                SimManager._run_mcmc_job, param
-                            )
+                            future = executor.submit(run_job, param)
                             in_flight[future] = param
             else:  # nworker = 1
                 for param in param_gen:
-                    _handle_result(SimManager._run_mcmc_job(param))
+                    _handle_result(run_job(param))
 
-    # Run a single simulation
+    # Run a single MCMC simulation
     @staticmethod
     def _run_mcmc_job(p: MCMCJob):
         settings = p.settings
@@ -827,55 +880,71 @@ class SimManager:
             # Initialize the methylation energy landscape
             eseq_list = np.frombuffer(p.seq_energy, dtype=np.float64).tolist()
             nbp = len(eseq_list)
-            if p.method == "tm":
-                model = NucPosTM(
-                    settings.nucbp,
-                    nbp,
-                    settings.llink,
-                    settings.elink,
-                    settings.mu,
-                    p.seed,
+            cool_option = SimSettings._cool_map[settings.cool_option]
+            # Create the cpp backend Monte Carlo simulation model
+            model = NucPosMCMC(
+                settings.nucbp,
+                nbp,
+                settings.llink,
+                settings.elink,
+                settings.mu,
+                p.seed,
+            )
+            model.setEnergy(eseq_list, settings.emax)
+            # For tracking all simulation data
+            model.addTracker(
+                sim.createDump(
+                    settings.print_freq, str(p.out_file), p.out_type
                 )
-                model.setEnergy(eseq_list, settings.emax)
-                model.solve(settings.end_temp)
-                positions, energy = model.sampleConfig()
-                _write_tm_file(
-                    p.out_file,
-                    nucbp=settings.nucbp,
-                    nbp=nbp,
-                    llink=settings.llink,
-                    elink=settings.elink,
-                    mu=settings.mu,
-                    seed=p.seed,
-                    position=np.asarray(positions, dtype=np.int32),
-                    energy=energy,
-                    logz=model.getLogZ(),
-                )
-            else:
-                cool_option = SimSettings._cool_map[settings.cool_option]
-                # Create the cpp backend Monte Carlo simulation model
-                model = NucPosMCMC(
-                    settings.nucbp,
-                    nbp,
-                    settings.llink,
-                    settings.elink,
-                    settings.mu,
-                    p.seed,
-                )
-                model.setEnergy(eseq_list, settings.emax)
-                # For tracking all simulation data
-                model.addTracker(
-                    sim.createDump(
-                        settings.print_freq, str(p.out_file), p.out_type
-                    )
-                )
-                # Run the simulation
-                model.run(
-                    settings.nsweep,
-                    settings.start_temp,
-                    settings.end_temp,
-                    cool_option,
-                )
+            )
+            # Run the simulation
+            model.run(
+                settings.nsweep,
+                settings.start_temp,
+                settings.end_temp,
+                cool_option,
+            )
             return (p.chrom, p.mol, p.run, True, None)
         except Exception as e:  # noqa: BLE001
             return (p.chrom, p.mol, p.run, False, str(e))
+
+    # Solve one molecule once and draw all of its exact samples
+    @staticmethod
+    def _run_tm_job(p: TMJob):
+        settings = p.settings
+        try:
+            Path(p.out_file).parent.mkdir(exist_ok=True, parents=True)
+            eseq_list = np.frombuffer(p.seq_energy, dtype=np.float64).tolist()
+            nbp = len(eseq_list)
+            model = NucPosTM(
+                settings.nucbp,
+                nbp,
+                settings.llink,
+                settings.elink,
+                settings.mu,
+                p.seeds[0],
+            )
+            model.setEnergy(eseq_list, settings.emax)
+            model.solve(settings.end_temp)
+            positions = []
+            energies = []
+            for s in p.seeds:
+                model.setSeed(s)
+                position, energy = model.sampleConfig()
+                positions.append(np.asarray(position, dtype=np.int32))
+                energies.append(energy)
+            _write_tm_samples(
+                p.out_file,
+                nucbp=settings.nucbp,
+                nbp=nbp,
+                llink=settings.llink,
+                elink=settings.elink,
+                mu=settings.mu,
+                logz=model.getLogZ(),
+                positions=positions,
+                energies=energies,
+                seeds=p.seeds,
+            )
+            return (p.chrom, p.mol, None, True, None)
+        except Exception as e:  # noqa: BLE001
+            return (p.chrom, p.mol, None, False, str(e))

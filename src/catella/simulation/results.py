@@ -5,7 +5,7 @@ import re
 import shutil
 import weakref
 from collections import Counter
-from collections.abc import Callable, Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, fields
 from functools import lru_cache
@@ -563,6 +563,74 @@ def _consolidate_tm_samples(
         gparams = f.create_group("params")
         for k, v in params.items():
             gparams.attrs[k] = v
+
+        gdata = f.create_group("data")
+        gdata.attrs["logz"] = logz
+        gdata.create_dataset("position_flat", data=flat.astype(np.int32))
+        gdata.create_dataset("position_offset", data=offset)
+        gdata.create_dataset("energy", data=np.asarray(energies))
+        gdata.create_dataset("seed", data=np.asarray(seeds))
+
+
+def _write_tm_samples(
+    out_file: str | Path,
+    *,
+    nucbp: int,
+    nbp: int,
+    llink: int,
+    elink: float,
+    mu: float,
+    logz: float,
+    positions: Sequence[np.ndarray],
+    energies: Sequence[float],
+    seeds: Sequence[int],
+) -> None:
+    """
+    Write a molecule's exact transfer-matrix samples to one HDF5 file.
+
+    Uses the same flat/offset jagged layout already used for MCMC
+    position trajectories, but indexed by sample instead of frame.
+
+    Parameters
+    ----------
+    out_file : str or Path
+        Destination HDF5 file.
+    nucbp, nbp, llink, elink, mu : int or float
+        Physical parameters, stored as attrs on '/params'.
+    logz : float
+        The log partition function for this molecule.
+    positions : sequence of np.ndarray
+        The sampled nucleosome start positions, one array per sample.
+    energies : sequence of float
+        The exact Hamiltonian energy of each sample.
+    seeds : sequence of int
+        The seed each sample was drawn with.
+
+    Raises
+    ------
+    ValueError
+        If `positions`, `energies`, and `seeds` differ in length.
+    """
+    if not len(positions) == len(energies) == len(seeds):
+        raise ValueError(
+            "positions, energies, and seeds must have the same length, "
+            f"got {len(positions)}, {len(energies)}, and {len(seeds)}"
+        )
+
+    offset = np.zeros(len(positions) + 1, dtype=np.uint64)
+    for i, p in enumerate(positions):
+        offset[i + 1] = offset[i] + len(p)
+    flat = (
+        np.concatenate(positions) if positions else np.array([], dtype=int)
+    )
+
+    with h5py.File(out_file, "w") as f:
+        gparams = f.create_group("params")
+        gparams.attrs["nucbp"] = nucbp
+        gparams.attrs["nbp"] = nbp
+        gparams.attrs["llink"] = llink
+        gparams.attrs["elink"] = elink
+        gparams.attrs["mu"] = mu
 
         gdata = f.create_group("data")
         gdata.attrs["logz"] = logz

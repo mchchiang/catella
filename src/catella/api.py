@@ -247,7 +247,6 @@ def compute_model_prob(
     store_rho: bool = False,
     nu: float | None = None,
     rho_leak: float | None = None,
-    fit_kappa: bool = False,
     min_rel_contrast: float = 0.2,
     lnuc: int = 147,
     lbin: int = 30,
@@ -316,11 +315,6 @@ def compute_model_prob(
         If None (default), it is fitted per channel by
         expectation-maximization on the test sample; a float pins it.
         Used only when meth/unmeth controls are available.
-    fit_kappa : bool, default False
-        Whether to also fit kappa, the accessible-site efficiency
-        relative to the methylated control, per channel; otherwise
-        kappa is 1. Requires `rho_leak` to be None. Used only when
-        meth/unmeth controls are available.
     min_rel_contrast : float, default 0.2
         Minimum relative contrast `(kappa - tau) / kappa` of a context
         after an expectation-maximization fit (which must also pass a
@@ -414,7 +408,6 @@ def compute_model_prob(
         store_rho=store_rho,
         nu=nu,
         rho_leak=rho_leak,
-        fit_kappa=fit_kappa,
         min_rel_contrast=min_rel_contrast,
         lnuc=lnuc,
         lbin=lbin,

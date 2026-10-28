@@ -301,7 +301,7 @@ def _warn_boundary_fit(chrom, stratum, em_diag):
         From `_calibrate_from_profiles`.
     """
     where = chrom if stratum is None else f"{chrom} (strand {stratum!r})"
-    hint = "consider fit_kappa=True or a fixed rho_leak"
+    hint = "consider a fixed rho_leak"
     at_max = em_diag["tau"] >= em_diag["tau_max"] - 1e-6
     names = [CONTEXT_NAMES[c] for c, m in zip(em_diag["codes"], at_max) if m]
     if names:
@@ -333,7 +333,6 @@ def _controls_calibration(
     *,
     nu,
     rho_leak,
-    fit_kappa,
     lbin,
     max_iters,
     tol,
@@ -347,9 +346,9 @@ def _controls_calibration(
     Calibrate each stratum from the meth/unmeth controls.
 
     The controls give the rate profiles `F` and `D`. If `rho_leak` is
-    None, tau (and kappa if `fit_kappa`) are then fitted per channel by
-    expectation-maximization on the test sample, binned with `lbin`;
-    otherwise tau is `rho_leak` and kappa is 1.
+    None, tau is then fitted per channel by expectation-maximization on
+    the test sample, binned with `lbin`; otherwise tau is `rho_leak`.
+    kappa is 1 in both cases.
 
     Parameters
     ----------
@@ -363,8 +362,8 @@ def _controls_calibration(
         From `_strand_assay_masks`.
     strata : tuple
         `("+", "-")` to calibrate each strand, or `(None,)` to pool.
-    nu, rho_leak, fit_kappa, lbin, max_iters, tol,
-    min_rel_contrast, batch_size, mask_name, channels, span
+    nu, rho_leak, lbin, max_iters, tol, min_rel_contrast, batch_size,
+    mask_name, channels, span
         As in `_chrom_calibration`.
 
     Returns
@@ -453,7 +452,6 @@ def _controls_calibration(
                     fpr,
                     acc,
                     informative,
-                    fit_kappa=fit_kappa,
                     max_iters=max_iters,
                     tol=tol,
                     min_rel_contrast=min_rel_contrast,
@@ -567,7 +565,6 @@ def _chrom_calibration(
     batch_size,
     mask_name,
     min_rel_contrast=0.2,
-    fit_kappa=False,
     norm_by_strand=False,
     channels=None,
     span="full",
@@ -587,8 +584,6 @@ def _chrom_calibration(
     nu, rho_leak, lbin, max_iters, tol
         As in `model_prob`.
     min_rel_contrast : float, default 0.2
-        As in `model_prob`.
-    fit_kappa : bool, default False
         As in `model_prob`.
     batch_size : int
         Number of molecules processed per batch.
@@ -674,7 +669,6 @@ def _chrom_calibration(
             strata,
             nu=nu,
             rho_leak=rho_leak,
-            fit_kappa=fit_kappa,
             **common,
         )
     else:

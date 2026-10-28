@@ -426,7 +426,6 @@ class MethPrintAnalysis:
         store_rho: bool = False,
         nu: float | None = None,
         rho_leak: float | None = None,
-        fit_kappa: bool = False,
         min_rel_contrast: float = 0.2,
         lnuc: int = 147,
         lbin: int = 30,
@@ -503,15 +502,10 @@ class MethPrintAnalysis:
             rate (0 for perfect protection) and the accessible-state
             rate. If None (default), it is fitted per channel by
             expectation-maximization on the test sample (as tau, the
-            protected-site efficiency); a float pins it for all
-            channels. Used only when meth/unmeth controls are
-            available.
-        fit_kappa : bool, default False
-            Whether to also fit kappa, the accessible-site efficiency
-            relative to the methylated control, per channel. If False,
-            kappa is 1, which suits controls run under the same
-            conditions as the test sample. Requires `rho_leak` to be
-            None. Used only when meth/unmeth controls are available.
+            protected-site efficiency, with the accessible-site
+            efficiency kappa fixed to 1, i.e., to the methylated
+            control); a float pins it for all channels. Used only when
+            meth/unmeth controls are available.
         min_rel_contrast : float, default 0.2
             Minimum relative contrast `(kappa - tau) / kappa` between
             the fitted accessible and protected efficiencies of a
@@ -574,9 +568,8 @@ class MethPrintAnalysis:
         ------
         ValueError
             If `lbin` is less than 1, if `nu` is negative, if
-            `min_rel_contrast` is outside [0, 1], if
-            `fit_kappa` is True with a
-            float `rho_leak`, if a chromosome has no reference sequence
+            `min_rel_contrast` is outside [0, 1], if a chromosome has
+            no reference sequence
             (`refseq`), if an expectation-maximization fit cannot find
             enough bins with read sites, if `eta` is a dict with an
             unrecognized channel name, if `span` is not recognized, or
@@ -630,8 +623,6 @@ class MethPrintAnalysis:
             )
         if lbin < 1:
             raise ValueError(f"lbin must be at least 1, got {lbin}")
-        if fit_kappa and rho_leak is not None:
-            raise ValueError("fit_kappa=True requires rho_leak=None")
         if nu is not None and nu < 0:
             raise ValueError(f"nu must be non-negative, got {nu}")
         if not 0.0 <= min_rel_contrast <= 1.0:
@@ -648,7 +639,6 @@ class MethPrintAnalysis:
         calib_kwargs = {
             "nu": nu,
             "rho_leak": rho_leak,
-            "fit_kappa": fit_kappa,
             "min_rel_contrast": min_rel_contrast,
             "lbin": lbin,
             "max_iters": max_iters,
@@ -693,7 +683,6 @@ class MethPrintAnalysis:
                     "eta_max_lag": eta_max_lag,
                     "nu": np.nan if nu is None else nu,
                     "rho_leak": np.nan if rho_leak is None else rho_leak,
-                    "fit_kappa": fit_kappa,
                     "min_rel_contrast": min_rel_contrast,
                     "lnuc": lnuc,
                     "lbin": lbin,

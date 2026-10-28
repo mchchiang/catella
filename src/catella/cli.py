@@ -537,13 +537,6 @@ def compute_model_prob(
             "if not given (controls only)"
         ),
     ] = None,
-    fit_kappa: Annotated[
-        bool,
-        typer.Option(
-            help="Also fit kappa, the accessible-site efficiency "
-            "(controls only)"
-        ),
-    ] = False,
     min_rel_contrast: Annotated[
         float,
         typer.Option(
@@ -614,7 +607,6 @@ def compute_model_prob(
         store_rho=store_rho,
         nu=nu,
         rho_leak=rho_leak,
-        fit_kappa=fit_kappa,
         min_rel_contrast=min_rel_contrast,
         lnuc=lnuc,
         lbin=lbin,

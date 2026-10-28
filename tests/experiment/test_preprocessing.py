@@ -2038,7 +2038,6 @@ class TestModelProbFitTau:
         row = exp.global_analysis["meth_prob_calib"].iloc[0]
         params = exp.global_analysis["meth_prob_params"].iloc[0]
         assert np.isnan(params["rho_leak"])
-        assert params["fit_kappa"] == False
         assert 1 <= row["iters"] <= 200
         for ch in ("A", "GCH", "HCG", "GCG"):
             assert row[f"kappa_{ch}"] == 1.0
@@ -2052,25 +2051,6 @@ class TestModelProbFitTau:
         )
         calib = exp.global_analysis["meth_prob_calib"]
         assert not any(c.startswith("tau_") for c in calib.columns)
-
-    def test_fit_kappa_reports_kappa_and_rho(self):
-        exp = self._exp()
-        MethPrintAnalysis().model_prob(
-            exp=exp, lnuc=30, fit_kappa=True, batch_size=50
-        )
-        row = exp.global_analysis["meth_prob_calib"].iloc[0]
-        for ch in ("A", "GCH", "HCG", "GCG"):
-            assert row[f"tau_{ch}"] < row[f"kappa_{ch}"]
-            assert row[f"rho_{ch}"] == pytest.approx(
-                row[f"tau_{ch}"] / row[f"kappa_{ch}"]
-            )
-
-    def test_fit_kappa_with_float_rho_leak_raises(self):
-        exp = self._exp()
-        with pytest.raises(ValueError, match="fit_kappa"):
-            MethPrintAnalysis().model_prob(
-                exp=exp, lnuc=30, rho_leak=0.1, fit_kappa=True
-            )
 
 
 class TestModelProbMtase:

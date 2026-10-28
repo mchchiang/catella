@@ -42,7 +42,7 @@ void NucPosTM::setEnergy(const vector<double>& eseq, double emax) {
 void NucPosTM::requireSolved() const {
   if (!solved) {
     throw std::runtime_error("NucPosTM: call solve() before querying "
-			     "results.");
+			     "results");
   }
 }
 
@@ -52,7 +52,7 @@ const vector<double>& NucPosTM::getSeqEnergy() const {
 
 void NucPosTM::solve(double t) {
   if (!(t > 0)) {
-    throw std::runtime_error("temp must be positive.");
+    throw std::runtime_error("temp must be positive");
   }
   temp = t;
   computeForwardFull();
@@ -87,7 +87,7 @@ double logSumExp(const vector<double>& a) {
 void requireFinite(double logValue, const char* pass) {
   if (std::isnan(logValue) || (std::isinf(logValue) && logValue > 0)) {
     throw std::runtime_error(string("NucPosTM: ") + pass +
-			     " pass produced a non-finite weight.");
+			     " pass produced a non-finite weight");
   }
 }
 

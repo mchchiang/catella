@@ -46,13 +46,13 @@ void NucPosModel::setEnergy(string dataFile, double emax) {
   // comparison with NaN is false; +infinity passes, disabling clipping.
   if (!(emax >= 0)) {
     throw std::runtime_error(
-      "emax must be non-negative (pass inf to disable clipping).");
+      "emax must be non-negative (pass inf to disable clipping)");
   }
   siteEnergy = vector<double>(params.nbp, 0.0);
   ifstream reader;
   reader.open(dataFile);
   if (!reader) {
-    throw std::runtime_error("Cannot open the file " + dataFile + ".");
+    throw std::runtime_error("cannot open the file " + dataFile);
   }
   string line;
   stringstream ss;
@@ -74,11 +74,11 @@ void NucPosModel::setEnergy(const std::vector<double>& eseq_in,
 			    double emax) {
   if (!(emax >= 0)) {
     throw std::runtime_error(
-      "emax must be non-negative (pass inf to disable clipping).");
+      "emax must be non-negative (pass inf to disable clipping)");
   }
   if (static_cast<int>(eseq_in.size()) != params.nbp) {
-    throw std::runtime_error("Energy array size does not match "
-			     "the size of the simulated fiber.");
+    throw std::runtime_error("energy array size does not match "
+			     "the size of the simulated fiber");
   }
   for (int i = 0; i < params.nbp; i++) {
     siteEnergy[i] = std::clamp(eseq_in[i], -emax, emax);
@@ -97,7 +97,7 @@ const vector<double>& NucPosModel::eseq() const { return siteEnergy; }
 double NucPosModel::erep(int gap) const {
   int i = gap - params.nucbp;
   if (i < 0) {
-    throw std::runtime_error("erep: gap must be at least nucbp.");
+    throw std::runtime_error("erep: gap must be at least nucbp");
   }
   if (i >= params.llink) {
     return 0.0;

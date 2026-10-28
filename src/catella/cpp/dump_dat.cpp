@@ -21,7 +21,7 @@ void DumpDat::initialize(lint time, const NucPosMCMC& model) {
   if (append) {
     fileStream.open(file, std::ios::out | std::ios::app);
     if (!fileStream) {
-      throw std::runtime_error("Cannot open the file " + file);
+      throw std::runtime_error("cannot open the file " + file);
     }
   }
 }
@@ -35,7 +35,7 @@ void DumpDat::update(lint time, const NucPosMCMC& model) {
     ofile = ss.str();
     fileStream.open(ofile);
     if (!fileStream) {
-      throw std::runtime_error("Cannot open the file " + ofile);
+      throw std::runtime_error("cannot open the file " + ofile);
     }
   }
   dump(time, model, fileStream);

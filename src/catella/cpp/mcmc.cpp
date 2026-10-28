@@ -150,7 +150,7 @@ void NucPosMCMC::update() {
 void NucPosMCMC::run(lint nsweep, double startTemp, double endTemp,
 		     Cooling coolOption) {
   if (startTemp <= 0)
-    throw std::runtime_error("startTemp must be positive.");
+    throw std::runtime_error("startTemp must be positive");
   temp = startTemp;
   for (auto& t : trackers) t->initialize(0, *this);
   output(0); // Output the frame without any nucleosome

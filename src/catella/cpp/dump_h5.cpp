@@ -117,7 +117,7 @@ DumpH5::~DumpH5() {}
 void DumpH5::initialize(lint time, const NucPosMCMC& model) {
   h5file = H5Fcreate(file.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
   if (h5file < 0) {
-    throw std::runtime_error("Failed to create the HDF5 file " + file);
+    throw std::runtime_error("failed to create the HDF5 file " + file);
   }
   h5data = H5Gcreate(h5file, "/data", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
   h5params = H5Gcreate(h5file, "/params", H5P_DEFAULT, H5P_DEFAULT,

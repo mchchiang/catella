@@ -256,11 +256,17 @@ Common ``analysis[chrom]`` keys produced by the processing pipeline:
        nbp)``, values in ``[0, 1]`` (``NaN`` at un-computable trailing
        positions or dropout-masked rows).
    * - ``<prob_name>_theta``
-     - DataFrame, one row per bp position: ``theta_prot``,
-       ``theta_acc``, ``informative`` (or, with
-       ``norm_by_strand=True``, the same columns split into
+     - DataFrame, one row per bp position: ``pos`` (integer, the
+       column index of the probability matrix; the folded coordinate
+       for wrapped fibers), ``channel`` (``A``, ``GCH``, ``HCG``,
+       ``GCG``, or ``none`` without an assayable context),
+       ``theta_prot``, ``theta_acc``, ``informative`` (or, with
+       ``norm_by_strand=True``, the last three split into
        ``_pos``/``_neg`` variants) — the calibrated per-position
        protected/accessible call rates used by ``compute_model_prob``.
+       The rates are ``NaN`` at positions without an assayable
+       context; ``theta[theta.channel != "none"]`` or
+       ``theta.dropna()`` gives the compact table.
    * - ``<source>_<mask_name>`` (default ``dropout_mask``)
      - DataFrame with an ``int8`` ``keep`` column (0/1), one row per
        molecule, from ``filter_dropout``.

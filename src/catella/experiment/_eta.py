@@ -44,8 +44,8 @@ def _resolve_eta_overrides(eta):
         for name, val in eta.items():
             if name not in _CHANNEL_NAME_TO_CODE:
                 raise ValueError(
-                    f"Unrecognized eta channel {name!r}; expected one "
-                    f"of {sorted(_CHANNEL_NAME_TO_CODE)}."
+                    f"unrecognized eta channel {name!r}; expected one "
+                    f"of {sorted(_CHANNEL_NAME_TO_CODE)}"
                 )
             overrides[_CHANNEL_NAME_TO_CODE[name]] = float(val)
         return overrides

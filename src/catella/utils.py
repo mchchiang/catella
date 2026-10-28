@@ -68,10 +68,10 @@ def normalize_chroms(
         return list(default_chroms) if default_chroms is not None else []
     if isinstance(chroms, str):
         if chroms == "":
-            raise ValueError("chroms must not be an empty string.")
+            raise ValueError("chroms must not be an empty string")
         return [chroms]
     if not isinstance(chroms, Iterable):
-        raise TypeError("chroms must be a str or an iterable.")
+        raise TypeError("chroms must be a str or an iterable")
     return list(chroms)
 
 
@@ -220,15 +220,15 @@ def compute_linkage(
         and not isinstance(fill_nan, (int, float))
     ):
         raise ValueError(
-            f"fill_nan must be None, 'mean', or a number, got {fill_nan!r}."
+            f"fill_nan must be None, 'mean', or a number, got {fill_nan!r}"
         )
 
     nrow = matrix.shape[0]
     if nrow > _CLUSTER_WARN_ROWS:
         warnings.warn(
-            f"Clustering {nrow} rows requires an {nrow}x{nrow} pairwise "
-            "distance matrix; this may be slow and memory-intensive. "
-            "Consider downsampling first (e.g. H5Array.downsample).",
+            f"clustering {nrow} rows requires an {nrow}x{nrow} pairwise "
+            "distance matrix; this may be slow and memory-intensive; "
+            "consider downsampling first (e.g. H5Array.downsample)",
             stacklevel=2,
         )
 
@@ -272,7 +272,7 @@ def _resolve_metric(metric, has_nan):
     if metric != "euclidean":
         raise ValueError(
             "NaN-masked distances are only supported for "
-            f"metric='euclidean', got {metric!r} with nan present."
+            f"metric='euclidean', got {metric!r} with nan present"
         )
     return _nan_euclidean
 

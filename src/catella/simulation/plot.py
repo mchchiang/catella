@@ -87,7 +87,7 @@ class SimPlot:
         log10x = np.log10(x)
         if log10x < 0.0 or not np.isclose(np.mod(log10x, 1), 0, atol=1e-9):
             xstr = name if name is not None else "x"
-            raise ValueError(f"'{xstr}' must be a non-negative power of 10.")
+            raise ValueError(f"'{xstr}' must be a non-negative power of 10")
         return log10x
 
     @_apply_style
@@ -138,7 +138,7 @@ class SimPlot:
         """
         # Check the time values are valid
         if tstart is not None and tend is not None and tend < tstart:
-            raise ValueError("'tend' must be greater than 'tstart'.")
+            raise ValueError("'tend' must be greater than 'tstart'")
 
         tpow = int(self._log10(tscale, "tscale"))
 
@@ -235,7 +235,7 @@ class SimPlot:
         """
         # Check the time values are valid
         if tstart is not None and tend is not None and tend < tstart:
-            raise ValueError("'tend' must be greater than 'tstart'.")
+            raise ValueError("'tend' must be greater than 'tstart'")
 
         tpow = int(self._log10(tscale, "tscale"))
         xpow = int(self._log10(xscale, "xscale"))

@@ -190,11 +190,11 @@ def _warn_call_frac_mismatch(chrom, info, channels):
             continue
         bias = "protection" if test < lo else "accessibility"
         warnings.warn(
-            f"Channel {name} on chrom '{chrom}': the fraction of read "
+            f"channel {name} on chrom '{chrom}': the fraction of read "
             f"sites with a call is {test:.2f} in the test sample, outside "
-            f"the range {lo:.2f}-{hi:.2f} of the meth/unmeth controls. "
-            "Missing calls are treated as unmethylated, so the test "
-            f"sample may be biased toward {bias}.",
+            f"the range {lo:.2f}-{hi:.2f} of the meth/unmeth controls; "
+            "missing calls are treated as unmethylated, so the test "
+            f"sample may be biased toward {bias}",
             stacklevel=3,
         )
 
@@ -261,8 +261,8 @@ def _fold_contexts(exp, chrom):
     raw = exp.raw[chrom]
     if raw.refseq is None:
         raise ValueError(
-            f"No reference sequence for chrom '{chrom}'; "
-            "model_prob needs 'fasta_file' at load_raw."
+            f"no reference sequence for chrom '{chrom}'; "
+            "model_prob needs 'fasta_file' at load_raw"
         )
     full_ctx = _reference_contexts(raw.refseq)
     if not exp.wrap:
@@ -281,7 +281,7 @@ def _fold_contexts(exp, chrom):
             "pairs (folded to NONE there); this may "
             "indicate the wrong chromsize length or a "
             "non-symmetric reference, rather than a small "
-            "loop/junction region.",
+            "loop/junction region",
             stacklevel=4,
         )
     return np.where(agree, lower, NONE).astype(lower.dtype)

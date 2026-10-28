@@ -1380,7 +1380,7 @@ def sort_by_linkage(
         `mask_name` is given with `dataset`.
     """
     if (dataset is None) == (exp is None):
-        raise ValueError("Exactly one of 'dataset' or 'exp' must be given.")
+        raise ValueError("exactly one of 'dataset' or 'exp' must be given")
     kwargs = {
         "sorted_name": sorted_name,
         "store_link_mat": store_link_mat,
@@ -1396,7 +1396,7 @@ def sort_by_linkage(
         kwargs["chroms"] = chroms
     if dataset is not None:
         if mask_name is not None:
-            raise ValueError("'mask_name' is only used with 'exp'.")
+            raise ValueError("'mask_name' is only used with 'exp'")
         return SimAnalysis().sort_by_linkage(dataset=dataset, **kwargs)
     if raw_which is not None:
         kwargs["raw_which"] = raw_which

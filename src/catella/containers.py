@@ -25,7 +25,7 @@ class DataFrameMap(MutableMapping):
         # Strict type enforcement
         if not isinstance(value, (pd.DataFrame, H5Array)):
             raise TypeError(
-                f"Value for key '{key}' must be a pandas DataFrame or H5Array"
+                f"value for key '{key}' must be a pandas DataFrame or H5Array"
             )
         self._data[key] = value
 
@@ -54,12 +54,12 @@ class FixedKeyMap(MutableMapping):
     def __setitem__(self, key: str, value: Any) -> None:
         if key not in self._data:
             raise KeyError(
-                f"Key '{key}' is not predefined. New keys are not allowed."
+                f"key '{key}' is not predefined; new keys are not allowed"
             )
         self._data[key] = value
 
     def __delitem__(self, key: str) -> None:
-        raise TypeError("Deletion is disabled for FixedKeyMap.")
+        raise TypeError("deletion is disabled for FixedKeyMap")
 
     def __iter__(self) -> Iterator[str]:
         return iter(self._data)

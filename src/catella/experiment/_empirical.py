@@ -85,7 +85,7 @@ def _smooth_source(
         if not (vmin <= fill_edge <= vmax):
             raise ValueError(
                 f"'fill_edge'={fill_edge} is outside the data "
-                f"range [{vmin}, {vmax}]."
+                f"range [{vmin}, {vmax}]"
             )
 
     all_pos = pd.Index(range(nbp))

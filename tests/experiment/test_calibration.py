@@ -38,7 +38,7 @@ class TestFoldContexts:
         np.testing.assert_array_equal(out, np.where(agree, ctx[:4], NONE))
 
     def test_missing_refseq_raises(self):
-        with pytest.raises(ValueError, match="No reference sequence"):
+        with pytest.raises(ValueError, match="no reference sequence"):
             _fold_contexts(_exp(None, False), "c")
 
 

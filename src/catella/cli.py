@@ -1237,7 +1237,7 @@ def plot_meth_prob(
     Plot a methylation heatmap.
     """
     if (key is None) == (raw_which is None):
-        raise typer.BadParameter("Specify exactly one of --key or --raw-which")
+        raise typer.BadParameter("specify exactly one of --key or --raw-which")
     exp = MethPrintExperiment.load(exp_file)
     data = exp.analysis[chrom][key] if key is not None else None
     link_mat = (

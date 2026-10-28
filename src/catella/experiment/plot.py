@@ -166,8 +166,8 @@ class MethPlot:
         if data is None:
             if exp is None or chrom is None or raw_which is None:
                 raise ValueError(
-                    "Provide either 'data', or all of 'exp', 'chrom', "
-                    "and 'raw_which'."
+                    "provide either 'data', or all of 'exp', 'chrom', "
+                    "and 'raw_which'"
                 )
             data = exp.to_dense(
                 chrom, which=raw_which, mols=mols, mask_name=mask_name
@@ -182,7 +182,7 @@ class MethPlot:
         ):
             raise ValueError(
                 "'exp'/'chrom'/'raw_which'/'mols'/'mask_name' cannot "
-                "be combined with 'data'."
+                "be combined with 'data'"
             )
 
         try:
@@ -192,10 +192,10 @@ class MethPlot:
             nrow = data.shape[0]
             if nrow > _PLOT_WARN_ROWS:
                 warnings.warn(
-                    f"Plotting {nrow} rows at full resolution; this may "
-                    "be slow and memory-intensive. Consider passing "
+                    f"plotting {nrow} rows at full resolution; this may "
+                    "be slow and memory-intensive; consider passing "
                     "'max_rows', or downsampling first "
-                    "(utils.downsample).",
+                    "(utils.downsample)",
                     stacklevel=2,
                 )
 
@@ -388,8 +388,8 @@ class MethPlot:
         ]
         if not keys:
             raise ValueError(
-                f"No entries for chrom={chrom!r}, source={source!r} "
-                "in dropout_fractions."
+                f"no entries for chrom={chrom!r}, source={source!r} "
+                "in dropout_fractions"
             )
 
         fig, ax = plt.subplots()

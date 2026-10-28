@@ -149,8 +149,8 @@ class SimAnalysis:
     def _require_tm_eseq(self, dataset: SimDataset):
         if not dataset.has_eseq:
             raise ValueError(
-                "Exact computation requires the per-molecule energy "
-                "landscape; recreate the dataset with store_eseq=True."
+                "exact computation requires the per-molecule energy "
+                "landscape; recreate the dataset with store_eseq=True"
             )
 
     def _solved_tm(self, dataset: SimDataset, chrom: str, mol: int):
@@ -222,7 +222,7 @@ class SimAnalysis:
             if time is not None or record_time:
                 raise ValueError(
                     "'time'/'record_time' are not meaningful for "
-                    "method='tm' datasets (no time axis)."
+                    "method='tm' datasets (no time axis)"
                 )
             self._compute_occup_tm(
                 dataset, chroms=chroms, name=name, batch_size=batch_size
@@ -349,7 +349,7 @@ class SimAnalysis:
             if time is not None or record_time:
                 raise ValueError(
                     "'time'/'record_time' are not meaningful for "
-                    "method='tm' datasets (no time axis)."
+                    "method='tm' datasets (no time axis)"
                 )
         else:
             if time is None:
@@ -438,7 +438,7 @@ class SimAnalysis:
             if time is not None or record_time:
                 raise ValueError(
                     "'time'/'record_time' are not meaningful for "
-                    "method='tm' datasets (no time axis)."
+                    "method='tm' datasets (no time axis)"
                 )
             self._compute_mean_nnuc_tm(dataset, chroms=chroms, name=name)
             return
@@ -514,7 +514,7 @@ class SimAnalysis:
         """
         if dataset.method != "tm":
             raise ValueError(
-                "compute_var_nnuc requires a method='tm' dataset."
+                "compute_var_nnuc requires a method='tm' dataset"
             )
         self._require_tm_eseq(dataset)
         chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)
@@ -563,7 +563,7 @@ class SimAnalysis:
         """
         if dataset.method != "tm":
             raise ValueError(
-                "compute_var_occup requires a method='tm' dataset."
+                "compute_var_occup requires a method='tm' dataset"
             )
         self._require_tm_eseq(dataset)
         chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)

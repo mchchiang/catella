@@ -8,7 +8,7 @@ from catella.experiment._contexts import NONE
 from catella.experiment._dropout import _strand_of_mol
 
 _UNMAPPED_STRAND_MSG = (
-    "Cannot do normalization by strand with unmapped strands '.'."
+    "cannot do normalization by strand with unmapped strands '.'"
 )
 
 
@@ -17,9 +17,9 @@ def _lookup_mask(exp, chrom, source, mask_name):
     key = f"{source}_{mask_name}"
     if key not in exp.analysis[chrom]:
         raise KeyError(
-            f"'{key}' not found in exp.analysis['{chrom}']. Run "
+            f"'{key}' not found in exp.analysis['{chrom}']; run "
             "filter_dropout() for this source first, matching "
-            "mask_name."
+            "mask_name"
         )
     return exp.analysis[chrom][key]["keep"].to_numpy()
 

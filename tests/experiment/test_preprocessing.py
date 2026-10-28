@@ -2402,7 +2402,7 @@ class TestModelProbMissingCalls:
         )
         with pytest.warns(UserWarning, match="fraction of read sites") as rec:
             MethPrintAnalysis().model_prob(exp=exp, lnuc=30)
-        assert any("Channel A " in str(w.message) for w in rec)
+        assert any("channel A " in str(w.message) for w in rec)
         calib = exp.global_analysis["meth_prob_calib"].iloc[0]
         assert calib["call_frac_test_A"] == pytest.approx(0.8, abs=0.03)
 

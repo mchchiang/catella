@@ -131,7 +131,7 @@ class MethPrintAnalysis:
         if nan_method not in ("mean", "interpolate", "none"):
             raise ValueError(
                 "'nan_method' must be 'mean', 'interpolate', "
-                f"or 'none', got {nan_method!r}."
+                f"or 'none', got {nan_method!r}"
             )
 
         exp.global_analysis[f"{name}_params"] = pd.DataFrame(
@@ -385,7 +385,7 @@ class MethPrintAnalysis:
             if lnuc is None:
                 raise ValueError(
                     "'lnuc' must be specified if data are not already "
-                    "smoothed."
+                    "smoothed"
                 )
             self.smooth(
                 lnuc=lnuc,
@@ -410,7 +410,7 @@ class MethPrintAnalysis:
                     f"'{smoothed_name}' was already smoothed with "
                     f"different {', '.join(mismatched)}; pass "
                     "resmooth=True to recompute, or use a "
-                    "different 'smoothed_name'."
+                    "different 'smoothed_name'"
                 )
             return cached_lnuc
         return lnuc
@@ -829,7 +829,7 @@ class MethPrintAnalysis:
             some chromosome.
         """
         if mask_name is not None and raw_which is None:
-            raise ValueError("'mask_name' requires 'raw_which' to be given.")
+            raise ValueError("'mask_name' requires 'raw_which' to be given")
         chroms = utils.normalize_chroms(chroms, default_chroms=exp.chroms)
         tmp_dir = exp.resolve_tmp_dir()
         link_mats = {}
@@ -858,10 +858,10 @@ class MethPrintAnalysis:
                 if data_name not in ana:
                     raise KeyError(
                         f"'{data_name}' not found in "
-                        f"exp.analysis['{chrom}']. Run 'smooth' or "
+                        f"exp.analysis['{chrom}']; run 'smooth' or "
                         "'meth_prob' first (matching the name/prob_name "
                         "used there), or pass 'raw_which' to source "
-                        "from the raw long-form data instead."
+                        "from the raw long-form data instead"
                     )
                 data = ana[data_name]
                 base_name = data_name

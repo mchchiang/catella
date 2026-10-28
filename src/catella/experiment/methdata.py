@@ -118,7 +118,7 @@ class MethPrintData:
     def __init__(self, **kwargs: Any):
         if not kwargs.pop("_internal", False):
             raise TypeError(
-                "Use MethPrintData._load() to instantiate ", "this class."
+                "use MethPrintData._load() to instantiate this class"
             )
         for f in fields(self):
             val = kwargs.get(f.name)
@@ -157,7 +157,7 @@ class MethPrintData:
     @classmethod
     def _load(cls, group, chrom) -> Self:
         if chrom not in group:
-            raise ValueError(f"Cannot find data for the chrom {chrom}.")
+            raise ValueError(f"cannot find data for the chrom {chrom}")
         gchrom = group[chrom]
         gmeta = gchrom["metadata"]
         chrom = gmeta.attrs["chrom"]
@@ -282,8 +282,8 @@ class MethPrintExperiment:
     def __init__(self, **kwargs: Any):
         if not kwargs.pop("_internal", False):
             raise TypeError(
-                "Use MethPrintExperiment.load() or .load_raw()",
-                "to instantiate this class",
+                "use MethPrintExperiment.load() or .load_raw() "
+                "to instantiate this class"
             )
 
         # Bulk assignment of fields
@@ -563,8 +563,8 @@ class MethPrintExperiment:
             exp_file = self._exp_file
             if exp_file is None:
                 raise ValueError(
-                    "No exp_file given and this experiment has not "
-                    "been saved before; pass 'exp_file' explicitly."
+                    "no exp_file given and this experiment has not "
+                    "been saved before; pass 'exp_file' explicitly"
                 )
 
         dest_path = Path(exp_file)
@@ -578,10 +578,10 @@ class MethPrintExperiment:
         if collision:
             if not overwrite:
                 raise ValueError(
-                    "Cannot save to the same file that backs an "
+                    "cannot save to the same file that backs an "
                     "existing H5Array analysis entry; save to a "
                     "different path, or pass overwrite=True to safely "
-                    "replace it in place."
+                    "replace it in place"
                 )
             colliding = [
                 (data, name, entry.dataset_path)
@@ -698,7 +698,7 @@ class MethPrintExperiment:
                 unknown = set(chroms) - set(available_chroms)
                 if unknown:
                     raise ValueError(
-                        f"Chromosomes not found in {exp_file}: "
+                        f"chromosomes not found in {exp_file}: "
                         f"{sorted(unknown)}"
                     )
                 selected = list(chroms)
@@ -923,7 +923,7 @@ class MethPrintExperiment:
         mol_id = getattr(raw, f"{which}_mol_id")
         if df is None or mol_id is None:
             raise ValueError(
-                f"No '{which}' data available for chrom '{chrom}'"
+                f"no '{which}' data available for chrom '{chrom}'"
             )
         nbp = raw.nbp
         all_pos = pd.Index(range(nbp))
@@ -943,10 +943,10 @@ class MethPrintExperiment:
         if not as_h5array:
             if len(mol_ids) > _DENSE_WARN_ROWS:
                 warnings.warn(
-                    f"Materializing {len(mol_ids)} molecules as a "
+                    f"materializing {len(mol_ids)} molecules as a "
                     f"pd.DataFrame ({len(mol_ids)}x{nbp}); this may "
-                    "use significant memory. Pass as_h5array=True to "
-                    "stream to disk instead.",
+                    "use significant memory; pass as_h5array=True to "
+                    "stream to disk instead",
                     stacklevel=2,
                 )
             piv = df.pivot(
@@ -1009,9 +1009,9 @@ class MethPrintExperiment:
         """
         if self._mtase is None:
             raise ValueError(
-                "This experiment has no 'mtase' set (specify it via "
+                "this experiment has no 'mtase' set (specify it via "
                 "load_raw()); required to determine methylatable "
-                "positions."
+                "positions"
             )
         if mtase is None:
             return self._mtase
@@ -1020,7 +1020,7 @@ class MethPrintExperiment:
         if unknown:
             raise ValueError(
                 "'mtase' contains label(s) not in this experiment's "
-                f"mtase {list(self._mtase)}: {sorted(unknown)}."
+                f"mtase {list(self._mtase)}: {sorted(unknown)}"
             )
         return labels
 
@@ -1050,7 +1050,7 @@ class MethPrintExperiment:
             raise ValueError(
                 "'chroms' contains chromosome(s) not in this "
                 f"experiment's chroms {list(self.chroms)}: "
-                f"{sorted(unknown)}."
+                f"{sorted(unknown)}"
             )
         return tuple(chroms)
 
@@ -1123,36 +1123,36 @@ class MethPrintExperiment:
         chroms = self._resolve_chroms_subset(chroms)
         if not (0.0 <= thres_min <= 1.0):
             raise ValueError(
-                f"'thres_min' must be in [0, 1], got {thres_min}."
+                f"'thres_min' must be in [0, 1], got {thres_min}"
             )
         if not (0.0 <= thres_max <= 1.0):
             raise ValueError(
-                f"'thres_max' must be in [0, 1], got {thres_max}."
+                f"'thres_max' must be in [0, 1], got {thres_max}"
             )
         if thres_min > thres_max:
             raise ValueError(
                 "'thres_min' must be <= 'thres_max', got "
-                f"thres_min={thres_min}, thres_max={thres_max}."
+                f"thres_min={thres_min}, thres_max={thres_max}"
             )
         if unmapped_strand not in _VALID_UNMAPPED_STRAND:
             raise ValueError(
                 "'unmapped_strand' must be one of "
                 f"{sorted(_VALID_UNMAPPED_STRAND)}, got "
-                f"{unmapped_strand!r}."
+                f"{unmapped_strand!r}"
             )
         if method not in _VALID_FILTER_DROPOUT_METHOD:
             raise ValueError(
                 "'method' must be one of "
                 f"{sorted(_VALID_FILTER_DROPOUT_METHOD)}, got "
-                f"{method!r}."
+                f"{method!r}"
             )
 
         for chrom in chroms:
             raw = self.raw[chrom]
             if raw.refseq is None:
                 raise ValueError(
-                    f"No refseq available for chrom '{chrom}'; "
-                    "required to determine methylatable positions."
+                    f"no refseq available for chrom '{chrom}'; "
+                    "required to determine methylatable positions"
                 )
             sources = _resolve_sources(raw, which)
 
@@ -1161,7 +1161,7 @@ class MethPrintExperiment:
                 mol_id = getattr(raw, f"{src}_mol_id")
                 if df is None or mol_id is None:
                     raise ValueError(
-                        f"No '{src}' data available for chrom '{chrom}'"
+                        f"no '{src}' data available for chrom '{chrom}'"
                     )
                 cov = _label_coverage(
                     df,
@@ -1247,7 +1247,7 @@ class MethPrintExperiment:
             raise ValueError(
                 "'unmapped_strand' must be one of "
                 f"{sorted(_VALID_UNMAPPED_STRAND)}, got "
-                f"{unmapped_strand!r}."
+                f"{unmapped_strand!r}"
             )
 
         percentiles = [0, 25, 50, 75, 100]
@@ -1257,8 +1257,8 @@ class MethPrintExperiment:
             raw = self.raw[chrom]
             if raw.refseq is None:
                 raise ValueError(
-                    f"No refseq available for chrom '{chrom}'; "
-                    "required to determine methylatable positions."
+                    f"no refseq available for chrom '{chrom}'; "
+                    "required to determine methylatable positions"
                 )
             sources = _resolve_sources(raw, which)
 
@@ -1267,7 +1267,7 @@ class MethPrintExperiment:
                 mol_id = getattr(raw, f"{src}_mol_id")
                 if df is None or mol_id is None:
                     raise ValueError(
-                        f"No '{src}' data available for chrom '{chrom}'"
+                        f"no '{src}' data available for chrom '{chrom}'"
                     )
                 cov = _label_coverage(
                     df,
@@ -1382,7 +1382,7 @@ class MethPrintExperiment:
             raise ValueError(
                 "'unmapped_strand' must be one of "
                 f"{sorted(_VALID_UNMAPPED_STRAND)}, got "
-                f"{unmapped_strand!r}."
+                f"{unmapped_strand!r}"
             )
 
         result = {}
@@ -1390,8 +1390,8 @@ class MethPrintExperiment:
             raw = self.raw[chrom]
             if raw.refseq is None:
                 raise ValueError(
-                    f"No refseq available for chrom '{chrom}'; "
-                    "required to determine methylatable positions."
+                    f"no refseq available for chrom '{chrom}'; "
+                    "required to determine methylatable positions"
                 )
             sources = _resolve_sources(raw, which)
 
@@ -1400,7 +1400,7 @@ class MethPrintExperiment:
                 mol_id = getattr(raw, f"{src}_mol_id")
                 if df is None or mol_id is None:
                     raise ValueError(
-                        f"No '{src}' data available for chrom '{chrom}'"
+                        f"no '{src}' data available for chrom '{chrom}'"
                     )
                 cov = _label_coverage(
                     df,

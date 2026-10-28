@@ -93,7 +93,7 @@ class SimMCMCData:
 
     def __init__(self, **kwargs: Any):
         if not kwargs.pop("_internal", False):
-            raise TypeError("Use SimMCMCData.load() to instantiate this class")
+            raise TypeError("use SimMCMCData.load() to instantiate this class")
 
         # Bulk assignment of fields
         for f in fields(self):
@@ -157,7 +157,7 @@ class SimMCMCData:
             If obs is not a valid observable.
         """
         if obs not in self._obs_map:
-            raise ValueError(f"'{obs}' is not a valid observable.")
+            raise ValueError(f"'{obs}' is not a valid observable")
         value = self._obs_map[obs][self._time_to_idx[t]]
         return value.item() if np.ndim(value) == 0 else value
 
@@ -257,7 +257,7 @@ class SimMCMCData:
             If obs is not a valid observable name
         """
         if obs not in cls._obs_list:
-            raise ValueError(f"'{obs}' is not a valid observable.")
+            raise ValueError(f"'{obs}' is not a valid observable")
         sim_file = str(Path(sim_file).resolve())
         try:
             return cls._cached_extract(sim_file, time, obs)
@@ -271,7 +271,7 @@ class SimMCMCData:
             tdata = f["data/time"][()]
             matches = np.where(tdata == time)[0]
             if len(matches) == 0:
-                raise KeyError(f"Cannot find data for time {time}.")
+                raise KeyError(f"cannot find data for time {time}")
             idx = matches[0]
             if obs == "position":
                 flat = f["data/position_flat"]
@@ -296,11 +296,11 @@ class SimMCMCData:
         temp = kwargs.get("temp")
         # Some validation
         if nucbp <= 0 or nbp <= 0 or llink <= 0 or seed <= 0:
-            raise ValueError("nucbp, nbp, llink, and seed must be positive.")
+            raise ValueError("nucbp, nbp, llink, and seed must be positive")
         if not (len(time) == len(energy) == len(temp) == len(position)):
             raise ValueError(
-                "time, energy, position, and temp must have the",
-                "same length.",
+                "time, energy, position, and temp must have the "
+                "same length"
             )
         return cls(**kwargs, _internal=True)
 
@@ -372,7 +372,7 @@ class SimTMData:
 
     def __init__(self, **kwargs: Any):
         if not kwargs.pop("_internal", False):
-            raise TypeError("Use SimTMData.load() to instantiate this class")
+            raise TypeError("use SimTMData.load() to instantiate this class")
 
         for f in fields(self):
             val = kwargs.get(f.name)
@@ -435,7 +435,7 @@ class SimTMData:
         llink = kwargs.get("llink")
         seed = kwargs.get("seed")
         if nucbp <= 0 or nbp <= 0 or llink <= 0 or seed <= 0:
-            raise ValueError("nucbp, nbp, llink, and seed must be positive.")
+            raise ValueError("nucbp, nbp, llink, and seed must be positive")
         return cls(**kwargs, _internal=True)
 
     def __repr__(self):
@@ -525,7 +525,7 @@ def _consolidate_tm_samples(
     """
     sample_files = list(sample_files)
     if not sample_files:
-        raise ValueError("sample_files must contain at least one file.")
+        raise ValueError("sample_files must contain at least one file")
 
     params = None
     logz = None
@@ -543,8 +543,8 @@ def _consolidate_tm_samples(
                 params = this_params
             elif params != this_params:
                 raise ValueError(
-                    "All sample files must share the same physical "
-                    "parameters."
+                    "all sample files must share the same physical "
+                    "parameters"
                 )
             seeds.append(gparams.attrs["seed"])
 
@@ -664,7 +664,7 @@ class SimFileMapper:
             molidx = int(match.group(1))
             run = int(match.group(2))
             return chrom, molidx, run
-        raise ValueError(f"Could not parse parameters from file: {sim_file}")
+        raise ValueError(f"could not parse parameters from file: {sim_file}")
 
 
 @dataclass(slots=True, init=False, weakref_slot=True)
@@ -710,7 +710,7 @@ class SimDataset:
                 )
                 if not combined_file.exists():
                     raise ValueError(
-                        "Cannot find the simulation for chrom "
+                        "cannot find the simulation for chrom "
                         f"{chrom}, molecule {mol}, run {run}"
                     )
                 arrays = self._load_tm_combined(str(combined_file))
@@ -720,7 +720,7 @@ class SimDataset:
                 return self._load_sim_data(str(sim_file))
             else:
                 raise ValueError(
-                    "Cannot find the simulation for chrom "
+                    "cannot find the simulation for chrom "
                     f"{chrom}, molecule {mol}, run {run}"
                 )
 
@@ -782,7 +782,7 @@ class SimDataset:
 
     def __init__(self, *args: Any, **kwargs: Any):
         raise TypeError(
-            "Use SimDataset.load() or create() to instantiate this class."
+            "use SimDataset.load() or create() to instantiate this class"
         )
 
     @classmethod
@@ -805,23 +805,23 @@ class SimDataset:
     ):
         # Some validations
         if method not in ("mcmc", "tm"):
-            raise ValueError("method must be 'mcmc' or 'tm'.")
+            raise ValueError("method must be 'mcmc' or 'tm'")
         if nsim < 0:
-            raise ValueError("Number of simulations cannot be negative")
+            raise ValueError("number of simulations cannot be negative")
         if method == "mcmc" and nsim == 0:
             raise ValueError(
-                "Number of simulations must be positive for method="
-                "'mcmc'. Only 'tm' datasets can start with nsim=0 "
-                "(exact quantities do not require any samples)."
+                "number of simulations must be positive for method="
+                "'mcmc'; only 'tm' datasets can start with nsim=0 "
+                "(exact quantities do not require any samples)"
             )
         # Check the keys in nmol match up with chroms
         if set(nmol.keys()) != set(chroms):
-            raise ValueError("Chromosomes in nmol do not match with chroms")
+            raise ValueError("chromosomes in nmol do not match with chroms")
         # Check the number of molcules in each chromosome is valid
         for chrom in chroms:
             if nmol[chrom] <= 0:
                 raise ValueError(
-                    f"Chromosome {chrom} must have at least one molecule"
+                    f"chromosome {chrom} must have at least one molecule"
                 )
 
         obj = cls.__new__(cls)
@@ -950,7 +950,7 @@ class SimDataset:
         # Check validity of the output directory
         out_dir = Path(out_dir).resolve()
         if out_dir.exists():
-            raise FileExistsError(f"The directory '{out_dir}' already exists.")
+            raise FileExistsError(f"the directory '{out_dir}' already exists")
         else:
             raw_dir = out_dir / "raw_data"
             raw_dir.mkdir(exist_ok=True, parents=True)
@@ -1011,13 +1011,13 @@ class SimDataset:
                     raw_dir = Path(gmeta.attrs["raw_dir"]).resolve()
                 if not raw_dir.exists():
                     raise FileNotFoundError(
-                        "The raw simulation data directory cannot be found."
+                        "the raw simulation data directory cannot be found"
                     )
             else:
                 new_raw_dir = Path(new_raw_dir).resolve()
                 if not new_raw_dir.exists():
                     raise FileNotFoundError(
-                        "The raw simulation data directory cannot be found."
+                        "the raw simulation data directory cannot be found"
                     )
                 raw_dir = new_raw_dir
             nsim = gmeta.attrs["nsim"]
@@ -1135,10 +1135,10 @@ class SimDataset:
         if collision:
             if not overwrite:
                 raise ValueError(
-                    "Cannot save to the same file that backs an "
+                    "cannot save to the same file that backs an "
                     "existing H5Array analysis entry; save to a "
                     "different path, or pass overwrite=True to safely "
-                    "replace it in place."
+                    "replace it in place"
                 )
             colliding = [
                 (data, name, entry.dataset_path)
@@ -1396,8 +1396,8 @@ class SimDataset:
             unknown_args = ", ".join(agg_kwargs.keys())
             raise TypeError(
                 "extract() got unexpected keyword arguments: "
-                f"{unknown_args}. These can only be used when an "
-                "'agg_func' is provided."
+                f"{unknown_args}; these can only be used when an "
+                "'agg_func' is provided"
             )
 
         chroms = utils.normalize_chroms(chroms, default_chroms=self._chroms)

@@ -111,6 +111,6 @@ class SimSettings:
                 data = yaml.safe_load(f)
             else:
                 raise ValueError(
-                    f"Unsupported file format: {config_file.suffix}"
+                    f"unsupported file format: {config_file.suffix}"
                 )
         return cls(**data)

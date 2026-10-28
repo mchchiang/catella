@@ -89,11 +89,11 @@ def _normalize_mtase(mtase):
     unknown = sorted(set(values) - _VALID_MTASE)
     if unknown:
         raise ValueError(
-            f"Unknown mtase value(s) {unknown}; must be one or more "
-            f"of {sorted(_VALID_MTASE)}."
+            f"unknown mtase value(s) {unknown}; must be one or more "
+            f"of {sorted(_VALID_MTASE)}"
         )
     if len(set(values)) != len(values):
-        raise ValueError("Duplicate mtase values given.")
+        raise ValueError("duplicate mtase values given")
     return values
 
 
@@ -761,7 +761,7 @@ def _merge_staging(graw, ingested):
     for name, chroms_found, _ in ingested[1:]:
         if chroms_found != test_chroms:
             raise ValueError(
-                f"Different number of chromosomes in test and {name} datasets"
+                f"different number of chromosomes in test and {name} datasets"
             )
 
     handles = {name: h5py.File(path, "r") for name, _, path in ingested}
@@ -822,14 +822,14 @@ def _read_chromsize(chromsize, wrap, chroms):
         )
     if "chrom" not in df_size.columns:
         raise ValueError(
-            "Column 'chrom' containing the chromosome identifier is missing."
+            "column 'chrom' containing the chromosome identifier is missing"
         )
     if "length" not in df_size.columns:
         raise ValueError(
-            "Column 'length' containing the chromosome length is missing."
+            "column 'length' containing the chromosome length is missing"
         )
     if not df_size["chrom"].is_unique:
-        raise ValueError("Chromosomes must be unique in chromsize file")
+        raise ValueError("chromosomes must be unique in chromsize file")
 
     full_sizes = dict(zip(df_size["chrom"], df_size["length"].astype(int)))
     if wrap:
@@ -843,7 +843,7 @@ def _read_chromsize(chromsize, wrap, chroms):
         unknown = set(chroms) - set(df_size["chrom"])
         if unknown:
             raise ValueError(
-                f"Chromosomes not found in chromsize: {sorted(unknown)}"
+                f"chromosomes not found in chromsize: {sorted(unknown)}"
             )
         full_sizes = {c: v for c, v in full_sizes.items() if c in chroms}
         sizes = {c: v for c, v in sizes.items() if c in chroms}
@@ -878,8 +878,8 @@ def _load_refseqs(fasta_file, full_sizes):
     for chrom, seq in refseq_by_chrom.items():
         if len(seq) != full_sizes[chrom]:
             raise ValueError(
-                f"Reference sequence length for chromosome "
+                f"reference sequence length for chromosome "
                 f"{chrom!r} ({len(seq)}) does not match its "
-                f"chromsize length ({full_sizes[chrom]})."
+                f"chromsize length ({full_sizes[chrom]})"
             )
     return refseq_by_chrom

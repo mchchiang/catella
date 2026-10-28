@@ -110,7 +110,7 @@ class SimManager:
     def __init__(self, *, nworker: int = 1, verbose: bool = True):
 
         if nworker <= 0:
-            raise ValueError("nworker must be greater than zero.")
+            raise ValueError("nworker must be greater than zero")
 
         self.nworker = nworker
         self.verbose = verbose
@@ -230,7 +230,7 @@ class SimManager:
         """
 
         if method not in ("mcmc", "tm"):
-            raise ValueError("'method' must be 'mcmc' or 'tm'.")
+            raise ValueError("'method' must be 'mcmc' or 'tm'")
 
         chroms = utils.normalize_chroms(chroms)
 
@@ -238,14 +238,14 @@ class SimManager:
         if isinstance(meth_prob, np.ndarray):
             if not len(chroms) == 1:
                 raise TypeError(
-                    "Methylation probability array 'meth_prob' "
-                    "provided but multiple chroms requested."
+                    "methylation probability array 'meth_prob' "
+                    "provided but multiple chroms requested"
                 )
             meth_prob = {chroms[0]: meth_prob}
         elif isinstance(meth_prob, Mapping):
             meth_prob = {chrom: meth_prob[chrom] for chrom in chroms}
         else:
-            raise TypeError("'meth_prob' must be a numpy array or a mapping.")
+            raise TypeError("'meth_prob' must be a numpy array or a mapping")
 
         # Normalize molecule indices (unparameterized base types, since
         # isinstance() rejects IndexType.__args__'s Sequence[int])
@@ -255,7 +255,7 @@ class SimManager:
         elif isinstance(mols, Mapping):
             mols = {chrom: mols[chrom] for chrom in chroms}
         else:
-            raise TypeError("'mols' must be an IndexType or a mapping.")
+            raise TypeError("'mols' must be an IndexType or a mapping")
 
         # Check that the molecule indices are valid and compute total number
         # of simulations required
@@ -279,7 +279,7 @@ class SimManager:
                 text_idx = np.empty(size, dtype=np.int8)[mols[chrom]]
                 if text_idx.size == 0:
                     raise ValueError(
-                        f"Selection 'mols' for chromosome '{chrom}' is empty."
+                        f"selection 'mols' for chromosome '{chrom}' is empty"
                     )
                 total_sim += text_idx.size * nsim
             except IndexError as e:
@@ -293,7 +293,7 @@ class SimManager:
         elif not isinstance(settings, SimSettings):
             raise TypeError(
                 "'settings' must be either a path to the "
-                "simulation setting file or a SimSettings object."
+                "simulation setting file or a SimSettings object"
             )
 
         if method == "mcmc":
@@ -305,32 +305,32 @@ class SimManager:
             ):
                 if getattr(settings, field_name) is None:
                     raise ValueError(
-                        f"'{field_name}' is required for method='mcmc'."
+                        f"'{field_name}' is required for method='mcmc'"
                     )
             if settings.end_temp > settings.start_temp:
-                raise ValueError("Expect 'end_temp' <= 'start_temp'.")
+                raise ValueError("expect 'end_temp' <= 'start_temp'")
             if settings.cool_option not in SimSettings._cool_map:
                 raise KeyError(
-                    "Invalid value for 'cool_option'. Expect either "
-                    "'linear', 'geometric', or 'constant'."
+                    "invalid value for 'cool_option'; expect either "
+                    "'linear', 'geometric', or 'constant'"
                 )
 
             # Combine output types
             if isinstance(out_types, str):
                 if out_types not in SimRun._out_map:
                     raise ValueError(
-                        f"Output type '{out_types}' is not a valid option."
+                        f"output type '{out_types}' is not a valid option"
                     )
                 out_types = [out_types]
             elif not isinstance(out_types, Iterable):
-                raise TypeError("'out_types' must be a str or an iterable.")
+                raise TypeError("'out_types' must be a str or an iterable")
 
             out_type = SimRun._out_map[out_types[0]]
             for i in range(1, len(out_types)):
                 if out_types[i] not in SimRun._out_map:
                     raise ValueError(
-                        f"Output type '{out_types[i]}' is not a valid "
-                        "option."
+                        f"output type '{out_types[i]}' is not a valid "
+                        "option"
                     )
                 otype = SimRun._out_map[out_types[i]]
                 # Dump.OutputType is a scoped C++ enum class, so pybind11
@@ -544,14 +544,14 @@ class SimManager:
         if isinstance(meth_prob, np.ndarray):
             if not len(chroms) == 1:
                 raise TypeError(
-                    "Methylation probability array 'meth_prob' "
-                    "provided but dataset has multiple chroms."
+                    "methylation probability array 'meth_prob' "
+                    "provided but dataset has multiple chroms"
                 )
             meth_prob = {chroms[0]: meth_prob}
         elif isinstance(meth_prob, Mapping):
             meth_prob = {chrom: meth_prob[chrom] for chrom in chroms}
         else:
-            raise TypeError("'meth_prob' must be a numpy array or a mapping.")
+            raise TypeError("'meth_prob' must be a numpy array or a mapping")
         for chrom in chroms:
             if isinstance(meth_prob[chrom], pd.DataFrame):
                 meth_prob[chrom] = meth_prob[chrom].to_numpy()
@@ -603,10 +603,10 @@ class SimManager:
             for target in targets:
                 if len(target) != 2:
                     raise ValueError(
-                        "For a 'tm' dataset, 'only' must contain "
+                        "for a 'tm' dataset, 'only' must contain "
                         "(chrom, mol) pairs, not (chrom, mol, run) "
-                        "triplets -- TM samples are regenerated at "
-                        "molecule granularity."
+                        "triplets; TM samples are regenerated at "
+                        "molecule granularity"
                     )
 
         nsim = dataset.nsim
@@ -621,14 +621,14 @@ class SimManager:
         if isinstance(meth_prob, np.ndarray):
             if not len(chroms) == 1:
                 raise TypeError(
-                    "Methylation probability array 'meth_prob' "
-                    "provided but dataset has multiple chroms."
+                    "methylation probability array 'meth_prob' "
+                    "provided but dataset has multiple chroms"
                 )
             meth_prob = {chroms[0]: meth_prob}
         elif isinstance(meth_prob, Mapping):
             meth_prob = {chrom: meth_prob[chrom] for chrom in chroms}
         else:
-            raise TypeError("'meth_prob' must be a numpy array or a mapping.")
+            raise TypeError("'meth_prob' must be a numpy array or a mapping")
         for chrom in chroms:
             if isinstance(meth_prob[chrom], pd.DataFrame):
                 meth_prob[chrom] = meth_prob[chrom].to_numpy()

@@ -6,7 +6,7 @@ import h5py
 import numpy as np
 import pytest
 from catella.simulation.config import SimSettings
-from catella.simulation.engine import SimManager, SimRun
+from catella.simulation.engine import MCMCJob, SimManager
 from catella.simulation.results import SimDataset
 from catella_cpp import Dump
 
@@ -48,7 +48,7 @@ def _make_sim_run(out_file, **overrides):
         "settings": _make_settings(),
     }
     defaults.update(overrides)
-    return SimRun(**defaults)
+    return MCMCJob(**defaults)
 
 
 class TestSimManagerInit:
@@ -69,7 +69,7 @@ class TestSimManagerInit:
 class TestRunJob:
     def test_success_returns_true(self, tmp_path):
         p = _make_sim_run(tmp_path / "out.h5")
-        chrom, mol, run, success, err_msg = SimManager._run_job(p)
+        chrom, mol, run, success, err_msg = SimManager._run_mcmc_job(p)
         assert (chrom, mol, run) == ("chr1", 0, 0)
         assert success is True
         assert err_msg is None
@@ -79,7 +79,7 @@ class TestRunJob:
         # job should report failure instead of raising.
         bad_path = Path(str(tmp_path) + "/bad\x00dir/out.h5")
         p = _make_sim_run(bad_path)
-        chrom, mol, run, success, err_msg = SimManager._run_job(p)
+        chrom, mol, run, success, err_msg = SimManager._run_mcmc_job(p)
         assert (chrom, mol, run) == ("chr1", 0, 0)
         assert success is False
         assert err_msg
@@ -146,19 +146,21 @@ class TestSimManagerRun:
         # Regression test: `if not result:` on the always-truthy result
         # tuple used to make failed jobs silently disappear. A failure
         # should now (a) be reported to the console and (b) not stop the
-        # rest of the batch from completing. `_run_job` is monkeypatched
+        # rest of the batch from completing. `_run_mcmc_job` is monkeypatched
         # (rather than relying on a genuine backend failure) so this test
         # exercises the batch's error-handling regardless of what the C++
         # backend happens to reject.
         calls = []
 
-        def fake_run_job(p):
+        def fake_run_mcmc_job(p):
             calls.append(p)
             if len(calls) == 1:
                 return (p.chrom, p.mol, p.run, False, "synthetic failure")
             return (p.chrom, p.mol, p.run, True, None)
 
-        monkeypatch.setattr(SimManager, "_run_job", staticmethod(fake_run_job))
+        monkeypatch.setattr(
+            SimManager, "_run_mcmc_job", staticmethod(fake_run_mcmc_job)
+        )
 
         meth_prob = _make_meth_prob(nmol=2, nbp=200)
         manager = SimManager(nworker=1, verbose=True)
@@ -199,7 +201,7 @@ class TestSimManagerRun:
 
     def test_median_eseq_mu_reflected_in_persisted_settings(self, tmp_path):
         # Regression test: use_median_eseq_mu used to adjust mu only via a
-        # per-job SimRun.override dict, so dataset.settings.mu silently
+        # per-job MCMCJob.override dict, so dataset.settings.mu silently
         # kept showing the pre-adjustment value. It's now applied via
         # dataclasses.replace() before the dataset is created, so the
         # persisted settings reflect the mu actually used.
@@ -289,7 +291,7 @@ class TestSimManagerRun:
 
     def test_broken_pool_is_reported_and_reraised(self, tmp_path, capsys):
         # Regression test for the sliding-window dispatch: if a future's
-        # result() raises for a reason _run_job's own try/except can't
+        # result() raises for a reason _run_mcmc_job's own try/except can't
         # catch (e.g. the worker process itself died), that must be
         # reported distinctly (including the status of every run that was
         # still in flight) and re-raised rather than silently hanging or
@@ -386,13 +388,15 @@ class TestSimManagerRerun:
         )
 
         calls = []
-        real_run_job = SimManager._run_job
+        real_run_mcmc_job = SimManager._run_mcmc_job
 
-        def spy_run_job(p):
+        def spy_run_mcmc_job(p):
             calls.append((p.chrom, p.mol, p.run))
-            return real_run_job(p)
+            return real_run_mcmc_job(p)
 
-        monkeypatch.setattr(SimManager, "_run_job", staticmethod(spy_run_job))
+        monkeypatch.setattr(
+            SimManager, "_run_mcmc_job", staticmethod(spy_run_mcmc_job)
+        )
 
         manager.rerun(
             dataset=dataset, meth_prob=meth_prob, only=[("chr1", 0, 0)]
@@ -493,7 +497,7 @@ class TestRunJobTM:
         seq_energy = np.asarray(
             _make_meth_prob(nmol=1, nbp=20)[0], dtype=np.float64
         ).tobytes()
-        p = SimRun(
+        p = MCMCJob(
             chrom="chr1",
             mol=0,
             run=0,
@@ -504,7 +508,7 @@ class TestRunJobTM:
             out_file=tmp_path / "sample.h5",
             settings=_make_tm_settings(),
         )
-        chrom, mol, run, success, err_msg = SimManager._run_job(p)
+        chrom, mol, run, success, err_msg = SimManager._run_mcmc_job(p)
         assert (chrom, mol, run) == ("chr1", 0, 0)
         assert success is True
         assert err_msg is None

@@ -35,7 +35,7 @@ from catella.utils import IndexType
 
 # Store parameters for a specific simulation run
 @dataclass(frozen=True, kw_only=True)
-class SimRun:
+class MCMCJob:
     """
     The complete execution manifest for a single chromatin fiber simulation.
 
@@ -317,7 +317,7 @@ class SimManager:
 
             # Combine output types
             if isinstance(out_types, str):
-                if out_types not in SimRun._out_map:
+                if out_types not in MCMCJob._out_map:
                     raise ValueError(
                         f"output type '{out_types}' is not a valid option"
                     )
@@ -325,14 +325,14 @@ class SimManager:
             elif not isinstance(out_types, Iterable):
                 raise TypeError("'out_types' must be a str or an iterable")
 
-            out_type = SimRun._out_map[out_types[0]]
+            out_type = MCMCJob._out_map[out_types[0]]
             for i in range(1, len(out_types)):
-                if out_types[i] not in SimRun._out_map:
+                if out_types[i] not in MCMCJob._out_map:
                     raise ValueError(
                         f"output type '{out_types[i]}' is not a valid "
                         "option"
                     )
-                otype = SimRun._out_map[out_types[i]]
+                otype = MCMCJob._out_map[out_types[i]]
                 # Dump.OutputType is a scoped C++ enum class, so pybind11
                 # doesn't bind '|' between two enum values directly;
                 # combine via their underlying int values instead.
@@ -414,7 +414,7 @@ class SimManager:
                     ).tobytes()
                     for run in range(nsim):
                         sim_file = dataset.mcmc_file(chrom, idx, run)
-                        yield SimRun(
+                        yield MCMCJob(
                             chrom=chrom,
                             mol=idx,
                             run=run,
@@ -499,7 +499,25 @@ class SimManager:
             return self._rerun_tm(
                 dataset, meth_prob=meth_prob, only=only, seed=seed
             )
+        return self._rerun_mcmc(
+            dataset,
+            meth_prob=meth_prob,
+            only=only,
+            seed=seed,
+            out_type=out_type,
+        )
 
+    def _rerun_mcmc(
+        self,
+        dataset: SimDataset,
+        *,
+        meth_prob: np.ndarray | Mapping[str, np.ndarray | pd.DataFrame],
+        only: Iterable[tuple[str, int, int]] | None,
+        seed: int | None,
+        out_type: Any | None,
+    ) -> SimDataset:
+        """Rerun an MCMC dataset's runs, at run granularity (see
+        `rerun`'s docstring)."""
         resolved_out_type = (
             out_type if out_type is not None else dataset.out_type
         )
@@ -562,7 +580,7 @@ class SimManager:
                 eseq = np.asarray(
                     logit(meth_prob[chrom][mol, :]), dtype=np.float64
                 ).tobytes()
-                yield SimRun(
+                yield MCMCJob(
                     chrom=chrom,
                     mol=mol,
                     run=run,
@@ -648,7 +666,7 @@ class SimManager:
                         run_seed = SimManager._job_seed(
                             seed, chroms.index(chrom), mol, run
                         )
-                    yield SimRun(
+                    yield MCMCJob(
                         chrom=chrom,
                         mol=mol,
                         run=run,
@@ -680,7 +698,7 @@ class SimManager:
     ) -> None:
         """
         Merge each (chrom, mol)'s per-run temp files (as written by
-        `_run_job` in TM mode) into one combined file via
+        `_run_mcmc_job` in TM mode) into one combined file via
         `_consolidate_tm_samples`, then delete the temp files. A
         molecule with zero successfully-generated samples is left
         without a combined file (reported as 'missing' by
@@ -706,19 +724,19 @@ class SimManager:
     def _dispatch(
         self,
         dataset: SimDataset,
-        param_gen: Iterator[SimRun],
+        param_gen: Iterator[MCMCJob],
         total: int,
         progress_desc: str = "[cyan]Running simulations ...",
     ) -> None:
         """
-        Dispatch a stream of `SimRun` jobs and report progress/errors.
+        Dispatch a stream of `MCMCJob` jobs and report progress/errors.
 
         Parameters
         ----------
         dataset : SimDataset
             The dataset being populated. Used only to classify runs that
             were still in flight if the worker pool crashes.
-        param_gen : Iterator[SimRun]
+        param_gen : Iterator[MCMCJob]
             A (possibly lazy) generator of jobs to execute.
         total : int
             The total number of jobs `param_gen` will yield, used for the
@@ -757,7 +775,9 @@ class SimManager:
                 ) as executor:
                     in_flight = {}
                     for param in islice(param_gen, window):
-                        future = executor.submit(SimManager._run_job, param)
+                        future = executor.submit(
+                            SimManager._run_mcmc_job, param
+                        )
                         in_flight[future] = param
                     while in_flight:
                         done, _ = wait(in_flight, return_when=FIRST_COMPLETED)
@@ -789,16 +809,16 @@ class SimManager:
                             _handle_result(result)
                         for param in islice(param_gen, len(done)):
                             future = executor.submit(
-                                SimManager._run_job, param
+                                SimManager._run_mcmc_job, param
                             )
                             in_flight[future] = param
             else:  # nworker = 1
                 for param in param_gen:
-                    _handle_result(SimManager._run_job(param))
+                    _handle_result(SimManager._run_mcmc_job(param))
 
     # Run a single simulation
     @staticmethod
-    def _run_job(p: SimRun):
+    def _run_mcmc_job(p: MCMCJob):
         settings = p.settings
         try:
             # Create the output directory

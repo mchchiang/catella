@@ -210,7 +210,8 @@ class TestSampling:
         for s in (7, 8, 9):
             tm.setSeed(s)
             got = tm.sampleConfig()
-            expected = _tm(nucbp, llink, elink, mu, eseq, seed=s).sampleConfig()
+            fresh = _tm(nucbp, llink, elink, mu, eseq, seed=s)
+            expected = fresh.sampleConfig()
             assert list(got[0]) == list(expected[0])
             assert got[1] == expected[1]
 

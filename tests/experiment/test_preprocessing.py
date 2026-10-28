@@ -2113,7 +2113,13 @@ class TestModelProbTheta:
         theta = exp.analysis["chr1"]["meth_prob_theta"]
         nbp = len(exp.raw["chr1"].refseq)
         assert len(theta) == nbp
-        assert set(theta.columns) == {"theta_prot", "theta_acc", "informative"}
+        assert set(theta.columns) == {
+            "pos",
+            "channel",
+            "theta_prot",
+            "theta_acc",
+            "informative",
+        }
 
     def test_theta_table_present_for_controls_path(self):
         exp = _make_footprint_experiment(
@@ -2124,7 +2130,13 @@ class TestModelProbTheta:
         theta = exp.analysis["chr1"]["meth_prob_theta"]
         nbp = len(exp.raw["chr1"].refseq)
         assert len(theta) == nbp
-        assert set(theta.columns) == {"theta_prot", "theta_acc", "informative"}
+        assert set(theta.columns) == {
+            "pos",
+            "channel",
+            "theta_prot",
+            "theta_acc",
+            "informative",
+        }
         informative = theta["informative"].to_numpy()
         assert informative.any()
         assert (
@@ -2144,6 +2156,8 @@ class TestModelProbTheta:
         ana.model_prob(exp=exp, lnuc=30, batch_size=7, norm_by_strand=True)
         theta = exp.analysis["chr1"]["meth_prob_theta"]
         expected = {
+            "pos",
+            "channel",
             "theta_prot_pos",
             "theta_acc_pos",
             "informative_pos",

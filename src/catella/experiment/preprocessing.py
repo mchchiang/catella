@@ -707,7 +707,7 @@ class MethPrintAnalysis:
                     _calib_rows(chrom, calib_info, norm_by_strand)
                 )
             exp.analysis[chrom][f"{prob_name}_theta"] = _theta_frame(
-                *calib[2:], norm_by_strand
+                calib[0], *calib[2:], norm_by_strand
             )
             prob, test_stats = _score_test_reads(
                 exp,

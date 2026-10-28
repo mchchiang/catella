@@ -765,12 +765,14 @@ def _calib_rows(chrom, info, norm_by_strand):
     return rows
 
 
-def _theta_frame(theta_prot, theta_acc, informative, norm_by_strand):
+def _theta_frame(ctx, theta_prot, theta_acc, informative, norm_by_strand):
     """
     Per-position calibration as a table.
 
     Parameters
     ----------
+    ctx : np.ndarray
+        int8, length L, context code per position.
     theta_prot, theta_acc, informative : np.ndarray or dict
         From `_chrom_calibration`; per-strand dicts if `norm_by_strand`.
     norm_by_strand : bool
@@ -779,18 +781,22 @@ def _theta_frame(theta_prot, theta_acc, informative, norm_by_strand):
     Returns
     -------
     pd.DataFrame
-        Columns `theta_prot`, `theta_acc`, `informative`, each suffixed
-        with `_pos`/`_neg` per strand if `norm_by_strand`.
+        One row per position: `pos` (the column index of the
+        probability matrix), `channel` (context name, "none" without an
+        assayable context), and `theta_prot`, `theta_acc`,
+        `informative`, each suffixed with `_pos`/`_neg` per strand if
+        `norm_by_strand`. Rates are nan at positions without an
+        assayable context.
     """
+    names = np.array([CONTEXT_NAMES[c] for c in range(len(CONTEXT_NAMES))])
+    cols = {"pos": np.arange(len(ctx)), "channel": names[ctx]}
     if not norm_by_strand:
-        return pd.DataFrame(
-            {
-                "theta_prot": theta_prot,
-                "theta_acc": theta_acc,
-                "informative": informative,
-            }
+        cols.update(
+            theta_prot=theta_prot,
+            theta_acc=theta_acc,
+            informative=informative,
         )
-    cols = {}
+        return pd.DataFrame(cols)
     for s, suffix in (("+", "pos"), ("-", "neg")):
         cols[f"theta_prot_{suffix}"] = theta_prot[s]
         cols[f"theta_acc_{suffix}"] = theta_acc[s]

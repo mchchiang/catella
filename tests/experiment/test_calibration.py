@@ -45,23 +45,35 @@ class TestFoldContexts:
 class TestThetaFrame:
     def test_pooled_columns(self):
         df = _theta_frame(
+            np.array([A, GCH], dtype=np.int8),
             np.array([0.1, 0.2]),
             np.array([0.8, 0.9]),
             np.array([True, False]),
             False,
         )
-        assert list(df.columns) == ["theta_prot", "theta_acc", "informative"]
+        assert list(df.columns) == [
+            "pos",
+            "channel",
+            "theta_prot",
+            "theta_acc",
+            "informative",
+        ]
+        np.testing.assert_array_equal(df["pos"], [0, 1])
+        np.testing.assert_array_equal(df["channel"], ["A", "GCH"])
         np.testing.assert_array_equal(df["theta_acc"], [0.8, 0.9])
         np.testing.assert_array_equal(df["informative"], [True, False])
 
     def test_by_strand_columns(self):
         df = _theta_frame(
+            np.array([NONE], dtype=np.int8),
             {"+": np.array([0.1]), "-": np.array([0.2])},
             {"+": np.array([0.8]), "-": np.array([0.9])},
             {"+": np.array([True]), "-": np.array([False])},
             True,
         )
         assert list(df.columns) == [
+            "pos",
+            "channel",
             "theta_prot_pos",
             "theta_acc_pos",
             "informative_pos",

@@ -431,8 +431,6 @@ class MethPrintAnalysis:
         lnuc: int = 147,
         lbin: int = 30,
         max_iters: int = 200,
-        init_prot: float = 0.05,
-        init_acc: float = 0.95,
         tol: float = 1e-8,
         fill_edge: float = np.nan,
         norm_by_strand: bool = False,
@@ -536,14 +534,6 @@ class MethPrintAnalysis:
             each. A read-bin without read sites is left out of the fit.
         max_iters : int, default 200
             Maximum number of expectation-maximization iterations.
-        init_prot : float, default 0.05
-            Initial guess for the protected-state call rate (without
-            controls) or for tau (with controls) in the first start of
-            the expectation-maximization fit.
-        init_acc : float, default 0.95
-            Initial guess for the accessible-state call rate (without
-            controls) or for kappa (with controls, if `fit_kappa`) in
-            the first start of the expectation-maximization fit.
         tol : float, default 1e-8
             Relative log-likelihood convergence tolerance of the
             expectation-maximization fit.
@@ -662,8 +652,6 @@ class MethPrintAnalysis:
             "min_rel_contrast": min_rel_contrast,
             "lbin": lbin,
             "max_iters": max_iters,
-            "init_prot": init_prot,
-            "init_acc": init_acc,
             "tol": tol,
             "batch_size": batch_size,
             "mask_name": mask_name,
@@ -710,8 +698,6 @@ class MethPrintAnalysis:
                     "lnuc": lnuc,
                     "lbin": lbin,
                     "max_iters": max_iters,
-                    "init_prot": init_prot,
-                    "init_acc": init_acc,
                     "tol": tol,
                     "fill_edge": fill_edge,
                     "norm_by_strand": norm_by_strand,

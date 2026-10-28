@@ -336,8 +336,6 @@ def _controls_calibration(
     fit_kappa,
     lbin,
     max_iters,
-    init_prot,
-    init_acc,
     tol,
     min_rel_contrast,
     batch_size,
@@ -365,7 +363,7 @@ def _controls_calibration(
         From `_strand_assay_masks`.
     strata : tuple
         `("+", "-")` to calibrate each strand, or `(None,)` to pool.
-    nu, rho_leak, fit_kappa, lbin, max_iters, init_prot, init_acc, tol,
+    nu, rho_leak, fit_kappa, lbin, max_iters, tol,
     min_rel_contrast, batch_size, mask_name, channels, span
         As in `_chrom_calibration`.
 
@@ -457,8 +455,6 @@ def _controls_calibration(
                     informative,
                     fit_kappa=fit_kappa,
                     max_iters=max_iters,
-                    init_prot=init_prot,
-                    init_acc=init_acc,
                     tol=tol,
                     min_rel_contrast=min_rel_contrast,
                 )
@@ -489,8 +485,6 @@ def _em_calibration(
     *,
     lbin,
     max_iters,
-    init_prot,
-    init_acc,
     tol,
     min_rel_contrast,
     batch_size,
@@ -513,7 +507,7 @@ def _em_calibration(
         From `_strand_assay_masks`.
     strata : tuple
         `("+", "-")` to calibrate each strand, or `(None,)` to pool.
-    lbin, max_iters, init_prot, init_acc, tol, min_rel_contrast,
+    lbin, max_iters, tol, min_rel_contrast,
     batch_size, mask_name, channels, span
         As in `_chrom_calibration`.
 
@@ -547,8 +541,6 @@ def _em_calibration(
             ctx,
             codes,
             max_iters=max_iters,
-            init_prot=init_prot,
-            init_acc=init_acc,
             tol=tol,
             min_rel_contrast=min_rel_contrast,
         )
@@ -571,8 +563,6 @@ def _chrom_calibration(
     rho_leak,
     lbin,
     max_iters,
-    init_prot,
-    init_acc,
     tol,
     batch_size,
     mask_name,
@@ -594,7 +584,7 @@ def _chrom_calibration(
         The experiment object containing raw data and analysis maps.
     chrom : str
         Chromosome identifier.
-    nu, rho_leak, lbin, max_iters, init_prot, init_acc, tol
+    nu, rho_leak, lbin, max_iters, tol
         As in `model_prob`.
     min_rel_contrast : float, default 0.2
         As in `model_prob`.
@@ -668,8 +658,6 @@ def _chrom_calibration(
     common = {
         "lbin": lbin,
         "max_iters": max_iters,
-        "init_prot": init_prot,
-        "init_acc": init_acc,
         "tol": tol,
         "min_rel_contrast": min_rel_contrast,
         "batch_size": batch_size,

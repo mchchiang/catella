@@ -560,14 +560,6 @@ def compute_model_prob(
     max_iters: Annotated[
         int, typer.Option(help="Max EM iterations (no-controls fit)")
     ] = 200,
-    init_prot: Annotated[
-        float,
-        typer.Option(help="Initial protected-state rate (no-controls fit)"),
-    ] = 0.05,
-    init_acc: Annotated[
-        float,
-        typer.Option(help="Initial accessible-state rate (no-controls fit)"),
-    ] = 0.95,
     tol: Annotated[
         float, typer.Option(help="EM log-likelihood convergence tolerance")
     ] = 1e-8,
@@ -627,8 +619,6 @@ def compute_model_prob(
         lnuc=lnuc,
         lbin=lbin,
         max_iters=max_iters,
-        init_prot=init_prot,
-        init_acc=init_acc,
         tol=tol,
         fill_edge=fill_edge,
         norm_by_strand=norm_by_strand,

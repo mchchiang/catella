@@ -252,8 +252,6 @@ def compute_model_prob(
     lnuc: int = 147,
     lbin: int = 30,
     max_iters: int = 200,
-    init_prot: float = 0.05,
-    init_acc: float = 0.95,
     tol: float = 1e-8,
     fill_edge: float = np.nan,
     norm_by_strand: bool = False,
@@ -337,12 +335,6 @@ def compute_model_prob(
     max_iters : int, default 200
         Maximum number of expectation-maximization iterations for
         the no-controls rate fit.
-    init_prot : float, default 0.05
-        Initial guess for the protected-state call rate in the
-        no-controls expectation-maximization fit.
-    init_acc : float, default 0.95
-        Initial guess for the accessible-state call rate in the
-        no-controls expectation-maximization fit.
     tol : float, default 1e-8
         Relative log-likelihood convergence tolerance for the
         no-controls expectation-maximization fit.
@@ -427,8 +419,6 @@ def compute_model_prob(
         lnuc=lnuc,
         lbin=lbin,
         max_iters=max_iters,
-        init_prot=init_prot,
-        init_acc=init_acc,
         tol=tol,
         fill_edge=fill_edge,
         norm_by_strand=norm_by_strand,

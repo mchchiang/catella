@@ -98,9 +98,15 @@ def save_df(name, df, group):
     g.create_dataset("_column_order", data=order, dtype=dt)
     g.attrs["_column_index_dtype"] = str(df.columns.dtype)
 
-    # Split numeric and string data
+    # Split numeric, bool and string data
     num_df = df.select_dtypes(include=[np.number])
-    str_df = df.select_dtypes(exclude=[np.number])
+    bool_df = df.select_dtypes(include="bool")
+    str_df = df.select_dtypes(exclude=[np.number, "bool"])
+
+    for col in bool_df.columns:
+        g.create_dataset(
+            f"bool_{col}", data=bool_df[col].to_numpy(), compression="gzip"
+        )
 
     # Save numeric block
     if not num_df.empty:
@@ -230,14 +236,19 @@ def load_df(name, group):
             ]
             df = pd.DataFrame(data, columns=cols)
 
-        # Load the string data
+        # Load the bool and string data
         for k in g:
-            if k.startswith("str_"):
-                colname = k.replace("str_", "")
-                df[colname] = [
+            if k.startswith("bool_"):
+                df[k[len("bool_") :]] = g[k][:].astype(bool)
+            elif k.startswith("str_"):
+                values = [
                     s.decode("utf-8") if isinstance(s, bytes) else s
                     for s in g[k][:]
                 ]
+                # Files saved before bool columns were stored as bools
+                if values and set(values) <= {"True", "False"}:
+                    values = [v == "True" for v in values]
+                df[k[len("str_") :]] = values
 
         # Reorder to the original state
         order = [

@@ -289,8 +289,7 @@ Common ``global_analysis`` keys:
      - DataFrame (1 row) recording every ``compute_model_prob`` kwarg
        (``pi0``, ``eta_max_lag``, ``nu`` and ``rho_leak`` (nan when
        fitted), ``fit_kappa``, ``min_rel_contrast``,
-       ``lnuc``, ``lbin``, ``max_iters``, ``init_prot``,
-       ``init_acc``, ``tol``, ``fill_edge``, ``norm_by_strand``,
+       ``lnuc``, ``lbin``, ``max_iters``, ``tol``, ``fill_edge``, ``norm_by_strand``,
        ``mask_name``).
    * - ``<prob_name>_calib``
      - DataFrame, one row per chromosome (and, if ``norm_by_strand``,

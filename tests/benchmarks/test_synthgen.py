@@ -4,6 +4,9 @@ import numpy as np
 import pandas as pd
 import pytest
 import synthgen
+from typer.testing import CliRunner
+
+runner = CliRunner()
 
 
 class TestPlaceNucleosomes:
@@ -371,3 +374,70 @@ class TestWriteSam:
             synthgen.write_sam(
                 calls, {"chr1": seq}, tmp_path / "x.sam", mtase="TA"
             )
+
+
+class TestMakeDataset:
+    def test_files_written(self, tmp_path):
+        paths = synthgen.make_dataset(
+            tmp_path / "out", prefix="p", nbp=1000, nmol=5, seed=0
+        )
+        assert set(paths) == {"chromsize", "fasta", "modkit", "sam", "truth"}
+        for path in paths.values():
+            assert path.exists()
+            assert path.name.startswith("p.")
+
+    def test_consistent_outputs(self, tmp_path):
+        paths = synthgen.make_dataset(
+            tmp_path, nbp=1000, nmol=5, chrom="seg", seed=0
+        )
+        tsv = pd.read_csv(paths["modkit"], sep="\t")
+        _, reads = _read_sam(paths["sam"])
+        truth = pd.read_csv(paths["truth"], sep="\t", header=None)
+        fasta = paths["fasta"].read_text().splitlines()
+        assert paths["chromsize"].read_text() == "chrom\tlength\nseg\t1000\n"
+        assert fasta[0] == ">seg"
+        assert len("".join(fasta[1:])) == 1000
+        assert set(reads) == set(tsv["read_id"])
+        assert set(truth[3]) <= set(tsv["read_id"])
+        assert (tsv["chrom"] == "seg").all()
+
+    def test_user_nucs(self, tmp_path):
+        nucs = pd.DataFrame(
+            {"mol_id": ["a", "b"], "start": [100, 300], "end": [247, 447]}
+        )
+        paths = synthgen.make_dataset(tmp_path, nbp=600, nucs=nucs, seed=0)
+        truth = pd.read_csv(paths["truth"], sep="\t", header=None)
+        assert truth.values.tolist() == [
+            ["chr1", 100, 247, "a"],
+            ["chr1", 300, 447, "b"],
+        ]
+        tsv = pd.read_csv(paths["modkit"], sep="\t")
+        assert set(tsv["read_id"]) == {"a", "b"}
+
+    def test_seed_reproducible(self, tmp_path):
+        a = synthgen.make_dataset(tmp_path / "a", nbp=800, nmol=3, seed=1)
+        b = synthgen.make_dataset(tmp_path / "b", nbp=800, nmol=3, seed=1)
+        for key in a:
+            assert a[key].read_text() == b[key].read_text()
+
+
+class TestCli:
+    def test_writes_files(self, tmp_path):
+        result = runner.invoke(
+            synthgen.app,
+            [str(tmp_path), "--nbp", "800", "--nmol", "3", "--seed", "0"],
+        )
+        assert result.exit_code == 0, result.output
+        for ext in ("size", "fa", "tsv", "sam", "truth.bed"):
+            assert (tmp_path / f"synth.{ext}").exists()
+
+    def test_nucs_bed(self, tmp_path):
+        bed = tmp_path / "in.bed"
+        bed.write_text("chr1\t50\t197\tm1\n")
+        result = runner.invoke(
+            synthgen.app,
+            [str(tmp_path / "out"), "--nbp", "400", "--nucs", str(bed)],
+        )
+        assert result.exit_code == 0, result.output
+        truth = (tmp_path / "out" / "synth.truth.bed").read_text()
+        assert truth == "chr1\t50\t197\tm1\n"

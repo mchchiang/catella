@@ -2,9 +2,11 @@
 
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Annotated
 
 import numpy as np
 import pandas as pd
+import typer
 
 _TRUTH_COLS = ["mol_id", "chrom", "start", "end"]
 _CALL_COLS = ["mol_id", "chrom", "pos", "strand", "mod_qual"]
@@ -456,3 +458,169 @@ def write_sam(
                 f"{seq}\t*\tMM:Z:{base}+{code}?{mm};\tML:B:C{ml_str}\n"
             )
     return path
+
+
+def make_dataset(
+    outdir: str | Path,
+    *,
+    prefix: str = "synth",
+    nbp: int = 5000,
+    nmol: int = 100,
+    chrom: str = "chr1",
+    mtase: str = "A",
+    nucs: pd.DataFrame | None = None,
+    lnuc: int = 147,
+    linker_mean: float = 40.0,
+    p_linker: float = 0.7,
+    p_nuc: float = 0.05,
+    seed: int | None = None,
+) -> dict[str, Path]:
+    """
+    Generate a synthetic footprinting dataset and write it to disk.
+
+    Draws a random reference sequence, places nucleosomes (unless
+    `nucs` is given), simulates methylation calls, and writes the same
+    calls for catella (ModKit TSV) and for base-mod-aware tools such as
+    fibertools (SAM with MM/ML tags), along with the ground truth.
+
+    Parameters
+    ----------
+    outdir : str or Path
+        Output directory; created if missing.
+    prefix : str, default "synth"
+        File name prefix.
+    nbp : int, default 5000
+        Reference (and molecule) length in bp.
+    nmol : int, default 100
+        Number of molecules; ignored if `nucs` is given.
+    chrom : str, default "chr1"
+        Chromosome name.
+    mtase : {"A", "CG", "GC"}, default "A"
+        Methyltransferase context.
+    nucs : pandas.DataFrame, optional
+        User-supplied nucleosome positions with columns `mol_id`,
+        `start`, `end`. If None (default), drawn with
+        `place_nucleosomes`.
+    lnuc : int, default 147
+        Nucleosome footprint length (bp); used only if `nucs` is None.
+    linker_mean : float, default 40.0
+        Mean linker length (bp); used only if `nucs` is None.
+    p_linker : float, default 0.7
+        Methylation probability of an eligible site in linker DNA.
+    p_nuc : float, default 0.05
+        Methylation probability of an eligible site inside a
+        nucleosome.
+    seed : int, optional
+        Seed for the random number generator.
+
+    Returns
+    -------
+    dict of str to Path
+        Paths written, keyed by "chromsize", "fasta", "modkit", "sam",
+        and "truth".
+    """
+    outdir = Path(outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    seq_seed, nuc_seed, call_seed = np.random.default_rng(seed).integers(
+        2**32, size=3
+    )
+    seq = random_sequence(nbp, seed=seq_seed)
+    if nucs is None:
+        nucs = place_nucleosomes(
+            nbp,
+            nmol,
+            chrom=chrom,
+            lnuc=lnuc,
+            linker_mean=linker_mean,
+            seed=nuc_seed,
+        )
+    else:
+        nucs = nucs.assign(chrom=chrom)[_TRUTH_COLS]
+    calls = simulate_calls(
+        seq,
+        nucs,
+        chrom=chrom,
+        mtase=mtase,
+        p_linker=p_linker,
+        p_nuc=p_nuc,
+        seed=call_seed,
+    )
+    stem = outdir / prefix
+    return {
+        "chromsize": write_chromsize({chrom: nbp}, f"{stem}.size"),
+        "fasta": write_fasta({chrom: seq}, f"{stem}.fa"),
+        "modkit": write_modkit_tsv(calls, f"{stem}.tsv", mtase=mtase),
+        "sam": write_sam(calls, {chrom: seq}, f"{stem}.sam", mtase=mtase),
+        "truth": write_truth_bed(nucs, f"{stem}.truth.bed"),
+    }
+
+
+app = typer.Typer(help="Synthetic footprinting data generator")
+
+
+@app.command()
+def main(
+    outdir: Annotated[
+        Path,
+        typer.Argument(help="Output directory", file_okay=False),
+    ],
+    prefix: Annotated[str, typer.Option(help="File name prefix")] = "synth",
+    nbp: Annotated[int, typer.Option(help="Molecule length (bp)")] = 5000,
+    nmol: Annotated[int, typer.Option(help="Number of molecules")] = 100,
+    chrom: Annotated[str, typer.Option(help="Chromosome name")] = "chr1",
+    mtase: Annotated[
+        str, typer.Option(help="Methyltransferase context: A, CG, or GC")
+    ] = "A",
+    nucs: Annotated[
+        Path | None,
+        typer.Option(
+            help="BED of nucleosome positions (chrom, start, end, mol_id)",
+            exists=True,
+            dir_okay=False,
+            readable=True,
+        ),
+    ] = None,
+    lnuc: Annotated[
+        int, typer.Option(help="Nucleosome footprint length (bp)")
+    ] = 147,
+    linker_mean: Annotated[
+        float, typer.Option(help="Mean linker length (bp)")
+    ] = 40.0,
+    p_linker: Annotated[
+        float, typer.Option(help="Methylation probability in linkers")
+    ] = 0.7,
+    p_nuc: Annotated[
+        float, typer.Option(help="Methylation probability in nucleosomes")
+    ] = 0.05,
+    seed: Annotated[int | None, typer.Option(help="Random seed")] = None,
+):
+    """Generate a synthetic footprinting dataset."""
+    nuc_table = None
+    if nucs is not None:
+        nuc_table = pd.read_csv(
+            nucs,
+            sep="\t",
+            header=None,
+            usecols=range(4),
+            names=["chrom", "start", "end", "mol_id"],
+        )
+    paths = make_dataset(
+        outdir,
+        prefix=prefix,
+        nbp=nbp,
+        nmol=nmol,
+        chrom=chrom,
+        mtase=mtase,
+        nucs=nuc_table,
+        lnuc=lnuc,
+        linker_mean=linker_mean,
+        p_linker=p_linker,
+        p_nuc=p_nuc,
+        seed=seed,
+    )
+    for path in paths.values():
+        typer.echo(path)
+
+
+if __name__ == "__main__":
+    app()

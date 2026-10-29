@@ -254,6 +254,7 @@ class TestSimulateCalls:
             {"p_nuc": -0.1},
             {"signal_sep": 0.0},
             {"signal_sep": -1.0},
+            {"report_sep": 0.0},
         ],
     )
     def test_invalid_args(self, kwargs):
@@ -261,7 +262,7 @@ class TestSimulateCalls:
         with pytest.raises(ValueError):
             synthgen.simulate_calls(seq, nucs, **kwargs)
 
-    def _free_quals(self, p_linker, signal_sep, seed=0):
+    def _free_quals(self, p_linker, signal_sep, seed=0, report_sep=None):
         seq = synthgen.random_sequence(5000, seed=0)
         nucs = pd.DataFrame(columns=["mol_id", "chrom", "start", "end"])
         mol_ids = [f"m{i}" for i in range(40)]
@@ -271,9 +272,24 @@ class TestSimulateCalls:
             mol_ids,
             p_linker=p_linker,
             signal_sep=signal_sep,
+            report_sep=report_sep,
             seed=seed,
         )
         return calls["mod_qual"].to_numpy()
+
+    def test_report_sep_keeps_thresholded_calls(self):
+        calibrated = self._free_quals(0.5, 1.5, seed=3)
+        overconfident = self._free_quals(0.5, 1.5, seed=3, report_sep=3.0)
+        np.testing.assert_array_equal(calibrated >= 0.5, overconfident >= 0.5)
+        assert not np.allclose(calibrated, overconfident)
+
+    def test_overconfident_scores(self):
+        meth_q = self._free_quals(1.0, 1.5, seed=1, report_sep=3.0)
+        unmeth_q = self._free_quals(0.0, 1.5, seed=2, report_sep=3.0)
+        n_meth = ((meth_q > 0.75) & (meth_q < 0.85)).sum()
+        n_unmeth = ((unmeth_q > 0.75) & (unmeth_q < 0.85)).sum()
+        frac = n_meth / (n_meth + n_unmeth)
+        assert frac == pytest.approx(2 / 3, abs=0.04)
 
     @pytest.mark.parametrize("signal_sep", [1.0, 2.0])
     def test_wrong_side_rate(self, signal_sep):

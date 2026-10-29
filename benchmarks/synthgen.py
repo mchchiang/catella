@@ -197,6 +197,7 @@ def simulate_calls(
     p_linker: float = 0.7,
     p_nuc: float = 0.02,
     signal_sep: float = 2.0,
+    report_sep: float | None = None,
     double_strand: bool = False,
     seed: int | None = None,
 ) -> pd.DataFrame:
@@ -237,6 +238,12 @@ def simulate_calls(
         P(methylated | x) under a 50:50 prior,
         1 / (1 + exp(-2 * s * x)). A fraction Phi(-s) of sites (Phi the
         standard normal CDF) are scored on the wrong side of 0.5.
+    report_sep : float, optional
+        Signal separation the simulated caller assumes when converting x
+        to `mod_qual`, i.e., 1 / (1 + exp(-2 * report_sep * x)). If None
+        (default), equal to `signal_sep` (calibrated scores); larger
+        values give overconfident scores and smaller values
+        underconfident ones.
     double_strand : bool, default False
         If True, read every molecule on both strands, as in PacBio
         Fiber-seq; otherwise on one random strand, as in Nanopore.
@@ -255,6 +262,10 @@ def simulate_calls(
             raise ValueError(f"{name} must be in [0, 1], got {p}")
     if signal_sep <= 0:
         raise ValueError(f"signal_sep must be positive, got {signal_sep}")
+    if report_sep is None:
+        report_sep = signal_sep
+    if report_sep <= 0:
+        raise ValueError(f"report_sep must be positive, got {report_sep}")
     nbp = len(seq)
     if len(nucs) and (nucs["start"].min() < 0 or nucs["end"].max() > nbp):
         raise ValueError(
@@ -283,7 +294,7 @@ def simulate_calls(
         prob = np.where(occupied[pos], p_nuc, p_linker)
         meth = rng.random(len(pos)) < prob
         x = rng.normal(np.where(meth, signal_sep, -signal_sep), 1.0)
-        qual = 1 / (1 + np.exp(-2 * signal_sep * x))
+        qual = 1 / (1 + np.exp(-2 * report_sep * x))
         frames.append(
             pd.DataFrame(
                 {
@@ -527,6 +538,7 @@ def make_dataset(
     p_linker: float = 0.7,
     p_nuc: float = 0.02,
     signal_sep: float = 2.0,
+    report_sep: float | None = None,
     double_strand: bool = False,
     controls: bool = False,
     seed: int | None = None,
@@ -576,6 +588,9 @@ def make_dataset(
         nucleosome.
     signal_sep : float, default 2.0
         Signal separation for the call scores; see `simulate_calls`.
+    report_sep : float, optional
+        Signal separation assumed by the simulated caller; see
+        `simulate_calls`. Applies to the controls too.
     double_strand : bool, default False
         If True, read every molecule on both strands; see
         `simulate_calls`.
@@ -617,6 +632,7 @@ def make_dataset(
         p_linker=p_linker,
         p_nuc=p_nuc,
         signal_sep=signal_sep,
+        report_sep=report_sep,
         double_strand=double_strand,
         seed=call_seed,
     )
@@ -643,6 +659,7 @@ def make_dataset(
                 mtase=mtase,
                 p_linker=rate,
                 signal_sep=signal_sep,
+                report_sep=report_sep,
                 double_strand=double_strand,
                 seed=ctrl_seed,
             )
@@ -699,6 +716,10 @@ def main(
     signal_sep: Annotated[
         float, typer.Option(help="Signal separation for call scores")
     ] = 2.0,
+    report_sep: Annotated[
+        float | None,
+        typer.Option(help="Signal separation assumed by the caller"),
+    ] = None,
     double_strand: Annotated[
         bool, typer.Option(help="Read every molecule on both strands")
     ] = False,
@@ -731,6 +752,7 @@ def main(
         p_linker=p_linker,
         p_nuc=p_nuc,
         signal_sep=signal_sep,
+        report_sep=report_sep,
         double_strand=double_strand,
         controls=controls,
         seed=seed,

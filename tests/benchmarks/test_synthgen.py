@@ -209,3 +209,57 @@ class TestSimulateCalls:
         seq, nucs = self._data(nmol=1)
         with pytest.raises(ValueError):
             synthgen.simulate_calls(seq, nucs, **kwargs)
+
+
+class TestWriteChromsize:
+    def test_contents(self, tmp_path):
+        path = synthgen.write_chromsize(
+            {"chr1": 1000, "chr2": 50}, tmp_path / "x.size"
+        )
+        assert path.read_text() == "chrom\tlength\nchr1\t1000\nchr2\t50\n"
+
+
+class TestWriteFasta:
+    def test_contents(self, tmp_path):
+        path = synthgen.write_fasta(
+            {"a": "ACGTA", "b": "GG"}, tmp_path / "x.fa", width=2
+        )
+        assert path.read_text() == ">a\nAC\nGT\nA\n>b\nGG\n"
+
+    def test_invalid_width(self, tmp_path):
+        with pytest.raises(ValueError):
+            synthgen.write_fasta({"a": "A"}, tmp_path / "x.fa", width=0)
+
+
+class TestWriteModkitTsv:
+    def _calls(self):
+        seq = synthgen.random_sequence(1000, seed=0)
+        nucs = synthgen.place_nucleosomes(1000, 3, seed=0)
+        return synthgen.simulate_calls(seq, nucs, seed=0)
+
+    @pytest.mark.parametrize("mtase, code", [("A", "a"), ("CG", "m")])
+    def test_roundtrip(self, tmp_path, mtase, code):
+        calls = self._calls()
+        path = synthgen.write_modkit_tsv(
+            calls, tmp_path / "x.tsv", mtase=mtase
+        )
+        back = pd.read_csv(path, sep="\t")
+        assert list(back.columns) == [
+            "read_id",
+            "ref_position",
+            "chrom",
+            "ref_strand",
+            "mod_qual",
+            "mod_code",
+        ]
+        assert (back["mod_code"] == code).all()
+        assert back["read_id"].tolist() == calls["mol_id"].tolist()
+        assert back["ref_position"].tolist() == calls["pos"].tolist()
+        assert back["ref_strand"].tolist() == calls["strand"].tolist()
+        np.testing.assert_allclose(back["mod_qual"], calls["mod_qual"])
+
+    def test_invalid_mtase(self, tmp_path):
+        with pytest.raises(ValueError):
+            synthgen.write_modkit_tsv(
+                self._calls(), tmp_path / "x.tsv", mtase="TA"
+            )

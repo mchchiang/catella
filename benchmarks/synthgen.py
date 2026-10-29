@@ -9,6 +9,15 @@ import pandas as pd
 _TRUTH_COLS = ["mol_id", "chrom", "start", "end"]
 _CALL_COLS = ["mol_id", "chrom", "pos", "strand", "mod_qual"]
 _VALID_MTASE = ("A", "CG", "GC")
+# ModKit column name for each call column, in ModKit order
+_MODKIT_COLS = {
+    "mol_id": "read_id",
+    "pos": "ref_position",
+    "chrom": "chrom",
+    "strand": "ref_strand",
+    "mod_qual": "mod_qual",
+}
+_MOD_CODE = {"A": "a", "CG": "m", "GC": "m"}
 
 
 def place_nucleosomes(
@@ -248,3 +257,95 @@ def simulate_calls(
     if not frames:
         return pd.DataFrame(columns=_CALL_COLS)
     return pd.concat(frames, ignore_index=True)
+
+
+def write_chromsize(sizes: dict[str, int], path: str | Path) -> Path:
+    """
+    Write a chromosome-size file with a `chrom`/`length` header.
+
+    Parameters
+    ----------
+    sizes : dict of str to int
+        Chromosome name -> length (bp).
+    path : str or Path
+        Output file path.
+
+    Returns
+    -------
+    Path
+        The path written.
+    """
+    path = Path(path)
+    with open(path, "w") as fh:
+        fh.write("chrom\tlength\n")
+        fh.writelines(f"{chrom}\t{nbp}\n" for chrom, nbp in sizes.items())
+    return path
+
+
+def write_fasta(
+    seqs: dict[str, str], path: str | Path, *, width: int = 60
+) -> Path:
+    """
+    Write sequences as a multi-FASTA file.
+
+    Parameters
+    ----------
+    seqs : dict of str to str
+        Record id -> sequence.
+    path : str or Path
+        Output file path.
+    width : int, default 60
+        Number of bases per line.
+
+    Returns
+    -------
+    Path
+        The path written.
+    """
+    if width <= 0:
+        raise ValueError(f"width must be positive, got {width}")
+    path = Path(path)
+    with open(path, "w") as fh:
+        for name, seq in seqs.items():
+            fh.write(f">{name}\n")
+            fh.writelines(
+                f"{seq[i : i + width]}\n" for i in range(0, len(seq), width)
+            )
+    return path
+
+
+def write_modkit_tsv(
+    calls: pd.DataFrame, path: str | Path, *, mtase: str = "A"
+) -> Path:
+    """
+    Write methylation calls in ModKit `extract full` column format.
+
+    Only the six columns read by catella's `load_raw` are written,
+    under ModKit's own header names: `read_id`, `ref_position`,
+    `chrom`, `ref_strand`, `mod_qual`, `mod_code`.
+
+    Parameters
+    ----------
+    calls : pandas.DataFrame
+        Calls with columns `mol_id`, `chrom`, `pos`, `strand`,
+        `mod_qual`, e.g., from `simulate_calls`.
+    path : str or Path
+        Output file path (tab-separated, with header).
+    mtase : {"A", "CG", "GC"}, default "A"
+        Methyltransferase context; sets `mod_code` to "a" (6mA) for
+        "A" and "m" (5mC) otherwise.
+
+    Returns
+    -------
+    Path
+        The path written.
+    """
+    if mtase not in _VALID_MTASE:
+        raise ValueError(
+            f"mtase must be one of {_VALID_MTASE}, got {mtase!r}"
+        )
+    path = Path(path)
+    out = calls[list(_MODKIT_COLS)].rename(columns=_MODKIT_COLS)
+    out["mod_code"] = _MOD_CODE[mtase]
+    out.to_csv(path, sep="\t", index=False)
+    return path

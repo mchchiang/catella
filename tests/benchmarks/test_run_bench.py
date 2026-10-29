@@ -490,6 +490,40 @@ class TestPlotOccupancy:
         assert _pdf_pages(path) == 1
 
 
+class TestPlotSummary:
+    def test_all_pages(self, evaluated_out):
+        path = run_bench.plot_summary(evaluated_out)
+        assert path == evaluated_out / "plots" / "summary.pdf"
+        assert _pdf_pages(path) == 5
+
+    def test_partial_results(self, tuned_out):
+        run_bench.evaluate(tuned_out, tools=["catella", "ft"])
+        path = run_bench.plot_summary(tuned_out)
+        assert _pdf_pages(path) == 5
+
+    def test_without_catella_skips_paired_page(self, tuned_out):
+        run_bench.evaluate(tuned_out, tools=["ft", "fiberhmm"])
+        path = run_bench.plot_summary(tuned_out)
+        assert _pdf_pages(path) == 4
+
+    def test_without_tune_scores(self, evaluated_out, tmp_path):
+        (evaluated_out / "tune_scores.csv").unlink()
+        path = run_bench.plot_summary(evaluated_out, path=tmp_path / "s.pdf")
+        assert path == tmp_path / "s.pdf"
+        assert _pdf_pages(path) == 4
+
+    def test_without_results_raises(self, tmp_path):
+        with pytest.raises(ValueError):
+            run_bench.plot_summary(tmp_path)
+
+    @pytest.mark.parametrize("command", ["summarize", "plot_summary"])
+    def test_cli(self, evaluated_out, command):
+        (evaluated_out / "plots" / "summary.pdf").unlink(missing_ok=True)
+        result = runner.invoke(run_bench.app, [command, str(evaluated_out)])
+        assert result.exit_code == 0, result.output
+        assert _pdf_pages(evaluated_out / "plots" / "summary.pdf") == 5
+
+
 class TestTuneEvaluate:
     def test_pipeline(self, tmp_path, fake_tools):
         run_bench.make_data(tmp_path, quick=True, convert=False)

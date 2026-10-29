@@ -1287,6 +1287,198 @@ def plot_occupancy(
     return path
 
 
+def _style_axes(ax):
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    ax.tick_params(labelsize=7)
+    ax.grid(axis="y", color="#e5e5e5", linewidth=0.5)
+    ax.set_axisbelow(True)
+
+
+def _dot_series(ax, x, values, color, *, hollow=False):
+    rng = np.random.default_rng(0)
+    jitter = rng.uniform(-0.04, 0.04, size=len(values))
+    face = "none" if hollow else color
+    ax.scatter(x + jitter, values, s=10, facecolors=face, edgecolors=color,
+               alpha=0.6, linewidths=0.8)
+    sd = np.std(values, ddof=1) if len(values) > 1 else 0.0
+    ax.errorbar(x, np.mean(values), yerr=sd, fmt="o", ms=4, color=color,
+                mfc=face, capsize=2, lw=1)
+
+
+def _dodged_panel(ax, ds, metric, tools, conds, ylabel):
+    width = 0.8 / max(len(tools), 1)
+    for j, tool in enumerate(tools):
+        label, color = TOOL_STYLES[tool]
+        offset = (j - (len(tools) - 1) / 2) * width
+        for i, cond in enumerate(conds):
+            sel = ds[(ds["tool"] == tool) & (ds["cond"] == cond)]
+            if len(sel):
+                _dot_series(ax, i + offset, sel[metric].to_numpy(), color)
+        ax.scatter([], [], color=color, label=label, s=12)
+    ax.set_xticks(range(len(conds)), conds, rotation=30, ha="right")
+    ax.set_xlim(-0.5, len(conds) - 0.5)
+    ax.set_ylabel(ylabel, fontsize=8)
+    ax.legend(fontsize=7, frameon=False, ncols=len(tools), loc="lower left",
+              bbox_to_anchor=(0, 1.0))
+    _style_axes(ax)
+
+
+def _param_label(params):
+    return ", ".join(f"{k}={v}" for k, v in json.loads(params).items())
+
+
+def plot_summary(out: str | Path, path: str | Path | None = None) -> Path:
+    """
+    Plot summary figures of the benchmark comparison.
+
+    Reads `<out>/results.csv` (see `write_summary`) and, if present,
+    `<out>/tune_scores.csv`. Each dataset contributes one point, the
+    mean over its molecules; error bars are mean +- SD over datasets.
+    Pages, one figure each (skipped if their data are missing):
+
+    1. MCC by condition and tool (tuned parameters).
+    2. Count error by condition and tool (tuned parameters).
+    3. MCC difference, catella minus each other tool, by condition.
+    4. MCC with tuned and default parameters, per tool.
+    5. Tuning-set MCC of every grid combination, per tool.
+
+    Parameters
+    ----------
+    out : str or Path
+        Benchmark output directory (after `evaluate` or `summarize`).
+    path : str or Path, optional
+        Output PDF path; defaults to `<out>/plots/summary.pdf`.
+
+    Returns
+    -------
+    Path
+        The PDF written.
+    """
+    out = Path(out)
+    results_path = out / "results.csv"
+    if not results_path.exists():
+        raise ValueError(f"{results_path} not found; run summarize first")
+    results = pd.read_csv(results_path)
+    keys = ["tool", "variant", "cond", "seed"]
+    ds = results.groupby(keys)[["mcc", "count_err"]].mean().reset_index()
+    tools = [t for t in TOOL_STYLES if t in set(ds["tool"])]
+    conds = [c for c in CONDITIONS if c in set(ds["cond"])]
+    tuned = ds[ds["variant"] == "tuned"]
+    if path is None:
+        path = out / "plots" / "summary.pdf"
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    size = (8.27, 11.69)
+    with PdfPages(path) as pdf:
+        for metric, ylabel, title in (
+            ("mcc", "MCC", "MCC by condition (tuned parameters)"),
+            (
+                "count_err",
+                "called - true nucleosomes",
+                "Nucleosome count error by condition (tuned parameters)",
+            ),
+        ):
+            fig = Figure(figsize=size)
+            ax = fig.add_subplot(2, 1, 1)
+            _dodged_panel(ax, tuned, metric, tools, conds, ylabel)
+            if metric == "count_err":
+                ax.axhline(0, color="#52514e", lw=0.8)
+            fig.suptitle(title, fontsize=10)
+            fig.tight_layout(rect=(0, 0, 1, 0.97))
+            pdf.savefig(fig)
+
+        others = [t for t in tools if t != "catella"]
+        if "catella" in tools and others:
+            wide = tuned.pivot_table(
+                index=["cond", "seed"], columns="tool", values="mcc"
+            )
+            fig = Figure(figsize=size)
+            axes = fig.subplots(len(others), 1, sharex=True, squeeze=False)
+            for ax, other in zip(axes[:, 0], others):
+                label, color = TOOL_STYLES[other]
+                for i, cond in enumerate(conds):
+                    if cond not in wide.index.get_level_values(0):
+                        continue
+                    diff = (wide.loc[cond, "catella"] - wide.loc[cond, other])
+                    diff = diff.dropna().to_numpy()
+                    if len(diff):
+                        _dot_series(ax, i, diff, color)
+                ax.axhline(0, color="#52514e", lw=0.8)
+                ax.set_ylabel(f"catella - {label}", fontsize=8)
+                _style_axes(ax)
+            axes[-1, 0].set_xticks(
+                range(len(conds)), conds, rotation=30, ha="right"
+            )
+            axes[-1, 0].set_xlim(-0.5, len(conds) - 0.5)
+            fig.suptitle(
+                "MCC difference, catella minus other tool (tuned)",
+                fontsize=10,
+            )
+            fig.tight_layout(rect=(0, 0, 1, 0.97))
+            pdf.savefig(fig)
+
+        variants = [v for v in ("tuned", "default") if v in set(ds["variant"])]
+        fig = Figure(figsize=size)
+        axes = fig.subplots(len(tools), 1, sharex=True, squeeze=False)
+        for ax, tool in zip(axes[:, 0], tools):
+            label, color = TOOL_STYLES[tool]
+            for k, variant in enumerate(variants):
+                offset = (k - (len(variants) - 1) / 2) * 0.3
+                sel = ds[(ds["tool"] == tool) & (ds["variant"] == variant)]
+                for i, cond in enumerate(conds):
+                    vals = sel.loc[sel["cond"] == cond, "mcc"].to_numpy()
+                    if len(vals):
+                        _dot_series(
+                            ax, i + offset, vals, color,
+                            hollow=variant == "default",
+                        )
+                face = "none" if variant == "default" else color
+                ax.scatter(
+                    [], [], s=12, edgecolors=color, facecolors=face,
+                    label=variant,
+                )
+            ax.set_ylabel(f"{label}\nMCC", fontsize=8)
+            ax.legend(fontsize=7, frameon=False, loc="lower right")
+            _style_axes(ax)
+        axes[-1, 0].set_xticks(
+            range(len(conds)), conds, rotation=30, ha="right"
+        )
+        axes[-1, 0].set_xlim(-0.5, len(conds) - 0.5)
+        fig.suptitle(
+            "MCC with tuned (filled) and default (hollow) parameters",
+            fontsize=10,
+        )
+        fig.tight_layout(rect=(0, 0, 1, 0.97))
+        pdf.savefig(fig)
+
+        tune_path = out / "tune_scores.csv"
+        if tune_path.exists():
+            scores = pd.read_csv(tune_path)
+            tune_tools = [t for t in TOOL_STYLES if t in set(scores["tool"])]
+            fig = Figure(figsize=size)
+            axes = fig.subplots(len(tune_tools), 1, squeeze=False)
+            for ax, tool in zip(axes[:, 0], tune_tools):
+                label, color = TOOL_STYLES[tool]
+                sel = scores[scores["tool"] == tool]
+                x = np.arange(len(sel))
+                best = sel["mcc"].to_numpy().argmax()
+                ax.plot(x, sel["mcc"], color=color, lw=1, marker="o", ms=4)
+                ax.plot(x[best], sel["mcc"].iloc[best], marker="o", ms=8,
+                        mfc="none", mec="#0b0b0b")
+                labels = [_param_label(p) for p in sel["params"]]
+                ax.set_xticks(x, labels, rotation=20, ha="right", fontsize=6)
+                ax.set_ylabel(f"{label}\nMCC", fontsize=8)
+                _style_axes(ax)
+            fig.suptitle(
+                "Tuning-set MCC per parameter combination (circled: chosen)",
+                fontsize=10,
+            )
+            fig.tight_layout(rect=(0, 0, 1, 0.97))
+            pdf.savefig(fig)
+    return path
+
+
 app = typer.Typer(help="Benchmark catella against fibertools and FiberHMM")
 
 
@@ -1369,9 +1561,18 @@ def evaluate_cmd(
 def summarize_cmd(
     out: Annotated[Path, typer.Argument(help="Benchmark output directory")],
 ):
-    """Combine all unit results and write the summary."""
+    """Combine all unit results and write the summary and its plots."""
     write_summary(out)
     typer.echo(f"wrote {Path(out) / 'summary.md'}")
+    typer.echo(f"wrote {plot_summary(out)}")
+
+
+@app.command(name="plot_summary")
+def plot_summary_cmd(
+    out: Annotated[Path, typer.Argument(help="Benchmark output directory")],
+):
+    """Plot summary figures of the benchmark comparison."""
+    typer.echo(f"wrote {plot_summary(out)}")
 
 
 @app.command(name="plot_occupancy")

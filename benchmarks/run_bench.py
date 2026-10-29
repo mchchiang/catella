@@ -2,6 +2,7 @@
 
 import itertools
 import json
+import multiprocessing
 import os
 import subprocess
 import tempfile
@@ -110,6 +111,9 @@ def run_in_env(env: str, args: list[str], cwd: str | Path | None = None):
     """
     Run a command inside a conda environment.
 
+    Uses the executable in `$CONDA_EXE`, else `$MAMBA_EXE`, else
+    `conda` on the `PATH`.
+
     Parameters
     ----------
     env : str
@@ -124,7 +128,8 @@ def run_in_env(env: str, args: list[str], cwd: str | Path | None = None):
     subprocess.CompletedProcess
         The finished process, with captured text output.
     """
-    conda = os.environ.get("CONDA_EXE", "conda")
+    conda = os.environ.get("CONDA_EXE") or os.environ.get("MAMBA_EXE")
+    conda = conda or "conda"
     proc = subprocess.run(
         [conda, "run", "-n", env, *args],
         cwd=cwd,
@@ -166,7 +171,9 @@ def sam_to_bam(sam: str | Path, env: str) -> Path:
 def _run_tasks(func, args_list, nworker):
     if nworker <= 1:
         return [func(*args) for args in args_list]
-    with ProcessPoolExecutor(max_workers=nworker) as pool:
+    # spawn on all platforms; fork is unsafe with HDF5/OpenMP state
+    ctx = multiprocessing.get_context("spawn")
+    with ProcessPoolExecutor(max_workers=nworker, mp_context=ctx) as pool:
         futures = [pool.submit(func, *args) for args in args_list]
         return [f.result() for f in futures]
 
@@ -826,10 +833,11 @@ def tune(
     out = Path(out)
     datasets = _read_record(out)["datasets"]
     spec = next(s for s in datasets if s["cond"] == "tune")
+    ddir = dataset_dir(out, spec["cond"], spec["seed"])
     if nworker > 1 and "fiberhmm" in TOOLS:
-        train_fiberhmm(spec["dir"], env=env)
+        train_fiberhmm(ddir, env=env)
     tasks = [
-        (out, spec["dir"], tool, params, env)
+        (out, ddir, tool, params, env)
         for tool in TOOLS
         for params in grid_combos(GRIDS[tool])
     ]
@@ -955,7 +963,8 @@ def evaluate_unit(
     out : str or Path
         Benchmark output directory.
     spec : dict
-        Dataset spec from `datasets.json` (keys "cond", "seed", "dir").
+        Dataset spec from `datasets.json` (keys "cond" and "seed"); the
+        dataset directory is found from `out` with `dataset_dir`.
     tool : str
         A key of `TOOLS`.
     tuned : dict
@@ -975,13 +984,14 @@ def evaluate_unit(
     path = unit_result_path(out, tool, cond, seed)
     if path.exists() and not overwrite:
         return path
-    truth = read_truth(spec["dir"])
+    ddir = dataset_dir(out, cond, seed)
+    truth = read_truth(ddir)
     work = out / "work"
     work.mkdir(parents=True, exist_ok=True)
     frames = []
     for variant, params in (("tuned", tuned), ("default", {})):
         with tempfile.TemporaryDirectory(dir=work) as wd:
-            calls = run_tool(tool, spec["dir"], wd, params, env)
+            calls = run_tool(tool, ddir, wd, params, env)
         save_calls(
             calls, out / "calls" / f"{tool}_{variant}" / cond / f"s{seed}.h5"
         )

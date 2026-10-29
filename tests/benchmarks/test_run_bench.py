@@ -1,6 +1,7 @@
 # test_run_bench.py
 
 import json
+import shutil
 import subprocess
 
 import numpy as np
@@ -119,6 +120,33 @@ class TestMakeData:
 
 
 class TestRunInEnv:
+    @pytest.mark.parametrize(
+        "conda_exe, mamba_exe, expected",
+        [
+            ("/x/conda", "/y/mamba", "/x/conda"),
+            (None, "/y/mamba", "/y/mamba"),
+            (None, None, "conda"),
+        ],
+    )
+    def test_executable_choice(
+        self, monkeypatch, conda_exe, mamba_exe, expected
+    ):
+        env_vars = (("CONDA_EXE", conda_exe), ("MAMBA_EXE", mamba_exe))
+        for name, value in env_vars:
+            if value is None:
+                monkeypatch.delenv(name, raising=False)
+            else:
+                monkeypatch.setenv(name, value)
+        seen = []
+
+        def fake_run(args, **kwargs):
+            seen.append(args)
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        monkeypatch.setattr(run_bench.subprocess, "run", fake_run)
+        run_bench.run_in_env("e", ["samtools", "--version"])
+        assert seen == [[expected, "run", "-n", "e", "samtools", "--version"]]
+
     def test_failure_raises(self):
         with pytest.raises((RuntimeError, FileNotFoundError)):
             run_bench.run_in_env("no_such_env_xyz", ["true"])
@@ -366,6 +394,12 @@ class TestEvaluateUnits:
         paired = pd.read_csv(tuned_out / "summary_paired.csv")
         assert set(paired["other"]) == {"ft"}
         assert (tuned_out / "summary.md").exists()
+
+    def test_moved_output_directory(self, tuned_out, tmp_path_factory):
+        moved = tmp_path_factory.mktemp("moved") / "out"
+        shutil.move(str(tuned_out), str(moved))
+        results = run_bench.evaluate(moved)
+        assert len(results) == len(run_bench.TOOLS) * 2 * run_bench.QUICK_NMOL
 
     def test_summary_without_results_raises(self, tmp_path):
         with pytest.raises(ValueError):

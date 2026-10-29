@@ -23,9 +23,41 @@ def _host_tag():
     return re.sub(r"[^A-Za-z0-9-]", "-", socket.gethostname())[:32]
 
 
+def _pid_alive_win(pid):
+    # os.kill on Windows terminates the process, so query it instead
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.OpenProcess.argtypes = [
+        wintypes.DWORD,
+        wintypes.BOOL,
+        wintypes.DWORD,
+    ]
+    kernel32.GetExitCodeProcess.argtypes = [
+        wintypes.HANDLE,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    query_limited_info, access_denied, still_active = 0x1000, 5, 259
+    handle = kernel32.OpenProcess(query_limited_info, False, pid)
+    if not handle:
+        return ctypes.get_last_error() == access_denied
+    try:
+        code = wintypes.DWORD()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+            return True
+        return code.value == still_active
+    finally:
+        kernel32.CloseHandle(handle)
+
+
 def _pid_alive(pid):
     if pid <= 0:
         return True
+    if os.name == "nt":
+        return _pid_alive_win(pid)
     try:
         os.kill(pid, 0)
     except ProcessLookupError:

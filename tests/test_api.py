@@ -512,6 +512,26 @@ class TestEstimateStartTemp:
         )
         assert np.isfinite(got)
 
+    @pytest.mark.parametrize(
+        "saturated, bound",
+        [
+            (1.0, 1 - np.finfo(np.float64).epsneg),
+            (0.0, np.finfo(np.float64).tiny),
+        ],
+    )
+    def test_saturated_probabilities_give_finite_estimate(
+        self, saturated, bound
+    ):
+        exp = _make_experiment(nmol=10, nbp=4, seed=5)
+        known = np.full((10, 4), 0.5)
+        known[:5] = saturated
+        exp.analysis["chr1"]["meth_prob"] = pd.DataFrame(known)
+
+        got = catella.estimate_start_temp(
+            exp, percentile=99.0, percentile_sample_size=100, seed=0
+        )
+        assert got == pytest.approx(abs(logit(bound)))
+
     def test_chroms_restricts_to_selected_chromosomes(self):
         raw1 = MethPrintData._create(
             chrom="chr1",

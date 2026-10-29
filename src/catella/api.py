@@ -444,7 +444,9 @@ def estimate_start_temp(
     Returns the `percentile`-th percentile of abs(logit(meth_prob))
     across `chroms`, via batched random subsampling, so sequence-
     energy barriers of that size are crossable early in the
-    annealing schedule.
+    annealing schedule. Probabilities of exactly 0 or 1 (log odds
+    beyond floating-point range) count as the largest finite log
+    odds rather than infinity.
 
     Parameters
     ----------
@@ -516,7 +518,13 @@ def estimate_start_temp(
                 batch.shape[0], max(1, round(batch.shape[0] * sample_frac))
             )
             rows = rng.choice(batch.shape[0], size=n_take, replace=False)
-            chunks.append(np.abs(logit(batch[rows, :])))
+            # Clip so saturated probabilities give finite log odds
+            prob = np.clip(
+                np.asarray(batch[rows, :], dtype=np.float64),
+                np.finfo(np.float64).tiny,
+                1 - np.finfo(np.float64).epsneg,
+            )
+            chunks.append(np.abs(logit(prob)))
 
     sample = np.concatenate([c.ravel() for c in chunks])
     return float(np.nanpercentile(sample, percentile))

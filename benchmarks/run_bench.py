@@ -3,11 +3,18 @@
 import json
 import os
 import subprocess
+import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 
+import catella
+import h5py
+import numpy as np
+import pandas as pd
 import synthgen
 import typer
+from catella.simulation.config import SimSettings
 
 # Benchmark configuration; fixed before any test dataset is scored
 NBP = 5000
@@ -205,6 +212,411 @@ def make_data(
     with open(out / "datasets.json", "w") as fh:
         json.dump(record, fh, indent=2)
     return specs
+
+
+@dataclass
+class Calls:
+    """
+    Nucleosome calls of one tool on one dataset.
+
+    Attributes
+    ----------
+    mol_ids : np.ndarray of str
+        Molecule ids, one per row.
+    occ : np.ndarray of float
+        (nmol, nbp) per-bp nucleosome occupancy: 0/1 for interval calls,
+        a probability for catella.
+    count : np.ndarray of float
+        Number of called (or expected, for catella) nucleosomes per
+        molecule.
+    """
+
+    mol_ids: np.ndarray
+    occ: np.ndarray
+    count: np.ndarray
+
+
+def intervals_to_calls(
+    intervals: pd.DataFrame, mol_ids: list[str], nbp: int
+) -> Calls:
+    """
+    Convert nucleosome intervals to calls.
+
+    Parameters
+    ----------
+    intervals : pandas.DataFrame
+        Columns `mol_id`, `start`, `end` (0-based, half-open). Intervals
+        are clipped to `[0, nbp)`.
+    mol_ids : list of str
+        Molecules to include, in row order; molecules without intervals
+        get no nucleosomes.
+    nbp : int
+        Molecule length in bp.
+
+    Returns
+    -------
+    Calls
+        Binary occupancy and interval counts.
+    """
+    row = {m: i for i, m in enumerate(mol_ids)}
+    occ = np.zeros((len(mol_ids), nbp), dtype=np.float32)
+    count = np.zeros(len(mol_ids))
+    cols = intervals[["mol_id", "start", "end"]]
+    for mol_id, start, end in cols.itertuples(index=False):
+        if mol_id not in row:
+            continue
+        occ[row[mol_id], max(start, 0) : min(end, nbp)] = 1
+        count[row[mol_id]] += 1
+    return Calls(np.asarray(mol_ids), occ, count)
+
+
+def _int_list(field):
+    text = str(field).strip(",")
+    if text in ("", ".", "nan"):
+        return []
+    return [int(v) for v in text.split(",")]
+
+
+def parse_ft_extract(path: str | Path) -> pd.DataFrame:
+    """
+    Read nucleosome intervals from an `ft extract --all` table.
+
+    Parameters
+    ----------
+    path : str or Path
+        Output of `ft extract --all`, with columns `fiber`,
+        `ref_nuc_starts`, and `ref_nuc_lengths`.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Columns `mol_id`, `start`, `end` in reference coordinates.
+    """
+    table = pd.read_csv(path, sep="\t")
+    cols = table[["fiber", "ref_nuc_starts", "ref_nuc_lengths"]]
+    rows = []
+    for fiber, starts, lengths in cols.itertuples(index=False):
+        for start, length in zip(_int_list(starts), _int_list(lengths)):
+            rows.append((fiber, start, start + length))
+    return pd.DataFrame(rows, columns=["mol_id", "start", "end"])
+
+
+def read_truth(ddir: str | Path) -> pd.DataFrame:
+    """
+    Read a dataset's ground-truth nucleosome positions.
+
+    Parameters
+    ----------
+    ddir : str or Path
+        Dataset directory.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Columns `mol_id`, `start`, `end`.
+    """
+    return pd.read_csv(
+        Path(ddir) / "synth.truth.bed",
+        sep="\t",
+        header=None,
+        names=["chrom", "start", "end", "mol_id"],
+    )[["mol_id", "start", "end"]]
+
+
+def _test_mol_ids(ddir):
+    tsv = pd.read_csv(Path(ddir) / "synth.tsv", sep="\t", usecols=["read_id"])
+    return list(dict.fromkeys(tsv["read_id"]))
+
+
+def _ft_calls(bam, ddir, env):
+    table = Path(bam).with_suffix(".tsv.gz")
+    run_in_env(env, ["ft", "extract", str(bam), "--all", str(table)])
+    return intervals_to_calls(
+        parse_ft_extract(table), _test_mol_ids(ddir), NBP
+    )
+
+
+def run_ft(
+    ddir: str | Path,
+    workdir: str | Path,
+    *,
+    env: str = "fiberseq",
+    nucleosome_length: int | None = None,
+    combined_length: int | None = None,
+) -> Calls:
+    """
+    Call nucleosomes with `ft add-nucleosomes`.
+
+    Parameters
+    ----------
+    ddir : str or Path
+        Dataset directory (with `synth.bam`).
+    workdir : str or Path
+        Directory for intermediate files.
+    env : str, default "fiberseq"
+        Conda environment providing fibertools.
+    nucleosome_length, combined_length : int, optional
+        Values for `--nucleosome-length` and
+        `--combined-nucleosome-length`; tool defaults if None.
+
+    Returns
+    -------
+    Calls
+    """
+    out = Path(workdir) / "ft.bam"
+    args = ["ft", "add-nucleosomes", "--ml", "128"]
+    if nucleosome_length is not None:
+        args += ["--nucleosome-length", str(nucleosome_length)]
+    if combined_length is not None:
+        args += ["--combined-nucleosome-length", str(combined_length)]
+    run_in_env(env, [*args, str(Path(ddir) / "synth.bam"), str(out)])
+    return _ft_calls(out, ddir, env)
+
+
+def train_fiberhmm(
+    ddir: str | Path,
+    *,
+    env: str = "fiberseq",
+    iterations: int = 10,
+) -> Path:
+    """
+    Train a FiberHMM model on a dataset, using its controls.
+
+    Emission tables come from the methylated (accessible) and
+    unmethylated (inaccessible) controls; the model is then trained on
+    the test reads. No ground truth is used. The model is cached in the
+    dataset directory and reused on later calls.
+
+    Parameters
+    ----------
+    ddir : str or Path
+        Dataset directory (with `synth.bam`, `synth.meth.bam`,
+        `synth.unmeth.bam`).
+    env : str, default "fiberseq"
+        Conda environment providing FiberHMM.
+    iterations : int, default 10
+        Training iterations (random initializations).
+
+    Returns
+    -------
+    Path
+        The trained model file.
+    """
+    ddir = Path(ddir)
+    model = ddir / "fiberhmm_model" / "best-model.json"
+    if model.exists():
+        return model
+    probs = ddir / "fiberhmm_probs"
+    run_in_env(
+        env,
+        [
+            "fiberhmm-probs",
+            "-a",
+            str(ddir / "synth.meth.bam"),
+            "-u",
+            str(ddir / "synth.unmeth.bam"),
+            "-o",
+            str(probs),
+            "--mode",
+            "pacbio-fiber",
+            "-p",
+            "128",
+            "-k",
+            "3",
+        ],
+    )
+    tables = probs / "tables"
+    run_in_env(
+        env,
+        [
+            "fiberhmm-train",
+            "-i",
+            str(ddir / "synth.bam"),
+            "-p",
+            str(next(tables.glob("*_accessible_*_k3.tsv"))),
+            str(next(tables.glob("*_inaccessible_*_k3.tsv"))),
+            "-o",
+            str(model.parent),
+            "-k",
+            "3",
+            "-c",
+            str(iterations),
+            "--prob-threshold",
+            "128",
+        ],
+    )
+    return model
+
+
+def run_fiberhmm(
+    ddir: str | Path,
+    workdir: str | Path,
+    *,
+    env: str = "fiberseq",
+    retrain: bool = True,
+    nuc_min_size: int | None = None,
+    split_min_llr: float | None = None,
+    iterations: int = 10,
+) -> Calls:
+    """
+    Call nucleosomes with `fiberhmm-call`.
+
+    Parameters
+    ----------
+    ddir : str or Path
+        Dataset directory.
+    workdir : str or Path
+        Directory for intermediate files.
+    env : str, default "fiberseq"
+        Conda environment providing FiberHMM and fibertools.
+    retrain : bool, default True
+        If True, use a model trained on this dataset (see
+        `train_fiberhmm`); otherwise the pretrained Hia5 PacBio model.
+    nuc_min_size : int, optional
+        Value for `--nuc-min-size`; tool default if None.
+    split_min_llr : float, optional
+        Value for `--split-min-llr`; tool default if None.
+    iterations : int, default 10
+        Training iterations if `retrain`.
+
+    Returns
+    -------
+    Calls
+    """
+    out = Path(workdir) / "fiberhmm.bam"
+    args = ["fiberhmm-call", "-i", str(Path(ddir) / "synth.bam")]
+    args += ["-o", str(out), "--prob-threshold", "128", "-c", "2"]
+    if retrain:
+        model = train_fiberhmm(ddir, env=env, iterations=iterations)
+        args += ["-m", str(model)]
+    else:
+        args += ["--enzyme", "hia5", "--seq", "pacbio"]
+    if nuc_min_size is not None:
+        args += ["--nuc-min-size", str(nuc_min_size)]
+    if split_min_llr is not None:
+        args += ["--split-min-llr", str(split_min_llr)]
+    run_in_env(env, args)
+    return _ft_calls(out, ddir, env)
+
+
+def run_catella(
+    ddir: str | Path,
+    workdir: str | Path,
+    *,
+    llink: int = 50,
+    elink: float = 25.0,
+    mu: float = 0.0,
+    seed: int = 1,
+) -> Calls:
+    """
+    Compute nucleosome occupancy with catella's exact (TM) solver.
+
+    Uses both controls for the methylation probability calibration and
+    reads both strands of each molecule (`ignore_strand=True`).
+
+    Parameters
+    ----------
+    ddir : str or Path
+        Dataset directory.
+    workdir : str or Path
+        Directory for intermediate files.
+    llink : int, default 50
+        `SimSettings.llink`.
+    elink : float, default 25.0
+        `SimSettings.elink`.
+    mu : float, default 0.0
+        `SimSettings.mu`.
+    seed : int, default 1
+        Seed passed to `catella.run`.
+
+    Returns
+    -------
+    Calls
+        Occupancy probabilities and expected nucleosome counts.
+    """
+    ddir = Path(ddir)
+    exp = catella.load_raw(
+        chromsize=ddir / "synth.size",
+        test_file=ddir / "synth.tsv",
+        unmeth_file=ddir / "synth.unmeth.tsv",
+        meth_file=ddir / "synth.meth.tsv",
+        fasta_file=ddir / "synth.fa",
+        mtase="A",
+        ignore_strand=True,
+        tmp_dir=workdir,
+    )
+    exp = catella.compute_model_prob(exp=exp)
+    chrom = exp.chroms[0]
+    settings = SimSettings(
+        nucbp=147, llink=llink, elink=elink, mu=mu, end_temp=1.0, emax=25.0
+    )
+    sim_dir = Path(tempfile.mkdtemp(dir=workdir)) / "sim"
+    sim = catella.run(
+        chroms=chrom,
+        nsim=0,
+        settings=settings,
+        meth_prob={chrom: exp.analysis[chrom]["meth_prob"]},
+        out_dir=sim_dir,
+        method="tm",
+        seed=seed,
+        verbose=False,
+    )
+    catella.analyze(sim)
+    occ = np.asarray(sim.analysis[chrom]["occup"][:], dtype=np.float32)
+    count = np.asarray(sim.analysis[chrom]["mean_nnuc"][:]).ravel()
+    mol_ids = np.asarray(exp.raw[chrom].test_mol_id)
+    return Calls(mol_ids, occ, count)
+
+
+def save_calls(calls: Calls, path: str | Path) -> Path:
+    """
+    Save calls to an HDF5 file.
+
+    The file holds datasets `mol_ids` (bytes), `occ` (float16,
+    gzip-compressed), and `count`.
+
+    Parameters
+    ----------
+    calls : Calls
+        Calls to save.
+    path : str or Path
+        Output file path.
+
+    Returns
+    -------
+    Path
+        The path written.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with h5py.File(path, "w") as fh:
+        fh.create_dataset("mol_ids", data=calls.mol_ids.astype("S"))
+        fh.create_dataset(
+            "occ", data=calls.occ.astype(np.float16), compression="gzip"
+        )
+        fh.create_dataset("count", data=calls.count)
+    return path
+
+
+def load_calls(path: str | Path) -> Calls:
+    """
+    Load calls saved by `save_calls`.
+
+    Parameters
+    ----------
+    path : str or Path
+        File written by `save_calls`.
+
+    Returns
+    -------
+    Calls
+    """
+    with h5py.File(path, "r") as fh:
+        return Calls(
+            fh["mol_ids"][:].astype(str),
+            fh["occ"][:].astype(np.float32),
+            fh["count"][:],
+        )
 
 
 app = typer.Typer(help="Benchmark catella against fibertools and FiberHMM")

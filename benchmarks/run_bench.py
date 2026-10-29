@@ -782,7 +782,23 @@ def _read_record(out):
         return json.load(fh)
 
 
-def tune(out: str | Path, *, env: str = "fiberseq") -> dict[str, dict]:
+def _tune_one(out, ddir, tool, params, env):
+    work = Path(out) / "work"
+    work.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=work) as wd:
+        calls = run_tool(tool, ddir, wd, params, env)
+    scores = score_calls(calls, read_truth(ddir))
+    return {
+        "tool": tool,
+        "params": json.dumps(params),
+        "mcc": scores["mcc"].mean(),
+        "count_err": scores["count_err"].mean(),
+    }
+
+
+def tune(
+    out: str | Path, *, env: str = "fiberseq", nworker: int = 1
+) -> dict[str, dict]:
     """
     Pick each tool's parameters on the tuning dataset.
 
@@ -797,6 +813,10 @@ def tune(out: str | Path, *, env: str = "fiberseq") -> dict[str, dict]:
         Benchmark output directory (after `make_data`).
     env : str, default "fiberseq"
         Conda environment for the external tools.
+    nworker : int, default 1
+        Number of grid combinations run in parallel. If greater than 1,
+        the tuning dataset's FiberHMM model is trained first so that
+        parallel runs share it.
 
     Returns
     -------
@@ -806,24 +826,14 @@ def tune(out: str | Path, *, env: str = "fiberseq") -> dict[str, dict]:
     out = Path(out)
     datasets = _read_record(out)["datasets"]
     spec = next(s for s in datasets if s["cond"] == "tune")
-    truth = read_truth(spec["dir"])
-    work = out / "work"
-    work.mkdir(parents=True, exist_ok=True)
-    rows = []
-    for tool in TOOLS:
-        for params in grid_combos(GRIDS[tool]):
-            with tempfile.TemporaryDirectory(dir=work) as wd:
-                calls = run_tool(tool, spec["dir"], wd, params, env)
-            scores = score_calls(calls, truth)
-            rows.append(
-                {
-                    "tool": tool,
-                    "params": json.dumps(params),
-                    "mcc": scores["mcc"].mean(),
-                    "count_err": scores["count_err"].mean(),
-                }
-            )
-    table = pd.DataFrame(rows)
+    if nworker > 1 and "fiberhmm" in TOOLS:
+        train_fiberhmm(spec["dir"], env=env)
+    tasks = [
+        (out, spec["dir"], tool, params, env)
+        for tool in TOOLS
+        for params in grid_combos(GRIDS[tool])
+    ]
+    table = pd.DataFrame(_run_tasks(_tune_one, tasks, nworker))
     table.to_csv(out / "tune_scores.csv", index=False)
     best = table.loc[table.groupby("tool", sort=False)["mcc"].idxmax()]
     tuned = {r.tool: json.loads(r.params) for r in best.itertuples()}
@@ -1132,9 +1142,15 @@ def tune_cmd(
     env: Annotated[
         str, typer.Option(help="Conda env with samtools/ft/FiberHMM")
     ] = "fiberseq",
+    nworker: Annotated[
+        int,
+        typer.Option(
+            help="Number of parallel processes (FiberHMM uses 2 threads)"
+        ),
+    ] = 1,
 ):
     """Pick each tool's parameters on the tuning dataset."""
-    tuned = tune(out, env=env)
+    tuned = tune(out, env=env, nworker=nworker)
     typer.echo(json.dumps(tuned, indent=2))
 
 

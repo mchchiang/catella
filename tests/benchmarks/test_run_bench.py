@@ -1,6 +1,7 @@
 # test_run_bench.py
 
 import json
+import re
 import shutil
 import subprocess
 
@@ -8,6 +9,9 @@ import numpy as np
 import pandas as pd
 import pytest
 import run_bench
+from typer.testing import CliRunner
+
+runner = CliRunner()
 
 
 def _has_env(env):
@@ -404,6 +408,86 @@ class TestEvaluateUnits:
     def test_summary_without_results_raises(self, tmp_path):
         with pytest.raises(ValueError):
             run_bench.write_summary(tmp_path)
+
+
+def _pdf_pages(path):
+    return len(re.findall(rb"/Type\s*/Page\b(?!s)", path.read_bytes()))
+
+
+@pytest.fixture
+def evaluated_out(tuned_out):
+    run_bench.evaluate(tuned_out)
+    return tuned_out
+
+
+class TestPlotOccupancy:
+    def test_default_path_and_pages(self, evaluated_out):
+        path = run_bench.plot_occupancy(evaluated_out, "default", 1)
+        expected = (
+            evaluated_out / "plots" / "occupancy_default_s1_tuned.pdf"
+        )
+        assert path == expected
+        assert path.read_bytes().startswith(b"%PDF")
+        assert _pdf_pages(path) == -(-run_bench.QUICK_NMOL // 4)
+
+    def test_nmol(self, evaluated_out, tmp_path):
+        path = run_bench.plot_occupancy(
+            evaluated_out, "default", 1, nmol=5, path=tmp_path / "a.pdf"
+        )
+        assert _pdf_pages(path) == 2
+
+    def test_nmol_larger_than_dataset(self, evaluated_out, tmp_path):
+        path = run_bench.plot_occupancy(
+            evaluated_out, "default", 1, nmol=999, path=tmp_path / "a.pdf"
+        )
+        assert _pdf_pages(path) == -(-run_bench.QUICK_NMOL // 4)
+
+    @pytest.mark.parametrize(
+        "kwargs", [{"nmol": 0}, {"per_page": 0}, {"tools": ["nope"]}]
+    )
+    def test_invalid_args(self, evaluated_out, kwargs):
+        with pytest.raises(ValueError):
+            run_bench.plot_occupancy(evaluated_out, "default", 1, **kwargs)
+
+    def test_tool_subset_and_default_variant(self, evaluated_out, tmp_path):
+        path = run_bench.plot_occupancy(
+            evaluated_out,
+            "default",
+            1,
+            variant="default",
+            tools=["ft", "catella"],
+            path=tmp_path / "a.pdf",
+        )
+        assert path.exists()
+
+    def test_missing_tool_calls_skipped(self, evaluated_out, tmp_path):
+        shutil.rmtree(evaluated_out / "calls" / "ft_tuned")
+        path = run_bench.plot_occupancy(
+            evaluated_out, "default", 1, path=tmp_path / "a.pdf"
+        )
+        assert path.exists()
+
+    def test_no_calls_raises(self, tuned_out):
+        with pytest.raises(ValueError):
+            run_bench.plot_occupancy(tuned_out, "default", 1)
+
+    def test_cli(self, evaluated_out):
+        result = runner.invoke(
+            run_bench.app,
+            [
+                "plot_occupancy",
+                str(evaluated_out),
+                "--cond",
+                "default",
+                "--seed",
+                "1",
+                "--nmol",
+                "3",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        path = evaluated_out / "plots" / "occupancy_default_s1_tuned.pdf"
+        assert _pdf_pages(path) == 1
 
 
 class TestTuneEvaluate:

@@ -18,9 +18,12 @@ import pandas as pd
 import synthgen
 import typer
 from catella.simulation.config import SimSettings
+from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.figure import Figure
 
 # Benchmark configuration; fixed before any test dataset is scored
 NBP = 5000
+TRIM = 150
 NMOL = 100
 QUICK_NMOL = 20
 TUNE_SEED = 0
@@ -663,7 +666,7 @@ def score_calls(
     truth: pd.DataFrame,
     *,
     nbp: int = NBP,
-    trim: int = 150,
+    trim: int = TRIM,
 ) -> pd.DataFrame:
     """
     Score nucleosome calls against the ground truth, per molecule.
@@ -676,7 +679,7 @@ def score_calls(
         Ground truth with columns `mol_id`, `start`, `end`.
     nbp : int, default `NBP`
         Molecule length in bp.
-    trim : int, default 150
+    trim : int, default `TRIM`
         Bases excluded at each molecule end when computing the MCC.
 
     Returns
@@ -1125,6 +1128,165 @@ def write_summary(out: str | Path) -> pd.DataFrame:
     return results
 
 
+TOOL_STYLES = {
+    "truth": ("truth", "#52514e"),
+    "catella": ("catella", "#2a78d6"),
+    "ft": ("ft", "#eb6834"),
+    "fiberhmm_pre": ("FiberHMM (pretrained)", "#1baf7a"),
+    "fiberhmm": ("FiberHMM (retrained)", "#eda100"),
+}
+
+
+def _mod_qual_rows(ddir, mol_ids, nbp):
+    tsv = pd.read_csv(Path(ddir) / "synth.tsv", sep="\t")
+    rows = np.full((len(mol_ids), nbp), np.nan)
+    index = {m: i for i, m in enumerate(mol_ids)}
+    for mol_id, grp in tsv.groupby("read_id", sort=False):
+        if mol_id in index:
+            pos = grp["ref_position"].to_numpy()
+            rows[index[mol_id], pos] = grp["mod_qual"].to_numpy()
+    return rows
+
+
+def _draw_track(ax, label, occ, color):
+    ax.set_ylabel(label, rotation=0, ha="right", va="center", fontsize=7)
+    ax.set_yticks([])
+    for side in ("top", "right", "left"):
+        ax.spines[side].set_visible(False)
+    if occ is None:
+        return
+    ax.axvspan(0, TRIM, color="#eeeeee", zorder=0)
+    ax.axvspan(NBP - TRIM, NBP, color="#eeeeee", zorder=0)
+    x = np.arange(len(occ))
+    ax.fill_between(x, occ, step="mid", color=color, alpha=0.85, lw=0)
+    ax.set_ylim(0, 1)
+
+
+def plot_occupancy(
+    out: str | Path,
+    cond: str,
+    seed: int,
+    *,
+    variant: str = "tuned",
+    tools: list[str] | None = None,
+    nmol: int | None = None,
+    per_page: int = 4,
+    path: str | Path | None = None,
+) -> Path:
+    """
+    Plot methylation probability and nucleosome occupancy per molecule.
+
+    For each molecule of one test dataset, draws the per-site
+    `mod_qual` of the test data, the true nucleosome coverage, and the
+    occupancy of each tool, as stacked tracks along the molecule. The
+    `TRIM` bases at each end, excluded from scoring, are shaded. Tools
+    without saved calls for this dataset are left out.
+
+    Parameters
+    ----------
+    out : str or Path
+        Benchmark output directory (after `evaluate`).
+    cond : str
+        Condition name.
+    seed : int
+        Dataset seed.
+    variant : {"tuned", "default"}, default "tuned"
+        Parameter variant whose calls are plotted.
+    tools : list of str, optional
+        Tools to plot, in track order; all of `TOOLS`, in `TOOL_STYLES`
+        order, if None.
+    nmol : int, optional
+        Plot only the first `nmol` molecules of the dataset; all if None.
+    per_page : int, default 4
+        Molecules per A4 page.
+    path : str or Path, optional
+        Output PDF path; defaults to
+        `<out>/plots/occupancy_<cond>_s<seed>_<variant>.pdf`.
+
+    Returns
+    -------
+    Path
+        The PDF written.
+    """
+    if nmol is not None and nmol <= 0:
+        raise ValueError(f"nmol must be positive, got {nmol}")
+    if per_page <= 0:
+        raise ValueError(f"per_page must be positive, got {per_page}")
+    out = Path(out)
+    ddir = dataset_dir(out, cond, seed)
+    if tools is None:
+        tools = [t for t in TOOL_STYLES if t in TOOLS]
+    _check_choices("tools", tools, set(TOOLS))
+    calls = {}
+    for tool in tools:
+        h5 = out / "calls" / f"{tool}_{variant}" / cond / f"s{seed}.h5"
+        if h5.exists():
+            calls[tool] = load_calls(h5)
+    if not calls:
+        raise ValueError(
+            f"no saved calls for cond {cond!r}, seed {seed}, "
+            f"variant {variant!r}; run evaluate first"
+        )
+    mol_ids = _test_mol_ids(ddir)[:nmol]
+    true = intervals_to_calls(read_truth(ddir), mol_ids, NBP)
+    qual = _mod_qual_rows(ddir, mol_ids, NBP)
+    rows = {
+        tool: {m: i for i, m in enumerate(c.mol_ids)}
+        for tool, c in calls.items()
+    }
+    ntrack = len(calls) + 2
+    if path is None:
+        path = out / "plots" / f"occupancy_{cond}_s{seed}_{variant}.pdf"
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with PdfPages(path) as pdf:
+        for start in range(0, len(mol_ids), per_page):
+            page = mol_ids[start : start + per_page]
+            fig = Figure(figsize=(8.27, 11.69))
+            axes = fig.subplots(per_page * ntrack, 1, sharex=True)
+            for ax in axes[len(page) * ntrack :]:
+                ax.set_visible(False)
+            for k, mol_id in enumerate(page):
+                i = start + k
+                top = axes[k * ntrack]
+                image = top.imshow(
+                    qual[i][None, :],
+                    aspect="auto",
+                    cmap="Purples",
+                    vmin=0,
+                    vmax=1,
+                    interpolation="nearest",
+                    extent=(-0.5, NBP - 0.5, 0, 1),
+                )
+                top.set_title(mol_id, fontsize=8, loc="left")
+                _draw_track(top, "mod_qual", None, None)
+                label, color = TOOL_STYLES["truth"]
+                _draw_track(axes[k * ntrack + 1], label, true.occ[i], color)
+                for j, tool in enumerate(calls, 2):
+                    label, color = TOOL_STYLES[tool]
+                    occ = None
+                    if mol_id in rows[tool]:
+                        occ = calls[tool].occ[rows[tool][mol_id]]
+                    _draw_track(axes[k * ntrack + j], label, occ, color)
+            axes[len(page) * ntrack - 1].set_xlabel("position (bp)")
+            fig.suptitle(
+                f"Methylation probability and nucleosome occupancy: {cond}, "
+                f"seed {seed}, {variant} parameters\n"
+                "(shaded ends excluded from scoring)",
+                fontsize=9,
+            )
+            fig.tight_layout(rect=(0, 0.03, 1, 0.97), h_pad=0.2)
+            cax = fig.add_axes((0.35, 0.012, 0.3, 0.008))
+            bar = fig.colorbar(image, cax=cax, orientation="horizontal")
+            bar.set_label(
+                "mod_qual = P(methylated | signal); white = no site",
+                fontsize=7,
+            )
+            bar.ax.tick_params(labelsize=6)
+            pdf.savefig(fig)
+    return path
+
+
 app = typer.Typer(help="Benchmark catella against fibertools and FiberHMM")
 
 
@@ -1210,6 +1372,37 @@ def summarize_cmd(
     """Combine all unit results and write the summary."""
     write_summary(out)
     typer.echo(f"wrote {Path(out) / 'summary.md'}")
+
+
+@app.command(name="plot_occupancy")
+def plot_occupancy_cmd(
+    out: Annotated[Path, typer.Argument(help="Benchmark output directory")],
+    cond: Annotated[str, typer.Option(help="Condition name")],
+    seed: Annotated[int, typer.Option(help="Dataset seed")],
+    variant: Annotated[
+        str, typer.Option(help="Parameter variant: tuned or default")
+    ] = "tuned",
+    tool: Annotated[
+        list[str] | None, typer.Option(help="Only this tool (repeatable)")
+    ] = None,
+    nmol: Annotated[
+        int | None, typer.Option(help="Plot only the first NMOL molecules")
+    ] = None,
+    per_page: Annotated[
+        int, typer.Option(help="Molecules per page")
+    ] = 4,
+):
+    """Plot methylation probability and occupancy per molecule."""
+    path = plot_occupancy(
+        out,
+        cond,
+        seed,
+        variant=variant,
+        tools=tool,
+        nmol=nmol,
+        per_page=per_page,
+    )
+    typer.echo(f"wrote {path}")
 
 
 if __name__ == "__main__":

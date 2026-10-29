@@ -305,7 +305,10 @@ class TestSummarize:
 
 @pytest.fixture
 def fake_tools(monkeypatch):
+    runs = []
+
     def fake_run_tool(tool, ddir, workdir, params, env="fiberseq"):
+        runs.append(tool)
         truth = run_bench.read_truth(ddir)
         mol_ids = list(dict.fromkeys(truth["mol_id"]))
         perfect = tool == "catella" or 85 in params.values()
@@ -314,6 +317,59 @@ def fake_tools(monkeypatch):
         return run_bench.intervals_to_calls(truth, mol_ids, run_bench.NBP)
 
     monkeypatch.setattr(run_bench, "run_tool", fake_run_tool)
+    return runs
+
+
+@pytest.fixture
+def tuned_out(tmp_path, fake_tools):
+    run_bench.make_data(tmp_path, quick=True, convert=False)
+    run_bench.tune(tmp_path)
+    fake_tools.clear()
+    return tmp_path
+
+
+class TestEvaluateUnits:
+    def test_one_result_file_per_unit(self, tuned_out):
+        run_bench.evaluate(tuned_out)
+        for tool in run_bench.TOOLS:
+            path = run_bench.unit_result_path(tuned_out, tool, "default", 1)
+            table = pd.read_csv(path)
+            assert set(table["tool"]) == {tool}
+            assert set(table["variant"]) == {"tuned", "default"}
+            assert len(table) == 2 * run_bench.QUICK_NMOL
+
+    def test_existing_units_skipped(self, tuned_out, fake_tools):
+        run_bench.evaluate(tuned_out)
+        assert len(fake_tools) == 2 * len(run_bench.TOOLS)
+        fake_tools.clear()
+        run_bench.evaluate(tuned_out)
+        assert fake_tools == []
+        run_bench.evaluate(tuned_out, tools=["ft"], overwrite=True)
+        assert fake_tools == ["ft", "ft"]
+
+    def test_filters(self, tuned_out, fake_tools):
+        run_bench.evaluate(tuned_out, tools=["ft"], conds=["default"])
+        assert set(fake_tools) == {"ft"}
+        results = pd.read_csv(tuned_out / "results.csv")
+        assert set(results["tool"]) == {"ft"}
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [{"tools": ["nope"]}, {"conds": ["nope"]}, {"seeds": [99]}],
+    )
+    def test_unknown_filter_values_raise(self, tuned_out, kwargs):
+        with pytest.raises(ValueError):
+            run_bench.evaluate(tuned_out, **kwargs)
+
+    def test_partial_summary(self, tuned_out):
+        run_bench.evaluate(tuned_out, tools=["catella", "ft"])
+        paired = pd.read_csv(tuned_out / "summary_paired.csv")
+        assert set(paired["other"]) == {"ft"}
+        assert (tuned_out / "summary.md").exists()
+
+    def test_summary_without_results_raises(self, tmp_path):
+        with pytest.raises(ValueError):
+            run_bench.write_summary(tmp_path)
 
 
 class TestTuneEvaluate:

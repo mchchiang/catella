@@ -902,16 +902,115 @@ def summarize(results: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     return per_tool, pd.DataFrame(rows)
 
 
-def evaluate(out: str | Path, *, env: str = "fiberseq") -> pd.DataFrame:
+def unit_result_path(out: str | Path, tool: str, cond: str, seed: int) -> Path:
     """
-    Run all tools on all test datasets and summarize.
+    Result file of one evaluation unit (one tool on one dataset).
 
-    Each tool is run with its tuned parameters (`tuned_params.json`)
-    and with its default parameters. Writes calls to
-    `<out>/calls/<tool>_<variant>/<cond>/s<seed>.h5`, per-molecule
-    scores to `<out>/results.csv`, and the summary tables to
-    `<out>/summary_per_tool.csv`, `<out>/summary_paired.csv`, and
-    `<out>/summary.md`.
+    Parameters
+    ----------
+    out : str or Path
+        Benchmark output directory.
+    tool : str
+        A key of `TOOLS`.
+    cond : str
+        Condition name.
+    seed : int
+        Dataset seed.
+
+    Returns
+    -------
+    Path
+        `<out>/results/<tool>/<cond>/s<seed>.csv`.
+    """
+    return Path(out) / "results" / tool / cond / f"s{seed}.csv"
+
+
+def evaluate_unit(
+    out: str | Path,
+    spec: dict,
+    tool: str,
+    tuned: dict,
+    env: str = "fiberseq",
+    overwrite: bool = False,
+) -> Path:
+    """
+    Run one tool on one test dataset, with tuned and default parameters.
+
+    Saves the calls of each variant to
+    `<out>/calls/<tool>_<variant>/<cond>/s<seed>.h5` and the
+    per-molecule scores of both variants to `unit_result_path`.
+
+    Parameters
+    ----------
+    out : str or Path
+        Benchmark output directory.
+    spec : dict
+        Dataset spec from `datasets.json` (keys "cond", "seed", "dir").
+    tool : str
+        A key of `TOOLS`.
+    tuned : dict
+        Tuned parameters of `tool`.
+    env : str, default "fiberseq"
+        Conda environment for the external tools.
+    overwrite : bool, default False
+        If False and the result file exists, skip the unit.
+
+    Returns
+    -------
+    Path
+        The result file.
+    """
+    out = Path(out)
+    cond, seed = spec["cond"], spec["seed"]
+    path = unit_result_path(out, tool, cond, seed)
+    if path.exists() and not overwrite:
+        return path
+    truth = read_truth(spec["dir"])
+    work = out / "work"
+    work.mkdir(parents=True, exist_ok=True)
+    frames = []
+    for variant, params in (("tuned", tuned), ("default", {})):
+        with tempfile.TemporaryDirectory(dir=work) as wd:
+            calls = run_tool(tool, spec["dir"], wd, params, env)
+        save_calls(
+            calls, out / "calls" / f"{tool}_{variant}" / cond / f"s{seed}.h5"
+        )
+        scores = score_calls(calls, truth)
+        scores.insert(0, "seed", seed)
+        scores.insert(0, "cond", cond)
+        scores.insert(0, "variant", variant)
+        scores.insert(0, "tool", tool)
+        frames.append(scores)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pd.concat(frames, ignore_index=True).to_csv(path, index=False)
+    return path
+
+
+def _check_choices(name, values, allowed):
+    unknown = [v for v in values if v not in allowed]
+    if unknown:
+        raise ValueError(
+            f"unknown {name} {unknown}; expected values in {sorted(allowed)}"
+        )
+
+
+def evaluate(
+    out: str | Path,
+    *,
+    env: str = "fiberseq",
+    nworker: int = 1,
+    tools: list[str] | None = None,
+    conds: list[str] | None = None,
+    seeds: list[int] | None = None,
+    overwrite: bool = False,
+) -> pd.DataFrame:
+    """
+    Run tools on test datasets and summarize all results so far.
+
+    Each (test dataset, tool) pair is one unit (see `evaluate_unit`);
+    units run in parallel and existing unit results are skipped unless
+    `overwrite`. Afterward, `write_summary` combines every unit result
+    present, including those from earlier or separate runs.
 
     Parameters
     ----------
@@ -919,6 +1018,54 @@ def evaluate(out: str | Path, *, env: str = "fiberseq") -> pd.DataFrame:
         Benchmark output directory (after `tune`).
     env : str, default "fiberseq"
         Conda environment for the external tools.
+    nworker : int, default 1
+        Number of units run in parallel.
+    tools : list of str, optional
+        Restrict to these tools (keys of `TOOLS`); all if None.
+    conds : list of str, optional
+        Restrict to these conditions; all if None.
+    seeds : list of int, optional
+        Restrict to these dataset seeds; all if None.
+    overwrite : bool, default False
+        If True, rerun units whose results already exist.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Per-molecule results of all units present, as returned by
+        `write_summary`.
+    """
+    out = Path(out)
+    with open(out / "tuned_params.json") as fh:
+        tuned = json.load(fh)
+    specs = [s for s in _read_record(out)["datasets"] if s["cond"] != "tune"]
+    _check_choices("tools", tools or [], set(TOOLS))
+    _check_choices("conds", conds or [], {s["cond"] for s in specs})
+    _check_choices("seeds", seeds or [], {s["seed"] for s in specs})
+    units = [
+        (out, spec, tool, tuned[tool], env, overwrite)
+        for spec in specs
+        if (conds is None or spec["cond"] in conds)
+        and (seeds is None or spec["seed"] in seeds)
+        for tool in TOOLS
+        if tools is None or tool in tools
+    ]
+    _run_tasks(evaluate_unit, units, nworker)
+    return write_summary(out)
+
+
+def write_summary(out: str | Path) -> pd.DataFrame:
+    """
+    Combine all unit results and write the summary tables.
+
+    Writes `<out>/results.csv` (per-molecule results of every unit
+    present), `<out>/summary_per_tool.csv`, `<out>/summary_paired.csv`,
+    and `<out>/summary.md`.
+
+    Parameters
+    ----------
+    out : str or Path
+        Benchmark output directory.
 
     Returns
     -------
@@ -926,29 +1073,13 @@ def evaluate(out: str | Path, *, env: str = "fiberseq") -> pd.DataFrame:
         Per-molecule results.
     """
     out = Path(out)
-    with open(out / "tuned_params.json") as fh:
-        tuned = json.load(fh)
-    datasets = _read_record(out)["datasets"]
-    specs = [s for s in datasets if s["cond"] != "tune"]
-    work = out / "work"
-    work.mkdir(parents=True, exist_ok=True)
-    frames = []
-    for spec in specs:
-        truth = read_truth(spec["dir"])
-        for tool in TOOLS:
-            for variant, params in (("tuned", tuned[tool]), ("default", {})):
-                with tempfile.TemporaryDirectory(dir=work) as wd:
-                    calls = run_tool(tool, spec["dir"], wd, params, env)
-                name = f"{tool}_{variant}/{spec['cond']}/s{spec['seed']}.h5"
-                save_calls(calls, out / "calls" / name)
-                scores = score_calls(calls, truth)
-                scores.insert(0, "seed", spec["seed"])
-                scores.insert(0, "cond", spec["cond"])
-                scores.insert(0, "variant", variant)
-                scores.insert(0, "tool", tool)
-                frames.append(scores)
-    results = pd.concat(frames, ignore_index=True)
+    files = sorted((out / "results").glob("*/*/*.csv"))
+    if not files:
+        raise ValueError(f"no unit results found in {out / 'results'}")
+    results = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
     results.to_csv(out / "results.csv", index=False)
+    tuned_path = out / "tuned_params.json"
+    tuned = json.loads(tuned_path.read_text()) if tuned_path.exists() else {}
     per_tool, paired = summarize(results)
     per_tool.to_csv(out / "summary_per_tool.csv", index=False)
     paired.to_csv(out / "summary_paired.csv", index=False)
@@ -1013,9 +1144,45 @@ def evaluate_cmd(
     env: Annotated[
         str, typer.Option(help="Conda env with samtools/ft/FiberHMM")
     ] = "fiberseq",
+    nworker: Annotated[
+        int,
+        typer.Option(
+            help="Number of parallel processes (FiberHMM uses 2 threads)"
+        ),
+    ] = 1,
+    tool: Annotated[
+        list[str] | None, typer.Option(help="Only this tool (repeatable)")
+    ] = None,
+    cond: Annotated[
+        list[str] | None,
+        typer.Option(help="Only this condition (repeatable)"),
+    ] = None,
+    seed: Annotated[
+        list[int] | None, typer.Option(help="Only this seed (repeatable)")
+    ] = None,
+    overwrite: Annotated[
+        bool, typer.Option(help="Rerun units with existing results")
+    ] = False,
 ):
-    """Run all tools on the test datasets and write the summary."""
-    evaluate(out, env=env)
+    """Run tools on the test datasets and write the summary."""
+    evaluate(
+        out,
+        env=env,
+        nworker=nworker,
+        tools=tool,
+        conds=cond,
+        seeds=seed,
+        overwrite=overwrite,
+    )
+    typer.echo(f"wrote {Path(out) / 'summary.md'}")
+
+
+@app.command(name="summarize")
+def summarize_cmd(
+    out: Annotated[Path, typer.Argument(help="Benchmark output directory")],
+):
+    """Combine all unit results and write the summary."""
+    write_summary(out)
     typer.echo(f"wrote {Path(out) / 'summary.md'}")
 
 

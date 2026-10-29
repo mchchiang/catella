@@ -1,5 +1,6 @@
 # test_tm_bruteforce.py
 
+import itertools
 import math
 
 import numpy as np
@@ -81,7 +82,7 @@ def _brute_force_log(nucbp, llink, elink, mu, eseq, temp):
         energy = sum(eseq[x] - mu for x in placed)
         energy += sum(
             _erep(b - a, nucbp, llink, elink)
-            for a, b in zip(placed, placed[1:])
+            for a, b in itertools.pairwise(placed)
         )
         logw.append(-energy / temp)
     logw = np.asarray(logw)

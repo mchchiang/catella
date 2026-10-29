@@ -58,11 +58,33 @@ class TestPlaceNucleosomes:
             {"nbp": 100, "nmol": 0},
             {"nbp": 100, "nmol": 1, "lnuc": 0},
             {"nbp": 100, "nmol": 1, "linker_mean": -1.0},
+            {"nbp": 100, "nmol": 1, "lnuc_range": (0, 10)},
+            {"nbp": 100, "nmol": 1, "lnuc_range": (20, 10)},
         ],
     )
     def test_invalid_args(self, kwargs):
         with pytest.raises(ValueError):
             synthgen.place_nucleosomes(**kwargs)
+
+    def test_lnuc_range_lengths(self):
+        nucs = synthgen.place_nucleosomes(
+            20000, 5, lnuc_range=(120, 160), seed=0
+        )
+        lengths = nucs["end"] - nucs["start"]
+        assert lengths.min() >= 120
+        assert lengths.max() <= 160
+        assert lengths.nunique() > 10
+        for _, grp in nucs.groupby("mol_id"):
+            starts = grp["start"].to_numpy()
+            ends = grp["end"].to_numpy()
+            assert (starts[1:] >= ends[:-1]).all()
+        assert (nucs["end"] <= 20000).all()
+
+    def test_lnuc_range_single_value(self):
+        nucs = synthgen.place_nucleosomes(
+            3000, 3, lnuc_range=(100, 100), seed=0
+        )
+        assert (nucs["end"] - nucs["start"] == 100).all()
 
 
 class TestWriteTruthBed:
@@ -549,6 +571,28 @@ class TestCli:
         assert result.exit_code == 0, result.output
         for ext in ("size", "fa", "tsv", "sam", "truth.bed"):
             assert (tmp_path / f"synth.{ext}").exists()
+
+    def test_lnuc_range_option(self, tmp_path):
+        result = runner.invoke(
+            synthgen.app,
+            [
+                str(tmp_path),
+                "--nbp",
+                "3000",
+                "--nmol",
+                "3",
+                "--lnuc-range",
+                "120",
+                "160",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        truth = pd.read_csv(
+            tmp_path / "synth.truth.bed", sep="\t", header=None
+        )
+        lengths = truth[2] - truth[1]
+        assert lengths.between(120, 160).all()
+        assert lengths.nunique() > 1
 
     def test_controls_and_double_strand_flags(self, tmp_path):
         result = runner.invoke(

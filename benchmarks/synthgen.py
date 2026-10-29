@@ -30,6 +30,7 @@ def place_nucleosomes(
     chrom: str = "chr1",
     lnuc: int = 147,
     linker_mean: float = 40.0,
+    lnuc_range: tuple[int, int] | None = None,
     seed: int | None = None,
 ) -> pd.DataFrame:
     """
@@ -37,8 +38,9 @@ def place_nucleosomes(
 
     Each molecule spans `[0, nbp)` on `chrom`. Starting from position 0,
     linker lengths are drawn from an exponential distribution (rounded
-    to integers) and nucleosome footprints of length `lnuc` are placed
-    between them until no further footprint fits.
+    to integers) and nucleosome footprints of length `lnuc` (or of a
+    random length in `lnuc_range`) are placed between them until no
+    further footprint fits.
 
     Parameters
     ----------
@@ -52,6 +54,9 @@ def place_nucleosomes(
         Nucleosome footprint length (bp).
     linker_mean : float, default 40.0
         Mean linker length (bp).
+    lnuc_range : tuple of (int, int), optional
+        If given, `(lo, hi)`: each nucleosome footprint length is drawn
+        uniformly from the integers in `[lo, hi]`, overriding `lnuc`.
     seed : int, optional
         Seed for the random number generator.
 
@@ -71,14 +76,26 @@ def place_nucleosomes(
         raise ValueError(
             f"linker_mean must be non-negative, got {linker_mean}"
         )
+    if lnuc_range is not None and not 0 < lnuc_range[0] <= lnuc_range[1]:
+        raise ValueError(
+            f"lnuc_range must satisfy 0 < lo <= hi, got {lnuc_range}"
+        )
     rng = np.random.default_rng(seed)
+
+    def draw_len():
+        if lnuc_range is None:
+            return lnuc
+        return int(rng.integers(lnuc_range[0], lnuc_range[1] + 1))
+
     rows = []
     for i in range(nmol):
         mol_id = f"mol{i}"
         pos = round(rng.exponential(linker_mean))
-        while pos + lnuc <= nbp:
-            rows.append((mol_id, chrom, pos, pos + lnuc))
-            pos += lnuc + round(rng.exponential(linker_mean))
+        length = draw_len()
+        while pos + length <= nbp:
+            rows.append((mol_id, chrom, pos, pos + length))
+            pos += length + round(rng.exponential(linker_mean))
+            length = draw_len()
     nucs = pd.DataFrame(rows, columns=_TRUTH_COLS)
     return nucs.astype({"start": "int64", "end": "int64"})
 
@@ -506,6 +523,7 @@ def make_dataset(
     nucs: pd.DataFrame | None = None,
     lnuc: int = 147,
     linker_mean: float = 40.0,
+    lnuc_range: tuple[int, int] | None = None,
     p_linker: float = 0.7,
     p_nuc: float = 0.02,
     signal_sep: float = 2.0,
@@ -548,6 +566,9 @@ def make_dataset(
         Nucleosome footprint length (bp); used only if `nucs` is None.
     linker_mean : float, default 40.0
         Mean linker length (bp); used only if `nucs` is None.
+    lnuc_range : tuple of (int, int), optional
+        Range of random footprint lengths (bp); see `place_nucleosomes`.
+        Used only if `nucs` is None.
     p_linker : float, default 0.7
         Methylation probability of an eligible site in linker DNA.
     p_nuc : float, default 0.02
@@ -583,6 +604,7 @@ def make_dataset(
             chrom=chrom,
             lnuc=lnuc,
             linker_mean=linker_mean,
+            lnuc_range=lnuc_range,
             seed=nuc_seed,
         )
     else:
@@ -664,6 +686,10 @@ def main(
     linker_mean: Annotated[
         float, typer.Option(help="Mean linker length (bp)")
     ] = 40.0,
+    lnuc_range: Annotated[
+        tuple[int, int] | None,
+        typer.Option(help="Random footprint length range LO HI (bp)"),
+    ] = None,
     p_linker: Annotated[
         float, typer.Option(help="Methylation probability in linkers")
     ] = 0.7,
@@ -701,6 +727,7 @@ def main(
         nucs=nuc_table,
         lnuc=lnuc,
         linker_mean=linker_mean,
+        lnuc_range=lnuc_range,
         p_linker=p_linker,
         p_nuc=p_nuc,
         signal_sep=signal_sep,

@@ -76,6 +76,7 @@ scripts.open = "python -m webbrowser -t docs/_build/html/index.html"
 dependency-groups = ["dev", "test"]
 
 [tool.pytest.ini_options]
+pythonpath = ["benchmarks"]
 filterwarnings = [
     "ignore:'click.utils.get_binary_stream' is deprecated:DeprecationWarning:typer",
     "ignore:'click.utils.get_text_stream' is deprecated:DeprecationWarning:typer",

@@ -598,6 +598,71 @@ def save_calls(calls: Calls, path: str | Path) -> Path:
     return path
 
 
+def mcc(truth: np.ndarray, pred: np.ndarray) -> float:
+    """
+    Matthews correlation coefficient of two boolean arrays.
+
+    Parameters
+    ----------
+    truth, pred : np.ndarray of bool
+        True and predicted labels, same shape.
+
+    Returns
+    -------
+    float
+        MCC in [-1, 1]; 0 if either array is constant.
+    """
+    tp = float(np.sum(truth & pred))
+    tn = float(np.sum(~truth & ~pred))
+    fp = float(np.sum(~truth & pred))
+    fn = float(np.sum(truth & ~pred))
+    denom = np.sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
+    return (tp * tn - fp * fn) / denom if denom else 0.0
+
+
+def score_calls(
+    calls: Calls,
+    truth: pd.DataFrame,
+    *,
+    nbp: int = NBP,
+    trim: int = 150,
+) -> pd.DataFrame:
+    """
+    Score nucleosome calls against the ground truth, per molecule.
+
+    Parameters
+    ----------
+    calls : Calls
+        Calls to score.
+    truth : pandas.DataFrame
+        Ground truth with columns `mol_id`, `start`, `end`.
+    nbp : int, default `NBP`
+        Molecule length in bp.
+    trim : int, default 150
+        Bases excluded at each molecule end when computing the MCC.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Columns `mol_id`; `mcc`, the MCC of occupancy >= 0.5 against
+        the true nucleosome coverage over `[trim, nbp - trim)`; and
+        `count_err`, the called (or expected) minus the true number of
+        nucleosomes on the whole molecule.
+    """
+    true = intervals_to_calls(truth, list(calls.mol_ids), nbp)
+    inner = slice(trim, nbp - trim)
+    rows = []
+    for i, mol_id in enumerate(calls.mol_ids):
+        rows.append(
+            (
+                mol_id,
+                mcc(true.occ[i, inner] >= 0.5, calls.occ[i, inner] >= 0.5),
+                calls.count[i] - true.count[i],
+            )
+        )
+    return pd.DataFrame(rows, columns=["mol_id", "mcc", "count_err"])
+
+
 def load_calls(path: str | Path) -> Calls:
     """
     Load calls saved by `save_calls`.

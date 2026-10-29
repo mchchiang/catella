@@ -159,6 +159,75 @@ class TestSaveLoadCalls:
         np.testing.assert_array_equal(back.count, calls.count)
 
 
+class TestMcc:
+    def test_perfect(self):
+        truth = np.array([1, 1, 0, 0, 1], dtype=bool)
+        assert run_bench.mcc(truth, truth) == pytest.approx(1.0)
+
+    def test_inverted(self):
+        truth = np.array([1, 1, 0, 0, 1], dtype=bool)
+        assert run_bench.mcc(truth, ~truth) == pytest.approx(-1.0)
+
+    def test_constant_prediction(self):
+        truth = np.array([1, 1, 0, 0, 1], dtype=bool)
+        assert run_bench.mcc(truth, np.ones(5, dtype=bool)) == 0.0
+
+    def test_known_value(self):
+        truth = np.array([1, 1, 1, 0, 0, 0], dtype=bool)
+        pred = np.array([1, 1, 0, 0, 0, 1], dtype=bool)
+        assert run_bench.mcc(truth, pred) == pytest.approx(1 / 3)
+
+
+class TestScoreCalls:
+    def _truth(self):
+        return pd.DataFrame(
+            {
+                "mol_id": ["a", "a", "b"],
+                "start": [10, 40, 20],
+                "end": [30, 60, 50],
+            }
+        )
+
+    def test_perfect_calls(self):
+        truth = self._truth()
+        calls = run_bench.intervals_to_calls(truth, ["a", "b"], 80)
+        scores = run_bench.score_calls(calls, truth, nbp=80, trim=5)
+        assert scores["mol_id"].tolist() == ["a", "b"]
+        assert scores["mcc"].tolist() == pytest.approx([1.0, 1.0])
+        assert scores["count_err"].tolist() == [0, 0]
+
+    def test_merged_calls(self):
+        truth = self._truth()
+        merged = pd.DataFrame({"mol_id": ["a"], "start": [10], "end": [60]})
+        calls = run_bench.intervals_to_calls(merged, ["a"], 80)
+        scores = run_bench.score_calls(calls, truth, nbp=80, trim=5)
+        assert scores["count_err"].tolist() == [-1]
+        assert 0 < scores["mcc"].iloc[0] < 1
+
+    def test_probability_occupancy(self):
+        truth = self._truth()
+        calls = run_bench.intervals_to_calls(truth, ["a", "b"], 80)
+        calls.occ = 0.4 + 0.2 * calls.occ
+        calls.count = np.array([2.4, 0.8])
+        scores = run_bench.score_calls(calls, truth, nbp=80, trim=5)
+        assert scores["mcc"].tolist() == pytest.approx([1.0, 1.0])
+        assert scores["count_err"].tolist() == pytest.approx([0.4, -0.2])
+
+    def test_trim_excludes_ends(self):
+        truth = pd.DataFrame({"mol_id": ["a"], "start": [0], "end": [10]})
+        empty = pd.DataFrame(columns=["mol_id", "start", "end"])
+        calls = run_bench.intervals_to_calls(empty, ["a"], 80)
+        calls.occ[0, 40:50] = 1
+        truth_mid = pd.concat(
+            [
+                truth,
+                pd.DataFrame({"mol_id": ["a"], "start": [40], "end": [50]}),
+            ]
+        )
+        scores = run_bench.score_calls(calls, truth_mid, nbp=80, trim=20)
+        assert scores["mcc"].iloc[0] == pytest.approx(1.0)
+
+
 @pytest.fixture(scope="module")
 def quick_data(tmp_path_factory):
     out = tmp_path_factory.mktemp("bench")

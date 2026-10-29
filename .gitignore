@@ -20,6 +20,7 @@ catella.egg-info/
 /data/
 /node_modules/
 /.coverage*
+/benchmarks/out/
 
 # docs
 /docs/generated/

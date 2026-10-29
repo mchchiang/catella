@@ -178,8 +178,8 @@ def simulate_calls(
     chrom: str = "chr1",
     mtase: str = "A",
     p_linker: float = 0.7,
-    p_nuc: float = 0.05,
-    signal_sep: float = 1.5,
+    p_nuc: float = 0.02,
+    signal_sep: float = 2.0,
     seed: int | None = None,
 ) -> pd.DataFrame:
     """
@@ -209,10 +209,10 @@ def simulate_calls(
         Methyltransferase context.
     p_linker : float, default 0.7
         Methylation probability of an eligible site in linker DNA.
-    p_nuc : float, default 0.05
+    p_nuc : float, default 0.02
         Methylation probability of an eligible site inside a
         nucleosome.
-    signal_sep : float, default 1.5
+    signal_sep : float, default 2.0
         Signal separation s. Each site has a raw signal x ~ Normal(s, 1)
         if methylated and Normal(-s, 1) otherwise, and `mod_qual` is
         P(methylated | x) under a 50:50 prior,
@@ -482,8 +482,8 @@ def make_dataset(
     lnuc: int = 147,
     linker_mean: float = 40.0,
     p_linker: float = 0.7,
-    p_nuc: float = 0.05,
-    signal_sep: float = 1.5,
+    p_nuc: float = 0.02,
+    signal_sep: float = 2.0,
     seed: int | None = None,
 ) -> dict[str, Path]:
     """
@@ -518,10 +518,10 @@ def make_dataset(
         Mean linker length (bp); used only if `nucs` is None.
     p_linker : float, default 0.7
         Methylation probability of an eligible site in linker DNA.
-    p_nuc : float, default 0.05
+    p_nuc : float, default 0.02
         Methylation probability of an eligible site inside a
         nucleosome.
-    signal_sep : float, default 1.5
+    signal_sep : float, default 2.0
         Signal separation for the call scores; see `simulate_calls`.
     seed : int, optional
         Seed for the random number generator.
@@ -605,10 +605,10 @@ def main(
     ] = 0.7,
     p_nuc: Annotated[
         float, typer.Option(help="Methylation probability in nucleosomes")
-    ] = 0.05,
+    ] = 0.02,
     signal_sep: Annotated[
         float, typer.Option(help="Signal separation for call scores")
-    ] = 1.5,
+    ] = 2.0,
     seed: Annotated[int | None, typer.Option(help="Random seed")] = None,
 ):
     """Generate a synthetic footprinting dataset."""

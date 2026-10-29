@@ -71,3 +71,141 @@ class TestWriteTruthBed:
         pd.testing.assert_frame_equal(
             back[["mol_id", "chrom", "start", "end"]], nucs
         )
+
+
+class TestRandomSequence:
+    def test_length_and_alphabet(self):
+        seq = synthgen.random_sequence(500, seed=0)
+        assert len(seq) == 500
+        assert set(seq) <= set("ACGT")
+
+    def test_seed_reproducible(self):
+        a = synthgen.random_sequence(100, seed=3)
+        b = synthgen.random_sequence(100, seed=3)
+        assert a == b
+
+    def test_invalid_nbp(self):
+        with pytest.raises(ValueError):
+            synthgen.random_sequence(0)
+
+
+class TestEligibleSites:
+    @pytest.mark.parametrize(
+        "mtase, strand, expected",
+        [
+            ("A", "+", [0, 4]),
+            ("A", "-", [5, 6]),
+            ("CG", "+", [2]),
+            ("CG", "-", [3]),
+            ("GC", "+", [8]),
+            ("GC", "-", [7]),
+        ],
+    )
+    def test_positions(self, mtase, strand, expected):
+        seq = "ACCGATTGC"
+        pos = synthgen.eligible_sites(seq, mtase, strand)
+        assert pos.tolist() == expected
+
+    def test_lowercase_input(self):
+        pos = synthgen.eligible_sites("acga", "A", "+")
+        assert pos.tolist() == [0, 3]
+
+    def test_invalid_mtase(self):
+        with pytest.raises(ValueError):
+            synthgen.eligible_sites("ACGT", "TA", "+")
+
+    def test_invalid_strand(self):
+        with pytest.raises(ValueError):
+            synthgen.eligible_sites("ACGT", "A", ".")
+
+
+class TestSimulateCalls:
+    def _data(self, nbp=3000, nmol=20, seed=0):
+        seq = synthgen.random_sequence(nbp, seed=seed)
+        nucs = synthgen.place_nucleosomes(nbp, nmol, seed=seed)
+        return seq, nucs
+
+    def test_columns(self):
+        seq, nucs = self._data()
+        calls = synthgen.simulate_calls(seq, nucs, seed=0)
+        assert list(calls.columns) == [
+            "mol_id", "chrom", "pos", "strand", "mod_qual"
+        ]
+
+    def test_one_strand_per_molecule(self):
+        seq, nucs = self._data()
+        calls = synthgen.simulate_calls(seq, nucs, seed=0)
+        assert (calls.groupby("mol_id")["strand"].nunique() == 1).all()
+        assert set(calls["strand"]) <= {"+", "-"}
+
+    @pytest.mark.parametrize("mtase", ["A", "CG", "GC"])
+    def test_positions_are_eligible(self, mtase):
+        seq, nucs = self._data()
+        calls = synthgen.simulate_calls(seq, nucs, mtase=mtase, seed=1)
+        for (_, strand), grp in calls.groupby(["mol_id", "strand"]):
+            expected = synthgen.eligible_sites(seq, mtase, strand)
+            assert grp["pos"].tolist() == expected.tolist()
+
+    def test_mod_qual_range(self):
+        seq, nucs = self._data()
+        calls = synthgen.simulate_calls(seq, nucs, seed=0)
+        assert ((calls["mod_qual"] >= 0) & (calls["mod_qual"] < 1)).all()
+
+    def test_linker_methylated_more_than_nucleosome(self):
+        seq, nucs = self._data(nmol=50)
+        calls = synthgen.simulate_calls(
+            seq, nucs, p_linker=0.8, p_nuc=0.1, seed=2
+        )
+        inside = np.zeros(len(calls), dtype=bool)
+        for mol_id, grp in nucs.groupby("mol_id"):
+            sel = (calls["mol_id"] == mol_id).to_numpy()
+            pos = calls.loc[sel, "pos"].to_numpy()
+            hit = np.zeros(len(pos), dtype=bool)
+            for start, end in zip(grp["start"], grp["end"]):
+                hit |= (pos >= start) & (pos < end)
+            inside[sel] = hit
+        meth = calls["mod_qual"].to_numpy() >= 0.5
+        assert meth[inside].mean() == pytest.approx(0.1, abs=0.03)
+        assert meth[~inside].mean() == pytest.approx(0.8, abs=0.03)
+
+    def test_extreme_probabilities(self):
+        seq, nucs = self._data()
+        calls = synthgen.simulate_calls(
+            seq, nucs, p_linker=1.0, p_nuc=1.0, seed=0
+        )
+        assert (calls["mod_qual"] >= 0.5).all()
+
+    def test_mol_ids_adds_nucleosome_free_molecule(self):
+        seq, nucs = self._data(nmol=2)
+        calls = synthgen.simulate_calls(
+            seq, nucs, ["mol0", "mol1", "free"], p_linker=1.0, seed=0
+        )
+        assert set(calls["mol_id"]) == {"mol0", "mol1", "free"}
+        free = calls[calls["mol_id"] == "free"]
+        assert (free["mod_qual"] >= 0.5).all()
+
+    def test_chrom(self):
+        seq, nucs = self._data(nmol=2)
+        calls = synthgen.simulate_calls(seq, nucs, chrom="seg", seed=0)
+        assert (calls["chrom"] == "seg").all()
+
+    def test_seed_reproducible(self):
+        seq, nucs = self._data()
+        a = synthgen.simulate_calls(seq, nucs, seed=5)
+        b = synthgen.simulate_calls(seq, nucs, seed=5)
+        pd.testing.assert_frame_equal(a, b)
+
+    def test_nucleosome_out_of_bounds(self):
+        nucs = pd.DataFrame(
+            {"mol_id": ["m"], "chrom": ["c"], "start": [0], "end": [200]}
+        )
+        with pytest.raises(ValueError):
+            synthgen.simulate_calls("ACGT" * 10, nucs)
+
+    @pytest.mark.parametrize(
+        "kwargs", [{"p_linker": 1.5}, {"p_nuc": -0.1}]
+    )
+    def test_invalid_probabilities(self, kwargs):
+        seq, nucs = self._data(nmol=1)
+        with pytest.raises(ValueError):
+            synthgen.simulate_calls(seq, nucs, **kwargs)

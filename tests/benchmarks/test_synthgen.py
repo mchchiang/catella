@@ -137,6 +137,19 @@ class TestSimulateCalls:
             "mol_id", "chrom", "pos", "strand", "mod_qual"
         ]
 
+    @pytest.mark.parametrize("mtase", ["A", "CG", "GC"])
+    def test_double_strand_reads_both_strands(self, mtase):
+        seq, nucs = self._data(nmol=5)
+        calls = synthgen.simulate_calls(
+            seq, nucs, mtase=mtase, double_strand=True, seed=0
+        )
+        for _, grp in calls.groupby("mol_id"):
+            assert (np.diff(grp["pos"].to_numpy()) > 0).all()
+            for strand in ("+", "-"):
+                pos = grp.loc[grp["strand"] == strand, "pos"]
+                expected = synthgen.eligible_sites(seq, mtase, strand)
+                assert pos.tolist() == expected.tolist()
+
     def test_one_strand_per_molecule(self):
         seq, nucs = self._data()
         calls = synthgen.simulate_calls(seq, nucs, seed=0)
@@ -338,16 +351,20 @@ def _decode(read):
     seq = read["seq"]
     rev = read["flag"] & 16
     read_seq = _revcomp(seq) if rev else seq
-    mod, *skips = read["mm"].rstrip(";").split(",")
-    base = mod[0]
-    cand = [i for i, b in enumerate(read_seq) if b == base]
-    k, idx = -1, []
-    for s in skips:
-        k += int(s) + 1
-        idx.append(cand[k])
-    ref = [len(seq) - 1 - i if rev else i for i in idx]
-    ml = [int(v) for v in read["ml"].split(",")[1:]]
-    return mod, ref, ml
+    ml_all = [int(v) for v in read["ml"].split(",")[1:]]
+    entries, used = [], 0
+    for entry in read["mm"].rstrip(";").split(";"):
+        mod, *skips = entry.split(",")
+        cand = [i for i, b in enumerate(read_seq) if b == mod[0]]
+        k, idx = -1, []
+        for s in skips:
+            k += int(s) + 1
+            idx.append(cand[k])
+        ref = [len(seq) - 1 - i if rev else i for i in idx]
+        entries.append((mod, ref, ml_all[used : used + len(idx)]))
+        used += len(idx)
+    assert used == len(ml_all)
+    return entries
 
 
 class TestWriteSam:
@@ -387,7 +404,7 @@ class TestWriteSam:
         )
         _, reads = _read_sam(path)
         for mol_id, grp in calls.groupby("mol_id"):
-            got_mod, ref, ml = _decode(reads[mol_id])
+            [(got_mod, ref, ml)] = _decode(reads[mol_id])
             assert got_mod == mod
             expected = dict(zip(grp["pos"], grp["mod_qual"]))
             assert sorted(ref) == sorted(expected)
@@ -406,9 +423,42 @@ class TestWriteSam:
             for s in r["mm"].rstrip(";").split(",")[1:]
         )
         for mol_id, grp in sub.groupby("mol_id"):
-            _, ref, ml = _decode(reads[mol_id])
+            [(_, ref, ml)] = _decode(reads[mol_id])
             assert sorted(ref) == sorted(grp["pos"])
             assert len(ml) == len(grp)
+
+    @pytest.mark.parametrize(
+        "mtase, plus_mod, minus_mod",
+        [
+            ("A", "A+a?", "T-a?"),
+            ("CG", "C+m?", "G-m?"),
+            ("GC", "C+m?", "G-m?"),
+        ],
+    )
+    def test_double_strand_roundtrip(
+        self, tmp_path, mtase, plus_mod, minus_mod
+    ):
+        seq = synthgen.random_sequence(1500, seed=0)
+        nucs = synthgen.place_nucleosomes(1500, 4, seed=0)
+        calls = synthgen.simulate_calls(
+            seq, nucs, mtase=mtase, double_strand=True, seed=0
+        )
+        path = synthgen.write_sam(
+            calls, {"chr1": seq}, tmp_path / "x.sam", mtase=mtase
+        )
+        _, reads = _read_sam(path)
+        for mol_id, grp in calls.groupby("mol_id"):
+            read = reads[mol_id]
+            assert read["flag"] == 0
+            decoded = {mod: (ref, ml) for mod, ref, ml in _decode(read)}
+            assert set(decoded) == {plus_mod, minus_mod}
+            for mod, strand in ((plus_mod, "+"), (minus_mod, "-")):
+                sub = grp[grp["strand"] == strand]
+                expected = dict(zip(sub["pos"], sub["mod_qual"]))
+                ref, ml = decoded[mod]
+                assert sorted(ref) == sorted(expected)
+                want = [min(int(expected[p] * 256), 255) for p in ref]
+                assert ml == want
 
     def test_invalid_mtase(self, tmp_path):
         seq, calls = self._calls()
@@ -456,6 +506,33 @@ class TestMakeDataset:
         tsv = pd.read_csv(paths["modkit"], sep="\t")
         assert set(tsv["read_id"]) == {"a", "b"}
 
+    def test_controls(self, tmp_path):
+        paths = synthgen.make_dataset(
+            tmp_path, nbp=5000, nmol=20, controls=True, seed=0
+        )
+        keys = {"meth_modkit", "meth_sam", "unmeth_modkit", "unmeth_sam"}
+        assert keys <= set(paths)
+        err = 0.5 * math.erfc(2.0 / math.sqrt(2))
+        for name, rate in (("meth", 0.7), ("unmeth", 0.0)):
+            tsv = pd.read_csv(paths[f"{name}_modkit"], sep="\t")
+            assert set(tsv["read_id"]) == {f"{name}{i}" for i in range(20)}
+            _, reads = _read_sam(paths[f"{name}_sam"])
+            assert set(reads) == set(tsv["read_id"])
+            called = (tsv["mod_qual"] >= 0.5).mean()
+            expected = rate * (1 - err) + (1 - rate) * err
+            assert called == pytest.approx(expected, abs=0.02)
+
+    def test_no_controls_by_default(self, tmp_path):
+        paths = synthgen.make_dataset(tmp_path, nbp=800, nmol=3, seed=0)
+        assert not any(key.startswith(("meth", "unmeth")) for key in paths)
+
+    def test_double_strand(self, tmp_path):
+        paths = synthgen.make_dataset(
+            tmp_path, nbp=800, nmol=3, double_strand=True, seed=0
+        )
+        tsv = pd.read_csv(paths["modkit"], sep="\t")
+        assert (tsv.groupby("read_id")["ref_strand"].nunique() == 2).all()
+
     def test_seed_reproducible(self, tmp_path):
         a = synthgen.make_dataset(tmp_path / "a", nbp=800, nmol=3, seed=1)
         b = synthgen.make_dataset(tmp_path / "b", nbp=800, nmol=3, seed=1)
@@ -472,6 +549,24 @@ class TestCli:
         assert result.exit_code == 0, result.output
         for ext in ("size", "fa", "tsv", "sam", "truth.bed"):
             assert (tmp_path / f"synth.{ext}").exists()
+
+    def test_controls_and_double_strand_flags(self, tmp_path):
+        result = runner.invoke(
+            synthgen.app,
+            [
+                str(tmp_path),
+                "--nbp",
+                "800",
+                "--nmol",
+                "3",
+                "--controls",
+                "--double-strand",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        for name in ("meth", "unmeth"):
+            for ext in ("tsv", "sam"):
+                assert (tmp_path / f"synth.{name}.{ext}").exists()
 
     def test_nucs_bed(self, tmp_path):
         bed = tmp_path / "in.bed"

@@ -180,17 +180,19 @@ def simulate_calls(
     p_linker: float = 0.7,
     p_nuc: float = 0.02,
     signal_sep: float = 2.0,
+    double_strand: bool = False,
     seed: int | None = None,
 ) -> pd.DataFrame:
     """
     Simulate per-site methylation calls from nucleosome positions.
 
-    Each molecule is assigned the "+" or "-" strand with equal
-    probability. Every site eligible for `mtase` on that strand is
-    methylated with probability `p_nuc` if it lies inside a nucleosome
-    and `p_linker` otherwise. Each site's call score `mod_qual` is the
-    probability that it is methylated given a simulated raw signal
-    (see `signal_sep`).
+    Each molecule is read on the "+" or "-" strand with equal
+    probability, or on both strands if `double_strand`. Every site
+    eligible for `mtase` on a read strand is methylated with
+    probability `p_nuc` if it lies inside a nucleosome and `p_linker`
+    otherwise. Each site's call score `mod_qual` is the probability
+    that it is methylated given a simulated raw signal (see
+    `signal_sep`).
 
     Parameters
     ----------
@@ -218,15 +220,18 @@ def simulate_calls(
         P(methylated | x) under a 50:50 prior,
         1 / (1 + exp(-2 * s * x)). A fraction Phi(-s) of sites (Phi the
         standard normal CDF) are scored on the wrong side of 0.5.
+    double_strand : bool, default False
+        If True, read every molecule on both strands, as in PacBio
+        Fiber-seq; otherwise on one random strand, as in Nanopore.
     seed : int, optional
         Seed for the random number generator.
 
     Returns
     -------
     pandas.DataFrame
-        One row per eligible site per molecule, with columns `mol_id`,
-        `chrom`, `pos`, `strand`, `mod_qual`, sorted by molecule then
-        position.
+        One row per eligible site per read strand per molecule, with
+        columns `mol_id`, `chrom`, `pos`, `strand`, `mod_qual`, sorted
+        by molecule then position.
     """
     for name, p in (("p_linker", p_linker), ("p_nuc", p_nuc)):
         if not 0 <= p <= 1:
@@ -245,8 +250,14 @@ def simulate_calls(
     by_mol = dict(tuple(nucs.groupby("mol_id", sort=False)))
     frames = []
     for mol_id in mol_ids:
-        strand = "+" if rng.random() < 0.5 else "-"
-        pos = sites[strand]
+        if double_strand:
+            strands = ("+", "-")
+        else:
+            strands = ("+",) if rng.random() < 0.5 else ("-",)
+        pos = np.concatenate([sites[s] for s in strands])
+        strand = np.concatenate([np.full(len(sites[s]), s) for s in strands])
+        order = np.argsort(pos, kind="stable")
+        pos, strand = pos[order], strand[order]
         occupied = np.zeros(nbp, dtype=bool)
         if mol_id in by_mol:
             grp = by_mol[mol_id]
@@ -373,11 +384,12 @@ def _mm_ml(seq, pos, qual, base, strand):
     seq : str
         Forward reference sequence the read is aligned to.
     pos : np.ndarray of int
-        Called reference positions (each a `base` on the read strand).
+        Called reference positions (each a `base` in the original read).
     qual : np.ndarray of float
         Call scores in [0, 1], parallel to `pos`.
-    base : {"A", "C"}
-        Unmodified base on the read strand.
+    base : {"A", "C", "T", "G"}
+        Base counted by the MM skip counts, as it appears in the
+        original read.
     strand : {"+", "-"}
         Read strand.
 
@@ -412,17 +424,21 @@ def write_sam(
 
     Each molecule becomes one read aligned end to end to its
     chromosome (POS 1, CIGAR `<len>M`), with SEQ set to the forward
-    reference sequence and FLAG 16 for "-" strand molecules. Calls are
-    encoded in the `MM`/`ML` tags (SAM specification, "?" mode) in the
-    original read orientation, so they can be read by base-mod-aware
-    tools such as fibertools. Convert to BAM with `samtools view -b`.
+    reference sequence. Molecules with "-" strand calls only are
+    written as reverse reads (FLAG 16); all others as forward reads
+    (FLAG 0), with any "-" strand calls encoded as opposite-strand
+    modifications (e.g., "T-a" for 6mA), as in PacBio Fiber-seq. Calls
+    are encoded in the `MM`/`ML` tags (SAM specification, "?" mode) in
+    the original read orientation, so they can be read by
+    base-mod-aware tools such as fibertools. Convert to BAM with
+    `samtools view -b`.
 
     Parameters
     ----------
     calls : pandas.DataFrame
         Calls with columns `mol_id`, `chrom`, `pos`, `strand`,
         `mod_qual`, e.g., from `simulate_calls`. Every call position
-        must be an eligible site for `mtase` on the molecule's strand.
+        must be an eligible site for `mtase` on its row's strand.
     seqs : dict of str to str
         Chromosome name -> forward reference sequence.
     path : str or Path
@@ -451,21 +467,30 @@ def write_sam(
         )
         for mol_id, grp in calls.groupby("mol_id", sort=False):
             chrom = grp["chrom"].iloc[0]
-            strand = grp["strand"].iloc[0]
             seq = seqs[chrom]
-            skips, ml = _mm_ml(
-                seq,
-                grp["pos"].to_numpy(),
-                grp["mod_qual"].to_numpy(),
-                base,
-                strand,
-            )
-            flag = 0 if strand == "+" else 16
-            mm = "".join(f",{s}" for s in skips)
-            ml_str = "".join(f",{v}" for v in ml)
+            pos = grp["pos"].to_numpy()
+            qual = grp["mod_qual"].to_numpy()
+            plus = (grp["strand"] == "+").to_numpy()
+            if not plus.any():
+                flag = 16
+                entries = [(f"{base}+{code}?", pos, qual, base, "-")]
+            else:
+                flag = 0
+                comp = _COMPLEMENT[base]
+                entries = [
+                    (f"{base}+{code}?", pos[plus], qual[plus], base, "+"),
+                    (f"{comp}-{code}?", pos[~plus], qual[~plus], comp, "+"),
+                ]
+            mm, ml_str = "", ""
+            for tag, p, q, b, s in entries:
+                if len(p) == 0:
+                    continue
+                skips, ml = _mm_ml(seq, p, q, b, s)
+                mm += tag + "".join(f",{v}" for v in skips) + ";"
+                ml_str += "".join(f",{v}" for v in ml)
             fh.write(
                 f"{mol_id}\t{flag}\t{chrom}\t1\t60\t{len(seq)}M\t*\t0\t0\t"
-                f"{seq}\t*\tMM:Z:{base}+{code}?{mm};\tML:B:C{ml_str}\n"
+                f"{seq}\t*\tMM:Z:{mm}\tML:B:C{ml_str}\n"
             )
     return path
 
@@ -484,6 +509,8 @@ def make_dataset(
     p_linker: float = 0.7,
     p_nuc: float = 0.02,
     signal_sep: float = 2.0,
+    double_strand: bool = False,
+    controls: bool = False,
     seed: int | None = None,
 ) -> dict[str, Path]:
     """
@@ -493,6 +520,11 @@ def make_dataset(
     `nucs` is given), simulates methylation calls, and writes the same
     calls for catella (ModKit TSV) and for base-mod-aware tools such as
     fibertools (SAM with MM/ML tags), along with the ground truth.
+    Optionally also writes a methylated control (naked DNA treated with
+    the methyltransferase: no nucleosomes, methylation probability
+    `p_linker` at every site) and an unmethylated control (untreated
+    DNA: methylation probability 0), each with the same number of
+    molecules as the test data.
 
     Parameters
     ----------
@@ -523,6 +555,11 @@ def make_dataset(
         nucleosome.
     signal_sep : float, default 2.0
         Signal separation for the call scores; see `simulate_calls`.
+    double_strand : bool, default False
+        If True, read every molecule on both strands; see
+        `simulate_calls`.
+    controls : bool, default False
+        If True, also write the methylated and unmethylated controls.
     seed : int, optional
         Seed for the random number generator.
 
@@ -530,12 +567,13 @@ def make_dataset(
     -------
     dict of str to Path
         Paths written, keyed by "chromsize", "fasta", "modkit", "sam",
-        and "truth".
+        and "truth", plus "meth_modkit", "meth_sam", "unmeth_modkit",
+        and "unmeth_sam" if `controls`.
     """
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
-    seq_seed, nuc_seed, call_seed = np.random.default_rng(seed).integers(
-        2**32, size=3
+    seq_seed, nuc_seed, call_seed, meth_seed, unmeth_seed = (
+        np.random.default_rng(seed).integers(2**32, size=5)
     )
     seq = random_sequence(nbp, seed=seq_seed)
     if nucs is None:
@@ -557,16 +595,42 @@ def make_dataset(
         p_linker=p_linker,
         p_nuc=p_nuc,
         signal_sep=signal_sep,
+        double_strand=double_strand,
         seed=call_seed,
     )
     stem = outdir / prefix
-    return {
+    paths = {
         "chromsize": write_chromsize({chrom: nbp}, f"{stem}.size"),
         "fasta": write_fasta({chrom: seq}, f"{stem}.fa"),
         "modkit": write_modkit_tsv(calls, f"{stem}.tsv", mtase=mtase),
         "sam": write_sam(calls, {chrom: seq}, f"{stem}.sam", mtase=mtase),
         "truth": write_truth_bed(nucs, f"{stem}.truth.bed"),
     }
+    if controls:
+        no_nucs = pd.DataFrame(columns=_TRUTH_COLS)
+        ncontrol = nucs["mol_id"].nunique()
+        for name, rate, ctrl_seed in (
+            ("meth", p_linker, meth_seed),
+            ("unmeth", 0.0, unmeth_seed),
+        ):
+            ctrl = simulate_calls(
+                seq,
+                no_nucs,
+                [f"{name}{i}" for i in range(ncontrol)],
+                chrom=chrom,
+                mtase=mtase,
+                p_linker=rate,
+                signal_sep=signal_sep,
+                double_strand=double_strand,
+                seed=ctrl_seed,
+            )
+            paths[f"{name}_modkit"] = write_modkit_tsv(
+                ctrl, f"{stem}.{name}.tsv", mtase=mtase
+            )
+            paths[f"{name}_sam"] = write_sam(
+                ctrl, {chrom: seq}, f"{stem}.{name}.sam", mtase=mtase
+            )
+    return paths
 
 
 app = typer.Typer(help="Synthetic footprinting data generator")
@@ -609,6 +673,12 @@ def main(
     signal_sep: Annotated[
         float, typer.Option(help="Signal separation for call scores")
     ] = 2.0,
+    double_strand: Annotated[
+        bool, typer.Option(help="Read every molecule on both strands")
+    ] = False,
+    controls: Annotated[
+        bool, typer.Option(help="Also write meth/unmeth controls")
+    ] = False,
     seed: Annotated[int | None, typer.Option(help="Random seed")] = None,
 ):
     """Generate a synthetic footprinting dataset."""
@@ -634,6 +704,8 @@ def main(
         p_linker=p_linker,
         p_nuc=p_nuc,
         signal_sep=signal_sep,
+        double_strand=double_strand,
+        controls=controls,
         seed=seed,
     )
     for path in paths.values():

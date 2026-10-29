@@ -1,5 +1,7 @@
 # test_synthgen.py
 
+import math
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -152,12 +154,12 @@ class TestSimulateCalls:
     def test_mod_qual_range(self):
         seq, nucs = self._data()
         calls = synthgen.simulate_calls(seq, nucs, seed=0)
-        assert ((calls["mod_qual"] >= 0) & (calls["mod_qual"] < 1)).all()
+        assert ((calls["mod_qual"] >= 0) & (calls["mod_qual"] <= 1)).all()
 
     def test_linker_methylated_more_than_nucleosome(self):
         seq, nucs = self._data(nmol=50)
         calls = synthgen.simulate_calls(
-            seq, nucs, p_linker=0.8, p_nuc=0.1, seed=2
+            seq, nucs, p_linker=0.8, p_nuc=0.1, signal_sep=10.0, seed=2
         )
         inside = np.zeros(len(calls), dtype=bool)
         for mol_id, grp in nucs.groupby("mol_id"):
@@ -174,14 +176,19 @@ class TestSimulateCalls:
     def test_extreme_probabilities(self):
         seq, nucs = self._data()
         calls = synthgen.simulate_calls(
-            seq, nucs, p_linker=1.0, p_nuc=1.0, seed=0
+            seq, nucs, p_linker=1.0, p_nuc=1.0, signal_sep=10.0, seed=0
         )
         assert (calls["mod_qual"] >= 0.5).all()
 
     def test_mol_ids_adds_nucleosome_free_molecule(self):
         seq, nucs = self._data(nmol=2)
         calls = synthgen.simulate_calls(
-            seq, nucs, ["mol0", "mol1", "free"], p_linker=1.0, seed=0
+            seq,
+            nucs,
+            ["mol0", "mol1", "free"],
+            p_linker=1.0,
+            signal_sep=10.0,
+            seed=0,
         )
         assert set(calls["mol_id"]) == {"mol0", "mol1", "free"}
         free = calls[calls["mol_id"] == "free"]
@@ -206,12 +213,47 @@ class TestSimulateCalls:
             synthgen.simulate_calls("ACGT" * 10, nucs)
 
     @pytest.mark.parametrize(
-        "kwargs", [{"p_linker": 1.5}, {"p_nuc": -0.1}]
+        "kwargs",
+        [
+            {"p_linker": 1.5},
+            {"p_nuc": -0.1},
+            {"signal_sep": 0.0},
+            {"signal_sep": -1.0},
+        ],
     )
-    def test_invalid_probabilities(self, kwargs):
+    def test_invalid_args(self, kwargs):
         seq, nucs = self._data(nmol=1)
         with pytest.raises(ValueError):
             synthgen.simulate_calls(seq, nucs, **kwargs)
+
+    def _free_quals(self, p_linker, signal_sep, seed=0):
+        seq = synthgen.random_sequence(5000, seed=0)
+        nucs = pd.DataFrame(columns=["mol_id", "chrom", "start", "end"])
+        mol_ids = [f"m{i}" for i in range(40)]
+        calls = synthgen.simulate_calls(
+            seq,
+            nucs,
+            mol_ids,
+            p_linker=p_linker,
+            signal_sep=signal_sep,
+            seed=seed,
+        )
+        return calls["mod_qual"].to_numpy()
+
+    @pytest.mark.parametrize("signal_sep", [1.0, 2.0])
+    def test_wrong_side_rate(self, signal_sep):
+        expected = 0.5 * math.erfc(signal_sep / math.sqrt(2))
+        meth_q = self._free_quals(1.0, signal_sep, seed=1)
+        unmeth_q = self._free_quals(0.0, signal_sep, seed=2)
+        assert (meth_q < 0.5).mean() == pytest.approx(expected, abs=0.005)
+        assert (unmeth_q >= 0.5).mean() == pytest.approx(expected, abs=0.005)
+
+    def test_calibrated(self):
+        meth_q = self._free_quals(1.0, 1.5, seed=1)
+        unmeth_q = self._free_quals(0.0, 1.5, seed=2)
+        n_meth = ((meth_q > 0.75) & (meth_q < 0.85)).sum()
+        n_unmeth = ((unmeth_q > 0.75) & (unmeth_q < 0.85)).sum()
+        assert n_meth / (n_meth + n_unmeth) == pytest.approx(0.8, abs=0.03)
 
 
 class TestWriteChromsize:

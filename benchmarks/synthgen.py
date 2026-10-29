@@ -179,6 +179,7 @@ def simulate_calls(
     mtase: str = "A",
     p_linker: float = 0.7,
     p_nuc: float = 0.05,
+    signal_sep: float = 1.5,
     seed: int | None = None,
 ) -> pd.DataFrame:
     """
@@ -187,9 +188,9 @@ def simulate_calls(
     Each molecule is assigned the "+" or "-" strand with equal
     probability. Every site eligible for `mtase` on that strand is
     methylated with probability `p_nuc` if it lies inside a nucleosome
-    and `p_linker` otherwise. Methylated sites get a call score
-    `mod_qual` drawn uniformly from [0.5, 1) and unmethylated sites
-    from [0, 0.5).
+    and `p_linker` otherwise. Each site's call score `mod_qual` is the
+    probability that it is methylated given a simulated raw signal
+    (see `signal_sep`).
 
     Parameters
     ----------
@@ -211,6 +212,12 @@ def simulate_calls(
     p_nuc : float, default 0.05
         Methylation probability of an eligible site inside a
         nucleosome.
+    signal_sep : float, default 1.5
+        Signal separation s. Each site has a raw signal x ~ Normal(s, 1)
+        if methylated and Normal(-s, 1) otherwise, and `mod_qual` is
+        P(methylated | x) under a 50:50 prior,
+        1 / (1 + exp(-2 * s * x)). A fraction Phi(-s) of sites (Phi the
+        standard normal CDF) are scored on the wrong side of 0.5.
     seed : int, optional
         Seed for the random number generator.
 
@@ -224,6 +231,8 @@ def simulate_calls(
     for name, p in (("p_linker", p_linker), ("p_nuc", p_nuc)):
         if not 0 <= p <= 1:
             raise ValueError(f"{name} must be in [0, 1], got {p}")
+    if signal_sep <= 0:
+        raise ValueError(f"signal_sep must be positive, got {signal_sep}")
     nbp = len(seq)
     if len(nucs) and (nucs["start"].min() < 0 or nucs["end"].max() > nbp):
         raise ValueError(
@@ -245,7 +254,8 @@ def simulate_calls(
                 occupied[start:end] = True
         prob = np.where(occupied[pos], p_nuc, p_linker)
         meth = rng.random(len(pos)) < prob
-        qual = 0.5 * rng.random(len(pos)) + 0.5 * meth
+        x = rng.normal(np.where(meth, signal_sep, -signal_sep), 1.0)
+        qual = 1 / (1 + np.exp(-2 * signal_sep * x))
         frames.append(
             pd.DataFrame(
                 {
@@ -473,6 +483,7 @@ def make_dataset(
     linker_mean: float = 40.0,
     p_linker: float = 0.7,
     p_nuc: float = 0.05,
+    signal_sep: float = 1.5,
     seed: int | None = None,
 ) -> dict[str, Path]:
     """
@@ -510,6 +521,8 @@ def make_dataset(
     p_nuc : float, default 0.05
         Methylation probability of an eligible site inside a
         nucleosome.
+    signal_sep : float, default 1.5
+        Signal separation for the call scores; see `simulate_calls`.
     seed : int, optional
         Seed for the random number generator.
 
@@ -543,6 +556,7 @@ def make_dataset(
         mtase=mtase,
         p_linker=p_linker,
         p_nuc=p_nuc,
+        signal_sep=signal_sep,
         seed=call_seed,
     )
     stem = outdir / prefix
@@ -592,6 +606,9 @@ def main(
     p_nuc: Annotated[
         float, typer.Option(help="Methylation probability in nucleosomes")
     ] = 0.05,
+    signal_sep: Annotated[
+        float, typer.Option(help="Signal separation for call scores")
+    ] = 1.5,
     seed: Annotated[int | None, typer.Option(help="Random seed")] = None,
 ):
     """Generate a synthetic footprinting dataset."""
@@ -616,6 +633,7 @@ def main(
         linker_mean=linker_mean,
         p_linker=p_linker,
         p_nuc=p_nuc,
+        signal_sep=signal_sep,
         seed=seed,
     )
     for path in paths.values():

@@ -228,6 +228,102 @@ class TestScoreCalls:
         assert scores["mcc"].iloc[0] == pytest.approx(1.0)
 
 
+class TestGridCombos:
+    def test_product(self):
+        combos = run_bench.grid_combos({"a": [1, 2], "b": ["x", "y"]})
+        assert combos == [
+            {"a": 1, "b": "x"},
+            {"a": 1, "b": "y"},
+            {"a": 2, "b": "x"},
+            {"a": 2, "b": "y"},
+        ]
+
+    def test_all_grids_have_four_combos(self):
+        for tool in run_bench.TOOLS:
+            assert len(run_bench.grid_combos(run_bench.GRIDS[tool])) == 4
+
+    def test_ft_grid_combined_not_shorter(self):
+        for params in run_bench.grid_combos(run_bench.GRIDS["ft"]):
+            assert params["combined_length"] >= params["nucleosome_length"]
+
+
+class TestSummarize:
+    def _results(self):
+        rows = []
+        for seed, (cat, ft) in enumerate([(0.9, 0.7), (0.8, 0.85)], 1):
+            for mol, shift in (("m0", 0.05), ("m1", -0.05)):
+                rows.append(("catella", "tuned", "c", seed, mol, cat + shift))
+                rows.append(("ft", "tuned", "c", seed, mol, ft + shift))
+        results = pd.DataFrame(
+            rows, columns=["tool", "variant", "cond", "seed", "mol_id", "mcc"]
+        )
+        results["count_err"] = 1.0
+        return results
+
+    def test_per_tool(self):
+        per_tool, _ = run_bench.summarize(self._results())
+        cat = per_tool[per_tool["tool"] == "catella"].iloc[0]
+        assert cat["mcc_mean"] == pytest.approx(0.85)
+        assert cat["mcc_sd"] == pytest.approx(np.std([0.9, 0.8], ddof=1))
+        assert cat["count_err_mean"] == pytest.approx(1.0)
+        assert cat["n"] == 2
+
+    def test_paired(self):
+        _, paired = run_bench.summarize(self._results())
+        assert len(paired) == 1
+        row = paired.iloc[0]
+        assert row["other"] == "ft"
+        assert row["diff_mean"] == pytest.approx((0.2 - 0.05) / 2)
+        assert row["wins"] == 1
+        assert row["n"] == 2
+
+
+@pytest.fixture
+def fake_tools(monkeypatch):
+    def fake_run_tool(tool, ddir, workdir, params, env="fiberseq"):
+        truth = run_bench.read_truth(ddir)
+        mol_ids = list(dict.fromkeys(truth["mol_id"]))
+        perfect = tool == "catella" or 85 in params.values()
+        if not perfect:
+            truth = truth.iloc[::2]
+        return run_bench.intervals_to_calls(truth, mol_ids, run_bench.NBP)
+
+    monkeypatch.setattr(run_bench, "run_tool", fake_run_tool)
+
+
+class TestTuneEvaluate:
+    def test_pipeline(self, tmp_path, fake_tools):
+        run_bench.make_data(tmp_path, quick=True, convert=False)
+        tuned = run_bench.tune(tmp_path)
+        assert set(tuned) == set(run_bench.TOOLS)
+        assert tuned["ft"]["nucleosome_length"] == 85
+        scores = pd.read_csv(tmp_path / "tune_scores.csv")
+        assert len(scores) == 4 * len(run_bench.TOOLS)
+        saved = json.loads((tmp_path / "tuned_params.json").read_text())
+        assert saved == tuned
+
+        results = run_bench.evaluate(tmp_path)
+        n_rows = len(run_bench.TOOLS) * 2 * run_bench.QUICK_NMOL
+        assert len(results) == n_rows
+        assert set(results["variant"]) == {"tuned", "default"}
+        calls = run_bench.load_calls(
+            tmp_path / "calls" / "ft_tuned" / "default" / "s1.h5"
+        )
+        assert calls.occ.shape == (run_bench.QUICK_NMOL, run_bench.NBP)
+        for name in (
+            "results.csv",
+            "summary_per_tool.csv",
+            "summary_paired.csv",
+            "summary.md",
+        ):
+            assert (tmp_path / name).exists()
+        paired = pd.read_csv(tmp_path / "summary_paired.csv")
+        tuned_ft = paired[
+            (paired["variant"] == "tuned") & (paired["other"] == "ft")
+        ]
+        assert tuned_ft["diff_mean"].iloc[0] == pytest.approx(0.0)
+
+
 @pytest.fixture(scope="module")
 def quick_data(tmp_path_factory):
     out = tmp_path_factory.mktemp("bench")

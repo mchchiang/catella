@@ -1,5 +1,6 @@
 # run_bench.py
 
+import itertools
 import json
 import os
 import subprocess
@@ -38,8 +39,12 @@ CONDITIONS = {
 }
 GRIDS = {
     "catella": {"llink": [0, 30], "mu": [-1.0, 1.0]},
-    "ft": {"nucleosome_length": [60, 90], "combined_length": [85, 115]},
+    "ft": {"nucleosome_length": [65, 85], "combined_length": [90, 110]},
     "fiberhmm": {"nuc_min_size": [70, 100], "split_min_llr": [2.0, 6.0]},
+    "fiberhmm_pre": {
+        "nuc_min_size": [70, 100],
+        "split_min_llr": [2.0, 6.0],
+    },
 }
 
 
@@ -684,6 +689,265 @@ def load_calls(path: str | Path) -> Calls:
         )
 
 
+TOOLS = {
+    "catella": (run_catella, {}),
+    "ft": (run_ft, {}),
+    "fiberhmm": (run_fiberhmm, {"retrain": True}),
+    "fiberhmm_pre": (run_fiberhmm, {"retrain": False}),
+}
+
+
+def run_tool(
+    tool: str,
+    ddir: str | Path,
+    workdir: str | Path,
+    params: dict,
+    env: str = "fiberseq",
+) -> Calls:
+    """
+    Run one tool on one dataset.
+
+    Parameters
+    ----------
+    tool : str
+        A key of `TOOLS`.
+    ddir : str or Path
+        Dataset directory.
+    workdir : str or Path
+        Directory for intermediate files.
+    params : dict
+        Keyword arguments for the tool's runner (e.g., a grid point).
+    env : str, default "fiberseq"
+        Conda environment for the external tools.
+
+    Returns
+    -------
+    Calls
+    """
+    runner, fixed = TOOLS[tool]
+    if tool == "catella":
+        return runner(ddir, workdir, **fixed, **params)
+    return runner(ddir, workdir, env=env, **fixed, **params)
+
+
+def grid_combos(grid: dict[str, list]) -> list[dict]:
+    """
+    All parameter combinations of a grid.
+
+    Parameters
+    ----------
+    grid : dict of str to list
+        Parameter name -> candidate values.
+
+    Returns
+    -------
+    list of dict
+        One dict per combination, in `itertools.product` order.
+    """
+    keys = list(grid)
+    return [
+        dict(zip(keys, values))
+        for values in itertools.product(*(grid[k] for k in keys))
+    ]
+
+
+def _read_record(out):
+    with open(Path(out) / "datasets.json") as fh:
+        return json.load(fh)
+
+
+def tune(out: str | Path, *, env: str = "fiberseq") -> dict[str, dict]:
+    """
+    Pick each tool's parameters on the tuning dataset.
+
+    Every combination in `GRIDS` is run on the tuning dataset only and
+    scored by mean MCC; the best combination per tool is kept. Writes
+    `<out>/tune_scores.csv` (all combinations) and
+    `<out>/tuned_params.json` (the chosen ones).
+
+    Parameters
+    ----------
+    out : str or Path
+        Benchmark output directory (after `make_data`).
+    env : str, default "fiberseq"
+        Conda environment for the external tools.
+
+    Returns
+    -------
+    dict of str to dict
+        Tool -> chosen parameters.
+    """
+    out = Path(out)
+    datasets = _read_record(out)["datasets"]
+    spec = next(s for s in datasets if s["cond"] == "tune")
+    truth = read_truth(spec["dir"])
+    work = out / "work"
+    work.mkdir(parents=True, exist_ok=True)
+    rows = []
+    for tool in TOOLS:
+        for params in grid_combos(GRIDS[tool]):
+            with tempfile.TemporaryDirectory(dir=work) as wd:
+                calls = run_tool(tool, spec["dir"], wd, params, env)
+            scores = score_calls(calls, truth)
+            rows.append(
+                {
+                    "tool": tool,
+                    "params": json.dumps(params),
+                    "mcc": scores["mcc"].mean(),
+                    "count_err": scores["count_err"].mean(),
+                }
+            )
+    table = pd.DataFrame(rows)
+    table.to_csv(out / "tune_scores.csv", index=False)
+    best = table.loc[table.groupby("tool", sort=False)["mcc"].idxmax()]
+    tuned = {r.tool: json.loads(r.params) for r in best.itertuples()}
+    with open(out / "tuned_params.json", "w") as fh:
+        json.dump(tuned, fh, indent=2)
+    return tuned
+
+
+def _markdown_table(table):
+    cols = [str(c) for c in table.columns]
+    lines = ["| " + " | ".join(cols) + " |"]
+    lines.append("|" + "---|" * len(cols))
+    for row in table.itertuples(index=False):
+        cells = [f"{v:.3f}" if isinstance(v, float) else str(v) for v in row]
+        lines.append("| " + " | ".join(cells) + " |")
+    return "\n".join(lines)
+
+
+def summarize(results: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Summarize per-molecule results by condition.
+
+    Molecule scores are first averaged within each dataset; datasets
+    are the unit of replication.
+
+    Parameters
+    ----------
+    results : pandas.DataFrame
+        Columns `tool`, `variant`, `cond`, `seed`, `mcc`, `count_err`
+        (one row per molecule).
+
+    Returns
+    -------
+    per_tool : pandas.DataFrame
+        Per (`tool`, `variant`, `cond`): mean and SD over datasets of
+        `mcc` and `count_err`, and the number of datasets `n`.
+    paired : pandas.DataFrame
+        Per (`variant`, `cond`, `other` tool): mean and SD over datasets
+        of the MCC difference catella minus `other`, and `wins`, the
+        number of datasets where catella has the higher MCC, out of `n`.
+    """
+    keys = ["tool", "variant", "cond", "seed"]
+    ds = results.groupby(keys, sort=False)[["mcc", "count_err"]].mean()
+    ds = ds.reset_index()
+    per_tool = (
+        ds.groupby(["tool", "variant", "cond"], sort=False)
+        .agg(
+            mcc_mean=("mcc", "mean"),
+            mcc_sd=("mcc", "std"),
+            count_err_mean=("count_err", "mean"),
+            count_err_sd=("count_err", "std"),
+            n=("mcc", "size"),
+        )
+        .reset_index()
+    )
+    wide = ds.pivot_table(
+        index=["variant", "cond", "seed"], columns="tool", values="mcc"
+    )
+    rows = []
+    if "catella" in wide.columns:
+        others = [t for t in wide.columns if t != "catella"]
+        for (variant, cond), grp in wide.groupby(level=[0, 1], sort=False):
+            for other in others:
+                diff = (grp["catella"] - grp[other]).dropna()
+                rows.append(
+                    {
+                        "variant": variant,
+                        "cond": cond,
+                        "other": other,
+                        "diff_mean": diff.mean(),
+                        "diff_sd": diff.std(),
+                        "wins": int((diff > 0).sum()),
+                        "n": len(diff),
+                    }
+                )
+    return per_tool, pd.DataFrame(rows)
+
+
+def evaluate(out: str | Path, *, env: str = "fiberseq") -> pd.DataFrame:
+    """
+    Run all tools on all test datasets and summarize.
+
+    Each tool is run with its tuned parameters (`tuned_params.json`)
+    and with its default parameters. Writes calls to
+    `<out>/calls/<tool>_<variant>/<cond>/s<seed>.h5`, per-molecule
+    scores to `<out>/results.csv`, and the summary tables to
+    `<out>/summary_per_tool.csv`, `<out>/summary_paired.csv`, and
+    `<out>/summary.md`.
+
+    Parameters
+    ----------
+    out : str or Path
+        Benchmark output directory (after `tune`).
+    env : str, default "fiberseq"
+        Conda environment for the external tools.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Per-molecule results.
+    """
+    out = Path(out)
+    with open(out / "tuned_params.json") as fh:
+        tuned = json.load(fh)
+    datasets = _read_record(out)["datasets"]
+    specs = [s for s in datasets if s["cond"] != "tune"]
+    work = out / "work"
+    work.mkdir(parents=True, exist_ok=True)
+    frames = []
+    for spec in specs:
+        truth = read_truth(spec["dir"])
+        for tool in TOOLS:
+            for variant, params in (("tuned", tuned[tool]), ("default", {})):
+                with tempfile.TemporaryDirectory(dir=work) as wd:
+                    calls = run_tool(tool, spec["dir"], wd, params, env)
+                name = f"{tool}_{variant}/{spec['cond']}/s{spec['seed']}.h5"
+                save_calls(calls, out / "calls" / name)
+                scores = score_calls(calls, truth)
+                scores.insert(0, "seed", spec["seed"])
+                scores.insert(0, "cond", spec["cond"])
+                scores.insert(0, "variant", variant)
+                scores.insert(0, "tool", tool)
+                frames.append(scores)
+    results = pd.concat(frames, ignore_index=True)
+    results.to_csv(out / "results.csv", index=False)
+    per_tool, paired = summarize(results)
+    per_tool.to_csv(out / "summary_per_tool.csv", index=False)
+    paired.to_csv(out / "summary_paired.csv", index=False)
+    text = [
+        "# Benchmark summary",
+        "",
+        "## Per tool (mean and SD over datasets)",
+        "",
+        _markdown_table(per_tool),
+        "",
+        "## catella minus other tool (MCC)",
+        "",
+        _markdown_table(paired),
+        "",
+        "## Tuned parameters",
+        "",
+        "```",
+        json.dumps(tuned, indent=2),
+        "```",
+        "",
+    ]
+    (out / "summary.md").write_text("\n".join(text))
+    return results
+
+
 app = typer.Typer(help="Benchmark catella against fibertools and FiberHMM")
 
 
@@ -700,6 +964,30 @@ def make_data_cmd(
     """Generate the benchmark datasets."""
     specs = make_data(out, quick=quick, env=env)
     typer.echo(f"wrote {len(specs)} datasets to {out}")
+
+
+@app.command(name="tune")
+def tune_cmd(
+    out: Annotated[Path, typer.Argument(help="Benchmark output directory")],
+    env: Annotated[
+        str, typer.Option(help="Conda env with samtools/ft/FiberHMM")
+    ] = "fiberseq",
+):
+    """Pick each tool's parameters on the tuning dataset."""
+    tuned = tune(out, env=env)
+    typer.echo(json.dumps(tuned, indent=2))
+
+
+@app.command(name="evaluate")
+def evaluate_cmd(
+    out: Annotated[Path, typer.Argument(help="Benchmark output directory")],
+    env: Annotated[
+        str, typer.Option(help="Conda env with samtools/ft/FiberHMM")
+    ] = "fiberseq",
+):
+    """Run all tools on the test datasets and write the summary."""
+    evaluate(out, env=env)
+    typer.echo(f"wrote {Path(out) / 'summary.md'}")
 
 
 if __name__ == "__main__":

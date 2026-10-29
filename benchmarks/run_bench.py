@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import tempfile
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
@@ -162,12 +163,30 @@ def sam_to_bam(sam: str | Path, env: str) -> Path:
     return bam
 
 
+def _run_tasks(func, args_list, nworker):
+    if nworker <= 1:
+        return [func(*args) for args in args_list]
+    with ProcessPoolExecutor(max_workers=nworker) as pool:
+        futures = [pool.submit(func, *args) for args in args_list]
+        return [f.result() for f in futures]
+
+
+def _make_one(out, spec, env, convert):
+    ddir = dataset_dir(out, spec["cond"], spec["seed"])
+    paths = synthgen.make_dataset(ddir, **spec["params"])
+    if convert:
+        for key in ("sam", "meth_sam", "unmeth_sam"):
+            sam_to_bam(paths[key], env)
+    return str(ddir)
+
+
 def make_data(
     out: str | Path,
     *,
     quick: bool = False,
     env: str = "fiberseq",
     convert: bool = True,
+    nworker: int = 1,
 ) -> list[dict]:
     """
     Generate all benchmark datasets.
@@ -186,6 +205,8 @@ def make_data(
         Conda environment providing samtools.
     convert : bool, default True
         If True, convert every SAM file to a sorted, indexed BAM file.
+    nworker : int, default 1
+        Number of processes generating datasets in parallel.
 
     Returns
     -------
@@ -194,13 +215,11 @@ def make_data(
     """
     out = Path(out)
     specs = dataset_specs(quick)
-    for spec in specs:
-        ddir = dataset_dir(out, spec["cond"], spec["seed"])
-        paths = synthgen.make_dataset(ddir, **spec["params"])
-        if convert:
-            for key in ("sam", "meth_sam", "unmeth_sam"):
-                sam_to_bam(paths[key], env)
-        spec["dir"] = str(ddir)
+    dirs = _run_tasks(
+        _make_one, [(out, spec, env, convert) for spec in specs], nworker
+    )
+    for spec, ddir in zip(specs, dirs):
+        spec["dir"] = ddir
     git = subprocess.run(
         ["git", "rev-parse", "HEAD"],
         cwd=Path(__file__).parent,
@@ -967,9 +986,12 @@ def make_data_cmd(
     env: Annotated[
         str, typer.Option(help="Conda env with samtools/ft/FiberHMM")
     ] = "fiberseq",
+    nworker: Annotated[
+        int, typer.Option(help="Number of parallel processes")
+    ] = 1,
 ):
     """Generate the benchmark datasets."""
-    specs = make_data(out, quick=quick, env=env)
+    specs = make_data(out, quick=quick, env=env, nworker=nworker)
     typer.echo(f"wrote {len(specs)} datasets to {out}")
 
 

@@ -58,6 +58,15 @@ class TestDatasetSpecs:
         assert all(s["params"]["nmol"] == run_bench.QUICK_NMOL for s in specs)
 
 
+class TestRunTasks:
+    def test_serial_and_pool_match(self, tmp_path):
+        args = [(tmp_path, "c", seed) for seed in range(5)]
+        serial = run_bench._run_tasks(run_bench.dataset_dir, args, 1)
+        pooled = run_bench._run_tasks(run_bench.dataset_dir, args, 2)
+        assert serial == pooled
+        assert serial[3] == tmp_path / "data" / "c" / "s3"
+
+
 class TestDatasetDir:
     def test_layout(self, tmp_path):
         path = run_bench.dataset_dir(tmp_path, "default", 2)
@@ -83,6 +92,22 @@ class TestMakeData:
         assert record["quick"] is True
         assert len(record["datasets"]) == 2
         assert record["grids"] == json.loads(json.dumps(run_bench.GRIDS))
+
+    def test_parallel_matches_serial(self, tmp_path):
+        run_bench.make_data(tmp_path / "a", quick=True, convert=False)
+        run_bench.make_data(
+            tmp_path / "b", quick=True, convert=False, nworker=2
+        )
+        files_a = sorted(
+            p.relative_to(tmp_path / "a")
+            for p in (tmp_path / "a" / "data").rglob("*")
+            if p.is_file()
+        )
+        assert files_a
+        for rel in files_a:
+            a = (tmp_path / "a" / rel).read_bytes()
+            b = (tmp_path / "b" / rel).read_bytes()
+            assert a == b
 
     @needs_fiberseq
     def test_writes_indexed_bams(self, tmp_path):

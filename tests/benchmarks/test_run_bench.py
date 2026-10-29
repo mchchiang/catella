@@ -353,6 +353,13 @@ class TestRunners:
         _, ddir = quick_data
         calls = run_bench.run_catella(ddir, tmp_path, llink=10, mu=0.0)
         _check_calls(calls, ddir)
+        scores = run_bench.score_calls(calls, run_bench.read_truth(ddir))
+        assert scores["mcc"].mean() > 0.8
+
+    def test_catella_explicit_emax(self, quick_data, tmp_path):
+        _, ddir = quick_data
+        calls = run_bench.run_catella(ddir, tmp_path, llink=10, emax=25.0)
+        _check_calls(calls, ddir)
 
     @needs_fiberseq
     def test_ft(self, quick_data, tmp_path):

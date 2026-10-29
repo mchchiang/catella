@@ -511,13 +511,15 @@ def run_catella(
     llink: int = 50,
     elink: float = 25.0,
     mu: float = 0.0,
+    emax: float | None = None,
     seed: int = 1,
 ) -> Calls:
     """
     Compute nucleosome occupancy with catella's exact (TM) solver.
 
     Uses both controls for the methylation probability calibration and
-    reads both strands of each molecule (`ignore_strand=True`).
+    reads both strands of each molecule (`ignore_strand=True`). By
+    default, `emax` is estimated from the data.
 
     Parameters
     ----------
@@ -531,8 +533,11 @@ def run_catella(
         `SimSettings.elink`.
     mu : float, default 0.0
         `SimSettings.mu`.
+    emax : float, optional
+        `SimSettings.emax`. If None (default), the 99th percentile of
+        abs(logit(meth_prob)) from `catella.estimate_start_temp`.
     seed : int, default 1
-        Seed passed to `catella.run`.
+        Seed passed to `catella.run` and `catella.estimate_start_temp`.
 
     Returns
     -------
@@ -552,8 +557,10 @@ def run_catella(
     )
     exp = catella.compute_model_prob(exp=exp)
     chrom = exp.chroms[0]
+    if emax is None:
+        emax = catella.estimate_start_temp(exp, percentile=99.0, seed=seed)
     settings = SimSettings(
-        nucbp=147, llink=llink, elink=elink, mu=mu, end_temp=1.0, emax=25.0
+        nucbp=147, llink=llink, elink=elink, mu=mu, end_temp=1.0, emax=emax
     )
     sim_dir = Path(tempfile.mkdtemp(dir=workdir)) / "sim"
     sim = catella.run(

@@ -958,7 +958,7 @@ def evaluate(out: str | Path, *, env: str = "fiberseq") -> pd.DataFrame:
 app = typer.Typer(help="Benchmark catella against fibertools and FiberHMM")
 
 
-@app.command(name="make-data")
+@app.command(name="make_data")
 def make_data_cmd(
     out: Annotated[Path, typer.Argument(help="Benchmark output directory")],
     quick: Annotated[

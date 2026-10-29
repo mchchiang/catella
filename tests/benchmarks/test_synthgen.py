@@ -263,3 +263,111 @@ class TestWriteModkitTsv:
             synthgen.write_modkit_tsv(
                 self._calls(), tmp_path / "x.tsv", mtase="TA"
             )
+
+
+def _revcomp(seq):
+    return seq[::-1].translate(str.maketrans("ACGT", "TGCA"))
+
+
+def _read_sam(path):
+    header, reads = [], {}
+    for line in path.read_text().splitlines():
+        if line.startswith("@"):
+            header.append(line)
+            continue
+        f = line.split("\t")
+        tags = dict(t.split(":", 2)[::2] for t in f[11:])
+        reads[f[0]] = {
+            "flag": int(f[1]),
+            "chrom": f[2],
+            "pos": int(f[3]),
+            "cigar": f[5],
+            "seq": f[9],
+            "mm": tags["MM"],
+            "ml": tags["ML"],
+        }
+    return header, reads
+
+
+def _decode(read):
+    seq = read["seq"]
+    rev = read["flag"] & 16
+    read_seq = _revcomp(seq) if rev else seq
+    mod, *skips = read["mm"].rstrip(";").split(",")
+    base = mod[0]
+    cand = [i for i, b in enumerate(read_seq) if b == base]
+    k, idx = -1, []
+    for s in skips:
+        k += int(s) + 1
+        idx.append(cand[k])
+    ref = [len(seq) - 1 - i if rev else i for i in idx]
+    ml = [int(v) for v in read["ml"].split(",")[1:]]
+    return mod, ref, ml
+
+
+class TestWriteSam:
+    def _calls(self, mtase="A", nmol=6, seed=0):
+        seq = synthgen.random_sequence(1500, seed=seed)
+        nucs = synthgen.place_nucleosomes(1500, nmol, seed=seed)
+        calls = synthgen.simulate_calls(seq, nucs, mtase=mtase, seed=seed)
+        return seq, calls
+
+    def test_header(self, tmp_path):
+        seq, calls = self._calls()
+        path = synthgen.write_sam(calls, {"chr1": seq}, tmp_path / "x.sam")
+        header, _ = _read_sam(path)
+        assert header[0].startswith("@HD")
+        assert "@SQ\tSN:chr1\tLN:1500" in header
+
+    def test_one_read_per_molecule(self, tmp_path):
+        seq, calls = self._calls()
+        path = synthgen.write_sam(calls, {"chr1": seq}, tmp_path / "x.sam")
+        _, reads = _read_sam(path)
+        assert set(reads) == set(calls["mol_id"])
+        for mol_id, read in reads.items():
+            strand = calls.loc[calls["mol_id"] == mol_id, "strand"].iloc[0]
+            assert read["flag"] == (0 if strand == "+" else 16)
+            assert read["chrom"] == "chr1"
+            assert read["pos"] == 1
+            assert read["cigar"] == "1500M"
+            assert read["seq"] == seq
+
+    @pytest.mark.parametrize(
+        "mtase, mod", [("A", "A+a?"), ("CG", "C+m?"), ("GC", "C+m?")]
+    )
+    def test_mm_ml_roundtrip(self, tmp_path, mtase, mod):
+        seq, calls = self._calls(mtase=mtase)
+        path = synthgen.write_sam(
+            calls, {"chr1": seq}, tmp_path / "x.sam", mtase=mtase
+        )
+        _, reads = _read_sam(path)
+        for mol_id, grp in calls.groupby("mol_id"):
+            got_mod, ref, ml = _decode(reads[mol_id])
+            assert got_mod == mod
+            expected = dict(zip(grp["pos"], grp["mod_qual"]))
+            assert sorted(ref) == sorted(expected)
+            want = [min(int(expected[p] * 256), 255) for p in ref]
+            assert ml == want
+
+    def test_sparse_calls_have_skips(self, tmp_path):
+        seq, calls = self._calls(mtase="A")
+        rng = np.random.default_rng(0)
+        sub = calls[rng.random(len(calls)) < 0.3].reset_index(drop=True)
+        path = synthgen.write_sam(sub, {"chr1": seq}, tmp_path / "x.sam")
+        _, reads = _read_sam(path)
+        assert any(
+            int(s) > 0
+            for r in reads.values()
+            for s in r["mm"].rstrip(";").split(",")[1:]
+        )
+        for mol_id, grp in sub.groupby("mol_id"):
+            _, ref, ml = _decode(reads[mol_id])
+            assert sorted(ref) == sorted(grp["pos"])
+            assert len(ml) == len(grp)
+
+    def test_invalid_mtase(self, tmp_path):
+        seq, calls = self._calls()
+        with pytest.raises(ValueError):
+            synthgen.write_sam(
+                calls, {"chr1": seq}, tmp_path / "x.sam", mtase="TA"
+            )

@@ -18,6 +18,7 @@ _MODKIT_COLS = {
     "mod_qual": "mod_qual",
 }
 _MOD_CODE = {"A": "a", "CG": "m", "GC": "m"}
+_COMPLEMENT = {"A": "T", "C": "G", "G": "C", "T": "A"}
 
 
 def place_nucleosomes(
@@ -348,4 +349,110 @@ def write_modkit_tsv(
     out = calls[list(_MODKIT_COLS)].rename(columns=_MODKIT_COLS)
     out["mod_code"] = _MOD_CODE[mtase]
     out.to_csv(path, sep="\t", index=False)
+    return path
+
+
+def _mm_ml(seq, pos, qual, base, strand):
+    """
+    MM skip counts and ML bytes for one read, in read orientation.
+
+    Parameters
+    ----------
+    seq : str
+        Forward reference sequence the read is aligned to.
+    pos : np.ndarray of int
+        Called reference positions (each a `base` on the read strand).
+    qual : np.ndarray of float
+        Call scores in [0, 1], parallel to `pos`.
+    base : {"A", "C"}
+        Unmodified base on the read strand.
+    strand : {"+", "-"}
+        Read strand.
+
+    Returns
+    -------
+    skips : np.ndarray of int64
+    ml : np.ndarray of int64
+    """
+    ref_base = base if strand == "+" else _COMPLEMENT[base]
+    arr = np.frombuffer(seq.upper().encode(), dtype="S1")
+    cand = np.flatnonzero(arr == ref_base.encode())
+    order = np.argsort(pos)
+    idx = np.searchsorted(cand, pos[order])
+    # - strand reads run 3' to 5' along the reference
+    if strand == "-":
+        order = order[::-1]
+        idx = len(cand) - 1 - idx[::-1]
+    skips = np.diff(idx, prepend=-1) - 1
+    ml = np.minimum(np.floor(qual[order] * 256), 255).astype(np.int64)
+    return skips.astype(np.int64), ml
+
+
+def write_sam(
+    calls: pd.DataFrame,
+    seqs: dict[str, str],
+    path: str | Path,
+    *,
+    mtase: str = "A",
+) -> Path:
+    """
+    Write methylation calls as a SAM file with MM/ML base-mod tags.
+
+    Each molecule becomes one read aligned end to end to its
+    chromosome (POS 1, CIGAR `<len>M`), with SEQ set to the forward
+    reference sequence and FLAG 16 for "-" strand molecules. Calls are
+    encoded in the `MM`/`ML` tags (SAM specification, "?" mode) in the
+    original read orientation, so they can be read by base-mod-aware
+    tools such as fibertools. Convert to BAM with `samtools view -b`.
+
+    Parameters
+    ----------
+    calls : pandas.DataFrame
+        Calls with columns `mol_id`, `chrom`, `pos`, `strand`,
+        `mod_qual`, e.g., from `simulate_calls`. Every call position
+        must be an eligible site for `mtase` on the molecule's strand.
+    seqs : dict of str to str
+        Chromosome name -> forward reference sequence.
+    path : str or Path
+        Output file path.
+    mtase : {"A", "CG", "GC"}, default "A"
+        Methyltransferase context; sets the MM code to "A+a" (6mA) for
+        "A" and "C+m" (5mC) otherwise.
+
+    Returns
+    -------
+    Path
+        The path written.
+    """
+    if mtase not in _VALID_MTASE:
+        raise ValueError(
+            f"mtase must be one of {_VALID_MTASE}, got {mtase!r}"
+        )
+    base = "A" if mtase == "A" else "C"
+    code = _MOD_CODE[mtase]
+    path = Path(path)
+    with open(path, "w") as fh:
+        fh.write("@HD\tVN:1.6\tSO:unsorted\n")
+        fh.writelines(
+            f"@SQ\tSN:{chrom}\tLN:{len(seq)}\n"
+            for chrom, seq in seqs.items()
+        )
+        for mol_id, grp in calls.groupby("mol_id", sort=False):
+            chrom = grp["chrom"].iloc[0]
+            strand = grp["strand"].iloc[0]
+            seq = seqs[chrom]
+            skips, ml = _mm_ml(
+                seq,
+                grp["pos"].to_numpy(),
+                grp["mod_qual"].to_numpy(),
+                base,
+                strand,
+            )
+            flag = 0 if strand == "+" else 16
+            mm = "".join(f",{s}" for s in skips)
+            ml_str = "".join(f",{v}" for v in ml)
+            fh.write(
+                f"{mol_id}\t{flag}\t{chrom}\t1\t60\t{len(seq)}M\t*\t0\t0\t"
+                f"{seq}\t*\tMM:Z:{base}+{code}?{mm};\tML:B:C{ml_str}\n"
+            )
     return path

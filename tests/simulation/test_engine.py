@@ -200,6 +200,25 @@ class TestSimManagerRun:
             recorded_seed = int(f["params"].attrs["seed"])
         assert int(dataset.seed_table["chr1"][1, 0]) == recorded_seed
 
+    @pytest.mark.parametrize("method", ["mcmc", "tm"])
+    def test_none_seed_is_drawn_and_persisted(self, tmp_path, method):
+        settings = (
+            _make_settings() if method == "mcmc" else _make_tm_settings()
+        )
+        manager = SimManager(nworker=1, verbose=False)
+        dataset = manager.run(
+            chroms="chr1",
+            nsim=1,
+            method=method,
+            settings=settings,
+            meth_prob=_make_meth_prob(nmol=2, nbp=30),
+            out_dir=tmp_path / "noseed",
+        )
+        assert isinstance(dataset.seed, int)
+        assert 0 <= dataset.seed < 2**63
+        loaded = SimDataset.load(dataset._dataset_file)
+        assert loaded.seed == dataset.seed
+
     def test_median_eseq_mu_reflected_in_persisted_settings(self, tmp_path):
         # Regression test: use_median_eseq_mu used to adjust mu only via a
         # per-job MCMCJob.override dict, so dataset.settings.mu silently

@@ -224,8 +224,8 @@ class SimManager:
             'temp', or 'all'. Ignored for `method='tm'`.
         seed : int, optional
             Master seed used to generate independent seeds for each run. If
-            None, a high-entropy seed is automatically generated using the
-            NumPy default random generator.
+            None, a random seed in [0, 2**63) is drawn from a freshly
+            seeded NumPy default random generator.
         mols : IndexType or dict, default slice(None)
             Indices of molecules to simulate for each chromosome. Can be a
             single index/slice or a mapping of {chrom_name: indices}.
@@ -397,8 +397,8 @@ class SimManager:
         # 'mols' filtering, so it can be persisted and later used to
         # reproduce or rerun any individual simulation exactly)
         if seed is None:
-            rng = np.random.default_rng()
-            seed = int(rng.bit_generator.seed_seq.entropy)
+            # Bounded so it fits a signed 64-bit HDF5 attribute
+            seed = int(np.random.default_rng().integers(2**63))
         seed_table = {}
         for chrom_idx, chrom in enumerate(chroms):
             arr = np.empty((nmol[chrom], nsim), dtype=np.uint32)

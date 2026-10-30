@@ -353,6 +353,7 @@ def read_truth(ddir: str | Path) -> pd.DataFrame:
         Path(ddir) / "synth.truth.bed",
         sep="\t",
         header=None,
+        comment="#",
         names=["chrom", "start", "end", "mol_id"],
     )[["mol_id", "start", "end"]]
 

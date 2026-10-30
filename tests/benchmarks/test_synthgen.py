@@ -91,8 +91,12 @@ class TestWriteTruthBed:
     def test_roundtrip(self, tmp_path):
         nucs = synthgen.place_nucleosomes(2000, 2, seed=0)
         path = synthgen.write_truth_bed(nucs, tmp_path / "truth.bed")
+        assert path.read_text().splitlines()[0] == "#chrom\tstart\tend\tmol_id"
         back = pd.read_csv(
-            path, sep="\t", header=None,
+            path,
+            sep="\t",
+            header=None,
+            comment="#",
             names=["chrom", "start", "end", "mol_id"],
         )
         pd.testing.assert_frame_equal(
@@ -522,7 +526,9 @@ class TestMakeDataset:
         )
         tsv = pd.read_csv(paths["modkit"], sep="\t")
         _, reads = _read_sam(paths["sam"])
-        truth = pd.read_csv(paths["truth"], sep="\t", header=None)
+        truth = pd.read_csv(
+            paths["truth"], sep="\t", header=None, comment="#"
+        )
         fasta = paths["fasta"].read_text().splitlines()
         assert paths["chromsize"].read_text() == "chrom\tlength\nseg\t1000\n"
         assert fasta[0] == ">seg"
@@ -536,7 +542,9 @@ class TestMakeDataset:
             {"mol_id": ["a", "b"], "start": [100, 300], "end": [247, 447]}
         )
         paths = synthgen.make_dataset(tmp_path, nbp=600, nucs=nucs, seed=0)
-        truth = pd.read_csv(paths["truth"], sep="\t", header=None)
+        truth = pd.read_csv(
+            paths["truth"], sep="\t", header=None, comment="#"
+        )
         assert truth.values.tolist() == [
             ["chr1", 100, 247, "a"],
             ["chr1", 300, 447, "b"],
@@ -604,7 +612,7 @@ class TestCli:
         )
         assert result.exit_code == 0, result.output
         truth = pd.read_csv(
-            tmp_path / "synth.truth.bed", sep="\t", header=None
+            tmp_path / "synth.truth.bed", sep="\t", header=None, comment="#"
         )
         lengths = truth[2] - truth[1]
         assert lengths.between(120, 160).all()
@@ -637,4 +645,15 @@ class TestCli:
         )
         assert result.exit_code == 0, result.output
         truth = (tmp_path / "out" / "synth.truth.bed").read_text()
-        assert truth == "chr1\t50\t197\tm1\n"
+        assert truth == "#chrom\tstart\tend\tmol_id\nchr1\t50\t197\tm1\n"
+
+    def test_nucs_bed_with_header(self, tmp_path):
+        bed = tmp_path / "in.bed"
+        bed.write_text("#chrom\tstart\tend\tmol_id\nchr1\t50\t197\tm1\n")
+        result = runner.invoke(
+            synthgen.app,
+            [str(tmp_path / "out"), "--nbp", "400", "--nucs", str(bed)],
+        )
+        assert result.exit_code == 0, result.output
+        truth = (tmp_path / "out" / "synth.truth.bed").read_text()
+        assert truth.splitlines()[1:] == ["chr1\t50\t197\tm1"]

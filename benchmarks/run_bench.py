@@ -204,7 +204,7 @@ def make_data(
 
     Also writes `<out>/datasets.json`, recording each dataset's
     condition, seed, parameters, and directory, along with the tuning
-    grids and the git commit of the code that generated them.
+    grids.
 
     Parameters
     ----------
@@ -231,15 +231,7 @@ def make_data(
     )
     for spec, ddir in zip(specs, dirs):
         spec["dir"] = ddir
-    git = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=Path(__file__).parent,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
     record = {
-        "git_commit": git.stdout.strip(),
         "quick": quick,
         "grids": GRIDS,
         "datasets": specs,

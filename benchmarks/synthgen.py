@@ -89,7 +89,7 @@ def place_nucleosomes(
 
     rows = []
     for i in range(nmol):
-        mol_id = f"mol{i}"
+        mol_id = f"mol_{i}"
         pos = round(rng.exponential(linker_mean))
         length = draw_len()
         while pos + length <= nbp:

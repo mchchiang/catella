@@ -33,7 +33,7 @@ TUNE_SEED = 0
 TEST_SEEDS = (1, 2, 3)
 ENV = "catella"
 BASE_PARAMS = {
-    "p_linker": 0.7,
+    "p_linker": 0.5,
     "p_nuc": 0.02,
     "signal_sep": 2.0,
     "linker_mean": 40.0,

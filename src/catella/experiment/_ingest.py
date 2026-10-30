@@ -223,6 +223,40 @@ def _resolve_modkit_schema(data_file, sep, colidx):
     return header_names, name_for
 
 
+def _ensure_fasta_index(fasta_file):
+    """
+    Build the `.fai` index of a FASTA file if it is missing or stale.
+
+    The index is written under a unique temporary name in the same
+    directory and then renamed into place, so processes reading the
+    same FASTA file concurrently never see a partially written index.
+
+    Parameters
+    ----------
+    fasta_file : str or pathlib.Path
+        FASTA file; its index is `<fasta_file>.fai`.
+    """
+    fasta_file = os.path.abspath(fasta_file)
+    fai = fasta_file + ".fai"
+    if os.path.exists(fai) and (
+        os.path.getmtime(fai) >= os.path.getmtime(fasta_file)
+    ):
+        return
+    fd, tmp = tempfile.mkstemp(
+        prefix=os.path.basename(fai) + ".",
+        suffix=".tmp",
+        dir=os.path.dirname(fai),
+    )
+    os.close(fd)
+    os.remove(tmp)
+    try:
+        pyfaidx.Faidx(fasta_file, indexname=tmp).close()
+        os.replace(tmp, fai)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+
+
 def _parse_fasta(fasta_file, wanted_chroms):
     """
     Read reference sequences for a set of chromosomes from a FASTA file.
@@ -243,6 +277,7 @@ def _parse_fasta(fasta_file, wanted_chroms):
         file are simply not present in the returned dict.
     """
     sequences = {}
+    _ensure_fasta_index(fasta_file)
     fasta = pyfaidx.Fasta(str(fasta_file), as_raw=True, build_index=True)
     try:
         for chrom in wanted_chroms:

@@ -121,7 +121,7 @@ def write_truth_bed(nucs: pd.DataFrame, path: str | Path) -> Path:
     with open(path, "w") as fh:
         fh.write("#")
         nucs[["chrom", "start", "end", "mol_id"]].to_csv(
-            fh, sep="\t", index=False
+            fh, sep="\t", index=False, lineterminator="\n"
         )
     return path
 

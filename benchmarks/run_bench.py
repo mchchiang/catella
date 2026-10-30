@@ -754,7 +754,9 @@ def write_hiddenfoot_input(
     (workdir / "wms.txt").write_text("")
     with open(workdir / "met.txt", "w") as fh:
         fh.write(" ".join(map(str, mat.columns)) + "\n")
-        mat.to_csv(fh, sep=" ", header=False, index=False)
+        mat.to_csv(
+            fh, sep=" ", header=False, index=False, lineterminator="\n"
+        )
     return keys
 
 

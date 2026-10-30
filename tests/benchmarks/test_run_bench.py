@@ -4,6 +4,8 @@ import json
 import re
 import shutil
 import subprocess
+import sys
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -26,6 +28,31 @@ needs_env = pytest.mark.skipif(
     not _has_env(run_bench.ENV),
     reason=f"conda env {run_bench.ENV} not available",
 )
+needs_hiddenfoot = pytest.mark.skipif(
+    run_bench._hiddenfoot_binary() is None,
+    reason="HiddenFoot executable not available",
+)
+
+FAKE_HF = """#!{python}
+import os, sys
+nrow = sum(1 for _ in open("met.txt")) - 1
+width = len(open("seq.txt").read().strip())
+open("args.txt", "w").write(" ".join(sys.argv[1:]))
+ll = os.environ.get("FAKE_HF_LL", "-100")
+open("hf.params_SGD.txt", "w").write(f"99 {{ll}} 1 1 1 0.3 0.96\\n")
+for name, val in (("hfprofile", 0.5), ("hfbinding", 0.001)):
+    with open(f"hf.{{name}}.nucleosome.txt", "w") as fh:
+        for _ in range(nrow):
+            fh.write(" ".join([str(val)] * width) + "\\n")
+"""
+
+
+def _fake_hiddenfoot(directory):
+    directory.mkdir(parents=True, exist_ok=True)
+    exe = directory / "hiddenfoot_omp"
+    exe.write_text(FAKE_HF.format(python=sys.executable))
+    exe.chmod(0o755)
+    return exe
 
 
 class TestDatasetSpecs:
@@ -171,6 +198,7 @@ class TestToolVersions:
                 return subprocess.CompletedProcess(args, 1, "", "missing")
             return subprocess.CompletedProcess(args, 0, out, "")
 
+        monkeypatch.setenv("HIDDENFOOT", "/no/such/hiddenfoot")
         monkeypatch.setattr(run_bench.subprocess, "run", fake_run)
 
     def test_parsed_versions(self, monkeypatch):
@@ -188,6 +216,7 @@ class TestToolVersions:
             "fibertools": "0.13.1",
             "fiberhmm": "3.0.2",
             "samtools": "1.25",
+            "hiddenfoot": "unknown",
         }
 
     def test_unknown_versions(self, monkeypatch):
@@ -197,11 +226,37 @@ class TestToolVersions:
         assert versions["fiberhmm"] == "unknown"
         assert versions["samtools"] == "unknown"
 
+    def test_hiddenfoot_git_commit(self, monkeypatch, tmp_path):
+        repo = tmp_path / "HiddenFoot"
+        exe = _fake_hiddenfoot(repo / "build")
+        git = ["git", "-c", "user.name=t", "-c", "user.email=t@t"]
+        subprocess.run([*git, "init", "-q", str(repo)], check=True)
+        subprocess.run([*git, "-C", str(repo), "add", "."], check=True)
+        subprocess.run(
+            [*git, "-C", str(repo), "commit", "-qm", "init"], check=True
+        )
+        head = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+
+        def no_env(env, args, cwd=None):
+            raise RuntimeError("no env")
+
+        monkeypatch.setattr(run_bench, "run_in_env", no_env)
+        monkeypatch.setenv("HIDDENFOOT", str(exe))
+        assert run_bench.tool_versions("e")["hiddenfoot"] == head
+
     @needs_env
     def test_real_env(self):
         versions = run_bench.tool_versions(run_bench.ENV)
-        assert set(versions) == {"catella", *run_bench.VERSION_CMDS}
-        assert "unknown" not in versions.values()
+        assert set(versions) == {
+            "catella", "hiddenfoot", *run_bench.VERSION_CMDS
+        }
+        for tool in run_bench.VERSION_CMDS:
+            assert versions[tool] != "unknown"
 
 
 class TestIntervalsToCalls:
@@ -685,3 +740,126 @@ class TestRunners:
         _check_calls(calls, ddir)
         model = run_bench.train_fiberhmm(ddir, iterations=2)
         assert model.exists()
+
+
+class TestHiddenFootWindows:
+    def test_starts(self):
+        assert run_bench.hiddenfoot_windows(5000, 1000, 500) == list(
+            range(0, 4001, 500)
+        )
+        assert run_bench.hiddenfoot_windows(5000, 1000, 700) == [
+            0, 700, 1400, 2100, 2800, 3500, 4000
+        ]
+        assert run_bench.hiddenfoot_windows(5000, 5000, 100) == [0]
+
+    @pytest.mark.parametrize(
+        "window, step", [(0, 1), (6000, 500), (1000, 0), (1000, 1500)]
+    )
+    def test_invalid(self, window, step):
+        with pytest.raises(ValueError):
+            run_bench.hiddenfoot_windows(5000, window, step)
+
+
+class TestStitchWindows:
+    def _keys(self, mol_ids):
+        starts = run_bench.hiddenfoot_windows(5000, 1000, 500)
+        return starts, [(m, s) for s in starts for m in mol_ids]
+
+    def test_nearest_centre(self):
+        starts, keys = self._keys(["a", "b"])
+        index = {s: k for k, s in enumerate(starts)}
+        values = np.array([np.full(1000, index[s]) for _, s in keys])
+        out = run_bench.stitch_windows(values, keys, ["a", "b"], 5000,
+                                       1000, 500)
+        assert out.shape == (2, 5000)
+        assert out[0, 0] == 0
+        assert out[0, 4999] == 8
+        assert out[1, 760] == 1
+        assert out[1, 740] == 0
+
+    def test_reconstructs_position(self):
+        _, keys = self._keys(["a", "b"])
+        values = np.array([np.arange(s, s + 1000) for _, s in keys])
+        out = run_bench.stitch_windows(values, keys, ["b", "a"], 5000,
+                                       1000, 500)
+        assert (out == np.arange(5000)).all()
+
+
+class TestHiddenFoot:
+    def test_input_files(self, quick_data, tmp_path):
+        _, ddir = quick_data
+        keys = run_bench.write_hiddenfoot_input(ddir, tmp_path, 1000, 500)
+        mol_ids = run_bench._test_mol_ids(ddir)
+        assert len(keys) == len(mol_ids) * 9
+        assert (tmp_path / "seq.txt").read_text() == "A" * 1000 + "\n"
+        assert (tmp_path / "wms.txt").read_text() == ""
+        lines = (tmp_path / "met.txt").read_text().splitlines()
+        sites = np.array(lines[0].split(), dtype=int)
+        mat = np.array([line.split() for line in lines[1:]], dtype=int)
+        assert mat.shape == (len(keys), len(sites))
+        assert ((sites >= 0) & (sites < 1000)).all()
+        assert set(np.unique(mat)) <= {0, 1, 2}
+        k = keys.index((mol_ids[3], 500))
+        tsv = pd.read_csv(Path(ddir) / "synth.tsv", sep="\t")
+        mol = tsv[(tsv["read_id"] == mol_ids[3])]
+        mol = mol[(mol["ref_position"] >= 500) & (mol["ref_position"] < 1500)]
+        expected = dict.fromkeys(sites, 2)
+        expected.update(
+            zip(mol["ref_position"] - 500, (mol["mod_qual"] >= 0.5) * 1)
+        )
+        assert mat[k].tolist() == [expected[s] for s in sites]
+
+    def test_fake_binary(self, quick_data, tmp_path):
+        _, ddir = quick_data
+        exe = _fake_hiddenfoot(tmp_path / "bin")
+        work = tmp_path / "work"
+        work.mkdir()
+        calls = run_bench.run_hiddenfoot(ddir, work, binary=str(exe))
+        nmol = run_bench.QUICK_NMOL
+        assert calls.occ.shape == (nmol, run_bench.NBP)
+        assert np.allclose(calls.occ, 0.5)
+        assert np.allclose(calls.count, 0.001 * run_bench.NBP)
+        args = (work / "args.txt").read_text().split()
+        assert args[args.index("-nuclen") + 1] == "147"
+        assert args[args.index("-numthreads") + 1] == "2"
+
+    def test_underflow_raises(self, quick_data, tmp_path, monkeypatch):
+        _, ddir = quick_data
+        exe = _fake_hiddenfoot(tmp_path / "bin")
+        monkeypatch.setenv("FAKE_HF_LL", "-inf")
+        with pytest.raises(RuntimeError, match="underflow"):
+            run_bench.run_hiddenfoot(ddir, tmp_path, binary=str(exe))
+
+    def test_window_too_large(self, quick_data, tmp_path):
+        _, ddir = quick_data
+        with pytest.raises(ValueError):
+            run_bench.run_hiddenfoot(ddir, tmp_path, window=2500)
+
+    def test_missing_binary(self, quick_data, tmp_path):
+        _, ddir = quick_data
+        with pytest.raises(FileNotFoundError):
+            run_bench.run_hiddenfoot(ddir, tmp_path, binary="/no/such/hf")
+
+    def test_binary_resolution(self, tmp_path, monkeypatch):
+        arg = _fake_hiddenfoot(tmp_path / "arg")
+        env = _fake_hiddenfoot(tmp_path / "env")
+        path = _fake_hiddenfoot(tmp_path / "path")
+        monkeypatch.setenv("PATH", str(path.parent), prepend=":")
+        monkeypatch.setenv("HIDDENFOOT", str(env))
+        assert run_bench._hiddenfoot_binary(str(arg)) == str(arg)
+        assert run_bench._hiddenfoot_binary() == str(env)
+        monkeypatch.delenv("HIDDENFOOT")
+        assert run_bench._hiddenfoot_binary() == str(path)
+
+    @needs_hiddenfoot
+    def test_real_binary(self, quick_data, tmp_path):
+        _, ddir = quick_data
+        truth = run_bench.read_truth(ddir)
+        mccs = []
+        for name in ("a", "b"):
+            (tmp_path / name).mkdir()
+            calls = run_bench.run_hiddenfoot(ddir, tmp_path / name)
+            _check_calls(calls, ddir)
+            mccs.append(run_bench.score_calls(calls, truth)["mcc"].mean())
+        assert min(mccs) > 0.8
+        assert abs(mccs[0] - mccs[1]) < 0.01

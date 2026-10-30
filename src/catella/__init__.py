@@ -10,6 +10,7 @@ warnings.filterwarnings(
     category=RuntimeWarning,
 )
 
+from catella.__about__ import __version__ as __version__
 from catella.api import *
 
 __all__ = [

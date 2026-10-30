@@ -17,6 +17,7 @@ import catella
 import h5py
 import numpy as np
 import pandas as pd
+import pyfaidx
 import synthgen
 import typer
 from catella.simulation.config import SimSettings
@@ -245,6 +246,8 @@ def _run_tasks(func, args_list, nworker):
 def _make_one(out, spec, env, convert):
     ddir = dataset_dir(out, spec["cond"], spec["seed"])
     paths = synthgen.make_dataset(ddir, **spec["params"])
+    # Index now so that parallel tool runs only read the index
+    pyfaidx.Faidx(str(ddir / "synth.fa")).close()
     if convert:
         for key in ("sam", "meth_sam", "unmeth_sam"):
             sam_to_bam(paths[key], env)

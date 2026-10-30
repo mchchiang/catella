@@ -122,6 +122,12 @@ class TestMakeData:
                 "synth.truth.bed",
             ):
                 assert (ddir / name).exists()
+            fai = ddir / "synth.fa.fai"
+            assert fai.read_text().split("\t")[:2] == [
+                "chr1",
+                str(run_bench.NBP),
+            ]
+            assert fai.stat().st_mtime >= (ddir / "synth.fa").stat().st_mtime
         record = json.loads((tmp_path / "datasets.json").read_text())
         assert record["quick"] is True
         assert len(record["datasets"]) == 2

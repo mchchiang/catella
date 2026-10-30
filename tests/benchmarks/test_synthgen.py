@@ -269,7 +269,9 @@ class TestSimulateCalls:
         with pytest.raises(ValueError):
             synthgen.simulate_calls(seq, nucs, **kwargs)
 
-    def _free_quals(self, p_linker, signal_sep, seed=0, report_sep=None):
+    def _free_quals(
+        self, p_linker, signal_sep, seed=0, report_sep=None, report_bias=0.0
+    ):
         seq = synthgen.random_sequence(5000, seed=0)
         nucs = pd.DataFrame(columns=["mol_id", "chrom", "start", "end"])
         mol_ids = [f"m{i}" for i in range(40)]
@@ -280,9 +282,29 @@ class TestSimulateCalls:
             p_linker=p_linker,
             signal_sep=signal_sep,
             report_sep=report_sep,
+            report_bias=report_bias,
             seed=seed,
         )
         return calls["mod_qual"].to_numpy()
+
+    def test_zero_report_bias_is_default(self):
+        default = self._free_quals(0.5, 2.0, seed=3)
+        unbiased = self._free_quals(0.5, 2.0, seed=3, report_bias=0.0)
+        np.testing.assert_array_equal(default, unbiased)
+
+    @pytest.mark.parametrize("report_bias", [3.0, -4.0])
+    def test_report_bias_call_rates(self, report_bias):
+        cut = -report_bias / 4
+        meth_q = self._free_quals(1.0, 2.0, seed=1, report_bias=report_bias)
+        unmeth_q = self._free_quals(
+            0.0, 2.0, seed=2, report_bias=report_bias
+        )
+        meth_rate = 0.5 * math.erfc((cut - 2) / math.sqrt(2))
+        unmeth_rate = 0.5 * math.erfc((cut + 2) / math.sqrt(2))
+        assert (meth_q >= 0.5).mean() == pytest.approx(meth_rate, abs=0.01)
+        assert (unmeth_q >= 0.5).mean() == pytest.approx(
+            unmeth_rate, abs=0.01
+        )
 
     def test_report_sep_keeps_thresholded_calls(self):
         calibrated = self._free_quals(0.5, 1.5, seed=3)
@@ -578,6 +600,15 @@ class TestMakeDataset:
             expected = rate * (1 - err) + (1 - rate) * err
             assert called == pytest.approx(expected, abs=0.02)
 
+    def test_report_bias_applies_to_controls(self, tmp_path):
+        paths = synthgen.make_dataset(
+            tmp_path, nbp=5000, nmol=20, controls=True, report_bias=3.0, seed=0
+        )
+        tsv = pd.read_csv(paths["unmeth_modkit"], sep="\t")
+        expected = 0.5 * math.erfc(1.25 / math.sqrt(2))
+        called = (tsv["mod_qual"] >= 0.5).mean()
+        assert called == pytest.approx(expected, abs=0.02)
+
     def test_no_controls_by_default(self, tmp_path):
         paths = synthgen.make_dataset(tmp_path, nbp=800, nmol=3, seed=0)
         assert not any(key.startswith(("meth", "unmeth")) for key in paths)
@@ -649,6 +680,15 @@ class TestCli:
         for name in ("meth", "unmeth"):
             for ext in ("tsv", "sam"):
                 assert (tmp_path / f"synth.{name}.{ext}").exists()
+
+    def test_report_bias_option(self, tmp_path):
+        args = [str(tmp_path), "--nbp", "800", "--nmol", "3", "--seed", "0"]
+        assert runner.invoke(synthgen.app, args).exit_code == 0
+        default = pd.read_csv(tmp_path / "synth.tsv", sep="\t")
+        result = runner.invoke(synthgen.app, [*args, "--report-bias", "3"])
+        assert result.exit_code == 0, result.output
+        biased = pd.read_csv(tmp_path / "synth.tsv", sep="\t")
+        assert (biased["mod_qual"] > default["mod_qual"]).all()
 
     def test_nucs_bed(self, tmp_path):
         bed = tmp_path / "in.bed"

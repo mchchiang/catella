@@ -200,6 +200,7 @@ def simulate_calls(
     p_nuc: float = 0.02,
     signal_sep: float = 2.0,
     report_sep: float | None = None,
+    report_bias: float = 0.0,
     double_strand: bool = False,
     seed: int | None = None,
 ) -> pd.DataFrame:
@@ -246,6 +247,11 @@ def simulate_calls(
         (default), equal to `signal_sep` (calibrated scores); larger
         values give overconfident scores and smaller values
         underconfident ones.
+    report_bias : float, default 0.0
+        Offset added to the log-odds the simulated caller reports, so
+        `mod_qual` is 1 / (1 + exp(-(2 * report_sep * x + report_bias))).
+        Positive values over-call methylation and negative values
+        under-call it, moving calls across 0.5.
     double_strand : bool, default False
         If True, each read has calls on both strands, as in PacBio
         Fiber-seq; otherwise only on the strand it is aligned to, as in
@@ -293,7 +299,7 @@ def simulate_calls(
         prob = np.where(occupied[pos], p_nuc, p_linker)
         meth = rng.random(len(pos)) < prob
         x = rng.normal(np.where(meth, signal_sep, -signal_sep), 1.0)
-        qual = 1 / (1 + np.exp(-2 * report_sep * x))
+        qual = 1 / (1 + np.exp(-(2 * report_sep * x + report_bias)))
         frames.append(
             pd.DataFrame(
                 {
@@ -539,6 +545,7 @@ def make_dataset(
     p_nuc: float = 0.02,
     signal_sep: float = 2.0,
     report_sep: float | None = None,
+    report_bias: float = 0.0,
     double_strand: bool = False,
     controls: bool = False,
     seed: int | None = None,
@@ -591,6 +598,9 @@ def make_dataset(
     report_sep : float, optional
         Signal separation assumed by the simulated caller; see
         `simulate_calls`. Applies to the controls too.
+    report_bias : float, default 0.0
+        Log-odds offset of the simulated caller; see `simulate_calls`.
+        Applies to the controls too.
     double_strand : bool, default False
         If True, read every molecule on both strands; see
         `simulate_calls`.
@@ -633,6 +643,7 @@ def make_dataset(
         p_nuc=p_nuc,
         signal_sep=signal_sep,
         report_sep=report_sep,
+        report_bias=report_bias,
         double_strand=double_strand,
         seed=call_seed,
     )
@@ -660,6 +671,7 @@ def make_dataset(
                 p_linker=rate,
                 signal_sep=signal_sep,
                 report_sep=report_sep,
+                report_bias=report_bias,
                 double_strand=double_strand,
                 seed=ctrl_seed,
             )
@@ -720,6 +732,9 @@ def main(
         float | None,
         typer.Option(help="Signal separation assumed by the caller"),
     ] = None,
+    report_bias: Annotated[
+        float, typer.Option(help="Log-odds offset of the caller")
+    ] = 0.0,
     double_strand: Annotated[
         bool, typer.Option(help="Read every molecule on both strands")
     ] = False,
@@ -754,6 +769,7 @@ def main(
         p_nuc=p_nuc,
         signal_sep=signal_sep,
         report_sep=report_sep,
+        report_bias=report_bias,
         double_strand=double_strand,
         controls=controls,
         seed=seed,

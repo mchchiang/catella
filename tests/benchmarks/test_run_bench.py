@@ -22,8 +22,9 @@ def _has_env(env):
     return True
 
 
-needs_fiberseq = pytest.mark.skipif(
-    not _has_env("fiberseq"), reason="conda env fiberseq not available"
+needs_env = pytest.mark.skipif(
+    not _has_env(run_bench.ENV),
+    reason=f"conda env {run_bench.ENV} not available",
 )
 
 
@@ -114,7 +115,7 @@ class TestMakeData:
             b = (tmp_path / "b" / rel).read_bytes()
             assert a == b
 
-    @needs_fiberseq
+    @needs_env
     def test_writes_indexed_bams(self, tmp_path):
         run_bench.make_data(tmp_path, quick=True)
         ddir = run_bench.dataset_dir(tmp_path, "default", 1)
@@ -155,9 +156,9 @@ class TestRunInEnv:
         with pytest.raises((RuntimeError, FileNotFoundError)):
             run_bench.run_in_env("no_such_env_xyz", ["true"])
 
-    @needs_fiberseq
+    @needs_env
     def test_success_returns_process(self):
-        proc = run_bench.run_in_env("fiberseq", ["samtools", "--version"])
+        proc = run_bench.run_in_env(run_bench.ENV, ["samtools", "--version"])
         assert isinstance(proc, subprocess.CompletedProcess)
         assert "samtools" in proc.stdout
 
@@ -196,9 +197,9 @@ class TestToolVersions:
         assert versions["fiberhmm"] == "unknown"
         assert versions["samtools"] == "unknown"
 
-    @needs_fiberseq
+    @needs_env
     def test_real_env(self):
-        versions = run_bench.tool_versions("fiberseq")
+        versions = run_bench.tool_versions(run_bench.ENV)
         assert set(versions) == {"catella", *run_bench.VERSION_CMDS}
         assert "unknown" not in versions.values()
 
@@ -388,7 +389,7 @@ FAKE_VERSIONS = {
 def fake_tools(monkeypatch):
     runs = []
 
-    def fake_run_tool(tool, ddir, workdir, params, env="fiberseq"):
+    def fake_run_tool(tool, ddir, workdir, params, env=run_bench.ENV):
         runs.append(tool)
         truth = run_bench.read_truth(ddir)
         mol_ids = list(dict.fromkeys(truth["mol_id"]))
@@ -399,7 +400,7 @@ def fake_tools(monkeypatch):
 
     monkeypatch.setattr(run_bench, "run_tool", fake_run_tool)
     monkeypatch.setattr(
-        run_bench, "tool_versions", lambda env="fiberseq": FAKE_VERSIONS
+        run_bench, "tool_versions", lambda env=run_bench.ENV: FAKE_VERSIONS
     )
     return runs
 
@@ -628,7 +629,7 @@ class TestTuneEvaluate:
 def quick_data(tmp_path_factory):
     out = tmp_path_factory.mktemp("bench")
     specs = run_bench.make_data(
-        out, quick=True, convert=_has_env("fiberseq")
+        out, quick=True, convert=_has_env(run_bench.ENV)
     )
     return out, specs[1]["dir"]
 
@@ -661,20 +662,20 @@ class TestRunners:
         calls = run_bench.run_catella(ddir, tmp_path, llink=10, emax=25.0)
         _check_calls(calls, ddir)
 
-    @needs_fiberseq
+    @needs_env
     def test_ft(self, quick_data, tmp_path):
         _, ddir = quick_data
         calls = run_bench.run_ft(ddir, tmp_path, nucleosome_length=75)
         _check_calls(calls, ddir)
         assert set(np.unique(calls.occ)) <= {0.0, 1.0}
 
-    @needs_fiberseq
+    @needs_env
     def test_fiberhmm_pretrained(self, quick_data, tmp_path):
         _, ddir = quick_data
         calls = run_bench.run_fiberhmm(ddir, tmp_path, retrain=False)
         _check_calls(calls, ddir)
 
-    @needs_fiberseq
+    @needs_env
     def test_fiberhmm_retrained(self, quick_data, tmp_path):
         _, ddir = quick_data
         calls = run_bench.run_fiberhmm(

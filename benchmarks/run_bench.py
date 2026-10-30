@@ -29,6 +29,7 @@ NMOL = 100
 QUICK_NMOL = 20
 TUNE_SEED = 0
 TEST_SEEDS = (1, 2, 3)
+ENV = "catella"
 BASE_PARAMS = {
     "p_linker": 0.7,
     "p_nuc": 0.02,
@@ -157,13 +158,13 @@ VERSION_CMDS = {
 }
 
 
-def tool_versions(env: str = "fiberseq") -> dict[str, str]:
+def tool_versions(env: str = ENV) -> dict[str, str]:
     """
     Report the versions of catella and the external tools.
 
     Parameters
     ----------
-    env : str, default "fiberseq"
+    env : str, default "catella"
         Conda environment for the external tools.
 
     Returns
@@ -230,7 +231,7 @@ def make_data(
     out: str | Path,
     *,
     quick: bool = False,
-    env: str = "fiberseq",
+    env: str = ENV,
     convert: bool = True,
     nworker: int = 1,
 ) -> list[dict]:
@@ -247,7 +248,7 @@ def make_data(
         Benchmark output directory.
     quick : bool, default False
         Generate the reduced dataset list; see `dataset_specs`.
-    env : str, default "fiberseq"
+    env : str, default "catella"
         Conda environment providing samtools.
     convert : bool, default True
         If True, convert every SAM file to a sorted, indexed BAM file.
@@ -403,7 +404,7 @@ def run_ft(
     ddir: str | Path,
     workdir: str | Path,
     *,
-    env: str = "fiberseq",
+    env: str = ENV,
     nucleosome_length: int | None = None,
     combined_length: int | None = None,
 ) -> Calls:
@@ -416,7 +417,7 @@ def run_ft(
         Dataset directory (with `synth.bam`).
     workdir : str or Path
         Directory for intermediate files.
-    env : str, default "fiberseq"
+    env : str, default "catella"
         Conda environment providing fibertools.
     nucleosome_length, combined_length : int, optional
         Values for `--nucleosome-length` and
@@ -439,7 +440,7 @@ def run_ft(
 def train_fiberhmm(
     ddir: str | Path,
     *,
-    env: str = "fiberseq",
+    env: str = ENV,
     iterations: int = 10,
 ) -> Path:
     """
@@ -455,7 +456,7 @@ def train_fiberhmm(
     ddir : str or Path
         Dataset directory (with `synth.bam`, `synth.meth.bam`,
         `synth.unmeth.bam`).
-    env : str, default "fiberseq"
+    env : str, default "catella"
         Conda environment providing FiberHMM.
     iterations : int, default 10
         Training iterations (random initializations).
@@ -515,7 +516,7 @@ def run_fiberhmm(
     ddir: str | Path,
     workdir: str | Path,
     *,
-    env: str = "fiberseq",
+    env: str = ENV,
     retrain: bool = True,
     nuc_min_size: int | None = None,
     split_min_llr: float | None = None,
@@ -530,7 +531,7 @@ def run_fiberhmm(
         Dataset directory.
     workdir : str or Path
         Directory for intermediate files.
-    env : str, default "fiberseq"
+    env : str, default "catella"
         Conda environment providing FiberHMM and fibertools.
     retrain : bool, default True
         If True, use a model trained on this dataset (see
@@ -767,7 +768,7 @@ def run_tool(
     ddir: str | Path,
     workdir: str | Path,
     params: dict,
-    env: str = "fiberseq",
+    env: str = ENV,
 ) -> Calls:
     """
     Run one tool on one dataset.
@@ -782,7 +783,7 @@ def run_tool(
         Directory for intermediate files.
     params : dict
         Keyword arguments for the tool's runner (e.g., a grid point).
-    env : str, default "fiberseq"
+    env : str, default "catella"
         Conda environment for the external tools.
 
     Returns
@@ -836,7 +837,7 @@ def _tune_one(out, ddir, tool, params, env):
 
 
 def tune(
-    out: str | Path, *, env: str = "fiberseq", nworker: int = 1
+    out: str | Path, *, env: str = ENV, nworker: int = 1
 ) -> dict[str, dict]:
     """
     Pick each tool's parameters on the tuning dataset.
@@ -850,7 +851,7 @@ def tune(
     ----------
     out : str or Path
         Benchmark output directory (after `make_data`).
-    env : str, default "fiberseq"
+    env : str, default "catella"
         Conda environment for the external tools.
     nworker : int, default 1
         Number of grid combinations run in parallel. If greater than 1,
@@ -980,7 +981,7 @@ def evaluate_unit(
     spec: dict,
     tool: str,
     tuned: dict,
-    env: str = "fiberseq",
+    env: str = ENV,
     overwrite: bool = False,
 ) -> Path:
     """
@@ -1001,7 +1002,7 @@ def evaluate_unit(
         A key of `TOOLS`.
     tuned : dict
         Tuned parameters of `tool`.
-    env : str, default "fiberseq"
+    env : str, default "catella"
         Conda environment for the external tools.
     overwrite : bool, default False
         If False and the result file exists, skip the unit.
@@ -1049,7 +1050,7 @@ def _check_choices(name, values, allowed):
 def evaluate(
     out: str | Path,
     *,
-    env: str = "fiberseq",
+    env: str = ENV,
     nworker: int = 1,
     tools: list[str] | None = None,
     conds: list[str] | None = None,
@@ -1069,7 +1070,7 @@ def evaluate(
     ----------
     out : str or Path
         Benchmark output directory (after `tune`).
-    env : str, default "fiberseq"
+    env : str, default "catella"
         Conda environment for the external tools.
     nworker : int, default 1
         Number of units run in parallel.
@@ -1529,7 +1530,7 @@ def make_data_cmd(
     ] = False,
     env: Annotated[
         str, typer.Option(help="Conda env with samtools/ft/FiberHMM")
-    ] = "fiberseq",
+    ] = ENV,
     nworker: Annotated[
         int, typer.Option(help="Number of parallel processes")
     ] = 1,
@@ -1544,7 +1545,7 @@ def tune_cmd(
     out: Annotated[Path, typer.Argument(help="Benchmark output directory")],
     env: Annotated[
         str, typer.Option(help="Conda env with samtools/ft/FiberHMM")
-    ] = "fiberseq",
+    ] = ENV,
     nworker: Annotated[
         int,
         typer.Option(
@@ -1562,7 +1563,7 @@ def evaluate_cmd(
     out: Annotated[Path, typer.Argument(help="Benchmark output directory")],
     env: Annotated[
         str, typer.Option(help="Conda env with samtools/ft/FiberHMM")
-    ] = "fiberseq",
+    ] = ENV,
     nworker: Annotated[
         int,
         typer.Option(

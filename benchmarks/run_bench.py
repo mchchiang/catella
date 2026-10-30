@@ -37,6 +37,7 @@ BASE_PARAMS = {
     "p_nuc": 0.02,
     "signal_sep": 2.0,
     "linker_mean": 40.0,
+    "linker_shape": 3.0,
 }
 CONDITIONS = {
     "default": {},

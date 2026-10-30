@@ -844,7 +844,7 @@ def tune(
 
     Every combination in `GRIDS` is run on the tuning dataset only and
     scored by mean MCC; the best combination per tool is kept. Writes
-    `<out>/tune_scores.csv` (all combinations) and
+    `<out>/tune_scores.tsv` (all combinations) and
     `<out>/tuned_params.json` (the chosen ones).
 
     Parameters
@@ -875,7 +875,7 @@ def tune(
         for params in grid_combos(GRIDS[tool])
     ]
     table = pd.DataFrame(_run_tasks(_tune_one, tasks, nworker))
-    table.to_csv(out / "tune_scores.csv", index=False)
+    table.to_csv(out / "tune_scores.tsv", sep="\t", index=False)
     best = table.loc[table.groupby("tool", sort=False)["mcc"].idxmax()]
     tuned = {r.tool: json.loads(r.params) for r in best.itertuples()}
     with open(out / "tuned_params.json", "w") as fh:
@@ -971,9 +971,9 @@ def unit_result_path(out: str | Path, tool: str, cond: str, seed: int) -> Path:
     Returns
     -------
     Path
-        `<out>/results/<tool>/<cond>/s<seed>.csv`.
+        `<out>/results/<tool>/<cond>/s<seed>.tsv`.
     """
-    return Path(out) / "results" / tool / cond / f"s{seed}.csv"
+    return Path(out) / "results" / tool / cond / f"s{seed}.tsv"
 
 
 def evaluate_unit(
@@ -1035,7 +1035,7 @@ def evaluate_unit(
         scores.insert(0, "tool", tool)
         frames.append(scores)
     path.parent.mkdir(parents=True, exist_ok=True)
-    pd.concat(frames, ignore_index=True).to_csv(path, index=False)
+    pd.concat(frames, ignore_index=True).to_csv(path, sep="\t", index=False)
     return path
 
 
@@ -1114,8 +1114,8 @@ def write_summary(out: str | Path) -> pd.DataFrame:
     """
     Combine all unit results and write the summary tables.
 
-    Writes `<out>/results.csv` (per-molecule results of every unit
-    present), `<out>/summary_per_tool.csv`, `<out>/summary_paired.csv`,
+    Writes `<out>/results.tsv` (per-molecule results of every unit
+    present), `<out>/summary_per_tool.tsv`, `<out>/summary_paired.tsv`,
     and `<out>/summary.md`, which lists the tool versions if
     `<out>/versions.json` exists.
 
@@ -1130,16 +1130,18 @@ def write_summary(out: str | Path) -> pd.DataFrame:
         Per-molecule results.
     """
     out = Path(out)
-    files = sorted((out / "results").glob("*/*/*.csv"))
+    files = sorted((out / "results").glob("*/*/*.tsv"))
     if not files:
         raise ValueError(f"no unit results found in {out / 'results'}")
-    results = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
-    results.to_csv(out / "results.csv", index=False)
+    results = pd.concat(
+        [pd.read_csv(f, sep="\t") for f in files], ignore_index=True
+    )
+    results.to_csv(out / "results.tsv", sep="\t", index=False)
     tuned_path = out / "tuned_params.json"
     tuned = json.loads(tuned_path.read_text()) if tuned_path.exists() else {}
     per_tool, paired = summarize(results)
-    per_tool.to_csv(out / "summary_per_tool.csv", index=False)
-    paired.to_csv(out / "summary_paired.csv", index=False)
+    per_tool.to_csv(out / "summary_per_tool.tsv", sep="\t", index=False)
+    paired.to_csv(out / "summary_paired.tsv", sep="\t", index=False)
     text = [
         "# Benchmark summary",
         "",
@@ -1372,8 +1374,8 @@ def plot_summary(out: str | Path, path: str | Path | None = None) -> Path:
     """
     Plot summary figures of the benchmark comparison.
 
-    Reads `<out>/results.csv` (see `write_summary`) and, if present,
-    `<out>/tune_scores.csv`. Each dataset contributes one point, the
+    Reads `<out>/results.tsv` (see `write_summary`) and, if present,
+    `<out>/tune_scores.tsv`. Each dataset contributes one point, the
     mean over its molecules; error bars are mean +- SD over datasets.
     Pages, one figure each (skipped if their data are missing):
 
@@ -1396,10 +1398,10 @@ def plot_summary(out: str | Path, path: str | Path | None = None) -> Path:
         The PDF written.
     """
     out = Path(out)
-    results_path = out / "results.csv"
+    results_path = out / "results.tsv"
     if not results_path.exists():
         raise ValueError(f"{results_path} not found; run summarize first")
-    results = pd.read_csv(results_path)
+    results = pd.read_csv(results_path, sep="\t")
     keys = ["tool", "variant", "cond", "seed"]
     ds = results.groupby(keys)[["mcc", "count_err"]].mean().reset_index()
     tools = [t for t in TOOL_STYLES if t in set(ds["tool"])]
@@ -1492,9 +1494,9 @@ def plot_summary(out: str | Path, path: str | Path | None = None) -> Path:
         fig.tight_layout(rect=(0, 0, 1, 0.97))
         pdf.savefig(fig)
 
-        tune_path = out / "tune_scores.csv"
+        tune_path = out / "tune_scores.tsv"
         if tune_path.exists():
-            scores = pd.read_csv(tune_path)
+            scores = pd.read_csv(tune_path, sep="\t")
             tune_tools = [t for t in TOOL_STYLES if t in set(scores["tool"])]
             fig = Figure(figsize=size)
             axes = fig.subplots(len(tune_tools), 1, squeeze=False)

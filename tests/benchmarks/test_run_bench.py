@@ -418,7 +418,8 @@ class TestEvaluateUnits:
         run_bench.evaluate(tuned_out)
         for tool in run_bench.TOOLS:
             path = run_bench.unit_result_path(tuned_out, tool, "default", 1)
-            table = pd.read_csv(path)
+            assert path.suffix == ".tsv"
+            table = pd.read_csv(path, sep="\t")
             assert set(table["tool"]) == {tool}
             assert set(table["variant"]) == {"tuned", "default"}
             assert len(table) == 2 * run_bench.QUICK_NMOL
@@ -435,7 +436,7 @@ class TestEvaluateUnits:
     def test_filters(self, tuned_out, fake_tools):
         run_bench.evaluate(tuned_out, tools=["ft"], conds=["default"])
         assert set(fake_tools) == {"ft"}
-        results = pd.read_csv(tuned_out / "results.csv")
+        results = pd.read_csv(tuned_out / "results.tsv", sep="\t")
         assert set(results["tool"]) == {"ft"}
 
     @pytest.mark.parametrize(
@@ -448,7 +449,7 @@ class TestEvaluateUnits:
 
     def test_partial_summary(self, tuned_out):
         run_bench.evaluate(tuned_out, tools=["catella", "ft"])
-        paired = pd.read_csv(tuned_out / "summary_paired.csv")
+        paired = pd.read_csv(tuned_out / "summary_paired.tsv", sep="\t")
         assert set(paired["other"]) == {"ft"}
         assert (tuned_out / "summary.md").exists()
 
@@ -575,7 +576,7 @@ class TestPlotSummary:
         assert _pdf_pages(path) == 4
 
     def test_without_tune_scores(self, evaluated_out, tmp_path):
-        (evaluated_out / "tune_scores.csv").unlink()
+        (evaluated_out / "tune_scores.tsv").unlink()
         path = run_bench.plot_summary(evaluated_out, path=tmp_path / "s.pdf")
         assert path == tmp_path / "s.pdf"
         assert _pdf_pages(path) == 4
@@ -598,7 +599,7 @@ class TestTuneEvaluate:
         tuned = run_bench.tune(tmp_path)
         assert set(tuned) == set(run_bench.TOOLS)
         assert tuned["ft"]["nucleosome_length"] == 85
-        scores = pd.read_csv(tmp_path / "tune_scores.csv")
+        scores = pd.read_csv(tmp_path / "tune_scores.tsv", sep="\t")
         assert len(scores) == 4 * len(run_bench.TOOLS)
         saved = json.loads((tmp_path / "tuned_params.json").read_text())
         assert saved == tuned
@@ -612,13 +613,13 @@ class TestTuneEvaluate:
         )
         assert calls.occ.shape == (run_bench.QUICK_NMOL, run_bench.NBP)
         for name in (
-            "results.csv",
-            "summary_per_tool.csv",
-            "summary_paired.csv",
+            "results.tsv",
+            "summary_per_tool.tsv",
+            "summary_paired.tsv",
             "summary.md",
         ):
             assert (tmp_path / name).exists()
-        paired = pd.read_csv(tmp_path / "summary_paired.csv")
+        paired = pd.read_csv(tmp_path / "summary_paired.tsv", sep="\t")
         tuned_ft = paired[
             (paired["variant"] == "tuned") & (paired["other"] == "ft")
         ]

@@ -665,7 +665,8 @@ def run_catella(
 
 def _hiddenfoot_binary(binary=None):
     name = binary or os.environ.get("HIDDENFOOT") or "hiddenfoot_omp"
-    return shutil.which(name)
+    found = shutil.which(name)
+    return os.path.abspath(found) if found else None
 
 
 def hiddenfoot_windows(nbp: int, window: int, step: int) -> list[int]:
@@ -1805,6 +1806,12 @@ def make_data_cmd(
     typer.echo(f"wrote {len(specs)} datasets to {out}")
 
 
+def _set_hiddenfoot(hiddenfoot):
+    # Spawned workers inherit the environment
+    if hiddenfoot:
+        os.environ["HIDDENFOOT"] = os.path.abspath(hiddenfoot)
+
+
 @app.command(name="tune")
 def tune_cmd(
     out: Annotated[Path, typer.Argument(help="Benchmark output directory")],
@@ -1814,11 +1821,17 @@ def tune_cmd(
     nworker: Annotated[
         int,
         typer.Option(
-            help="Number of parallel processes (FiberHMM uses 2 threads)"
+            help="Number of parallel processes (FiberHMM and HiddenFoot "
+            "use 2 threads)"
         ),
     ] = 1,
+    hiddenfoot: Annotated[
+        str | None,
+        typer.Option(help="HiddenFoot executable; default $HIDDENFOOT"),
+    ] = None,
 ):
     """Pick each tool's parameters on the tuning dataset."""
+    _set_hiddenfoot(hiddenfoot)
     tuned = tune(out, env=env, nworker=nworker)
     typer.echo(json.dumps(tuned, indent=2))
 
@@ -1832,9 +1845,14 @@ def evaluate_cmd(
     nworker: Annotated[
         int,
         typer.Option(
-            help="Number of parallel processes (FiberHMM uses 2 threads)"
+            help="Number of parallel processes (FiberHMM and HiddenFoot "
+            "use 2 threads)"
         ),
     ] = 1,
+    hiddenfoot: Annotated[
+        str | None,
+        typer.Option(help="HiddenFoot executable; default $HIDDENFOOT"),
+    ] = None,
     tool: Annotated[
         list[str] | None, typer.Option(help="Only this tool (repeatable)")
     ] = None,
@@ -1850,6 +1868,7 @@ def evaluate_cmd(
     ] = False,
 ):
     """Run tools on the test datasets and write the summary."""
+    _set_hiddenfoot(hiddenfoot)
     evaluate(
         out,
         env=env,

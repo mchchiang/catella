@@ -1,6 +1,7 @@
 # test_run_bench.py
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -850,6 +851,19 @@ class TestHiddenFoot:
         assert run_bench._hiddenfoot_binary() == str(env)
         monkeypatch.delenv("HIDDENFOOT")
         assert run_bench._hiddenfoot_binary() == str(path)
+        monkeypatch.chdir(tmp_path)
+        resolved = run_bench._hiddenfoot_binary("arg/hiddenfoot_omp")
+        assert resolved == os.path.abspath("arg/hiddenfoot_omp")
+
+    @pytest.mark.parametrize("command", ["tune", "evaluate"])
+    def test_cli_option(self, tuned_out, monkeypatch, command):
+        monkeypatch.setenv("HIDDENFOOT", "unset")
+        monkeypatch.chdir(tuned_out)
+        result = runner.invoke(
+            run_bench.app, [command, str(tuned_out), "--hiddenfoot", "hf"]
+        )
+        assert result.exit_code == 0, result.output
+        assert os.environ["HIDDENFOOT"] == os.path.abspath("hf")
 
     @needs_hiddenfoot
     def test_real_binary(self, quick_data, tmp_path):

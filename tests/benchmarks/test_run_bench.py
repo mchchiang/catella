@@ -34,15 +34,14 @@ needs_hiddenfoot = pytest.mark.skipif(
     reason="HiddenFoot executable not available",
 )
 
-FAKE_HF = """#!{python}
-import os, sys
+FAKE_HF = """import os, sys
 nrow = sum(1 for _ in open("met.txt")) - 1
 width = len(open("seq.txt").read().strip())
 open("args.txt", "w").write(" ".join(sys.argv[1:]))
 ll = os.environ.get("FAKE_HF_LL", "-100")
-open("hf.params_SGD.txt", "w").write(f"99 {{ll}} 1 1 1 0.3 0.96\\n")
+open("hf.params_SGD.txt", "w").write(f"99 {ll} 1 1 1 0.3 0.96\\n")
 for name, val in (("hfprofile", 0.5), ("hfbinding", 0.001)):
-    with open(f"hf.{{name}}.nucleosome.txt", "w") as fh:
+    with open(f"hf.{name}.nucleosome.txt", "w") as fh:
         for _ in range(nrow):
             fh.write(" ".join([str(val)] * width) + "\\n")
 """
@@ -50,9 +49,17 @@ for name, val in (("hfprofile", 0.5), ("hfbinding", 0.001)):
 
 def _fake_hiddenfoot(directory):
     directory.mkdir(parents=True, exist_ok=True)
-    exe = directory / "hiddenfoot_omp"
-    exe.write_text(FAKE_HF.format(python=sys.executable))
-    exe.chmod(0o755)
+    script = directory / "fake_hiddenfoot.py"
+    script.write_text(FAKE_HF)
+    if os.name == "nt":
+        exe = directory / "hiddenfoot_omp.bat"
+        exe.write_text(f'@"{sys.executable}" "{script}" %*\n')
+    else:
+        exe = directory / "hiddenfoot_omp"
+        exe.write_text(
+            f'#!/bin/sh\nexec "{sys.executable}" "{script}" "$@"\n'
+        )
+        exe.chmod(0o755)
     return exe
 
 
@@ -851,15 +858,19 @@ class TestHiddenFoot:
         arg = _fake_hiddenfoot(tmp_path / "arg")
         env = _fake_hiddenfoot(tmp_path / "env")
         path = _fake_hiddenfoot(tmp_path / "path")
-        monkeypatch.setenv("PATH", str(path.parent), prepend=":")
+
+        def same(found, exe):
+            return os.path.normcase(found) == os.path.normcase(str(exe))
+
+        monkeypatch.setenv("PATH", str(path.parent), prepend=os.pathsep)
         monkeypatch.setenv("HIDDENFOOT", str(env))
-        assert run_bench._hiddenfoot_binary(str(arg)) == str(arg)
-        assert run_bench._hiddenfoot_binary() == str(env)
+        assert same(run_bench._hiddenfoot_binary(str(arg)), arg)
+        assert same(run_bench._hiddenfoot_binary(), env)
         monkeypatch.delenv("HIDDENFOOT")
-        assert run_bench._hiddenfoot_binary() == str(path)
+        assert same(run_bench._hiddenfoot_binary(), path)
         monkeypatch.chdir(tmp_path)
-        resolved = run_bench._hiddenfoot_binary("arg/hiddenfoot_omp")
-        assert resolved == os.path.abspath("arg/hiddenfoot_omp")
+        relative = os.path.join("arg", arg.name)
+        assert same(run_bench._hiddenfoot_binary(relative), arg)
 
     @pytest.mark.parametrize("command", ["tune", "evaluate"])
     def test_cli_option(self, tuned_out, monkeypatch, command):

@@ -58,6 +58,7 @@ class TestPlaceNucleosomes:
             {"nbp": 100, "nmol": 0},
             {"nbp": 100, "nmol": 1, "lnuc": 0},
             {"nbp": 100, "nmol": 1, "linker_mean": -1.0},
+            {"nbp": 100, "nmol": 1, "linker_shape": 0.0},
             {"nbp": 100, "nmol": 1, "lnuc_range": (0, 10)},
             {"nbp": 100, "nmol": 1, "lnuc_range": (20, 10)},
         ],
@@ -79,6 +80,22 @@ class TestPlaceNucleosomes:
             ends = grp["end"].to_numpy()
             assert (starts[1:] >= ends[:-1]).all()
         assert (nucs["end"] <= 20000).all()
+
+    @pytest.mark.parametrize("linker_shape", [1.0, 3.0])
+    def test_linker_length_moments(self, linker_shape):
+        nucs = synthgen.place_nucleosomes(
+            200000, 20, linker_mean=40.0, linker_shape=linker_shape, seed=0
+        )
+        linkers = np.concatenate(
+            [
+                grp["start"].to_numpy()[1:] - grp["end"].to_numpy()[:-1]
+                for _, grp in nucs.groupby("mol_id")
+            ]
+        )
+        assert linkers.mean() == pytest.approx(40.0, rel=0.03)
+        assert linkers.var() == pytest.approx(
+            1600.0 / linker_shape, rel=0.06
+        )
 
     def test_lnuc_range_single_value(self):
         nucs = synthgen.place_nucleosomes(
@@ -680,6 +697,21 @@ class TestCli:
         for name in ("meth", "unmeth"):
             for ext in ("tsv", "sam"):
                 assert (tmp_path / f"synth.{name}.{ext}").exists()
+
+    def test_linker_shape_option(self, tmp_path):
+        args = [str(tmp_path), "--nbp", "20000", "--nmol", "5", "--seed", "0"]
+        result = runner.invoke(synthgen.app, [*args, "--linker-shape", "50"])
+        assert result.exit_code == 0, result.output
+        truth = pd.read_csv(
+            tmp_path / "synth.truth.bed", sep="\t", header=None, comment="#"
+        )
+        linkers = np.concatenate(
+            [
+                grp[1].to_numpy()[1:] - grp[2].to_numpy()[:-1]
+                for _, grp in truth.groupby(3)
+            ]
+        )
+        assert linkers.min() > 10
 
     def test_report_bias_option(self, tmp_path):
         args = [str(tmp_path), "--nbp", "800", "--nmol", "3", "--seed", "0"]

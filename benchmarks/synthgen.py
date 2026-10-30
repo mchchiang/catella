@@ -30,6 +30,7 @@ def place_nucleosomes(
     chrom: str = "chr1",
     lnuc: int = 147,
     linker_mean: float = 40.0,
+    linker_shape: float = 1.0,
     lnuc_range: tuple[int, int] | None = None,
     seed: int | None = None,
 ) -> pd.DataFrame:
@@ -37,8 +38,8 @@ def place_nucleosomes(
     Place nucleosomes on synthetic molecules with random linkers.
 
     Each molecule spans `[0, nbp)` on `chrom`. Starting from position 0,
-    linker lengths are drawn from an exponential distribution (rounded
-    to integers) and nucleosome footprints of length `lnuc` (or of a
+    linker lengths are drawn from a gamma distribution (rounded to
+    integers) and nucleosome footprints of length `lnuc` (or of a
     random length in `lnuc_range`) are placed between them until no
     further footprint fits.
 
@@ -54,6 +55,11 @@ def place_nucleosomes(
         Nucleosome footprint length (bp).
     linker_mean : float, default 40.0
         Mean linker length (bp).
+    linker_shape : float, default 1.0
+        Shape of the gamma distribution of linker lengths. 1 gives an
+        exponential distribution; larger values make lengths cluster
+        more tightly around `linker_mean` (standard deviation
+        `linker_mean / sqrt(linker_shape)`).
     lnuc_range : tuple of (int, int), optional
         If given, `(lo, hi)`: each nucleosome footprint length is drawn
         uniformly from the integers in `[lo, hi]`, overriding `lnuc`.
@@ -76,6 +82,10 @@ def place_nucleosomes(
         raise ValueError(
             f"linker_mean must be non-negative, got {linker_mean}"
         )
+    if linker_shape <= 0:
+        raise ValueError(
+            f"linker_shape must be positive, got {linker_shape}"
+        )
     if lnuc_range is not None and not 0 < lnuc_range[0] <= lnuc_range[1]:
         raise ValueError(
             f"lnuc_range must satisfy 0 < lo <= hi, got {lnuc_range}"
@@ -87,14 +97,17 @@ def place_nucleosomes(
             return lnuc
         return int(rng.integers(lnuc_range[0], lnuc_range[1] + 1))
 
+    def draw_linker():
+        return round(rng.gamma(linker_shape, linker_mean / linker_shape))
+
     rows = []
     for i in range(nmol):
         mol_id = f"test_{i}"
-        pos = round(rng.exponential(linker_mean))
+        pos = draw_linker()
         length = draw_len()
         while pos + length <= nbp:
             rows.append((mol_id, chrom, pos, pos + length))
-            pos += length + round(rng.exponential(linker_mean))
+            pos += length + draw_linker()
             length = draw_len()
     nucs = pd.DataFrame(rows, columns=_TRUTH_COLS)
     return nucs.astype({"start": "int64", "end": "int64"})
@@ -540,6 +553,7 @@ def make_dataset(
     nucs: pd.DataFrame | None = None,
     lnuc: int = 147,
     linker_mean: float = 40.0,
+    linker_shape: float = 1.0,
     lnuc_range: tuple[int, int] | None = None,
     p_linker: float = 0.7,
     p_nuc: float = 0.02,
@@ -585,6 +599,9 @@ def make_dataset(
         Nucleosome footprint length (bp); used only if `nucs` is None.
     linker_mean : float, default 40.0
         Mean linker length (bp); used only if `nucs` is None.
+    linker_shape : float, default 1.0
+        Shape of the gamma distribution of linker lengths; see
+        `place_nucleosomes`. Used only if `nucs` is None.
     lnuc_range : tuple of (int, int), optional
         Range of random footprint lengths (bp); see `place_nucleosomes`.
         Used only if `nucs` is None.
@@ -629,6 +646,7 @@ def make_dataset(
             chrom=chrom,
             lnuc=lnuc,
             linker_mean=linker_mean,
+            linker_shape=linker_shape,
             lnuc_range=lnuc_range,
             seed=nuc_seed,
         )
@@ -715,6 +733,9 @@ def main(
     linker_mean: Annotated[
         float, typer.Option(help="Mean linker length (bp)")
     ] = 40.0,
+    linker_shape: Annotated[
+        float, typer.Option(help="Gamma shape of linker lengths")
+    ] = 1.0,
     lnuc_range: Annotated[
         tuple[int, int] | None,
         typer.Option(help="Random footprint length range LO HI (bp)"),
@@ -764,6 +785,7 @@ def main(
         nucs=nuc_table,
         lnuc=lnuc,
         linker_mean=linker_mean,
+        linker_shape=linker_shape,
         lnuc_range=lnuc_range,
         p_linker=p_linker,
         p_nuc=p_nuc,

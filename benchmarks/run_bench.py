@@ -4,6 +4,7 @@ import itertools
 import json
 import multiprocessing
 import os
+import re
 import subprocess
 import tempfile
 from concurrent.futures import ProcessPoolExecutor
@@ -147,6 +148,40 @@ def run_in_env(env: str, args: list[str], cwd: str | Path | None = None):
             f"{proc.stderr.strip()}"
         )
     return proc
+
+
+VERSION_CMDS = {
+    "fibertools": ["ft", "--version"],
+    "fiberhmm": ["fiberhmm-call", "--version"],
+    "samtools": ["samtools", "--version"],
+}
+
+
+def tool_versions(env: str = "fiberseq") -> dict[str, str]:
+    """
+    Report the versions of catella and the external tools.
+
+    Parameters
+    ----------
+    env : str, default "fiberseq"
+        Conda environment for the external tools.
+
+    Returns
+    -------
+    dict of str to str
+        Version number by tool; "unknown" if a tool cannot be run or
+        reports no version number.
+    """
+    versions = {"catella": catella.__version__}
+    for tool, args in VERSION_CMDS.items():
+        try:
+            proc = run_in_env(env, args)
+        except (RuntimeError, FileNotFoundError):
+            versions[tool] = "unknown"
+            continue
+        match = re.search(r"\d+(?:\.\d+)+", proc.stdout)
+        versions[tool] = match.group() if match else "unknown"
+    return versions
 
 
 def sam_to_bam(sam: str | Path, env: str) -> Path:
@@ -1026,8 +1061,9 @@ def evaluate(
 
     Each (test dataset, tool) pair is one unit (see `evaluate_unit`);
     units run in parallel and existing unit results are skipped unless
-    `overwrite`. Afterward, `write_summary` combines every unit result
-    present, including those from earlier or separate runs.
+    `overwrite`. The tool versions (see `tool_versions`) are written to
+    `<out>/versions.json`. Afterward, `write_summary` combines every
+    unit result present, including those from earlier or separate runs.
 
     Parameters
     ----------
@@ -1067,6 +1103,8 @@ def evaluate(
         for tool in TOOLS
         if tools is None or tool in tools
     ]
+    with open(out / "versions.json", "w") as fh:
+        json.dump(tool_versions(env), fh, indent=2)
     _run_tasks(evaluate_unit, units, nworker)
     return write_summary(out)
 
@@ -1077,7 +1115,8 @@ def write_summary(out: str | Path) -> pd.DataFrame:
 
     Writes `<out>/results.csv` (per-molecule results of every unit
     present), `<out>/summary_per_tool.csv`, `<out>/summary_paired.csv`,
-    and `<out>/summary.md`.
+    and `<out>/summary.md`, which lists the tool versions if
+    `<out>/versions.json` exists.
 
     Parameters
     ----------
@@ -1118,6 +1157,12 @@ def write_summary(out: str | Path) -> pd.DataFrame:
         "```",
         "",
     ]
+    versions_path = out / "versions.json"
+    if versions_path.exists():
+        versions = json.loads(versions_path.read_text())
+        text += ["## Tool versions", ""]
+        text += [f"- {tool}: {ver}" for tool, ver in versions.items()]
+        text += [""]
     (out / "summary.md").write_text("\n".join(text))
     return results
 

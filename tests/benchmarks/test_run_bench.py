@@ -162,6 +162,47 @@ class TestRunInEnv:
         assert "samtools" in proc.stdout
 
 
+class TestToolVersions:
+    def _fake_run(self, monkeypatch, outputs):
+        def fake_run(args, **kwargs):
+            out = outputs.get(args[4])
+            if out is None:
+                return subprocess.CompletedProcess(args, 1, "", "missing")
+            return subprocess.CompletedProcess(args, 0, out, "")
+
+        monkeypatch.setattr(run_bench.subprocess, "run", fake_run)
+
+    def test_parsed_versions(self, monkeypatch):
+        self._fake_run(
+            monkeypatch,
+            {
+                "ft": "fibertools-rs v0.13.1\tgit-commit VERGEN_\n",
+                "fiberhmm-call": "fiberhmm 3.0.2\n",
+                "samtools": "samtools 1.25\nUsing htslib 1.22\n",
+            },
+        )
+        versions = run_bench.tool_versions("e")
+        assert versions == {
+            "catella": run_bench.catella.__version__,
+            "fibertools": "0.13.1",
+            "fiberhmm": "3.0.2",
+            "samtools": "1.25",
+        }
+
+    def test_unknown_versions(self, monkeypatch):
+        self._fake_run(monkeypatch, {"samtools": "samtools\n"})
+        versions = run_bench.tool_versions("e")
+        assert versions["fibertools"] == "unknown"
+        assert versions["fiberhmm"] == "unknown"
+        assert versions["samtools"] == "unknown"
+
+    @needs_fiberseq
+    def test_real_env(self):
+        versions = run_bench.tool_versions("fiberseq")
+        assert set(versions) == {"catella", *run_bench.VERSION_CMDS}
+        assert "unknown" not in versions.values()
+
+
 class TestIntervalsToCalls:
     def test_occupancy_and_count(self):
         intervals = pd.DataFrame(
@@ -335,6 +376,14 @@ class TestSummarize:
         assert row["n"] == 2
 
 
+FAKE_VERSIONS = {
+    "catella": "0.1.0",
+    "fibertools": "0.13.1",
+    "fiberhmm": "3.0.2",
+    "samtools": "1.25",
+}
+
+
 @pytest.fixture
 def fake_tools(monkeypatch):
     runs = []
@@ -349,6 +398,9 @@ def fake_tools(monkeypatch):
         return run_bench.intervals_to_calls(truth, mol_ids, run_bench.NBP)
 
     monkeypatch.setattr(run_bench, "run_tool", fake_run_tool)
+    monkeypatch.setattr(
+        run_bench, "tool_versions", lambda env="fiberseq": FAKE_VERSIONS
+    )
     return runs
 
 
@@ -408,6 +460,21 @@ class TestEvaluateUnits:
     def test_summary_without_results_raises(self, tmp_path):
         with pytest.raises(ValueError):
             run_bench.write_summary(tmp_path)
+
+    def test_versions_recorded(self, tuned_out):
+        run_bench.evaluate(tuned_out)
+        saved = json.loads((tuned_out / "versions.json").read_text())
+        assert saved == FAKE_VERSIONS
+        text = (tuned_out / "summary.md").read_text()
+        assert "## Tool versions" in text
+        assert "- fibertools: 0.13.1" in text
+
+    def test_summary_without_versions(self, tuned_out):
+        run_bench.evaluate(tuned_out)
+        (tuned_out / "versions.json").unlink()
+        run_bench.write_summary(tuned_out)
+        text = (tuned_out / "summary.md").read_text()
+        assert "## Tool versions" not in text
 
 
 def _pdf_pages(path):

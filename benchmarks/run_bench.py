@@ -44,7 +44,7 @@ CONDITIONS = {
     "plinker04": {"p_linker": 0.4},
     "signal15": {"signal_sep": 1.5},
     "varfoot": {"lnuc_range": (120, 160)},
-    "overconf": {"report_sep": 4.0},
+    "biased": {"report_bias": 3.0},
 }
 GRIDS = {
     "catella": {"llink": [0, 10, 30, 50]},

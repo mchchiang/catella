@@ -42,7 +42,7 @@ BASE_PARAMS = {
 CONDITIONS = {
     "default": {},
     "linker20": {"linker_mean": 20.0},
-    "plinker04": {"p_linker": 0.4},
+    "plinker035": {"p_linker": 0.35},
     "signal15": {"signal_sep": 1.5},
     "varfoot": {"lnuc_range": (120, 160)},
     "biased": {"report_bias": 3.0},

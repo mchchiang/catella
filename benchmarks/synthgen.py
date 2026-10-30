@@ -89,7 +89,7 @@ def place_nucleosomes(
 
     rows = []
     for i in range(nmol):
-        mol_id = f"mol_{i}"
+        mol_id = f"test_{i}"
         pos = round(rng.exponential(linker_mean))
         length = draw_len()
         while pos + length <= nbp:
@@ -654,7 +654,7 @@ def make_dataset(
             ctrl = simulate_calls(
                 seq,
                 no_nucs,
-                [f"{name}{i}" for i in range(ncontrol)],
+                [f"{name}_{i}" for i in range(ncontrol)],
                 chrom=chrom,
                 mtase=mtase,
                 p_linker=rate,

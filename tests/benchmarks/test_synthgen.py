@@ -571,7 +571,7 @@ class TestMakeDataset:
         err = 0.5 * math.erfc(2.0 / math.sqrt(2))
         for name, rate in (("meth", 0.7), ("unmeth", 0.0)):
             tsv = pd.read_csv(paths[f"{name}_modkit"], sep="\t")
-            assert set(tsv["read_id"]) == {f"{name}{i}" for i in range(20)}
+            assert set(tsv["read_id"]) == {f"{name}_{i}" for i in range(20)}
             _, reads = _read_sam(paths[f"{name}_sam"])
             assert set(reads) == set(tsv["read_id"])
             called = (tsv["mod_qual"] >= 0.5).mean()

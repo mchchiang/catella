@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import run_bench
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 from typer.testing import CliRunner
 
 runner = CliRunner()
@@ -558,6 +559,9 @@ def evaluated_out(tuned_out):
     return tuned_out
 
 
+PER_PAGE = run_bench._occupancy_per_page(len(run_bench.TOOLS) + 2)
+
+
 class TestPlotOccupancy:
     def test_default_path_and_pages(self, evaluated_out):
         path = run_bench.plot_occupancy(evaluated_out, "default", 1)
@@ -566,26 +570,63 @@ class TestPlotOccupancy:
         )
         assert path == expected
         assert path.read_bytes().startswith(b"%PDF")
-        assert _pdf_pages(path) == -(-run_bench.QUICK_NMOL // 4)
+        assert _pdf_pages(path) == -(-run_bench.QUICK_NMOL // PER_PAGE)
 
     def test_nmol(self, evaluated_out, tmp_path):
         path = run_bench.plot_occupancy(
             evaluated_out, "default", 1, nmol=5, path=tmp_path / "a.pdf"
         )
-        assert _pdf_pages(path) == 2
+        assert _pdf_pages(path) == -(-5 // PER_PAGE)
 
     def test_nmol_larger_than_dataset(self, evaluated_out, tmp_path):
         path = run_bench.plot_occupancy(
             evaluated_out, "default", 1, nmol=999, path=tmp_path / "a.pdf"
         )
-        assert _pdf_pages(path) == -(-run_bench.QUICK_NMOL // 4)
+        assert _pdf_pages(path) == -(-run_bench.QUICK_NMOL // PER_PAGE)
+
+    def test_explicit_per_page(self, evaluated_out, tmp_path):
+        path = run_bench.plot_occupancy(
+            evaluated_out, "default", 1, per_page=2, path=tmp_path / "a.pdf"
+        )
+        assert _pdf_pages(path) == -(-run_bench.QUICK_NMOL // 2)
 
     @pytest.mark.parametrize(
-        "kwargs", [{"nmol": 0}, {"per_page": 0}, {"tools": ["nope"]}]
+        "kwargs",
+        [
+            {"nmol": 0},
+            {"per_page": 0},
+            {"per_page": PER_PAGE + 1},
+            {"tools": ["nope"]},
+        ],
     )
     def test_invalid_args(self, evaluated_out, kwargs):
         with pytest.raises(ValueError):
             run_bench.plot_occupancy(evaluated_out, "default", 1, **kwargs)
+
+    @pytest.mark.parametrize("ntrack", range(3, 10))
+    def test_full_page_fits(self, ntrack):
+        per_page = run_bench._occupancy_per_page(ntrack)
+        occ = np.zeros(run_bench.NBP)
+        tracks = [("FiberHMM (retrained)", occ, "#000000")] * (ntrack - 1)
+        molecules = [
+            (f"test_{i}", np.full(run_bench.NBP, 0.5), tracks)
+            for i in range(per_page)
+        ]
+        fig = run_bench._occupancy_figure(molecules, "title\nsubtitle")
+        renderer = FigureCanvasAgg(fig).get_renderer()
+        width, height = fig.get_size_inches()
+        box = fig.get_tightbbox(renderer)
+        assert box.x0 >= 0 and box.y0 >= 0
+        assert box.x1 <= width and box.y1 <= height
+        boxes = [ax.get_window_extent(renderer) for ax in fig.axes]
+        titles = [ax.title for ax in fig.axes if ax.get_title(loc="left")]
+        assert len(titles) == per_page
+        for title in titles:
+            extent = title.get_window_extent(renderer)
+            own = title.axes.get_window_extent(renderer)
+            assert not any(
+                extent.overlaps(b) for b in boxes if b is not own
+            )
 
     def test_tool_subset_and_default_variant(self, evaluated_out, tmp_path):
         path = run_bench.plot_occupancy(

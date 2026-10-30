@@ -1460,6 +1460,61 @@ def _mod_qual_rows(ddir, mol_ids, nbp):
     return rows
 
 
+# Occupancy page layout (inches)
+_OCC_PAGE = (8.27, 11.69)
+_OCC_TRACK = 0.28
+_OCC_GAP = 0.3
+_OCC_TOP = 0.8
+_OCC_BOTTOM = 1.1
+_OCC_LEFT = 1.5
+_OCC_RIGHT = 0.4
+
+
+def _occupancy_per_page(ntrack):
+    usable = _OCC_PAGE[1] - _OCC_TOP - _OCC_BOTTOM
+    return max(1, int(usable // (ntrack * _OCC_TRACK + _OCC_GAP)))
+
+
+def _occupancy_figure(molecules, title):
+    width, height = _OCC_PAGE
+    fig = Figure(figsize=_OCC_PAGE)
+    x0 = _OCC_LEFT / width
+    w = 1 - (_OCC_LEFT + _OCC_RIGHT) / width
+    th = _OCC_TRACK / height
+    y = 1 - _OCC_TOP / height
+    for mol_id, qual, tracks in molecules:
+        y -= _OCC_GAP / height
+        for k, (label, occ, color) in enumerate(
+            [("mod_qual", None, None), *tracks]
+        ):
+            y -= th
+            ax = fig.add_axes((x0, y + 0.25 * th, w, 0.75 * th))
+            ax.set_xlim(-0.5, NBP - 0.5)
+            ax.tick_params(labelbottom=False, labelsize=7)
+            if k == 0:
+                image = ax.imshow(
+                    qual[None, :],
+                    aspect="auto",
+                    cmap="Purples",
+                    vmin=0,
+                    vmax=1,
+                    interpolation="nearest",
+                    extent=(-0.5, NBP - 0.5, 0, 1),
+                )
+                ax.set_title(mol_id, fontsize=8, loc="left")
+            _draw_track(ax, label, occ, color)
+    ax.tick_params(labelbottom=True)
+    ax.set_xlabel("position (bp)", fontsize=8)
+    fig.suptitle(title, fontsize=9, y=1 - 0.25 / height, va="top")
+    cax = fig.add_axes((0.35, 0.45 / height, 0.3, 0.08 / height))
+    bar = fig.colorbar(image, cax=cax, orientation="horizontal")
+    bar.set_label(
+        "mod_qual = P(methylated | signal); white = no site", fontsize=7
+    )
+    bar.ax.tick_params(labelsize=6)
+    return fig
+
+
 def _draw_track(ax, label, occ, color):
     ax.set_ylabel(label, rotation=0, ha="right", va="center", fontsize=7)
     ax.set_yticks([])
@@ -1482,7 +1537,7 @@ def plot_occupancy(
     variant: str = "tuned",
     tools: list[str] | None = None,
     nmol: int | None = None,
-    per_page: int = 4,
+    per_page: int | None = None,
     path: str | Path | None = None,
 ) -> Path:
     """
@@ -1509,8 +1564,10 @@ def plot_occupancy(
         order, if None.
     nmol : int, optional
         Plot only the first `nmol` molecules of the dataset; all if None.
-    per_page : int, default 4
-        Molecules per A4 page.
+    per_page : int, optional
+        Molecules per A4 page; at most as many as fit on the page with
+        every track at a readable height. If None (default), that
+        maximum.
     path : str or Path, optional
         Output PDF path; defaults to
         `<out>/plots/occupancy_<cond>_s<seed>_<variant>.pdf`.
@@ -1522,7 +1579,7 @@ def plot_occupancy(
     """
     if nmol is not None and nmol <= 0:
         raise ValueError(f"nmol must be positive, got {nmol}")
-    if per_page <= 0:
+    if per_page is not None and per_page <= 0:
         raise ValueError(f"per_page must be positive, got {per_page}")
     out = Path(out)
     ddir = dataset_dir(out, cond, seed)
@@ -1547,55 +1604,38 @@ def plot_occupancy(
         for tool, c in calls.items()
     }
     ntrack = len(calls) + 2
+    max_per_page = _occupancy_per_page(ntrack)
+    if per_page is None:
+        per_page = max_per_page
+    elif per_page > max_per_page:
+        raise ValueError(
+            f"per_page must be at most {max_per_page} for {ntrack} tracks "
+            f"per molecule, got {per_page}"
+        )
+    title = (
+        f"Methylation probability and nucleosome occupancy: {cond}, "
+        f"seed {seed}, {variant} parameters\n"
+        "(shaded ends excluded from scoring)"
+    )
+    molecules = []
+    for i, mol_id in enumerate(mol_ids):
+        label, color = TOOL_STYLES["truth"]
+        tracks = [(label, true.occ[i], color)]
+        for tool in calls:
+            label, color = TOOL_STYLES[tool]
+            occ = None
+            if mol_id in rows[tool]:
+                occ = calls[tool].occ[rows[tool][mol_id]]
+            tracks.append((label, occ, color))
+        molecules.append((mol_id, qual[i], tracks))
     if path is None:
         path = out / "plots" / f"occupancy_{cond}_s{seed}_{variant}.pdf"
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with PdfPages(path) as pdf:
-        for start in range(0, len(mol_ids), per_page):
-            page = mol_ids[start : start + per_page]
-            fig = Figure(figsize=(8.27, 11.69))
-            axes = fig.subplots(per_page * ntrack, 1, sharex=True)
-            for ax in axes[len(page) * ntrack :]:
-                ax.set_visible(False)
-            for k, mol_id in enumerate(page):
-                i = start + k
-                top = axes[k * ntrack]
-                image = top.imshow(
-                    qual[i][None, :],
-                    aspect="auto",
-                    cmap="Purples",
-                    vmin=0,
-                    vmax=1,
-                    interpolation="nearest",
-                    extent=(-0.5, NBP - 0.5, 0, 1),
-                )
-                top.set_title(mol_id, fontsize=8, loc="left")
-                _draw_track(top, "mod_qual", None, None)
-                label, color = TOOL_STYLES["truth"]
-                _draw_track(axes[k * ntrack + 1], label, true.occ[i], color)
-                for j, tool in enumerate(calls, 2):
-                    label, color = TOOL_STYLES[tool]
-                    occ = None
-                    if mol_id in rows[tool]:
-                        occ = calls[tool].occ[rows[tool][mol_id]]
-                    _draw_track(axes[k * ntrack + j], label, occ, color)
-            axes[len(page) * ntrack - 1].set_xlabel("position (bp)")
-            fig.suptitle(
-                f"Methylation probability and nucleosome occupancy: {cond}, "
-                f"seed {seed}, {variant} parameters\n"
-                "(shaded ends excluded from scoring)",
-                fontsize=9,
-            )
-            fig.tight_layout(rect=(0, 0.03, 1, 0.97), h_pad=0.2)
-            cax = fig.add_axes((0.35, 0.012, 0.3, 0.008))
-            bar = fig.colorbar(image, cax=cax, orientation="horizontal")
-            bar.set_label(
-                "mod_qual = P(methylated | signal); white = no site",
-                fontsize=7,
-            )
-            bar.ax.tick_params(labelsize=6)
-            pdf.savefig(fig)
+        for start in range(0, len(molecules), per_page):
+            page = molecules[start : start + per_page]
+            pdf.savefig(_occupancy_figure(page, title))
     return path
 
 
@@ -1920,8 +1960,9 @@ def plot_occupancy_cmd(
         int | None, typer.Option(help="Plot only the first NMOL molecules")
     ] = None,
     per_page: Annotated[
-        int, typer.Option(help="Molecules per page")
-    ] = 4,
+        int | None,
+        typer.Option(help="Molecules per page; default as many as fit"),
+    ] = None,
 ):
     """Plot methylation probability and occupancy per molecule."""
     path = plot_occupancy(

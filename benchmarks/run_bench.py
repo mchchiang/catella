@@ -61,7 +61,8 @@ def dataset_specs(quick: bool = False) -> list[dict]:
     ----------
     quick : bool, default False
         If True, only the tuning dataset and one test dataset of the
-        "default" condition, for smoke testing.
+        "default" condition, each with fewer molecules, for a quick trial
+        run.
 
     Returns
     -------
@@ -1487,7 +1488,7 @@ app = typer.Typer(help="Benchmark catella against fibertools and FiberHMM")
 def make_data_cmd(
     out: Annotated[Path, typer.Argument(help="Benchmark output directory")],
     quick: Annotated[
-        bool, typer.Option(help="Generate a small smoke-test set")
+        bool, typer.Option(help="Generate a small set for a quick trial run")
     ] = False,
     env: Annotated[
         str, typer.Option(help="Conda env with samtools/ft/FiberHMM")

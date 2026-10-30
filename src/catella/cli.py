@@ -13,7 +13,7 @@ import catella
 from catella.experiment.methdata import MethPrintExperiment
 from catella.simulation.results import SimDataset
 
-app = typer.Typer(help="Nucleosome Positioning Monte Carlo Simulation Suite")
+app = typer.Typer(help="Nucleosome Positioning from Methylation Footprinting")
 
 
 class SourceKind(str, enum.Enum):

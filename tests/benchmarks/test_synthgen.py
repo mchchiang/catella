@@ -169,12 +169,15 @@ class TestSimulateCalls:
         calls = synthgen.simulate_calls(
             seq, nucs, mtase=mtase, double_strand=True, seed=0
         )
+        expected = np.sort(
+            np.concatenate(
+                [synthgen.eligible_sites(seq, mtase, s) for s in "+-"]
+            )
+        )
         for _, grp in calls.groupby("mol_id"):
-            assert (np.diff(grp["pos"].to_numpy()) > 0).all()
-            for strand in ("+", "-"):
-                pos = grp.loc[grp["strand"] == strand, "pos"]
-                expected = synthgen.eligible_sites(seq, mtase, strand)
-                assert pos.tolist() == expected.tolist()
+            assert grp["strand"].nunique() == 1
+            assert grp["pos"].tolist() == expected.tolist()
+        assert set(calls["strand"]) == {"+", "-"}
 
     def test_one_strand_per_molecule(self):
         seq, nucs = self._data()
@@ -481,7 +484,7 @@ class TestWriteSam:
         self, tmp_path, mtase, plus_mod, minus_mod
     ):
         seq = synthgen.random_sequence(1500, seed=0)
-        nucs = synthgen.place_nucleosomes(1500, 4, seed=0)
+        nucs = synthgen.place_nucleosomes(1500, 10, seed=0)
         calls = synthgen.simulate_calls(
             seq, nucs, mtase=mtase, double_strand=True, seed=0
         )
@@ -489,18 +492,25 @@ class TestWriteSam:
             calls, {"chr1": seq}, tmp_path / "x.sam", mtase=mtase
         )
         _, reads = _read_sam(path)
+        plus_sites = set(synthgen.eligible_sites(seq, mtase, "+").tolist())
+        flags = set()
         for mol_id, grp in calls.groupby("mol_id"):
             read = reads[mol_id]
-            assert read["flag"] == 0
+            strand = grp["strand"].iloc[0]
+            assert read["flag"] == (0 if strand == "+" else 16)
+            flags.add(read["flag"])
             decoded = {mod: (ref, ml) for mod, ref, ml in _decode(read)}
             assert set(decoded) == {plus_mod, minus_mod}
-            for mod, strand in ((plus_mod, "+"), (minus_mod, "-")):
-                sub = grp[grp["strand"] == strand]
+            on_plus = grp["pos"].isin(plus_sites)
+            own = on_plus if strand == "+" else ~on_plus
+            for mod, sel in ((plus_mod, own), (minus_mod, ~own)):
+                sub = grp[sel]
                 expected = dict(zip(sub["pos"], sub["mod_qual"]))
                 ref, ml = decoded[mod]
                 assert sorted(ref) == sorted(expected)
                 want = [min(int(expected[p] * 256), 255) for p in ref]
                 assert ml == want
+        assert flags == {0, 16}
 
     def test_invalid_mtase(self, tmp_path):
         seq, calls = self._calls()
@@ -574,10 +584,14 @@ class TestMakeDataset:
 
     def test_double_strand(self, tmp_path):
         paths = synthgen.make_dataset(
-            tmp_path, nbp=800, nmol=3, double_strand=True, seed=0
+            tmp_path, nbp=800, nmol=10, double_strand=True, seed=0
         )
         tsv = pd.read_csv(paths["modkit"], sep="\t")
-        assert (tsv.groupby("read_id")["ref_strand"].nunique() == 2).all()
+        assert (tsv.groupby("read_id")["ref_strand"].nunique() == 1).all()
+        assert set(tsv["ref_strand"]) == {"+", "-"}
+        seq = "".join(paths["fasta"].read_text().splitlines()[1:])
+        n_sites = sum(len(synthgen.eligible_sites(seq, "A", s)) for s in "+-")
+        assert (tsv.groupby("read_id").size() == n_sites).all()
 
     def test_seed_reproducible(self, tmp_path):
         a = synthgen.make_dataset(tmp_path / "a", nbp=800, nmol=3, seed=1)

@@ -206,13 +206,13 @@ def simulate_calls(
     """
     Simulate per-site methylation calls from nucleosome positions.
 
-    Each molecule is read on the "+" or "-" strand with equal
-    probability, or on both strands if `double_strand`. Every site
-    eligible for `mtase` on a read strand is methylated with
-    probability `p_nuc` if it lies inside a nucleosome and `p_linker`
-    otherwise. Each site's call score `mod_qual` is the probability
-    that it is methylated given a simulated raw signal (see
-    `signal_sep`).
+    Each molecule's read is aligned to the "+" or "-" strand with equal
+    probability, and has calls at the eligible sites of that strand, or
+    of both strands if `double_strand`. Every called site is methylated
+    with probability `p_nuc` if it lies inside a nucleosome and
+    `p_linker` otherwise. Each site's call score `mod_qual` is the
+    probability that it is methylated given a simulated raw signal
+    (see `signal_sep`).
 
     Parameters
     ----------
@@ -247,17 +247,19 @@ def simulate_calls(
         values give overconfident scores and smaller values
         underconfident ones.
     double_strand : bool, default False
-        If True, read every molecule on both strands, as in PacBio
-        Fiber-seq; otherwise on one random strand, as in Nanopore.
+        If True, each read has calls on both strands, as in PacBio
+        Fiber-seq; otherwise only on the strand it is aligned to, as in
+        Nanopore.
     seed : int, optional
         Seed for the random number generator.
 
     Returns
     -------
     pandas.DataFrame
-        One row per eligible site per read strand per molecule, with
-        columns `mol_id`, `chrom`, `pos`, `strand`, `mod_qual`, sorted
-        by molecule then position.
+        One row per called site per molecule, with columns `mol_id`,
+        `chrom`, `pos`, `strand` (the strand the molecule's read is
+        aligned to, the same for all its rows), `mod_qual`, sorted by
+        molecule then position.
     """
     for name, p in (("p_linker", p_linker), ("p_nuc", p_nuc)):
         if not 0 <= p <= 1:
@@ -280,14 +282,9 @@ def simulate_calls(
     by_mol = dict(tuple(nucs.groupby("mol_id", sort=False)))
     frames = []
     for mol_id in mol_ids:
-        if double_strand:
-            strands = ("+", "-")
-        else:
-            strands = ("+",) if rng.random() < 0.5 else ("-",)
-        pos = np.concatenate([sites[s] for s in strands])
-        strand = np.concatenate([np.full(len(sites[s]), s) for s in strands])
-        order = np.argsort(pos, kind="stable")
-        pos, strand = pos[order], strand[order]
+        read_strand = "+" if rng.random() < 0.5 else "-"
+        strands = ("+", "-") if double_strand else (read_strand,)
+        pos = np.sort(np.concatenate([sites[s] for s in strands]))
         occupied = np.zeros(nbp, dtype=bool)
         if mol_id in by_mol:
             grp = by_mol[mol_id]
@@ -303,7 +300,7 @@ def simulate_calls(
                     "mol_id": mol_id,
                     "chrom": chrom,
                     "pos": pos,
-                    "strand": strand,
+                    "strand": read_strand,
                     "mod_qual": qual,
                 }
             )
@@ -454,21 +451,23 @@ def write_sam(
 
     Each molecule becomes one read aligned end to end to its
     chromosome (POS 1, CIGAR `<len>M`), with SEQ set to the forward
-    reference sequence. Molecules with "-" strand calls only are
-    written as reverse reads (FLAG 16); all others as forward reads
-    (FLAG 0), with any "-" strand calls encoded as opposite-strand
-    modifications (e.g., "T-a" for 6mA), as in PacBio Fiber-seq. Calls
-    are encoded in the `MM`/`ML` tags (SAM specification, "?" mode) in
-    the original read orientation, so they can be read by
-    base-mod-aware tools such as fibertools. Convert to BAM with
-    `samtools view -b`.
+    reference sequence and FLAG 16 for reads aligned to the "-"
+    strand. The strand of each call is given by the reference base at
+    its position (e.g., A for "+" and T for "-" with 6mA). Calls on the
+    read's own strand are encoded as same-strand modifications (e.g.,
+    "A+a") and calls on the other strand as opposite-strand ones
+    (e.g., "T-a"), as in PacBio Fiber-seq, in the `MM`/`ML` tags (SAM
+    specification, "?" mode) in the original read orientation, so
+    they can be read by base-mod-aware tools such as fibertools.
+    Convert to BAM with `samtools view -b`.
 
     Parameters
     ----------
     calls : pandas.DataFrame
-        Calls with columns `mol_id`, `chrom`, `pos`, `strand`,
-        `mod_qual`, e.g., from `simulate_calls`. Every call position
-        must be an eligible site for `mtase` on its row's strand.
+        Calls with columns `mol_id`, `chrom`, `pos`, `strand` (strand
+        the read is aligned to), `mod_qual`, e.g., from
+        `simulate_calls`. Every call position must be an eligible site
+        for `mtase` on either strand.
     seqs : dict of str to str
         Chromosome name -> forward reference sequence.
     path : str or Path
@@ -500,22 +499,21 @@ def write_sam(
             seq = seqs[chrom]
             pos = grp["pos"].to_numpy()
             qual = grp["mod_qual"].to_numpy()
-            plus = (grp["strand"] == "+").to_numpy()
-            if not plus.any():
-                flag = 16
-                entries = [(f"{base}+{code}?", pos, qual, base, "-")]
-            else:
-                flag = 0
-                comp = _COMPLEMENT[base]
-                entries = [
-                    (f"{base}+{code}?", pos[plus], qual[plus], base, "+"),
-                    (f"{comp}-{code}?", pos[~plus], qual[~plus], comp, "+"),
-                ]
+            strand = grp["strand"].iloc[0]
+            flag = 0 if strand == "+" else 16
+            ref = np.frombuffer(seq.upper().encode(), dtype="S1")[pos]
+            # A call is on the read's own strand if its base matches it
+            own = (ref == base.encode()) == (strand == "+")
+            comp = _COMPLEMENT[base]
+            entries = [
+                (f"{base}+{code}?", own, base),
+                (f"{comp}-{code}?", ~own, comp),
+            ]
             mm, ml_str = "", ""
-            for tag, p, q, b, s in entries:
-                if len(p) == 0:
+            for tag, sel, b in entries:
+                if not sel.any():
                     continue
-                skips, ml = _mm_ml(seq, p, q, b, s)
+                skips, ml = _mm_ml(seq, pos[sel], qual[sel], b, strand)
                 mm += tag + "".join(f",{v}" for v in skips) + ";"
                 ml_str += "".join(f",{v}" for v in ml)
             fh.write(

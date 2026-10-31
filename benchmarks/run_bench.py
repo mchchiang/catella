@@ -420,11 +420,16 @@ def _test_mol_ids(ddir):
     return list(dict.fromkeys(tsv["read_id"]))
 
 
+def _dataset_length(ddir):
+    sizes = pd.read_csv(Path(ddir) / "synth.size", sep="\t")
+    return int(sizes["length"].iloc[0])
+
+
 def _ft_calls(bam, ddir, env):
     table = Path(bam).with_suffix(".tsv.gz")
     run_in_env(env, ["ft", "extract", str(bam), "--all", str(table)])
     return intervals_to_calls(
-        parse_ft_extract(table), _test_mol_ids(ddir), NBP
+        parse_ft_extract(table), _test_mol_ids(ddir), _dataset_length(ddir)
     )
 
 
@@ -740,7 +745,7 @@ def write_hiddenfoot_input(
     tsv["state"] = (tsv["mod_qual"] >= 0.5).astype(int)
     mol_ids = _test_mol_ids(ddir)
     blocks, keys = [], []
-    for start in hiddenfoot_windows(NBP, window, step):
+    for start in hiddenfoot_windows(_dataset_length(ddir), window, step):
         pos = tsv["ref_position"]
         sel = tsv[(pos >= start) & (pos < start + window)]
         block = sel.pivot(
@@ -898,7 +903,7 @@ def run_hiddenfoot(
             np.loadtxt(workdir / f"hf.{name}.nucleosome.txt", ndmin=2),
             keys,
             mol_ids,
-            NBP,
+            _dataset_length(ddir),
             window,
             step,
         )
@@ -1475,7 +1480,7 @@ def _occupancy_per_page(ntrack):
     return max(1, int(usable // (ntrack * _OCC_TRACK + _OCC_GAP)))
 
 
-def _occupancy_figure(molecules, title):
+def _occupancy_figure(molecules, title, nbp, trim):
     width, height = _OCC_PAGE
     fig = Figure(figsize=_OCC_PAGE)
     x0 = _OCC_LEFT / width
@@ -1489,7 +1494,7 @@ def _occupancy_figure(molecules, title):
         ):
             y -= th
             ax = fig.add_axes((x0, y + 0.25 * th, w, 0.75 * th))
-            ax.set_xlim(-0.5, NBP - 0.5)
+            ax.set_xlim(-0.5, nbp - 0.5)
             ax.tick_params(labelbottom=False, labelsize=7)
             if k == 0:
                 image = ax.imshow(
@@ -1499,10 +1504,10 @@ def _occupancy_figure(molecules, title):
                     vmin=0,
                     vmax=1,
                     interpolation="nearest",
-                    extent=(-0.5, NBP - 0.5, 0, 1),
+                    extent=(-0.5, nbp - 0.5, 0, 1),
                 )
                 ax.set_title(mol_id, fontsize=8, loc="left")
-            _draw_track(ax, label, occ, color)
+            _draw_track(ax, label, occ, color, nbp, trim)
     ax.tick_params(labelbottom=True)
     ax.set_xlabel("position (bp)", fontsize=8)
     fig.suptitle(title, fontsize=9, y=1 - 0.25 / height, va="top")
@@ -1515,15 +1520,15 @@ def _occupancy_figure(molecules, title):
     return fig
 
 
-def _draw_track(ax, label, occ, color):
+def _draw_track(ax, label, occ, color, nbp, trim):
     ax.set_ylabel(label, rotation=0, ha="right", va="center", fontsize=7)
     ax.set_yticks([])
     for side in ("top", "right", "left"):
         ax.spines[side].set_visible(False)
     if occ is None:
         return
-    ax.axvspan(0, TRIM, color="#eeeeee", zorder=0)
-    ax.axvspan(NBP - TRIM, NBP, color="#eeeeee", zorder=0)
+    ax.axvspan(0, trim, color="#eeeeee", zorder=0)
+    ax.axvspan(nbp - trim, nbp, color="#eeeeee", zorder=0)
     x = np.arange(len(occ))
     ax.fill_between(x, occ, step="mid", color=color, alpha=0.85, lw=0)
     ax.set_ylim(0, 1)
@@ -1597,8 +1602,9 @@ def plot_occupancy(
             f"variant {variant!r}; run evaluate first"
         )
     mol_ids = _test_mol_ids(ddir)[:nmol]
-    true = intervals_to_calls(read_truth(ddir), mol_ids, NBP)
-    qual = _mod_qual_rows(ddir, mol_ids, NBP)
+    nbp = _dataset_length(ddir)
+    true = intervals_to_calls(read_truth(ddir), mol_ids, nbp)
+    qual = _mod_qual_rows(ddir, mol_ids, nbp)
     rows = {
         tool: {m: i for i, m in enumerate(c.mol_ids)}
         for tool, c in calls.items()
@@ -1635,7 +1641,7 @@ def plot_occupancy(
     with PdfPages(path) as pdf:
         for start in range(0, len(molecules), per_page):
             page = molecules[start : start + per_page]
-            pdf.savefig(_occupancy_figure(page, title))
+            pdf.savefig(_occupancy_figure(page, title, nbp, TRIM))
     return path
 
 

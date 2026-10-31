@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import run_bench
+import synthgen
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from typer.testing import CliRunner
 
@@ -612,7 +613,9 @@ class TestPlotOccupancy:
             (f"test_{i}", np.full(run_bench.NBP, 0.5), tracks)
             for i in range(per_page)
         ]
-        fig = run_bench._occupancy_figure(molecules, "title\nsubtitle")
+        fig = run_bench._occupancy_figure(
+            molecules, "title\nsubtitle", run_bench.NBP, run_bench.TRIM
+        )
         renderer = FigureCanvasAgg(fig).get_renderer()
         width, height = fig.get_size_inches()
         box = fig.get_tightbbox(renderer)
@@ -877,6 +880,16 @@ class TestHiddenFoot:
         args = (work / "args.txt").read_text().split()
         assert args[args.index("-nuclen") + 1] == "147"
         assert args[args.index("-numthreads") + 1] == "2"
+
+    def test_dataset_length(self, tmp_path):
+        ddir = tmp_path / "data"
+        synthgen.make_dataset(ddir, nbp=3000, nmol=4, seed=0)
+        assert run_bench._dataset_length(ddir) == 3000
+        exe = _fake_hiddenfoot(tmp_path / "bin")
+        work = tmp_path / "work"
+        work.mkdir()
+        calls = run_bench.run_hiddenfoot(ddir, work, binary=str(exe))
+        assert calls.occ.shape == (4, 3000)
 
     def test_underflow_raises(self, quick_data, tmp_path, monkeypatch):
         _, ddir = quick_data

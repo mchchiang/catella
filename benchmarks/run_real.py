@@ -9,7 +9,8 @@ import pandas as pd
 import pyfaidx
 import synthgen
 import typer
-from callers import ENV, sam_to_bam
+from callers import ENV, Calls, load_calls, sam_to_bam
+from run_bench import _markdown_table
 
 # Widom 601 nucleosome positioning sequence (147 bp core)
 CORE_601 = (
@@ -20,6 +21,15 @@ CORE_601 = (
 MTASE_OF_CODE = {"a": "A", "m": "GC"}
 SAMPLES = ("chromatin", "methylated", "unmethylated")
 _COMP = str.maketrans("ACGTN", "TGCAN")
+
+# Scoring; fixed before any real dataset is scored
+TRIM = 150
+CORE_HALF = 73
+REPEAT = 197
+DYAD_TOL = 20
+SPACING_TOL = 20
+MARGINS = {"precision": 0.02, "contrast": 0.02, "false_per_kb": 0.1}
+HIGHER_IS_BETTER = {"precision": True, "contrast": True, "false_per_kb": False}
 
 
 def find_601_dyads(seq: str, anchor: int = 50) -> np.ndarray:
@@ -391,6 +401,342 @@ def prepare(
     return annotation
 
 
+def occupancy_runs(occ: np.ndarray) -> np.ndarray:
+    """
+    Intervals where occupancy is at least 0.5.
+
+    Parameters
+    ----------
+    occ : np.ndarray
+        Per-bp occupancy of one molecule.
+
+    Returns
+    -------
+    np.ndarray of int64
+        (nrun, 2) start and end (half-open) of each run.
+    """
+    on = np.concatenate([[0], (np.asarray(occ) >= 0.5).astype(int), [0]])
+    edges = np.flatnonzero(np.diff(on))
+    return edges.reshape(-1, 2).astype(np.int64)
+
+
+def molecule_metrics(
+    calls: Calls,
+    spans: pd.DataFrame,
+    dyads: np.ndarray,
+    *,
+    trim: int = TRIM,
+) -> pd.DataFrame:
+    """
+    Per-molecule counts behind the real-data metrics.
+
+    Each molecule is scored inside the span its calls cover, minus
+    `trim` bp at each end. Called nucleosomes are runs of occupancy
+    >= 0.5 (see `occupancy_runs`), counted if their centre lies in that
+    region.
+
+    Parameters
+    ----------
+    calls : Calls
+        Calls of one tool on one dataset.
+    spans : pandas.DataFrame
+        Index `mol_id`; columns `lo`, `hi`: first and last position
+        with a methylation call.
+    dyads : np.ndarray
+        601 dyad positions.
+    trim : int, default `TRIM`
+        Bases excluded at each end of the covered span.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Index `mol_id`; columns `n_calls` (called nucleosomes),
+        `n_hits` (those with centre within `DYAD_TOL` of a dyad),
+        `core` and `linker` (mean occupancy over 601 cores and over the
+        linkers between them), `n_pairs` and `n_regular` (adjacent call
+        pairs, and those `REPEAT` or 2 * `REPEAT` apart within
+        `SPACING_TOL`), `kb` (scored length), `lengths` (call lengths).
+    """
+    nbp = calls.occ.shape[1]
+    core = np.zeros(nbp, dtype=bool)
+    for dyad in dyads:
+        core[max(dyad - CORE_HALF, 0) : dyad + CORE_HALF + 1] = True
+    array = np.zeros(nbp, dtype=bool)
+    if len(dyads):
+        array[dyads.min() - CORE_HALF : dyads.max() + CORE_HALF + 1] = True
+    linker = array & ~core
+    rows = []
+    for mol_id, occ in zip(calls.mol_ids, calls.occ):
+        lo, hi = spans.loc[mol_id, ["lo", "hi"]]
+        region = np.zeros(nbp, dtype=bool)
+        region[lo + trim : hi + 1 - trim] = True
+        runs = occupancy_runs(occ)
+        centres = (runs[:, 0] + runs[:, 1] - 1) / 2
+        inside = region[np.clip(centres.astype(int), 0, nbp - 1)]
+        centres, runs = centres[inside], runs[inside]
+        near = np.abs(centres[:, None] - dyads[None, :]).min(axis=1) \
+            if len(dyads) and len(centres) else np.array([])
+        gaps = np.diff(centres)
+        regular = (np.abs(gaps - REPEAT) <= SPACING_TOL) | (
+            np.abs(gaps - 2 * REPEAT) <= SPACING_TOL
+        )
+        rows.append(
+            {
+                "mol_id": mol_id,
+                "n_calls": len(centres),
+                "n_hits": int((near <= DYAD_TOL).sum()),
+                "core": occ[region & core].mean()
+                if (region & core).any() else np.nan,
+                "linker": occ[region & linker].mean()
+                if (region & linker).any() else np.nan,
+                "n_pairs": len(gaps),
+                "n_regular": int(regular.sum()),
+                "kb": region.sum() / 1000,
+                "lengths": (runs[:, 1] - runs[:, 0]).tolist(),
+            }
+        )
+    return pd.DataFrame(rows).set_index("mol_id")
+
+
+def aggregate(table: pd.DataFrame) -> dict[str, float]:
+    """
+    Real-data metrics from per-molecule counts.
+
+    Parameters
+    ----------
+    table : pandas.DataFrame
+        From `molecule_metrics` (possibly a resample of its rows).
+
+    Returns
+    -------
+    dict of str to float
+        `precision` (pooled hits / calls), `contrast` (mean over
+        molecules of core minus linker occupancy), `false_per_kb`
+        (pooled calls per scored kb), `spacing` (pooled regular / all
+        adjacent pairs), `per_mol` (mean calls per molecule).
+    """
+    calls = table["n_calls"].sum()
+    pairs = table["n_pairs"].sum()
+    return {
+        "precision": table["n_hits"].sum() / calls if calls else np.nan,
+        "contrast": (table["core"] - table["linker"]).mean(),
+        "false_per_kb": calls / table["kb"].sum(),
+        "spacing": table["n_regular"].sum() / pairs if pairs else np.nan,
+        "per_mol": table["n_calls"].mean(),
+    }
+
+
+def bootstrap(
+    tables: dict[str, pd.DataFrame], *, nboot: int, seed: int
+) -> dict[str, pd.DataFrame]:
+    """
+    Bootstrap the metrics over molecules, paired across tools.
+
+    Every resample draws the same molecules for every tool.
+
+    Parameters
+    ----------
+    tables : dict of str to pandas.DataFrame
+        Tool -> `molecule_metrics` table, all with the same molecules.
+    nboot : int
+        Number of resamples.
+    seed : int
+        Seed for the resampling.
+
+    Returns
+    -------
+    dict of str to pandas.DataFrame
+        Tool -> (nboot, metric) table of resampled `aggregate` values.
+    """
+    mol_ids = sorted(next(iter(tables.values())).index)
+    rng = np.random.default_rng(seed)
+    draws = rng.integers(0, len(mol_ids), size=(nboot, len(mol_ids)))
+    out = {}
+    for tool, table in tables.items():
+        table = table.loc[mol_ids]
+        out[tool] = pd.DataFrame(
+            [aggregate(table.iloc[d]) for d in draws]
+        )
+    return out
+
+
+def equivalence_label(
+    diffs: np.ndarray, margin: float, higher_is_better: bool
+) -> str:
+    """
+    Classify a paired difference (catella minus another tool).
+
+    Parameters
+    ----------
+    diffs : np.ndarray
+        Bootstrap resamples of the difference.
+    margin : float
+        Equivalence margin.
+    higher_is_better : bool
+        Whether a larger metric value is better.
+
+    Returns
+    -------
+    str
+        "equivalent" if the 90% interval lies inside (-margin, margin)
+        (two one-sided tests at alpha 0.05); otherwise "better" or
+        "worse" for catella if the 95% interval excludes 0; otherwise
+        "inconclusive".
+    """
+    diffs = np.asarray(diffs, dtype=float)
+    diffs = diffs[np.isfinite(diffs)]
+    if diffs.size == 0:
+        return "inconclusive"
+    lo90, hi90 = np.percentile(diffs, [5, 95])
+    if -margin < lo90 and hi90 < margin:
+        return "equivalent"
+    lo95, hi95 = np.percentile(diffs, [2.5, 97.5])
+    if lo95 > 0:
+        return "better" if higher_is_better else "worse"
+    if hi95 < 0:
+        return "worse" if higher_is_better else "better"
+    return "inconclusive"
+
+
+DATASET_METRICS = {
+    "test": ("precision", "contrast", "spacing", "per_mol"),
+    "meth_eval": ("false_per_kb", "per_mol"),
+}
+
+
+def _spans(ddir):
+    tsv = pd.read_csv(
+        Path(ddir) / "synth.tsv", sep="\t", usecols=["read_id", "ref_position"]
+    )
+    spans = tsv.groupby("read_id")["ref_position"].agg(["min", "max"])
+    return spans.rename(columns={"min": "lo", "max": "hi"})
+
+
+def _interval(values, level):
+    values = np.asarray(values, dtype=float)
+    values = values[np.isfinite(values)]
+    if values.size == 0:
+        return np.nan, np.nan
+    tail = (100 - level) / 2
+    return tuple(np.percentile(values, [tail, 100 - tail]))
+
+
+def score(out: str | Path, *, nboot: int = 1000, seed: int = 0) -> dict:
+    """
+    Score saved real-data calls and compare catella with each tool.
+
+    For each dataset (`test`: chromatin; `meth_eval`: held-out
+    methylated control) and parameter variant, computes the metrics of
+    `aggregate` per tool with 95% bootstrap intervals over molecules,
+    and, on the molecules all tools share, the paired difference
+    catella minus each other tool with its `equivalence_label` (margins
+    `MARGINS`). Writes `<out>/real_results.tsv`,
+    `<out>/real_paired.tsv`, and `<out>/real_summary.md`.
+
+    Parameters
+    ----------
+    out : str or Path
+        Real-data output directory (after `prepare` and `evaluate`),
+        with calls in `<out>/calls/<tool>_<variant>/<dataset>.h5`.
+    nboot : int, default 1000
+        Number of bootstrap resamples.
+    seed : int, default 0
+        Seed for the resampling.
+
+    Returns
+    -------
+    dict
+        "results" and "paired" tables, as written.
+    """
+    out = Path(out)
+    annotation = json.loads((out / "annotation.json").read_text())
+    dyads = np.asarray(annotation["dyads"], dtype=np.int64)
+    results, paired = [], []
+    for dataset, metrics in DATASET_METRICS.items():
+        spans = _spans(out / dataset)
+        for variant in ("tuned", "default"):
+            tables = {}
+            pattern = f"*_{variant}/{dataset}.h5"
+            for h5 in sorted((out / "calls").glob(pattern)):
+                tool = h5.parent.name[: -len(variant) - 1]
+                tables[tool] = molecule_metrics(load_calls(h5), spans, dyads)
+            if not tables:
+                continue
+            shared = sorted(
+                set.intersection(*(set(t.index) for t in tables.values()))
+            )
+            tables = {t: table.loc[shared] for t, table in tables.items()}
+            boots = bootstrap(tables, nboot=nboot, seed=seed)
+            points = {t: aggregate(table) for t, table in tables.items()}
+            for tool in tables:
+                for metric in metrics:
+                    lo, hi = _interval(boots[tool][metric], 95)
+                    results.append(
+                        {
+                            "dataset": dataset,
+                            "variant": variant,
+                            "tool": tool,
+                            "metric": metric,
+                            "value": points[tool][metric],
+                            "ci_low": lo,
+                            "ci_high": hi,
+                            "n": len(shared),
+                        }
+                    )
+            if "catella" not in tables:
+                continue
+            for other in tables:
+                if other == "catella":
+                    continue
+                for metric in metrics:
+                    if metric not in MARGINS:
+                        continue
+                    diffs = boots["catella"][metric] - boots[other][metric]
+                    lo90, hi90 = _interval(diffs, 90)
+                    lo95, hi95 = _interval(diffs, 95)
+                    paired.append(
+                        {
+                            "dataset": dataset,
+                            "variant": variant,
+                            "other": other,
+                            "metric": metric,
+                            "diff": points["catella"][metric]
+                            - points[other][metric],
+                            "ci90_low": lo90,
+                            "ci90_high": hi90,
+                            "ci95_low": lo95,
+                            "ci95_high": hi95,
+                            "margin": MARGINS[metric],
+                            "label": equivalence_label(
+                                diffs, MARGINS[metric],
+                                HIGHER_IS_BETTER[metric],
+                            ),
+                        }
+                    )
+    results = pd.DataFrame(results)
+    paired = pd.DataFrame(paired)
+    results.to_csv(
+        out / "real_results.tsv", sep="\t", index=False, lineterminator="\n"
+    )
+    paired.to_csv(
+        out / "real_paired.tsv", sep="\t", index=False, lineterminator="\n"
+    )
+    text = [
+        "# Real-data benchmark (601 fibre)",
+        "",
+        "## Metrics (95% bootstrap intervals over molecules)",
+        "",
+        _markdown_table(results) if len(results) else "(none)",
+        "",
+        "## catella minus other tool",
+        "",
+        _markdown_table(paired) if len(paired) else "(none)",
+        "",
+    ]
+    (out / "real_summary.md").write_text("\n".join(text))
+    return {"results": results, "paired": paired}
+
+
 app = typer.Typer(help="Benchmark nucleosome callers on real 601 fibres")
 
 
@@ -422,6 +768,17 @@ def prepare_cmd(
     )
     counts = {k: len(v) for k, v in annotation["molecules"].items()}
     typer.echo(f"wrote {out}: {counts}, {len(annotation['dyads'])} dyads")
+
+
+@app.command(name="score")
+def score_cmd(
+    out: Annotated[Path, typer.Argument(help="Real-data output directory")],
+    nboot: Annotated[int, typer.Option(help="Bootstrap resamples")] = 1000,
+    seed: Annotated[int, typer.Option(help="Random seed")] = 0,
+):
+    """Score saved calls and write the real-data summary."""
+    score(out, nboot=nboot, seed=seed)
+    typer.echo(f"wrote {Path(out) / 'real_summary.md'}")
 
 
 if __name__ == "__main__":

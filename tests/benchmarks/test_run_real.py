@@ -3,6 +3,7 @@
 import gzip
 import json
 
+import callers
 import catella
 import numpy as np
 import pandas as pd
@@ -235,3 +236,136 @@ class TestPrepare:
             for stem in ("synth", "synth.meth", "synth.unmeth"):
                 assert (ddir / f"{stem}.sam").exists()
                 assert (ddir / f"{stem}.gpc.sam").exists()
+
+
+DYADS = np.array([300, 497, 694])
+
+
+def _calls(centres_per_mol, nbp=1000):
+    occ = np.zeros((len(centres_per_mol), nbp), dtype=np.float32)
+    for row, centres in enumerate(centres_per_mol):
+        for c in centres:
+            occ[row, c - 73 : c + 74] = 1
+    ids = np.array([f"m{i}" for i in range(len(centres_per_mol))])
+    return callers.Calls(ids, occ, occ.sum(axis=1) / 147)
+
+
+def _spans(n, lo=0, hi=999):
+    index = pd.Index([f"m{i}" for i in range(n)], name="mol_id")
+    return pd.DataFrame({"lo": lo, "hi": hi}, index=index)
+
+
+class TestOccupancyRuns:
+    def test_runs(self):
+        occ = np.array([0, 1, 1, 0, 0.6, 0.6, 0.4, 1])
+        runs = run_real.occupancy_runs(occ)
+        assert runs.tolist() == [[1, 3], [4, 6], [7, 8]]
+
+
+class TestMoleculeMetrics:
+    def test_perfect_calls(self):
+        table = run_real.molecule_metrics(
+            _calls([DYADS.tolist()]), _spans(1), DYADS, trim=0
+        )
+        row = table.loc["m0"]
+        assert row["n_calls"] == 3 and row["n_hits"] == 3
+        assert row["core"] == 1 and row["linker"] == 0
+        assert row["n_pairs"] == 2 and row["n_regular"] == 2
+        assert row["kb"] == 1.0
+        assert row["lengths"] == [147, 147, 147]
+
+    def test_shifted_calls(self):
+        table = run_real.molecule_metrics(
+            _calls([(DYADS + 50).tolist()]), _spans(1), DYADS, trim=0
+        )
+        assert table.loc["m0", "n_hits"] == 0
+        assert table.loc["m0", "linker"] > 0
+
+    def test_trim_excludes_edge_calls(self):
+        table = run_real.molecule_metrics(
+            _calls([DYADS.tolist()]), _spans(1, lo=0, hi=799), DYADS,
+            trim=250,
+        )
+        assert table.loc["m0", "n_calls"] == 2
+        assert table.loc["m0", "kb"] == 0.3
+
+
+class TestAggregate:
+    def test_pooled_values(self):
+        table = run_real.molecule_metrics(
+            _calls([DYADS.tolist(), (DYADS + 50).tolist()]),
+            _spans(2), DYADS, trim=0,
+        )
+        values = run_real.aggregate(table)
+        assert values["precision"] == pytest.approx(0.5)
+        assert values["false_per_kb"] == pytest.approx(3.0)
+        assert values["spacing"] == pytest.approx(1.0)
+        assert values["per_mol"] == pytest.approx(3.0)
+
+
+class TestEquivalenceLabel:
+    def test_labels(self):
+        rng = np.random.default_rng(0)
+        same = np.zeros(1000)
+        up = rng.normal(0.1, 0.01, 1000)
+        noisy = rng.normal(0.0, 0.1, 1000)
+        assert run_real.equivalence_label(same, 0.02, True) == "equivalent"
+        assert run_real.equivalence_label(up, 0.02, True) == "better"
+        assert run_real.equivalence_label(up, 0.02, False) == "worse"
+        assert run_real.equivalence_label(-up, 0.02, False) == "better"
+        assert run_real.equivalence_label(noisy, 0.02, True) == (
+            "inconclusive"
+        )
+        assert run_real.equivalence_label(
+            np.array([np.nan]), 0.02, True
+        ) == "inconclusive"
+
+
+class TestBootstrap:
+    def test_paired_resamples(self):
+        table = run_real.molecule_metrics(
+            _calls([DYADS.tolist(), (DYADS + 50).tolist()] * 5),
+            _spans(10), DYADS, trim=0,
+        )
+        boots = run_real.bootstrap(
+            {"a": table, "b": table.copy()}, nboot=50, seed=1
+        )
+        assert boots["a"].shape == (50, 5)
+        pd.testing.assert_frame_equal(boots["a"], boots["b"])
+
+
+class TestScore:
+    def test_outputs_and_labels(self, tmp_path):
+        nmol = 20
+        (tmp_path / "annotation.json").write_text(
+            json.dumps({"dyads": DYADS.tolist()})
+        )
+        for dataset in ("test", "meth_eval"):
+            ddir = tmp_path / dataset
+            ddir.mkdir()
+            pd.DataFrame(
+                {
+                    "read_id": [f"m{i}" for i in range(nmol)] * 2,
+                    "ref_position": [0] * nmol + [999] * nmol,
+                }
+            ).to_csv(ddir / "synth.tsv", sep="\t", index=False)
+        good = _calls([DYADS.tolist()] * nmol)
+        bad = _calls([(DYADS + 50).tolist()] * nmol)
+        empty = _calls([[]] * nmol)
+        for tool, test, meth in (("catella", good, empty), ("ft", bad, bad)):
+            for dataset, calls in (("test", test), ("meth_eval", meth)):
+                callers.save_calls(
+                    calls,
+                    tmp_path / "calls" / f"{tool}_tuned" / f"{dataset}.h5",
+                )
+        out = run_real.score(tmp_path, nboot=100)
+        for name in ("real_results.tsv", "real_paired.tsv",
+                     "real_summary.md"):
+            assert (tmp_path / name).exists()
+        paired = out["paired"].set_index(["dataset", "metric"])["label"]
+        assert paired[("test", "precision")] == "better"
+        assert paired[("test", "contrast")] == "better"
+        assert paired[("meth_eval", "false_per_kb")] == "better"
+        results = out["results"]
+        assert set(results["tool"]) == {"catella", "ft"}
+        assert set(results["variant"]) == {"tuned"}

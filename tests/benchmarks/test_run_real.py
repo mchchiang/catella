@@ -369,3 +369,69 @@ class TestScore:
         results = out["results"]
         assert set(results["tool"]) == {"catella", "ft"}
         assert set(results["variant"]) == {"tuned"}
+
+
+@pytest.fixture
+def prepared(tmp_path, monkeypatch):
+    fibre = _fibre_with_601([300, 497, 694], length=1200)
+    _write_raw(tmp_path / "raw", fibre, nread=4)
+    out = tmp_path / "out"
+    run_real.prepare(tmp_path / "raw", out, nmol=4, convert=False)
+    tuned = tmp_path / "tuned_params.json"
+    tuned.write_text(
+        json.dumps({key: {} for key, _ in run_real.REAL_TOOLS.values()})
+    )
+    runs = []
+
+    def fake_tool(tool, ddir, workdir, params, env="catella"):
+        runs.append((tool, ddir.name))
+        mol_ids = callers._test_mol_ids(ddir)
+        occ = _calls([[373, 570]] * len(mol_ids), nbp=len(fibre)).occ
+        return callers.Calls(
+            np.asarray(mol_ids), occ, np.full(len(mol_ids), 2.0)
+        )
+
+    monkeypatch.setattr(run_real, "run_real_tool", fake_tool)
+    monkeypatch.setattr(
+        run_real.callers, "tool_versions", lambda env="catella": {}
+    )
+    return out, tuned, runs
+
+
+class TestEvaluate:
+    def test_units_and_skip(self, prepared):
+        out, tuned, runs = prepared
+        paths = run_real.evaluate(out, tuned)
+        assert len(paths) == len(run_real.DATASETS) * len(
+            run_real.REAL_TOOLS
+        ) * 2
+        assert (out / "versions.json").exists()
+        assert len(runs) == len(paths)
+        runs.clear()
+        run_real.evaluate(out, tuned, tools=["catella"])
+        assert runs == []
+        run_real.evaluate(out, tuned, tools=["catella"], overwrite=True)
+        assert sorted(runs) == sorted(
+            [("catella", "test"), ("catella", "meth_eval")] * 2
+        )
+
+    def test_unknown_tool(self, prepared):
+        out, tuned, _ = prepared
+        with pytest.raises(ValueError):
+            run_real.evaluate(out, tuned, tools=["nope"])
+
+    def test_score_and_plot(self, prepared):
+        out, tuned, _ = prepared
+        run_real.evaluate(out, tuned)
+        result = run_real.score(out, nboot=20)
+        assert set(result["paired"]["other"]) == set(run_real.REAL_TOOLS) - {
+            "catella"
+        }
+        path = run_real.plot(out, nmol=3)
+        assert path == out / "plots" / "real_tuned.pdf"
+        assert path.read_bytes().startswith(b"%PDF")
+
+    def test_plot_without_calls(self, prepared):
+        out, _, _ = prepared
+        with pytest.raises(ValueError):
+            run_real.plot(out)

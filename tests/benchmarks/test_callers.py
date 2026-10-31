@@ -276,6 +276,61 @@ class TestRunners:
         assert model.exists()
 
 
+class TestChannels:
+    def _record(self, monkeypatch):
+        seen = []
+
+        def fake_run_in_env(env, args, cwd=None):
+            seen.append(args)
+            if args[0] == "fiberhmm-probs":
+                tables = Path(args[args.index("-o") + 1]) / "tables"
+                tables.mkdir(parents=True)
+                for state in ("accessible", "inaccessible"):
+                    (tables / f"x_{state}_C_k3.tsv").write_text("")
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        monkeypatch.setattr(callers, "run_in_env", fake_run_in_env)
+        return seen
+
+    def test_fiberhmm_gpc_training(self, tmp_path, monkeypatch):
+        seen = self._record(monkeypatch)
+        model = callers.train_fiberhmm(tmp_path, channel="m")
+        assert model == tmp_path / "fiberhmm_model.gpc" / "best-model.json"
+        probs, train = seen
+        assert str(tmp_path / "synth.meth.gpc.bam") in probs
+        assert str(tmp_path / "synth.unmeth.gpc.bam") in probs
+        assert probs[probs.index("--mode") + 1] == "gpc"
+        assert str(tmp_path / "synth.gpc.bam") in train
+        assert train[train.index("--mode") + 1] == "gpc"
+
+    def test_fiberhmm_gpc_calling(self, tmp_path, monkeypatch):
+        seen = self._record(monkeypatch)
+        monkeypatch.setattr(callers, "_ft_calls", lambda *a: "calls")
+        out = callers.run_fiberhmm(tmp_path, tmp_path, channel="m")
+        assert out == "calls"
+        call = seen[-1]
+        assert call[call.index("-i") + 1] == str(tmp_path / "synth.gpc.bam")
+
+    def test_fiberhmm_invalid_channel(self, tmp_path):
+        with pytest.raises(ValueError):
+            callers.train_fiberhmm(tmp_path, channel="x")
+        with pytest.raises(ValueError):
+            callers.run_fiberhmm(tmp_path, tmp_path, retrain=False,
+                                 channel="m")
+
+    def test_catella_mtase(self, tmp_path, monkeypatch):
+        seen = {}
+
+        def fake_load_raw(**kwargs):
+            seen.update(kwargs)
+            raise RuntimeError("stop")
+
+        monkeypatch.setattr(callers.catella, "load_raw", fake_load_raw)
+        with pytest.raises(RuntimeError, match="stop"):
+            callers.run_catella(tmp_path, tmp_path, mtase=["A", "GC"])
+        assert seen["mtase"] == ["A", "GC"]
+
+
 class TestHiddenFootWindows:
     def test_starts(self):
         assert callers.hiddenfoot_windows(5000, 1000, 500) == list(

@@ -20,6 +20,8 @@ ENV = "catella"
 HF_WINDOW = 1000
 HF_STEP = 500
 HF_MAX_WINDOW = 2000
+# FiberHMM labelling channel -> (BAM file suffix, FiberHMM mode)
+FIBERHMM_CHANNELS = {"a": ("", "pacbio-fiber"), "m": (".gpc", "gpc")}
 
 
 def run_in_env(env: str, args: list[str], cwd: str | Path | None = None):
@@ -276,11 +278,21 @@ def run_ft(
     return _ft_calls(out, ddir, env)
 
 
+def _fiberhmm_channel(channel):
+    if channel not in FIBERHMM_CHANNELS:
+        raise ValueError(
+            f"channel must be one of {sorted(FIBERHMM_CHANNELS)}, "
+            f"got {channel!r}"
+        )
+    return FIBERHMM_CHANNELS[channel]
+
+
 def train_fiberhmm(
     ddir: str | Path,
     *,
     env: str = ENV,
     iterations: int = 10,
+    channel: str = "a",
 ) -> Path:
     """
     Train a FiberHMM model on a dataset, using its controls.
@@ -294,34 +306,38 @@ def train_fiberhmm(
     ----------
     ddir : str or Path
         Dataset directory (with `synth.bam`, `synth.meth.bam`,
-        `synth.unmeth.bam`).
+        `synth.unmeth.bam`, or their `.gpc.bam` versions for GpC).
     env : str, default "catella"
         Conda environment providing FiberHMM.
     iterations : int, default 10
         Training iterations (random initializations).
+    channel : {"a", "m"}, default "a"
+        Labelling channel: "a" for m6A (FiberHMM mode `pacbio-fiber`),
+        "m" for GpC 5mC (mode `gpc`, files `synth*.gpc.bam`).
 
     Returns
     -------
     Path
         The trained model file.
     """
+    suffix, mode = _fiberhmm_channel(channel)
     ddir = Path(ddir)
-    model = ddir / "fiberhmm_model" / "best-model.json"
+    model = ddir / f"fiberhmm_model{suffix}" / "best-model.json"
     if model.exists():
         return model
-    probs = ddir / "fiberhmm_probs"
+    probs = ddir / f"fiberhmm_probs{suffix}"
     run_in_env(
         env,
         [
             "fiberhmm-probs",
             "-a",
-            str(ddir / "synth.meth.bam"),
+            str(ddir / f"synth.meth{suffix}.bam"),
             "-u",
-            str(ddir / "synth.unmeth.bam"),
+            str(ddir / f"synth.unmeth{suffix}.bam"),
             "-o",
             str(probs),
             "--mode",
-            "pacbio-fiber",
+            mode,
             "-p",
             "128",
             "-k",
@@ -334,12 +350,14 @@ def train_fiberhmm(
         [
             "fiberhmm-train",
             "-i",
-            str(ddir / "synth.bam"),
+            str(ddir / f"synth{suffix}.bam"),
             "-p",
             str(next(tables.glob("*_accessible_*_k3.tsv"))),
             str(next(tables.glob("*_inaccessible_*_k3.tsv"))),
             "-o",
             str(model.parent),
+            "--mode",
+            mode,
             "-k",
             "3",
             "-c",
@@ -360,6 +378,7 @@ def run_fiberhmm(
     nuc_min_size: int | None = None,
     split_min_llr: float | None = None,
     iterations: int = 10,
+    channel: str = "a",
 ) -> Calls:
     """
     Call nucleosomes with `fiberhmm-call`.
@@ -381,16 +400,27 @@ def run_fiberhmm(
         Value for `--split-min-llr`; tool default if None.
     iterations : int, default 10
         Training iterations if `retrain`.
+    channel : {"a", "m"}, default "a"
+        Labelling channel; see `train_fiberhmm`. The pretrained model
+        is m6A only.
 
     Returns
     -------
     Calls
     """
+    suffix, _ = _fiberhmm_channel(channel)
+    if not retrain and channel != "a":
+        raise ValueError(
+            f"pretrained FiberHMM models are m6A only; channel must be "
+            f"'a' when retrain is False, got {channel!r}"
+        )
     out = Path(workdir) / "fiberhmm.bam"
-    args = ["fiberhmm-call", "-i", str(Path(ddir) / "synth.bam")]
+    args = ["fiberhmm-call", "-i", str(Path(ddir) / f"synth{suffix}.bam")]
     args += ["-o", str(out), "--prob-threshold", "128", "-c", "2"]
     if retrain:
-        model = train_fiberhmm(ddir, env=env, iterations=iterations)
+        model = train_fiberhmm(
+            ddir, env=env, iterations=iterations, channel=channel
+        )
         args += ["-m", str(model)]
     else:
         args += ["--enzyme", "hia5", "--seq", "pacbio"]
@@ -411,6 +441,7 @@ def run_catella(
     mu: float = 0.0,
     emax: float | None = None,
     seed: int = 1,
+    mtase: str | list[str] = "A",
 ) -> Calls:
     """
     Compute nucleosome occupancy with catella's exact (TM) solver.
@@ -436,6 +467,9 @@ def run_catella(
         abs(logit(meth_prob)) from `catella.estimate_start_temp`.
     seed : int, default 1
         Seed passed to `catella.run` and `catella.estimate_start_temp`.
+    mtase : str or list of str, default "A"
+        Methyltransferase label(s) passed to `catella.load_raw`, e.g.,
+        `["A", "GC"]` for m6A and GpC labelling.
 
     Returns
     -------
@@ -449,7 +483,7 @@ def run_catella(
         unmeth_file=ddir / "synth.unmeth.tsv",
         meth_file=ddir / "synth.meth.tsv",
         fasta_file=ddir / "synth.fa",
-        mtase="A",
+        mtase=mtase,
         ignore_strand=True,
         tmp_dir=workdir,
     )

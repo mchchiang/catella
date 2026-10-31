@@ -708,7 +708,11 @@ def hiddenfoot_windows(nbp: int, window: int, step: int) -> list[int]:
 
 
 def write_hiddenfoot_input(
-    ddir: str | Path, workdir: str | Path, window: int, step: int
+    ddir: str | Path,
+    workdir: str | Path,
+    window: int,
+    step: int,
+    mod_code: str = "a",
 ) -> list[tuple[str, int]]:
     """
     Write HiddenFoot input files for a dataset cut into windows.
@@ -730,6 +734,9 @@ def write_hiddenfoot_input(
         Window length in bp.
     step : int
         Distance between consecutive window starts in bp.
+    mod_code : str, default "a"
+        Modification code of the calls used (e.g., "a" for m6A, "m" for
+        5mC in GpC); other calls are ignored.
 
     Returns
     -------
@@ -740,8 +747,10 @@ def write_hiddenfoot_input(
     tsv = pd.read_csv(
         Path(ddir) / "synth.tsv",
         sep="\t",
-        usecols=["read_id", "ref_position", "mod_qual"],
+        usecols=["read_id", "ref_position", "mod_qual", "mod_code"],
+        dtype={"mod_code": str},
     )
+    tsv = tsv[tsv["mod_code"] == mod_code].copy()
     tsv["state"] = (tsv["mod_qual"] >= 0.5).astype(int)
     mol_ids = _test_mol_ids(ddir)
     blocks, keys = [], []
@@ -820,6 +829,7 @@ def run_hiddenfoot(
     step: int = HF_STEP,
     threads: int = 2,
     binary: str | None = None,
+    mod_code: str = "a",
 ) -> Calls:
     """
     Call nucleosomes with HiddenFoot in nucleosome-only mode.
@@ -849,6 +859,9 @@ def run_hiddenfoot(
     binary : str, optional
         HiddenFoot executable; defaults to `$HIDDENFOOT`, else
         `hiddenfoot_omp` on the `PATH`.
+    mod_code : str, default "a"
+        Modification code of the calls used; see
+        `write_hiddenfoot_input`.
 
     Returns
     -------
@@ -867,7 +880,7 @@ def run_hiddenfoot(
             "binary"
         )
     workdir = Path(workdir)
-    keys = write_hiddenfoot_input(ddir, workdir, window, step)
+    keys = write_hiddenfoot_input(ddir, workdir, window, step, mod_code)
     proc = subprocess.run(
         [
             exe,

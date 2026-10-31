@@ -881,6 +881,24 @@ class TestHiddenFoot:
         assert args[args.index("-nuclen") + 1] == "147"
         assert args[args.index("-numthreads") + 1] == "2"
 
+    @pytest.mark.parametrize(
+        "mod_code, empty",
+        [("a", lambda s: s >= 2500), ("m", lambda s: s < 2000)],
+    )
+    def test_input_mod_code(self, tmp_path, mod_code, empty):
+        ddir = tmp_path / "data"
+        synthgen.make_dataset(ddir, nbp=5000, nmol=3, seed=0)
+        tsv = pd.read_csv(ddir / "synth.tsv", sep="\t")
+        tsv.loc[tsv["ref_position"] >= 2500, "mod_code"] = "m"
+        tsv.to_csv(ddir / "synth.tsv", sep="\t", index=False)
+        keys = run_bench.write_hiddenfoot_input(
+            ddir, tmp_path, 1000, 500, mod_code
+        )
+        lines = (tmp_path / "met.txt").read_text().splitlines()[1:]
+        rows = np.array([line.split() for line in lines], dtype=int)
+        for row, (_, start) in zip(rows, keys):
+            assert (row == 2).all() == empty(start)
+
     def test_dataset_length(self, tmp_path):
         ddir = tmp_path / "data"
         synthgen.make_dataset(ddir, nbp=3000, nmol=4, seed=0)

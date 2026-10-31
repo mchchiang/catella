@@ -106,6 +106,23 @@ class TestBasicIngestion:
         assert sorted(raw2.test_mol_id) == ["m0", "m1"]
         exp.close()
 
+    def test_numeric_chromosome_names(self, tmp_path):
+        rows = _make_rows("601", ["m0", "m1"], [10, 20]) + _make_rows(
+            "1", ["m0"], [5], seed=1
+        )
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"601": 100, "1": 50})
+
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file
+        )
+        assert set(exp.chroms) == {"601", "1"}
+        assert sorted(exp.raw["601"].test_mol_id) == ["m0", "m1"]
+        assert exp.raw["1"].nbp == 50
+        exp.close()
+
     def test_chunk_size_does_not_change_result(self, tmp_path):
         rows = _make_rows(
             "chr1", [f"m{i}" for i in range(12)], [1, 2, 3, 4], seed=3

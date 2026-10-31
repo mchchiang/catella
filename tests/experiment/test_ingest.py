@@ -44,6 +44,12 @@ class TestReadChromsize:
         with pytest.raises(ValueError, match="not found in chromsize"):
             _read_chromsize(f, False, ["c9"])
 
+    @pytest.mark.parametrize("header", ["chrom\tlength\n", ""])
+    def test_numeric_names_are_text(self, tmp_path, header):
+        f = _write(tmp_path / "s.tsv", f"{header}601\t100\n1\t51\n")
+        full, _ = _read_chromsize(f, False, ["601"])
+        assert full == {"601": 100}
+
     def test_duplicate_chrom_raises(self, tmp_path):
         f = _write(tmp_path / "s.tsv", "c1\t100\nc1\t50\n")
         with pytest.raises(ValueError, match="unique"):

@@ -849,11 +849,16 @@ def _read_chromsize(chromsize, wrap, chroms):
     size_cols = ["chrom", "length"]
     with open(chromsize, "r") as reader:
         first_line = reader.readline().strip()
+    # Read names as text so numeric names (e.g., "1") match the data
     if first_line == "\t".join(size_cols):
-        df_size = pd.read_csv(chromsize, sep="\t")
+        df_size = pd.read_csv(chromsize, sep="\t", dtype={"chrom": str})
     else:
         df_size = pd.read_csv(
-            chromsize, sep="\t", names=size_cols, header=None
+            chromsize,
+            sep="\t",
+            names=size_cols,
+            header=None,
+            dtype={"chrom": str},
         )
     if "chrom" not in df_size.columns:
         raise ValueError(

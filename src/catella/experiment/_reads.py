@@ -150,6 +150,54 @@ def _read_weights(b, assay, strand=None):
     return w
 
 
+def _dense_batches(df, nmol, nbp, batch_size):
+    """
+    Stream a raw long-format table as dense batches of molecules.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Raw table with `mol_index`/`pos`/`mod_qual` columns. Rows with
+        `pos` outside `[0, nbp)` are ignored.
+    nmol : int
+        Number of molecules.
+    nbp : int
+        Number of positions.
+    batch_size : int
+        Number of molecules per batch.
+
+    Yields
+    ------
+    start, stop : int
+        The row range of the batch.
+    batch : np.ndarray
+        float64, (stop - start, nbp), `mod_qual` per position; nan where
+        the molecule has no row.
+
+    Raises
+    ------
+    ValueError
+        If a batch has several rows for the same molecule and position.
+    """
+    df = df.sort_values("mol_index", kind="stable")
+    mol_index = df["mol_index"].to_numpy(dtype=np.int64)
+    pos = df["pos"].to_numpy(dtype=np.int64)
+    qual = df["mod_qual"].to_numpy(dtype=np.float64)
+    in_range = (pos >= 0) & (pos < nbp)
+    mol_index, pos, qual = mol_index[in_range], pos[in_range], qual[in_range]
+    for start in range(0, nmol, batch_size):
+        stop = min(start + batch_size, nmol)
+        lo, hi = np.searchsorted(mol_index, [start, stop])
+        rows, cols = mol_index[lo:hi] - start, pos[lo:hi]
+        seen = np.zeros((stop - start, nbp), dtype=bool)
+        seen[rows, cols] = True
+        if seen.sum() != hi - lo:
+            raise ValueError("raw table has duplicate (mol_index, pos) rows")
+        batch = np.full((stop - start, nbp), np.nan)
+        batch[rows, cols] = qual[lo:hi]
+        yield start, stop, batch
+
+
 def _iter_read_sites(
     exp, chrom, which, ctx, assay, *, batch_size, mask_name, span="full"
 ):
@@ -201,31 +249,20 @@ def _iter_read_sites(
     code = np.where(labels_all == "+", 0, np.where(labels_all == "-", 1, 2))
     stacked = np.stack([assay["+"], assay["-"], assay["."]])
     ctx_ok = ctx != NONE
-    arr = exp.to_dense(
-        chrom,
-        which=which,
-        as_h5array=True,
-        batch_size=batch_size,
-        mask_name=mask_name,
+    raw = exp.raw[chrom]
+    dense = _dense_batches(
+        getattr(raw, f"{which}_data"), len(keep_all), raw.nbp, batch_size
     )
-    try:
-        n_total = arr.shape[0]
-        for start in range(0, n_total, batch_size):
-            stop = min(start + batch_size, n_total)
-            batch = arr[start:stop, :]
-            q, read = _read_sites(
-                batch, stacked[code[start:stop]], ctx_ok, span
-            )
-            keep = keep_all[start:stop]
-            labels = labels_all[start:stop]
-            q[~keep] = np.nan
-            read[~keep] = False
-            called = read & ~np.isnan(batch)
-            blank = keep & (labels == ".") & ~read.any(axis=1)
-            if span != "full":
-                blank[:] = False
-            yield _ReadBatch(
-                start, stop, keep, labels, q, read, called, blank, frac
-            )
-    finally:
-        arr.close()
+    for start, stop, batch in dense:
+        q, read = _read_sites(batch, stacked[code[start:stop]], ctx_ok, span)
+        keep = keep_all[start:stop]
+        labels = labels_all[start:stop]
+        q[~keep] = np.nan
+        read[~keep] = False
+        called = read & ~np.isnan(batch)
+        blank = keep & (labels == ".") & ~read.any(axis=1)
+        if span != "full":
+            blank[:] = False
+        yield _ReadBatch(
+            start, stop, keep, labels, q, read, called, blank, frac
+        )

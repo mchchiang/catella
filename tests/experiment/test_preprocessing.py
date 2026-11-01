@@ -1195,9 +1195,8 @@ class TestModelProb:
         # with_controls=False also exercises the no-control EM
         # calibration path (_streamed_call_count/_streamed_window_count),
         # and the default eta calibration exercises
-        # _accumulate_eta_source -- both create transient to_dense()
-        # scratch arrays that must be closed, same as the main
-        # per-chromosome test_arr loop.
+        # _accumulate_eta_source -- neither may leave scratch files
+        # behind, same as the main per-chromosome test_arr loop.
         exp = _make_footprint_experiment(
             with_controls=False,
             nmol=120,
@@ -1233,7 +1232,7 @@ class TestModelProb:
 
         with pytest.raises(ValueError) as excinfo:
             # lbin longer than the fiber -> _streamed_window_count raises
-            # "too few windows" after its to_dense() array is created.
+            # "too few windows" after streaming its batches.
             ana.model_prob(exp=exp, lnuc=30, lbin=10**9, batch_size=17)
 
         assert set(tmp_dir.glob("*.h5")) == before

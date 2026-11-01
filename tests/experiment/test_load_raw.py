@@ -129,6 +129,25 @@ class TestBasicIngestion:
         assert set(df["pos"]) == {10, 20}
         reloaded.close()
 
+    def test_multi_character_mod_code_is_preserved(self, tmp_path):
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(
+            test_file,
+            [
+                ("m0", 10, "chr1", "+", 0.5, "76792"),
+                ("m0", 20, "chr1", "+", 0.5, "a"),
+            ],
+        )
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 100})
+
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file
+        )
+        codes = exp.raw["chr1"].test_data["mod_code"].tolist()
+        assert sorted(codes) == ["76792", "a"]
+        exp.close()
+
     def test_numeric_chromosome_names(self, tmp_path):
         rows = _make_rows("601", ["m0", "m1"], [10, 20]) + _make_rows(
             "1", ["m0"], [5], seed=1

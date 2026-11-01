@@ -58,7 +58,7 @@ class TestAppendableDF:
     SPEC = {
         "i": "integer",
         "x": "numeric",
-        "s": "string",
+        "s": "S4",
     }
 
     def _write(self, path, chunks, spec=None):
@@ -108,6 +108,36 @@ class TestAppendableDF:
         assert writer.nrows == 0
         assert len(loaded) == 0
         assert list(loaded.columns) == ["i", "x", "s"]
+
+    def test_strings_stored_at_fixed_width(self, tmp_path):
+        path = tmp_path / "df.h5"
+        self._write(
+            path,
+            [
+                pd.DataFrame({"i": [1], "x": [0.5], "s": ["a"]}),
+                pd.DataFrame({"i": [2], "x": [0.5], "s": ["abcd"]}),
+            ],
+        )
+        with h5py.File(path, "r") as f:
+            assert f["df/str_s"].dtype == np.dtype("S4")
+            loaded = h5_utils.load_df("df", f)
+        assert loaded["s"].tolist() == ["a", "abcd"]
+
+    def test_value_over_width_raises(self, tmp_path):
+        with pytest.raises(ValueError, match="fixed width 4"):
+            self._write(
+                tmp_path / "df.h5",
+                [pd.DataFrame({"i": [1], "x": [0.5], "s": ["abcde"]})],
+            )
+
+    @pytest.mark.parametrize("kind", ["string", "S0", "S", "float", "U4"])
+    def test_unknown_kind_raises(self, tmp_path, kind):
+        with h5py.File(tmp_path / "df.h5", "w") as f:
+            with pytest.raises(ValueError, match="unknown kind"):
+                h5_utils.AppendableDF(
+                    f, "df", columns=["s"], dtypes={"s": kind}
+                )
+            assert "df" not in f
 
 
 class TestFreshTmpDir:

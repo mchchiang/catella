@@ -121,6 +121,11 @@ def fresh_tmp_dir(base_dir=None):
     return path
 
 
+def _encode_strings(values):
+    # UTF-8 bytes, with the S<n> dtype sized to the longest value
+    return np.array(values.astype(str).str.encode("utf-8").tolist(), dtype="S")
+
+
 # Helper functions for loading and saving data frames in h5 files
 def save_df(name, df, group):
     g = group.create_group(name)
@@ -173,12 +178,11 @@ def save_df(name, df, group):
 
 class AppendableDF:
     """
-    Incrementally write a DataFrame to an HDF5 group, in the same
-    on-disk layout `save_df` produces, without holding the full table
-    in memory. Read back by the unmodified `load_df`.
+    Incrementally write a DataFrame to an HDF5 group without holding
+    the full table in memory. Read back by the unmodified `load_df`.
 
-    The column schema (order, and which columns are numeric vs. string)
-    is fixed up front and does not change across `append` calls.
+    The column schema (order, and the kind of each column) is fixed up
+    front and does not change across `append` calls.
     """
 
     def __init__(self, group, name, *, columns, dtypes):
@@ -191,17 +195,33 @@ class AppendableDF:
             Name of the sub-group to create.
         columns : list of str
             Full, fixed column order.
-        dtypes : dict of str to {"integer", "numeric", "string"}
-            Per-column kind, used to route values into a per-column
-            int64 dataset, the float64 numeric block, or a per-column
-            string dataset.
+        dtypes : dict of str to str
+            Per-column kind: "integer" for a per-column int64 dataset,
+            "numeric" for the float64 numeric block, or "S<n>" (e.g.,
+            "S8") for a per-column string dataset of at most `n` bytes.
+
+        Raises
+        ------
+        ValueError
+            If a column kind is not recognized.
         """
-        dt = h5py.string_dtype(encoding="utf-8")
-        self._group = group.create_group(name)
         self._columns = list(columns)
         self._int_cols = [c for c in self._columns if dtypes[c] == "integer"]
         self._num_cols = [c for c in self._columns if dtypes[c] == "numeric"]
-        self._str_cols = [c for c in self._columns if dtypes[c] == "string"]
+        self._str_width = {}
+        for col in self._columns:
+            kind = dtypes[col]
+            if kind in ("integer", "numeric"):
+                continue
+            m = re.fullmatch(r"S([1-9][0-9]*)", str(kind))
+            if m is None:
+                raise ValueError(
+                    f"unknown kind for column {col!r}, got {kind!r}"
+                )
+            self._str_width[col] = int(m[1])
+
+        dt = h5py.string_dtype(encoding="utf-8")
+        self._group = group.create_group(name)
 
         self._group.create_dataset(
             "_column_order", data=[str(c) for c in self._columns], dtype=dt
@@ -230,12 +250,12 @@ class AppendableDF:
                 "num_names", dtype=dt, data=[str(c) for c in self._num_cols]
             )
         self._str_ds = {}
-        for col in self._str_cols:
+        for col, width in self._str_width.items():
             self._str_ds[col] = self._group.create_dataset(
                 f"str_{col}",
                 shape=(0,),
                 maxshape=(None,),
-                dtype=dt,
+                dtype=f"S{width}",
                 compression="gzip",
             )
         self._nrows = 0
@@ -249,6 +269,11 @@ class AppendableDF:
         df_chunk : pd.DataFrame
             Rows to append; must contain all columns passed to the
             constructor. Extra columns are ignored.
+
+        Raises
+        ------
+        ValueError
+            If a string value is longer than its column's fixed width.
         """
         n = len(df_chunk)
         if n == 0:
@@ -263,11 +288,17 @@ class AppendableDF:
             old = self._num_ds.shape[0]
             self._num_ds.resize(old + n, axis=0)
             self._num_ds[old : old + n, :] = block
-        for col in self._str_cols:
+        for col, width in self._str_width.items():
+            encoded = _encode_strings(df_chunk[col])
+            if encoded.dtype.itemsize > width:
+                raise ValueError(
+                    f"column {col!r} value exceeds fixed width {width}, "
+                    f"got length {encoded.dtype.itemsize}"
+                )
             ds = self._str_ds[col]
             old = ds.shape[0]
             ds.resize(old + n, axis=0)
-            ds[old : old + n] = df_chunk[col].astype(str).to_numpy()
+            ds[old : old + n] = encoded
         self._nrows += n
 
     @property

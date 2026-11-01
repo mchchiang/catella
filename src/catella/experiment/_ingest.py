@@ -45,9 +45,9 @@ _CANONICAL_PA_TYPES = {
 _RAW_COLUMN_SPEC = {
     "mol_index": "integer",
     "pos": "integer",
-    "strand": "string",
+    "strand": "S1",
     "mod_qual": "numeric",
-    "mod_code": "string",
+    "mod_code": "S8",
 }
 
 # Recognized methyltransferase labels: 'A' (any-context adenine,

@@ -2,6 +2,10 @@
 
 import gzip
 import json
+import os
+import subprocess
+import sys
+from pathlib import Path
 
 import callers
 import catella
@@ -418,3 +422,123 @@ class TestEvaluate:
         out, _, _ = prepared
         with pytest.raises(ValueError):
             run_real.plot(out)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="needs bash")
+class TestRunRealScript:
+    SCRIPT = Path(run_real.__file__).with_suffix(".sh")
+
+    @pytest.fixture
+    def wrapper(self, tmp_path):
+        bindir = tmp_path / "bin"
+        bindir.mkdir()
+        log = tmp_path / "calls.log"
+        fake = bindir / "python"
+        fake.write_text(f'#!/bin/sh\nshift\necho "$*" >> "{log}"\n')
+        fake.chmod(0o755)
+        path = f"{bindir}{os.pathsep}{os.environ['PATH']}"
+        env = {**os.environ, "PATH": path}
+        env.pop("HIDDENFOOT", None)
+
+        def run(*args):
+            proc = subprocess.run(
+                ["bash", str(self.SCRIPT), *args],
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            calls = log.read_text().splitlines() if log.exists() else []
+            return proc, calls
+
+        return run
+
+    def test_help(self, wrapper):
+        proc, calls = wrapper("--help")
+        assert proc.returncode == 0
+        assert "--raw-dir" in proc.stdout
+        assert calls == []
+
+    def test_unknown_step(self, wrapper, tmp_path):
+        proc, calls = wrapper(str(tmp_path / "o"), "--steps", "nope")
+        assert proc.returncode == 1
+        assert "unknown step: nope" in proc.stderr
+        assert calls == []
+
+    def test_prepare_needs_raw_dir(self, wrapper, tmp_path):
+        out = tmp_path / "o"
+        proc, calls = wrapper(str(out), "--tuned", "t.json")
+        assert proc.returncode == 1
+        assert "--raw-dir" in proc.stderr
+        assert calls == []
+
+    def test_evaluate_needs_tuned(self, wrapper, tmp_path):
+        out = tmp_path / "o"
+        proc, calls = wrapper(str(out), "--raw-dir", "raw")
+        assert proc.returncode == 1
+        assert "--tuned" in proc.stderr
+        assert calls == []
+
+    def test_score_and_plot_need_neither(self, wrapper, tmp_path):
+        out = tmp_path / "o"
+        proc, calls = wrapper(str(out), "--steps", "score,plot")
+        assert proc.returncode == 0
+        assert [c.split()[0] for c in calls] == ["score", "plot"]
+
+    def test_pipeline_order(self, wrapper, tmp_path):
+        out = tmp_path / "o"
+        proc, calls = wrapper(
+            str(out),
+            "--steps",
+            "plot,score,evaluate,prepare",
+            "--raw-dir",
+            "raw",
+            "--tuned",
+            "t.json",
+        )
+        assert proc.returncode == 0
+        assert [c.split()[0] for c in calls] == [
+            "prepare",
+            "evaluate",
+            "score",
+            "plot",
+        ]
+
+    def test_prepare_skipped_when_annotated(self, wrapper, tmp_path):
+        out = tmp_path / "o"
+        out.mkdir()
+        (out / "annotation.json").write_text("{}")
+        proc, calls = wrapper(str(out), "--steps", "prepare,score")
+        assert proc.returncode == 0
+        assert "prepare skipped" in proc.stdout
+        assert [c.split()[0] for c in calls] == ["score"]
+
+    def test_options_forwarded(self, wrapper, tmp_path):
+        out = tmp_path / "o"
+        proc, calls = wrapper(
+            str(out),
+            "--raw-dir",
+            "raw",
+            "--tuned",
+            "t.json",
+            "--nmol",
+            "50",
+            "--ntrack",
+            "4",
+            "--nworker",
+            "3",
+            "--env",
+            "myenv",
+            "--hiddenfoot",
+            "hf",
+        )
+        assert proc.returncode == 0
+        assert calls == [
+            f"prepare raw {out} --nmol 50 --env myenv",
+            (
+                f"evaluate {out} --tuned t.json --env myenv --nworker 3 "
+                "--hiddenfoot hf"
+            ),
+            f"score {out}",
+            f"plot {out} --nmol 4",
+        ]

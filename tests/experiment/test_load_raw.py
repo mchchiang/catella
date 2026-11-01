@@ -106,6 +106,29 @@ class TestBasicIngestion:
         assert sorted(raw2.test_mol_id) == ["m0", "m1"]
         exp.close()
 
+    def test_pos_and_mol_index_are_integers_after_reload(self, tmp_path):
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, _make_rows("chr1", ["m0", "m1"], [10, 20]))
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 100})
+
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file
+        )
+        df = exp.raw["chr1"].test_data
+        assert np.issubdtype(df["pos"].dtype, np.integer)
+        assert np.issubdtype(df["mol_index"].dtype, np.integer)
+
+        saved = tmp_path / "exp.h5"
+        exp.save(saved)
+        exp.close()
+        reloaded = MethPrintExperiment.load(saved)
+        df = reloaded.raw["chr1"].test_data
+        assert np.issubdtype(df["pos"].dtype, np.integer)
+        assert np.issubdtype(df["mol_index"].dtype, np.integer)
+        assert set(df["pos"]) == {10, 20}
+        reloaded.close()
+
     def test_numeric_chromosome_names(self, tmp_path):
         rows = _make_rows("601", ["m0", "m1"], [10, 20]) + _make_rows(
             "1", ["m0"], [5], seed=1

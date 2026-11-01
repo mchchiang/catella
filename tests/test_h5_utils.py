@@ -54,6 +54,62 @@ class TestSaveLoadDf:
         assert list(loaded.columns) == ["a", "keep"]
 
 
+class TestAppendableDF:
+    SPEC = {
+        "i": "integer",
+        "x": "numeric",
+        "s": "string",
+    }
+
+    def _write(self, path, chunks, spec=None):
+        spec = self.SPEC if spec is None else spec
+        with h5py.File(path, "w") as f:
+            writer = h5_utils.AppendableDF(
+                f, "df", columns=list(spec), dtypes=spec
+            )
+            for chunk in chunks:
+                writer.append(chunk)
+        return writer
+
+    def test_integer_columns_round_trip_over_appends(self, tmp_path):
+        path = tmp_path / "df.h5"
+        writer = self._write(
+            path,
+            [
+                pd.DataFrame({"i": [1, 2], "x": [0.5, 1.5], "s": ["a", "b"]}),
+                pd.DataFrame({"i": [3], "x": [2.5], "s": ["c"]}),
+            ],
+        )
+        with h5py.File(path, "r") as f:
+            loaded = h5_utils.load_df("df", f)
+        assert writer.nrows == 3
+        assert list(loaded.columns) == ["i", "x", "s"]
+        assert np.issubdtype(loaded["i"].dtype, np.integer)
+        assert loaded["i"].tolist() == [1, 2, 3]
+        assert loaded["x"].tolist() == [0.5, 1.5, 2.5]
+        assert loaded["s"].tolist() == ["a", "b", "c"]
+
+    def test_only_integer_columns(self, tmp_path):
+        path = tmp_path / "df.h5"
+        self._write(
+            path,
+            [pd.DataFrame({"i": [7, 8]})],
+            spec={"i": "integer"},
+        )
+        with h5py.File(path, "r") as f:
+            loaded = h5_utils.load_df("df", f)
+        assert loaded["i"].tolist() == [7, 8]
+
+    def test_zero_rows_still_loads(self, tmp_path):
+        path = tmp_path / "df.h5"
+        writer = self._write(path, [])
+        with h5py.File(path, "r") as f:
+            loaded = h5_utils.load_df("df", f)
+        assert writer.nrows == 0
+        assert len(loaded) == 0
+        assert list(loaded.columns) == ["i", "x", "s"]
+
+
 class TestFreshTmpDir:
     def test_registers_atexit_fallback_cleanup(self):
         # Guards against a leaked dir if the caller is interrupted

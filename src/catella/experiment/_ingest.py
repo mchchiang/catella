@@ -43,8 +43,8 @@ _CANONICAL_PA_TYPES = {
 # Fixed schema for the raw per-chromosome long-format tables, used by
 # the streaming AppendableDF writer in load_raw().
 _RAW_COLUMN_SPEC = {
-    "mol_index": "numeric",
-    "pos": "numeric",
+    "mol_index": "integer",
+    "pos": "integer",
     "strand": "string",
     "mod_qual": "numeric",
     "mod_code": "string",

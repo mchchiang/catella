@@ -191,13 +191,15 @@ class AppendableDF:
             Name of the sub-group to create.
         columns : list of str
             Full, fixed column order.
-        dtypes : dict of str to {"numeric", "string"}
-            Per-column kind, used to route values into the numeric block
-            or a per-column string dataset.
+        dtypes : dict of str to {"integer", "numeric", "string"}
+            Per-column kind, used to route values into a per-column
+            int64 dataset, the float64 numeric block, or a per-column
+            string dataset.
         """
         dt = h5py.string_dtype(encoding="utf-8")
         self._group = group.create_group(name)
         self._columns = list(columns)
+        self._int_cols = [c for c in self._columns if dtypes[c] == "integer"]
         self._num_cols = [c for c in self._columns if dtypes[c] == "numeric"]
         self._str_cols = [c for c in self._columns if dtypes[c] == "string"]
 
@@ -206,6 +208,15 @@ class AppendableDF:
         )
         self._group.attrs["_column_index_dtype"] = "object"
 
+        self._int_ds = {}
+        for col in self._int_cols:
+            self._int_ds[col] = self._group.create_dataset(
+                f"int_{col}",
+                shape=(0,),
+                maxshape=(None,),
+                dtype=np.int64,
+                compression="gzip",
+            )
         self._num_ds = None
         if self._num_cols:
             self._num_ds = self._group.create_dataset(
@@ -242,6 +253,11 @@ class AppendableDF:
         n = len(df_chunk)
         if n == 0:
             return
+        for col in self._int_cols:
+            ds = self._int_ds[col]
+            old = ds.shape[0]
+            ds.resize(old + n, axis=0)
+            ds[old : old + n] = df_chunk[col].to_numpy(dtype=np.int64)
         if self._num_cols:
             block = df_chunk[self._num_cols].to_numpy(dtype=np.float64)
             old = self._num_ds.shape[0]

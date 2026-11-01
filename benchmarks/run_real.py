@@ -38,8 +38,8 @@ CORE_HALF = 73
 REPEAT = 197
 DYAD_TOL = 20
 SPACING_TOL = 20
-MARGINS = {"precision": 0.02, "contrast": 0.02, "false_per_kb": 0.1}
-HIGHER_IS_BETTER = {"precision": True, "contrast": True, "false_per_kb": False}
+MARGINS = {"precision": 0.02, "contrast": 0.02}
+HIGHER_IS_BETTER = {"precision": True, "contrast": True}
 
 
 def find_601_dyads(seq: str, anchor: int = 50) -> np.ndarray:
@@ -207,30 +207,6 @@ def select_molecules(
     return [str(i) for i in ids]
 
 
-def split_molecules(
-    ids: list[str], seed: int
-) -> tuple[list[str], list[str]]:
-    """
-    Split molecules into two random halves.
-
-    Parameters
-    ----------
-    ids : list of str
-        Molecule ids.
-    seed : int
-        Seed for the random split.
-
-    Returns
-    -------
-    first, second : list of str
-        Disjoint sorted halves; `first` gets the extra molecule if the
-        count is odd.
-    """
-    order = np.random.default_rng(seed).permutation(sorted(ids))
-    half = (len(order) + 1) // 2
-    return sorted(order[:half].tolist()), sorted(order[half:].tolist())
-
-
 def _write_tsv(calls, chrom, path):
     out = pd.DataFrame(
         {
@@ -343,13 +319,10 @@ def prepare(
     `unmethylated.tsv.gz` (ModKit `extract full` tables) and
     `segments.fa` (doubled reference) from `raw_dir`; unwraps every
     read (see `unwrap_calls`); keeps molecules covering at least
-    `min_cover` of the fibre and samples up to `nmol` per sample; splits
-    the methylated control into a calibration and an evaluation half.
-    Writes two datasets (see `write_dataset`): `<out>/test` (chromatin
-    against the calibration half and the unmethylated control) and
-    `<out>/meth_eval` (the evaluation half against the same controls),
-    and `<out>/annotation.json` with the fibre length, the 601 dyads,
-    and the molecule ids used.
+    `min_cover` of the fibre and samples up to `nmol` per sample.
+    Writes the dataset `<out>/test` (chromatin against both controls;
+    see `write_dataset`) and `<out>/annotation.json` with the fibre
+    length, the 601 dyads, and the molecule ids used.
 
     Parameters
     ----------
@@ -364,7 +337,7 @@ def prepare(
     min_cover : float, default 0.8
         Minimum fraction of the fibre covered by a molecule.
     seed : int, default 0
-        Seed for sampling and for the control split.
+        Seed for sampling the molecules.
     env : str, default "catella"
         Conda environment providing samtools.
     convert : bool, default True
@@ -388,24 +361,15 @@ def prepare(
             seed=seed + k,
         )
         calls[sample] = unwrapped[unwrapped["mol_id"].isin(ids[sample])]
-    calib, evaluation = split_molecules(ids["methylated"], seed)
-    meth = calls["methylated"]
-    meth_calib = meth[meth["mol_id"].isin(calib)]
-    for name, test in (
-        ("test", calls["chromatin"]),
-        ("meth_eval", meth[meth["mol_id"].isin(evaluation)]),
-    ):
-        write_dataset(
-            out / name, test, meth_calib, calls["unmethylated"], fibre,
-            chrom, env=env, convert=convert,
-        )
+    write_dataset(
+        out / "test", calls["chromatin"], calls["methylated"],
+        calls["unmethylated"], fibre, chrom, env=env, convert=convert,
+    )
     annotation = {
         "chrom": chrom,
         "fibre_length": len(fibre),
         "dyads": find_601_dyads(fibre).tolist(),
         "molecules": ids,
-        "meth_calibration": calib,
-        "meth_evaluation": evaluation,
     }
     (out / "annotation.json").write_text(json.dumps(annotation, indent=2))
     return annotation
@@ -521,16 +485,15 @@ def aggregate(table: pd.DataFrame) -> dict[str, float]:
     -------
     dict of str to float
         `precision` (pooled hits / calls), `contrast` (mean over
-        molecules of core minus linker occupancy), `false_per_kb`
-        (pooled calls per scored kb), `spacing` (pooled regular / all
-        adjacent pairs), `per_mol` (mean calls per molecule).
+        molecules of core minus linker occupancy), `spacing` (pooled
+        regular / all adjacent pairs), `per_mol` (mean calls per
+        molecule).
     """
     calls = table["n_calls"].sum()
     pairs = table["n_pairs"].sum()
     return {
         "precision": table["n_hits"].sum() / calls if calls else np.nan,
         "contrast": (table["core"] - table["linker"]).mean(),
-        "false_per_kb": calls / table["kb"].sum(),
         "spacing": table["n_regular"].sum() / pairs if pairs else np.nan,
         "per_mol": table["n_calls"].mean(),
     }
@@ -608,10 +571,7 @@ def equivalence_label(
     return "inconclusive"
 
 
-DATASET_METRICS = {
-    "test": ("precision", "contrast", "spacing", "per_mol"),
-    "meth_eval": ("false_per_kb", "per_mol"),
-}
+DATASET_METRICS = {"test": ("precision", "contrast", "spacing", "per_mol")}
 
 
 def _spans(ddir):
@@ -635,9 +595,9 @@ def score(out: str | Path, *, nboot: int = 1000, seed: int = 0) -> dict:
     """
     Score saved real-data calls and compare catella with each tool.
 
-    For each dataset (`test`: chromatin; `meth_eval`: held-out
-    methylated control) and parameter variant, computes the metrics of
-    `aggregate` per tool with 95% bootstrap intervals over molecules,
+    For the chromatin dataset (`test`) and each parameter variant,
+    computes the metrics of `aggregate` per tool with 95% bootstrap
+    intervals over molecules,
     and, on the molecules all tools share, the paired difference
     catella minus each other tool with its `equivalence_label` (margins
     `MARGINS`). Writes `<out>/real_results.tsv`,
@@ -758,7 +718,7 @@ REAL_TOOLS = {
     "hiddenfoot_m6a": ("hiddenfoot", {"mod_code": "a"}),
     "fiberhmm_pre_m6a": ("fiberhmm_pre", {"retrain": False, "channel": "a"}),
 }
-DATASETS = ("test", "meth_eval")
+DATASETS = ("test",)
 
 
 def run_real_tool(
@@ -819,7 +779,7 @@ def evaluate(
     overwrite: bool = False,
 ) -> list[str]:
     """
-    Run the real-data tools on both prepared datasets.
+    Run the real-data tools on the prepared dataset.
 
     Each (dataset, tool, variant) is one unit, run in parallel; units
     whose calls exist are skipped unless `overwrite`. The "tuned"

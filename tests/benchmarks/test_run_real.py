@@ -194,16 +194,6 @@ class TestSelectMolecules:
             )
 
 
-class TestSplitMolecules:
-    def test_disjoint_and_deterministic(self):
-        ids = [f"m{i}" for i in range(11)]
-        first, second = run_real.split_molecules(ids, seed=1)
-        assert len(first) == 6 and len(second) == 5
-        assert set(first).isdisjoint(second)
-        assert set(first) | set(second) == set(ids)
-        assert run_real.split_molecules(ids[::-1], seed=1) == (first, second)
-
-
 class TestPrepare:
     def test_outputs(self, tmp_path):
         fibre = _fibre_with_601([100, 297, 494])
@@ -214,28 +204,28 @@ class TestPrepare:
         assert annotation["dyads"] == [173, 370, 567]
         assert annotation["fibre_length"] == len(fibre)
         assert all(len(v) == 4 for v in annotation["molecules"].values())
-        calib = set(annotation["meth_calibration"])
-        evaluation = set(annotation["meth_evaluation"])
-        assert calib.isdisjoint(evaluation)
-        assert calib | evaluation == set(annotation["molecules"]["methylated"])
         saved = json.loads((tmp_path / "out" / "annotation.json").read_text())
         assert saved == annotation
-        for name, test_ids in (
-            ("test", set(annotation["molecules"]["chromatin"])),
-            ("meth_eval", evaluation),
+        ids = annotation["molecules"]
+        ddir = tmp_path / "out" / "test"
+        for name, sample in (
+            ("synth.tsv", "chromatin"),
+            ("synth.meth.tsv", "methylated"),
+            ("synth.unmeth.tsv", "unmethylated"),
         ):
-            ddir = tmp_path / "out" / name
-            test = pd.read_csv(ddir / "synth.tsv", sep="\t")
-            meth = pd.read_csv(ddir / "synth.meth.tsv", sep="\t")
-            assert set(test["read_id"]) == test_ids
-            assert set(meth["read_id"]) == calib
-            assert set(test["mod_code"]) == {"a", "m"}
-            assert test["ref_position"].max() < len(fibre)
-            sizes = pd.read_csv(ddir / "synth.size", sep="\t")
-            assert sizes["length"].tolist() == [len(fibre)]
-            for stem in ("synth", "synth.meth", "synth.unmeth"):
-                assert (ddir / f"{stem}.sam").exists()
-                assert (ddir / f"{stem}.gpc.sam").exists()
+            table = pd.read_csv(ddir / name, sep="\t")
+            assert set(table["read_id"]) == set(ids[sample])
+            assert set(table["mod_code"]) == {"a", "m"}
+            assert table["ref_position"].max() < len(fibre)
+        sizes = pd.read_csv(ddir / "synth.size", sep="\t")
+        assert sizes["length"].tolist() == [len(fibre)]
+        for stem in ("synth", "synth.meth", "synth.unmeth"):
+            assert (ddir / f"{stem}.sam").exists()
+            assert (ddir / f"{stem}.gpc.sam").exists()
+        assert sorted(p.name for p in (tmp_path / "out").iterdir()) == [
+            "annotation.json",
+            "test",
+        ]
 
 
 DYADS = np.array([300, 497, 694])
@@ -298,7 +288,6 @@ class TestAggregate:
         )
         values = run_real.aggregate(table)
         assert values["precision"] == pytest.approx(0.5)
-        assert values["false_per_kb"] == pytest.approx(3.0)
         assert values["spacing"] == pytest.approx(1.0)
         assert values["per_mol"] == pytest.approx(3.0)
 
@@ -330,7 +319,7 @@ class TestBootstrap:
         boots = run_real.bootstrap(
             {"a": table, "b": table.copy()}, nboot=50, seed=1
         )
-        assert boots["a"].shape == (50, 5)
+        assert boots["a"].shape == (50, 4)
         pd.testing.assert_frame_equal(boots["a"], boots["b"])
 
 
@@ -340,24 +329,20 @@ class TestScore:
         (tmp_path / "annotation.json").write_text(
             json.dumps({"dyads": DYADS.tolist()})
         )
-        for dataset in ("test", "meth_eval"):
-            ddir = tmp_path / dataset
-            ddir.mkdir()
-            pd.DataFrame(
-                {
-                    "read_id": [f"m{i}" for i in range(nmol)] * 2,
-                    "ref_position": [0] * nmol + [999] * nmol,
-                }
-            ).to_csv(ddir / "synth.tsv", sep="\t", index=False)
+        ddir = tmp_path / "test"
+        ddir.mkdir()
+        pd.DataFrame(
+            {
+                "read_id": [f"m{i}" for i in range(nmol)] * 2,
+                "ref_position": [0] * nmol + [999] * nmol,
+            }
+        ).to_csv(ddir / "synth.tsv", sep="\t", index=False)
         good = _calls([DYADS.tolist()] * nmol)
         bad = _calls([(DYADS + 50).tolist()] * nmol)
-        empty = _calls([[]] * nmol)
-        for tool, test, meth in (("catella", good, empty), ("ft", bad, bad)):
-            for dataset, calls in (("test", test), ("meth_eval", meth)):
-                callers.save_calls(
-                    calls,
-                    tmp_path / "calls" / f"{tool}_tuned" / f"{dataset}.h5",
-                )
+        for tool, calls in (("catella", good), ("ft", bad)):
+            callers.save_calls(
+                calls, tmp_path / "calls" / f"{tool}_tuned" / "test.h5"
+            )
         out = run_real.score(tmp_path, nboot=100)
         for name in ("real_results.tsv", "real_paired.tsv",
                      "real_summary.md"):
@@ -365,7 +350,7 @@ class TestScore:
         paired = out["paired"].set_index(["dataset", "metric"])["label"]
         assert paired[("test", "precision")] == "better"
         assert paired[("test", "contrast")] == "better"
-        assert paired[("meth_eval", "false_per_kb")] == "better"
+        assert set(out["paired"]["metric"]) == set(run_real.MARGINS)
         results = out["results"]
         assert set(results["tool"]) == {"catella", "ft"}
         assert set(results["variant"]) == {"tuned"}
@@ -411,9 +396,7 @@ class TestEvaluate:
         run_real.evaluate(out, tuned, tools=["catella"])
         assert runs == []
         run_real.evaluate(out, tuned, tools=["catella"], overwrite=True)
-        assert sorted(runs) == sorted(
-            [("catella", "test"), ("catella", "meth_eval")] * 2
-        )
+        assert runs == [("catella", "test")] * 2
 
     def test_unknown_tool(self, prepared):
         out, tuned, _ = prepared

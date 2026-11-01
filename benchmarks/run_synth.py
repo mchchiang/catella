@@ -1,4 +1,4 @@
-# run_bench.py
+# run_synth.py
 
 import itertools
 import json

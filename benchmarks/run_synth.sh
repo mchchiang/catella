@@ -6,7 +6,7 @@ usage() {
     cat <<EOF
 Usage: $(basename "$0") OUT [options]
 
-Run the benchmark pipeline (run_bench.py) in OUT. Reruns resume:
+Run the benchmark pipeline (run_synth.py) in OUT. Reruns resume:
 make_data is skipped if OUT/datasets.json exists, and evaluate skips
 finished units.
 
@@ -18,13 +18,13 @@ Options:
   --quick            Use the small quick-run dataset set
   --nworker N        Number of parallel processes (default 1)
   --env ENV          Conda env for the external tools
-                     (default: the run_bench.py default)
+                     (default: the run_synth.py default)
   --hiddenfoot PATH  HiddenFoot executable (default: \$HIDDENFOOT)
   --nmol N           Molecules per occupancy plot (default 10)
   -h, --help         Show this message
 
-For a single command with extra options, call run_bench.py directly:
-  python benchmarks/run_bench.py COMMAND --help
+For a single command with extra options, call run_synth.py directly:
+  python benchmarks/run_synth.py COMMAND --help
 EOF
 }
 
@@ -74,7 +74,7 @@ wants() {
 }
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-bench=(python "$script_dir/run_bench.py")
+bench=(python "$script_dir/run_synth.py")
 hf=()
 if [[ -n "$hiddenfoot" ]]; then
     hf=(--hiddenfoot "$hiddenfoot")

@@ -9,7 +9,7 @@ import callers
 import numpy as np
 import pandas as pd
 import pytest
-import run_bench
+import run_synth
 import synthgen
 
 
@@ -224,16 +224,16 @@ class TestSaveLoadCalls:
 @pytest.fixture(scope="module")
 def quick_data(tmp_path_factory):
     out = tmp_path_factory.mktemp("bench")
-    specs = run_bench.make_data(
+    specs = run_synth.make_data(
         out, quick=True, convert=_has_env(callers.ENV)
     )
     return out, specs[1]["dir"]
 
 
 def _check_calls(calls, ddir):
-    truth = run_bench.read_truth(ddir)
-    nmol = run_bench.QUICK_NMOL
-    assert calls.occ.shape == (nmol, run_bench.NBP)
+    truth = run_synth.read_truth(ddir)
+    nmol = run_synth.QUICK_NMOL
+    assert calls.occ.shape == (nmol, run_synth.NBP)
     assert set(calls.mol_ids) == set(truth["mol_id"])
     assert ((calls.occ >= 0) & (calls.occ <= 1)).all()
     assert (calls.count > 0).all()
@@ -244,7 +244,7 @@ class TestRunners:
         _, ddir = quick_data
         calls = callers.run_catella(ddir, tmp_path, llink=10, mu=0.0)
         _check_calls(calls, ddir)
-        scores = run_bench.score_calls(calls, run_bench.read_truth(ddir))
+        scores = run_synth.score_calls(calls, run_synth.read_truth(ddir))
         assert scores["mcc"].mean() > 0.8
 
     def test_catella_explicit_emax(self, quick_data, tmp_path):
@@ -404,10 +404,10 @@ class TestHiddenFoot:
         work = tmp_path / "work"
         work.mkdir()
         calls = callers.run_hiddenfoot(ddir, work, binary=str(exe))
-        nmol = run_bench.QUICK_NMOL
-        assert calls.occ.shape == (nmol, run_bench.NBP)
+        nmol = run_synth.QUICK_NMOL
+        assert calls.occ.shape == (nmol, run_synth.NBP)
         assert np.allclose(calls.occ, 0.5)
-        assert np.allclose(calls.count, 0.001 * run_bench.NBP)
+        assert np.allclose(calls.count, 0.001 * run_synth.NBP)
         args = (work / "args.txt").read_text().split()
         assert args[args.index("-nuclen") + 1] == "147"
         assert args[args.index("-numthreads") + 1] == "2"
@@ -478,12 +478,12 @@ class TestHiddenFoot:
     @needs_hiddenfoot
     def test_real_binary(self, quick_data, tmp_path):
         _, ddir = quick_data
-        truth = run_bench.read_truth(ddir)
+        truth = run_synth.read_truth(ddir)
         mccs = []
         for name in ("a", "b"):
             (tmp_path / name).mkdir()
             calls = callers.run_hiddenfoot(ddir, tmp_path / name)
             _check_calls(calls, ddir)
-            mccs.append(run_bench.score_calls(calls, truth)["mcc"].mean())
+            mccs.append(run_synth.score_calls(calls, truth)["mcc"].mean())
         assert min(mccs) > 0.8
         assert abs(mccs[0] - mccs[1]) < 0.01

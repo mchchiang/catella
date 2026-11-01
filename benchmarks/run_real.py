@@ -20,7 +20,7 @@ from plotting import (
     _occupancy_per_page,
     _style_axes,
 )
-from run_bench import _markdown_table, _run_tasks, _set_hiddenfoot
+from run_synth import _markdown_table, _run_tasks, _set_hiddenfoot
 
 # Widom 601 nucleosome positioning sequence (147 bp core)
 CORE_601 = (

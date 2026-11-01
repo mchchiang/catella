@@ -53,6 +53,39 @@ class TestSaveLoadDf:
         assert loaded["keep"].tolist() == [True, False, True]
         assert list(loaded.columns) == ["a", "keep"]
 
+    def test_strings_stored_at_fixed_width(self, tmp_path):
+        df = pd.DataFrame({"b": ["x", "yyy"]})
+        path = tmp_path / "df.h5"
+        with h5py.File(path, "w") as f:
+            h5_utils.save_df("df", df, f)
+        with h5py.File(path, "r") as f:
+            assert f["df/str_b"].dtype == np.dtype("S3")
+
+    def test_non_ascii_and_empty_strings_round_trip(self, tmp_path):
+        df = pd.DataFrame({"b": ["naïve", "", "β"], "c": ["", "", ""]})
+        path = tmp_path / "df.h5"
+        with h5py.File(path, "w") as f:
+            h5_utils.save_df("df", df, f)
+        with h5py.File(path, "r") as f:
+            loaded = h5_utils.load_df("df", f)
+        assert loaded["b"].tolist() == ["naïve", "", "β"]
+        assert loaded["c"].tolist() == ["", "", ""]
+
+    def test_old_vlen_float_layout_still_loads(self, tmp_path):
+        dt = h5py.string_dtype(encoding="utf-8")
+        path = tmp_path / "df.h5"
+        with h5py.File(path, "w") as f:
+            g = f.create_group("df")
+            g.create_dataset("_column_order", data=["pos", "s"], dtype=dt)
+            g.attrs["_column_index_dtype"] = "object"
+            g.create_dataset("num_values", data=np.array([[1.0], [2.0]]))
+            g.create_dataset("num_names", data=["pos"], dtype=dt)
+            g.create_dataset("str_s", data=["+", "-"], dtype=dt)
+        with h5py.File(path, "r") as f:
+            loaded = h5_utils.load_df("df", f)
+        assert loaded["pos"].tolist() == [1.0, 2.0]
+        assert loaded["s"].tolist() == ["+", "-"]
+
 
 class TestAppendableDF:
     SPEC = {

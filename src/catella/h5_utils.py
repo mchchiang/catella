@@ -170,9 +170,10 @@ def save_df(name, df, group):
     # Save string columns individually
     if not str_df.empty:
         for col in str_df.columns:
-            sdata = str_df[col].astype(str).tolist()
             g.create_dataset(
-                f"str_{col}", data=sdata, dtype=dt, compression="gzip"
+                f"str_{col}",
+                data=_encode_strings(str_df[col]),
+                compression="gzip",
             )
 
 

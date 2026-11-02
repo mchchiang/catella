@@ -18,6 +18,7 @@ __all__ = [
     "compute_empirical_prob",
     "compute_model_prob",
     "downsample",
+    "estimate_llink",
     "estimate_start_temp",
     "filter_dropout",
     "load_raw",

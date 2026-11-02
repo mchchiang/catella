@@ -16,6 +16,7 @@ from catella.experiment.methdata import MethPrintExperiment
 from catella.experiment.plot import MethPlot
 from catella.experiment.preprocessing import MethPrintAnalysis
 from catella.h5_array import H5Array
+from catella.simulation._llink import _estimate_llink
 from catella.simulation.analysis import SimAnalysis
 from catella.simulation.config import SimSettings
 from catella.simulation.engine import SimManager
@@ -528,6 +529,102 @@ def estimate_start_temp(
 
     sample = np.concatenate([c.ravel() for c in chunks])
     return float(np.nanpercentile(sample, percentile))
+
+
+def estimate_llink(
+    exp: MethPrintExperiment,
+    settings: str | Path | SimSettings,
+    *,
+    llinks: Iterable[int] = range(0, 65, 5),
+    prob_name: str = "meth_prob",
+    chroms: str | Iterable[str] | None = None,
+    max_nmol: int | None = None,
+    seed: int | None = None,
+    batch_size: int = 20000,
+    mask_name: str | None = None,
+) -> dict[str, int]:
+    """
+    Estimate `SimSettings.llink` per chromosome by maximum likelihood.
+
+    For each chromosome, returns the candidate that maximizes the sum
+    over molecules of log Z(data, llink) - log Z(no data, llink), the
+    marginal likelihood of the data, computed exactly with the transfer
+    matrix at temperature 1. `exp` is not modified, and the value only
+    takes effect once placed in the settings:
+
+    >>> best = catella.estimate_llink(exp, settings)
+    >>> settings = dataclasses.replace(settings, llink=best["chr1"])
+    >>> catella.run(chroms="chr1", settings=settings, ...)
+
+    Parameters
+    ----------
+    exp : MethPrintExperiment
+        The experiment to estimate from. `prob_name` must already be in
+        `exp.analysis[chrom]` for each chromosome.
+    settings : str or Path or SimSettings
+        A settings object, or a path to a settings file. Provides
+        `nucbp`, `elink`, `mu` and `emax`, which should match those used
+        for sampling. `llink` is ignored.
+    llinks : iterable of int, default range(0, 65, 5)
+        Candidate linker lengths (bp).
+    prob_name : str, default "meth_prob"
+        The key to read from `exp.analysis[chrom]`.
+    chroms : str or iterable of str, optional
+        Chromosome(s) to include. If None (default), all of `exp.chroms`
+        are used.
+    max_nmol : int, optional
+        If given, use a random sample of at most this many molecules per
+        chromosome, to reduce run time. All molecules are used if None
+        (default).
+    seed : int, optional
+        Seed for the random sample of `max_nmol`.
+    batch_size : int, default 20000
+        Number of molecules read (and held in memory) per batch.
+    mask_name : str, optional
+        If given, excludes molecules dropped by
+        `filter_dropout(mask_name=mask_name)` on the "test" source,
+        without modifying `exp`.
+
+    Returns
+    -------
+    dict of str to int
+        Chromosome -> estimated `llink`.
+
+    Raises
+    ------
+    ValueError
+        If `llinks` is empty or holds a value that is not a non-negative
+        integer, if `max_nmol` is not positive, or if a chromosome has no
+        usable molecules.
+    TypeError
+        If `settings` is neither a path nor a SimSettings object.
+    KeyError
+        If `prob_name` or the mask of `mask_name` is missing for a
+        chromosome.
+
+    Warns
+    -----
+    UserWarning
+        If `settings.end_temp` is not 1, if the estimate of a chromosome
+        is the largest candidate (the maximum may lie beyond it), or if a
+        chromosome uses fewer than 50 molecules.
+
+    Notes
+    -----
+    `SimSettings.llink` acts as a minimum linker length rather than a
+    preferred one, since the repulsion is zero for longer linkers.
+    """
+    return _estimate_llink(
+        exp,
+        settings,
+        llinks=llinks,
+        prob_name=prob_name,
+        chroms=chroms,
+        max_nmol=max_nmol,
+        seed=seed,
+        batch_size=batch_size,
+        mask_name=mask_name,
+    )
 
 
 def filter_dropout(

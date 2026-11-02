@@ -1,5 +1,7 @@
 # test_api.py
 
+from dataclasses import replace
+
 import catella
 import numpy as np
 import pandas as pd
@@ -591,6 +593,66 @@ def _make_tm_dataset(tmp_path, nmol=4, nbp=15, seed=2):
         out_dir=tmp_path / "tm_sim",
         seed=seed,
     )
+
+
+class TestEstimateLlink:
+    def _experiment(self, linker=10, nmol=50, nbp=200):
+        exp = _make_experiment(nmol=nmol, nbp=nbp)
+        energy = np.full((nmol, nbp), 5.0)
+        energy[:, 0 : nbp - 4 : 5 + linker] = -20.0
+        exp.analysis["chr1"]["meth_prob"] = pd.DataFrame(
+            1.0 / (1.0 + np.exp(-energy))
+        )
+        return exp
+
+    def _settings(self):
+        return SimSettings(
+            nucbp=5, llink=99, elink=25.0, mu=0.0, end_temp=1.0, emax=100.0
+        )
+
+    def test_is_exported(self):
+        assert "estimate_llink" in catella.__all__
+
+    def test_returns_value_per_chromosome(self):
+        best = catella.estimate_llink(
+            self._experiment(), self._settings(), llinks=[0, 10, 30]
+        )
+        assert best == {"chr1": 10}
+
+    def test_forwards_keywords(self):
+        exp = self._experiment()
+        with pytest.warns(UserWarning, match="from 5 molecules"):
+            catella.estimate_llink(
+                exp,
+                self._settings(),
+                llinks=[0, 10, 30],
+                chroms="chr1",
+                max_nmol=5,
+                seed=1,
+            )
+
+    def test_does_not_modify_experiment(self):
+        exp = self._experiment()
+        keys = set(exp.analysis["chr1"])
+        catella.estimate_llink(exp, self._settings(), llinks=[0, 10, 30])
+        assert set(exp.analysis["chr1"]) == keys
+
+    def test_estimate_reaches_simulation_through_settings(self, tmp_path):
+        exp = self._experiment()
+        settings = self._settings()
+        best = catella.estimate_llink(exp, settings, llinks=[0, 10, 30])
+        dataset = catella.run(
+            chroms="chr1",
+            nsim=1,
+            method="tm",
+            settings=replace(settings, llink=best["chr1"]),
+            meth_prob={"chr1": exp.analysis["chr1"]["meth_prob"]},
+            out_dir=tmp_path / "sim",
+            seed=1,
+            verbose=False,
+        )
+        assert dataset.settings["llink"] == 10
+        assert dataset.raw["chr1", 0, 0].llink == 10
 
 
 class TestRun:

@@ -4,6 +4,7 @@ import warnings
 
 import numpy as np
 import pandas as pd
+from scipy.special import xlogy
 
 from catella.experiment._contexts import (
     _ALL_CHANNELS,
@@ -44,10 +45,10 @@ def _per_base_log_odds(
     """
     Per-position, per-read log-odds of "protected" versus "accessible".
 
-    Computes lambda_x = log[(L_x*theta_P + 1-theta_P) /
-    (L_x*theta_A + 1-theta_A)], with L_x = q/(1-q) * (1-pi0)/pi0, using
-    the numerically stable form obtained by multiplying through by
-    (1-q), which is well-defined at q = 0 or 1.
+    Computes lambda_x = q*log(theta_P/theta_A) +
+    (1-q)*log[(1-theta_P)/(1-theta_A)], the expected log-odds of the
+    call when `q` is taken as the mean of a binary call. For `q` of 0
+    or 1, this is the log-likelihood ratio of that call.
 
     Parameters
     ----------
@@ -61,9 +62,7 @@ def _per_base_log_odds(
     informative : np.ndarray
         bool, length L.
     pi0 : float, default 0.5
-        Prior probability that a site is methylated, used to convert `q`
-        into the likelihood ratio `L_x`. 0.5 is the uninformative choice
-        used when the base caller's training prior is unknown.
+        Not used.
     eta : float or np.ndarray, default 1.0
         Multiplicative correction for inflated log-likelihood ratios
         from correlated nearby sites (e.g. palindromic CpG/GpC); 1.0
@@ -83,11 +82,14 @@ def _per_base_log_odds(
     ratios below are computed with warnings suppressed there, since
     `informative` always zeroes those positions regardless.
     """
-    w = (1.0 - pi0) / pi0
+    p = 1.0 - q
     with np.errstate(invalid="ignore"):
-        num = w * q * theta_prot + (1.0 - q) * (1.0 - theta_prot)
-        den = w * q * theta_acc + (1.0 - q) * (1.0 - theta_acc)
-        log_odds = eta * np.log(num / den)
+        log_odds = eta * (
+            xlogy(q, theta_prot)
+            - xlogy(q, theta_acc)
+            + xlogy(p, 1.0 - theta_prot)
+            - xlogy(p, 1.0 - theta_acc)
+        )
     log_odds = np.where(np.isnan(log_odds), 0.0, log_odds)
     return np.where(informative, log_odds, 0.0)
 

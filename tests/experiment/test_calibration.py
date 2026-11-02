@@ -5,6 +5,7 @@ import pytest
 from catella.experiment._calibration import (
     _calib_rows,
     _fold_contexts,
+    _per_base_log_odds,
     _theta_frame,
 )
 from catella.experiment._contexts import GCH, NONE, A, _reference_contexts
@@ -13,6 +14,65 @@ from catella.experiment._contexts import GCH, NONE, A, _reference_contexts
 def _exp(refseq, wrap, nbp=None):
     raw = SimpleNamespace(refseq=refseq, nbp=nbp)
     return SimpleNamespace(raw={"c": raw}, wrap=wrap)
+
+
+class TestPerBaseLogOdds:
+    def _odds(self, q, tp=0.1, ta=0.6, inf=True, **kwargs):
+        q = np.atleast_2d(np.asarray(q, dtype=float))
+        n = q.shape[1]
+        return _per_base_log_odds(
+            q, np.full(n, tp), np.full(n, ta), np.full(n, inf), **kwargs
+        )
+
+    def test_called_site(self):
+        np.testing.assert_allclose(self._odds([1.0]), [[np.log(0.1 / 0.6)]])
+
+    def test_uncalled_site(self):
+        np.testing.assert_allclose(self._odds([0.0]), [[np.log(0.9 / 0.4)]])
+
+    def test_soft_score_interpolates_linearly(self):
+        got = self._odds([0.0, 0.3, 1.0])[0]
+        np.testing.assert_allclose(got[1], 0.3 * got[2] + 0.7 * got[0])
+
+    @pytest.mark.parametrize("q", [0.0, 1.0])
+    def test_hard_call_matches_bernoulli_ratio(self, q):
+        tp, ta = 0.1, 0.6
+        want = np.log(
+            (tp**q * (1 - tp) ** (1 - q)) / (ta**q * (1 - ta) ** (1 - q))
+        )
+        np.testing.assert_allclose(self._odds([q], tp, ta), [[want]])
+
+    def test_mean_score_gives_positive_when_protected(self):
+        tp, ta = 0.1, 0.6
+        assert self._odds([tp], tp, ta)[0, 0] > 0
+
+    def test_mean_score_gives_negative_when_accessible(self):
+        tp, ta = 0.1, 0.6
+        assert self._odds([ta], tp, ta)[0, 0] < 0
+
+    def test_equal_rates_give_zero(self):
+        np.testing.assert_allclose(self._odds([0.2, 0.7], 0.3, 0.3), 0.0)
+
+    def test_eta_scales(self):
+        np.testing.assert_allclose(
+            self._odds([0.4], eta=0.5), 0.5 * self._odds([0.4])
+        )
+
+    def test_uncalled_site_is_finite_at_zero_protected_rate(self):
+        np.testing.assert_allclose(
+            self._odds([0.0], 0.0, 0.6), [[np.log(1.0 / 0.4)]]
+        )
+
+    def test_nan_score_gives_zero(self):
+        np.testing.assert_array_equal(self._odds([np.nan]), [[0.0]])
+
+    def test_uninformative_gives_zero(self):
+        np.testing.assert_array_equal(self._odds([0.8], inf=False), [[0.0]])
+
+    def test_nan_rate_gives_zero(self):
+        np.testing.assert_array_equal(
+            self._odds([0.8], np.nan, np.nan), [[0.0]]
+        )
 
 
 class TestFoldContexts:

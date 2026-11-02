@@ -293,7 +293,7 @@ Common ``global_analysis`` keys:
        channel.
    * - ``<prob_name>_params``
      - DataFrame (1 row) recording every ``compute_model_prob`` kwarg
-       (``q_thres`` (nan when unset), ``pi0``, ``eta_max_lag``, ``nu`` and
+       (``q_thres`` (nan when unset), ``eta_max_lag``, ``nu`` and
        ``rho_leak`` (nan when fitted), ``min_rel_contrast``,
        ``lnuc``, ``lbin``, ``max_iters``, ``tol``, ``fill_edge``, ``norm_by_strand``,
        ``mask_name``).

@@ -192,7 +192,6 @@ def _accumulate_eta_source(
     theta_prot,
     theta_acc,
     informative,
-    pi0,
     batch_size,
     mask_name,
     stats,
@@ -224,8 +223,6 @@ def _accumulate_eta_source(
         arrays.
     assay : dict of str to np.ndarray
         From `_chrom_calibration` (see `_strand_assay_masks`).
-    pi0 : float
-        Forwarded to `_per_base_log_odds`.
     batch_size : int
         Number of molecules processed per batch.
     mask_name : str or None
@@ -268,7 +265,7 @@ def _accumulate_eta_source(
                 acc = theta_acc if s is None else theta_acc[s]
                 info = informative if s is None else informative[s]
                 log_odds = _per_base_log_odds(
-                    b.q[sel], prot, acc, info, pi0=pi0, eta=1.0
+                    b.q[sel], prot, acc, info, eta=1.0
                 )
                 _accumulate_autocorr_stats(
                     stats,
@@ -280,7 +277,7 @@ def _accumulate_eta_source(
                 )
 
 
-def _estimate_channel_eta(exp, calib_kwargs, channels, *, pi0, max_lag):
+def _estimate_channel_eta(exp, calib_kwargs, channels, *, max_lag):
     """
     Calibrate every chromosome and estimate eta for `channels` from the
     autocorrelation of the log-odds, pooled across chromosomes.
@@ -297,8 +294,6 @@ def _estimate_channel_eta(exp, calib_kwargs, channels, *, pi0, max_lag):
         Keyword arguments of `_chrom_calibration`.
     channels : set of int
         Channel codes to estimate.
-    pi0 : float
-        Forwarded to `_per_base_log_odds`.
     max_lag : int
         Maximum lag (bp) summed over.
 
@@ -327,7 +322,6 @@ def _estimate_channel_eta(exp, calib_kwargs, channels, *, pi0, max_lag):
             chrom,
             "meth" if has_controls else "test",
             *calib,
-            pi0,
             calib_kwargs["batch_size"],
             calib_kwargs["mask_name"],
             stats,

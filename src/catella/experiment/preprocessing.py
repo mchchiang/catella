@@ -421,7 +421,6 @@ class MethPrintAnalysis:
         *,
         prob_name: str = "meth_prob",
         q_thres: float | None = None,
-        pi0: float = 0.5,
         eta: float | dict[str, float] | None = None,
         eta_max_lag: int = 10,
         store_rho: bool = False,
@@ -468,11 +467,6 @@ class MethPrintAnalysis:
             all sources, so to rate calibration, eta estimation, and
             the output alike. None (default) uses the scores as they
             are. Must be in (0, 1].
-        pi0 : float, default 0.5
-            Prior probability that an assayable site is methylated, used
-            to convert each site's `mod_qual` confidence score into a
-            likelihood ratio. 0.5 is the uninformative choice used when
-            the base caller's training prior is unknown.
         eta : float, dict of str to float, or None, default None
             Per-channel multiplicative correction for inflated log-
             likelihood ratios from correlated nearby sites (e.g.
@@ -665,7 +659,7 @@ class MethPrintAnalysis:
         if need_auto:
             estimated, rho_by_channel, calib_cache, calib_records = (
                 _estimate_channel_eta(
-                    exp, calib_kwargs, need_auto, pi0=pi0, max_lag=eta_max_lag
+                    exp, calib_kwargs, need_auto, max_lag=eta_max_lag
                 )
             )
             channel_eta.update({c: estimated[c] for c in need_auto})
@@ -690,7 +684,6 @@ class MethPrintAnalysis:
             [
                 {
                     "q_thres": np.nan if q_thres is None else q_thres,
-                    "pi0": pi0,
                     "eta_max_lag": eta_max_lag,
                     "nu": np.nan if nu is None else nu,
                     "rho_leak": np.nan if rho_leak is None else rho_leak,
@@ -726,7 +719,6 @@ class MethPrintAnalysis:
                 *calib,
                 channel_eta=channel_eta,
                 channels=channels,
-                pi0=pi0,
                 lnuc=lnuc,
                 fill_edge=fill_edge,
                 norm_by_strand=norm_by_strand,

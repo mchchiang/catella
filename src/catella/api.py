@@ -242,7 +242,6 @@ def compute_model_prob(
     out_file: str | Path | None = None,
     prob_name: str = "meth_prob",
     q_thres: float | None = None,
-    pi0: float = 0.5,
     eta: float | dict[str, float] | None = None,
     eta_max_lag: int = 10,
     store_rho: bool = False,
@@ -284,11 +283,6 @@ def compute_model_prob(
         at least `q_thres` and 0 otherwise. This applies to all sources,
         so to rate calibration, eta estimation, and the output alike.
         None (default) uses the scores as they are. Must be in (0, 1].
-    pi0 : float, default 0.5
-        Prior probability that an assayable site is methylated, used
-        to convert each site's `mod_qual` confidence score into a
-        likelihood ratio. 0.5 is the uninformative choice used when
-        the base caller's training prior is unknown.
     eta : float, dict of str to float, or None, default None
         Per-channel multiplicative correction for inflated log-
         likelihood ratios from correlated nearby sites (e.g.
@@ -409,7 +403,6 @@ def compute_model_prob(
         exp=exp,
         prob_name=prob_name,
         q_thres=q_thres,
-        pi0=pi0,
         eta=eta,
         eta_max_lag=eta_max_lag,
         store_rho=store_rho,

@@ -14,7 +14,7 @@ from catella.h5_array import H5Array
 
 
 def _strand_log_odds(
-    q, labels, theta_prot, theta_acc, informative, *, norm_by_strand, pi0, eta
+    q, labels, theta_prot, theta_acc, informative, *, norm_by_strand, eta
 ):
     """
     Per-base log-odds of a batch, each read scored against its own
@@ -30,9 +30,7 @@ def _strand_log_odds(
         From `_chrom_calibration`; per-strand dicts if `norm_by_strand`.
     norm_by_strand : bool
         Whether the calibration is keyed by strand.
-    pi0 : float
-        Forwarded to `_per_base_log_odds`.
-    eta : float or np.ndarray
+    eta :float or np.ndarray
         Forwarded to `_per_base_log_odds`.
 
     Returns
@@ -43,7 +41,7 @@ def _strand_log_odds(
     """
     if not norm_by_strand:
         return _per_base_log_odds(
-            q, theta_prot, theta_acc, informative, pi0=pi0, eta=eta
+            q, theta_prot, theta_acc, informative, eta=eta
         )
     log_odds = np.zeros_like(q)
     for s in ("+", "-"):
@@ -53,7 +51,6 @@ def _strand_log_odds(
             theta_prot[s],
             theta_acc[s],
             informative[s],
-            pi0=pi0,
             eta=eta,
         )
     return log_odds
@@ -70,7 +67,6 @@ def _score_test_reads(
     *,
     channel_eta,
     channels,
-    pi0,
     lnuc,
     fill_edge,
     norm_by_strand,
@@ -96,7 +92,7 @@ def _score_test_reads(
         Eta per channel code; positions outside `channels` use 1.0.
     channels : iterable of int
         Channel codes actually assayed.
-    pi0, lnuc, fill_edge, norm_by_strand, batch_size, mask_name, span
+    lnuc, fill_edge, norm_by_strand, batch_size, mask_name, span
         As in `MethPrintAnalysis.model_prob`.
     tmp_dir : str or pathlib.Path
         Directory for the scratch file backing the result.
@@ -146,7 +142,6 @@ def _score_test_reads(
                 theta_acc,
                 informative,
                 norm_by_strand=norm_by_strand,
-                pi0=pi0,
                 eta=eta_by_pos,
             )
             log_odds_win = _window_sum_log_odds(

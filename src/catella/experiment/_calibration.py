@@ -39,9 +39,7 @@ _EXPLICIT_MIN_CALL_FRAC = 0.5
 _CALL_FRAC_WARN_GAP = 0.05
 
 
-def _per_base_log_odds(
-    q, theta_prot, theta_acc, informative, pi0=0.5, eta=1.0
-):
+def _per_base_log_odds(q, theta_prot, theta_acc, informative, eta=1.0):
     """
     Per-position, per-read log-odds of "protected" versus "accessible".
 
@@ -61,8 +59,6 @@ def _per_base_log_odds(
         float64, length L.
     informative : np.ndarray
         bool, length L.
-    pi0 : float, default 0.5
-        Not used.
     eta : float or np.ndarray, default 1.0
         Multiplicative correction for inflated log-likelihood ratios
         from correlated nearby sites (e.g. palindromic CpG/GpC); 1.0

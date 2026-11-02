@@ -1977,6 +1977,14 @@ class TestModelProbQThres:
         params = self._run().global_analysis["meth_prob_params"]
         assert np.isnan(params["q_thres"].iloc[0])
 
+    def test_pi0_not_accepted(self):
+        with pytest.raises(TypeError, match="pi0"):
+            self._run(pi0=0.5)
+
+    def test_pi0_not_in_params(self):
+        params = self._run().global_analysis["meth_prob_params"]
+        assert "pi0" not in params.columns
+
 
 class TestModelProbLbin:
     def test_lbin_recorded_in_params(self):

@@ -87,6 +87,22 @@ class TestRunJob:
 
 
 class TestSimManagerRun:
+    @pytest.mark.parametrize("method", ["mcmc", "tm"])
+    def test_samples_at_zero_llink_read_back(self, tmp_path, method):
+        manager = SimManager(nworker=1, verbose=False)
+        dataset = manager.run(
+            chroms="chr1",
+            nsim=1,
+            method=method,
+            settings=_make_settings(llink=0),
+            meth_prob=_make_meth_prob(nmol=2, nbp=400),
+            out_dir=tmp_path / method,
+            seed=1,
+        )
+        sample = dataset.raw["chr1", 0, 0]
+        assert sample.llink == 0
+        assert len(sample.position) > 0
+
     def test_serial_run_produces_dataset(self, tmp_path):
         meth_prob = _make_meth_prob(nmol=3, nbp=200)
         manager = SimManager(nworker=1, verbose=False)

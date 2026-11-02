@@ -110,6 +110,7 @@ class TestCoreQuantities:
             (3, 2, 0.7, -0.3, 14, 1),
             (2, 3, 2.0, 1.2, 12, 2),
             (4, 1, 0.5, 0.0, 13, 3),
+            (3, 0, 1.0, 0.5, 14, 4),
         ],
     )
     def test_logz_startprob_occup_meann(

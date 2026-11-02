@@ -11,6 +11,7 @@ from catella.simulation.config import SimSettings
 from catella.simulation.engine import SimManager
 from catella.simulation.results import (
     SimDataset,
+    SimMCMCData,
     SimTMData,
     _read_tm_sample,
     _write_tm_samples,
@@ -212,6 +213,26 @@ class TestSimTMData:
     def test_requires_internal_flag(self):
         with pytest.raises(TypeError):
             SimTMData(nucbp=1, nbp=1, llink=1, elink=1.0, mu=1.0, seed=1)
+
+
+class TestLlinkValidation:
+    @pytest.mark.parametrize("cls", [SimMCMCData, SimTMData])
+    def test_negative_llink_raises(self, cls):
+        with pytest.raises(ValueError, match="llink must be non-negative"):
+            cls._create(nucbp=1, nbp=1, llink=-1, seed=1)
+
+    @pytest.mark.parametrize("cls", [SimMCMCData, SimTMData])
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"nucbp": 0, "nbp": 1, "seed": 1},
+            {"nucbp": 1, "nbp": 0, "seed": 1},
+            {"nucbp": 1, "nbp": 1, "seed": 0},
+        ],
+    )
+    def test_other_values_must_be_positive(self, cls, kwargs):
+        with pytest.raises(ValueError, match="must be positive"):
+            cls._create(llink=0, **kwargs)
 
 
 class TestWriteTMSamples:

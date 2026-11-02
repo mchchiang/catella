@@ -295,8 +295,10 @@ class SimMCMCData:
         position = kwargs.get("position")
         temp = kwargs.get("temp")
         # Some validation
-        if nucbp <= 0 or nbp <= 0 or llink <= 0 or seed <= 0:
-            raise ValueError("nucbp, nbp, llink, and seed must be positive")
+        if nucbp <= 0 or nbp <= 0 or seed <= 0:
+            raise ValueError("nucbp, nbp, and seed must be positive")
+        if llink < 0:
+            raise ValueError(f"llink must be non-negative, got {llink}")
         if not (len(time) == len(energy) == len(temp) == len(position)):
             raise ValueError(
                 "time, energy, position, and temp must have the "
@@ -389,8 +391,10 @@ class SimTMData:
         nbp = kwargs.get("nbp")
         llink = kwargs.get("llink")
         seed = kwargs.get("seed")
-        if nucbp <= 0 or nbp <= 0 or llink <= 0 or seed <= 0:
-            raise ValueError("nucbp, nbp, llink, and seed must be positive")
+        if nucbp <= 0 or nbp <= 0 or seed <= 0:
+            raise ValueError("nucbp, nbp, and seed must be positive")
+        if llink < 0:
+            raise ValueError(f"llink must be non-negative, got {llink}")
         return cls(**kwargs, _internal=True)
 
     def __repr__(self):

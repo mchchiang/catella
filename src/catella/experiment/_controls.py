@@ -185,6 +185,7 @@ def _streamed_call_count(
     by_strand=False,
     span="full",
     call_stats=None,
+    q_thres=None,
 ):
     """
     Per-position summed methylation-calling confidence and read count
@@ -216,6 +217,8 @@ def _streamed_call_count(
     call_stats : dict, optional
         If given, per-channel call and read-site counts are added to
         it in place (see `_accumulate_call_frac`), over all channels.
+    q_thres : float, optional
+        Forwarded to `_iter_read_sites`.
 
     Returns
     -------
@@ -242,6 +245,7 @@ def _streamed_call_count(
         batch_size=batch_size,
         mask_name=mask_name,
         span=span,
+        q_thres=q_thres,
     )
     with closing(batches):
         for b in batches:

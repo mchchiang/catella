@@ -25,6 +25,7 @@ def _streamed_window_count(
     channels=None,
     span="full",
     profiles=None,
+    q_thres=None,
 ):
     """
     Per-window, per-read summed methylation-calling confidence and
@@ -69,6 +70,8 @@ def _streamed_window_count(
         count. If given, only sites in `mask` are counted, and the
         per-window sums of `F` and `D` over the read sites are
         accumulated as well.
+    q_thres : float, optional
+        Forwarded to `_iter_read_sites`.
 
     Returns
     -------
@@ -116,6 +119,7 @@ def _streamed_window_count(
         batch_size=batch_size,
         mask_name=mask_name,
         span=span,
+        q_thres=q_thres,
     )
     with closing(batches):
         for b in batches:

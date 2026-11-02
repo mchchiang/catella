@@ -341,6 +341,7 @@ def _controls_calibration(
     mask_name,
     channels,
     span,
+    q_thres=None,
 ):
     """
     Calibrate each stratum from the meth/unmeth controls.
@@ -363,7 +364,7 @@ def _controls_calibration(
     strata : tuple
         `("+", "-")` to calibrate each strand, or `(None,)` to pool.
     nu, rho_leak, lbin, max_iters, tol, min_rel_contrast, batch_size,
-    mask_name, channels, span
+    mask_name, channels, span, q_thres
         As in `_chrom_calibration`.
 
     Returns
@@ -397,6 +398,7 @@ def _controls_calibration(
             by_strand=by_strand,
             span=span,
             call_stats=call_stats[src],
+            q_thres=q_thres,
         )
         counts[src] = c if by_strand else {None: c}
 
@@ -427,6 +429,7 @@ def _controls_calibration(
                     s: (fpr, acc - fpr, inf)
                     for s, (fpr, acc, inf, _) in profiles.items()
                 },
+                q_thres=q_thres,
             )
         except ValueError as err:
             raise ValueError(
@@ -489,6 +492,7 @@ def _em_calibration(
     mask_name,
     channels,
     span,
+    q_thres=None,
 ):
     """
     Calibrate each stratum by expectation-maximization on the test data.
@@ -506,7 +510,7 @@ def _em_calibration(
     strata : tuple
         `("+", "-")` to calibrate each strand, or `(None,)` to pool.
     lbin, max_iters, tol, min_rel_contrast,
-    batch_size, mask_name, channels, span
+    batch_size, mask_name, channels, span, q_thres
         As in `_chrom_calibration`.
 
     Returns
@@ -526,6 +530,7 @@ def _em_calibration(
         by_strand=by_strand,
         channels=channels,
         span=span,
+        q_thres=q_thres,
     )
     if not by_strand:
         counts = {None: counts}
@@ -568,6 +573,7 @@ def _chrom_calibration(
     norm_by_strand=False,
     channels=None,
     span="full",
+    q_thres=None,
 ):
     """
     Classify `chrom`'s reference into contexts and calibrate
@@ -600,6 +606,8 @@ def _chrom_calibration(
         Context channels actually assayed, from `_active_channels`.
         Defaults to all of `_ALL_CHANNELS`.
     span : {"full", "calls"}, default "full"
+        Forwarded to the streamed counting helpers.
+    q_thres : float, optional
         Forwarded to the streamed counting helpers.
 
     Returns
@@ -659,6 +667,7 @@ def _chrom_calibration(
         "mask_name": mask_name,
         "channels": channels,
         "span": span,
+        "q_thres": q_thres,
     }
     if has_controls:
         results = _controls_calibration(

@@ -979,6 +979,7 @@ def _make_footprint_experiment(
     mtase=None,
     own_strand_only=False,
     drop_zero_rows=False,
+    binarize_at=None,
 ):
     # Synthetic multi-channel footprinting experiment with a known
     # planted "protected" region, for testing model_prob end to end.
@@ -1071,6 +1072,8 @@ def _make_footprint_experiment(
                 )
             else:
                 qual = calls.astype(float)
+            if binarize_at is not None:
+                qual = (qual >= binarize_at).astype(float)
             for pos in np.where(strand_site[strand])[0]:
                 if drop_zero_rows and qual[pos] == 0.0:
                     continue
@@ -1906,6 +1909,73 @@ class TestModelProbCalib:
         params = exp.global_analysis["meth_prob_params"]
         assert params.iloc[0]["max_iters"] == 50
         assert "iters" not in params.columns
+
+
+class TestModelProbQThres:
+    def _run(self, *, with_controls=True, binarize_at=None, **kwargs):
+        exp = _make_footprint_experiment(
+            with_controls=with_controls,
+            planted_edges=(30,),
+            lnuc=30,
+            soft_q=True,
+            binarize_at=binarize_at,
+        )
+        MethPrintAnalysis().model_prob(
+            exp=exp, lnuc=30, batch_size=7, **kwargs
+        )
+        return exp
+
+    def test_default_is_none(self):
+        np.testing.assert_array_equal(
+            self._run().analysis["chr1"]["meth_prob"].to_numpy(),
+            self._run(q_thres=None).analysis["chr1"]["meth_prob"].to_numpy(),
+        )
+
+    def test_threshold_changes_soft_scores(self):
+        default = self._run().analysis["chr1"]["meth_prob"].to_numpy()
+        binary = self._run(q_thres=0.5).analysis["chr1"]["meth_prob"]
+        assert not np.allclose(default, binary.to_numpy(), equal_nan=True)
+
+    @pytest.mark.parametrize("with_controls", [True, False])
+    @pytest.mark.parametrize("q_thres", [0.5, 0.7])
+    def test_matches_binarized_input(self, with_controls, q_thres):
+        got = self._run(with_controls=with_controls, q_thres=q_thres)
+        want = self._run(with_controls=with_controls, binarize_at=q_thres)
+        np.testing.assert_allclose(
+            got.analysis["chr1"]["meth_prob"].to_numpy(),
+            want.analysis["chr1"]["meth_prob"].to_numpy(),
+            equal_nan=True,
+        )
+        pd.testing.assert_frame_equal(
+            got.analysis["chr1"]["meth_prob_theta"],
+            want.analysis["chr1"]["meth_prob_theta"],
+        )
+        pd.testing.assert_frame_equal(
+            got.global_analysis["meth_prob_eta"],
+            want.global_analysis["meth_prob_eta"],
+        )
+
+    def test_does_not_modify_raw_scores(self):
+        exp = self._run(q_thres=0.5)
+        qual = exp.raw["chr1"].test_data["mod_qual"].to_numpy()
+        assert ((qual > 0.0) & (qual < 1.0)).any()
+
+    @pytest.mark.parametrize("q_thres", [0.0, -0.1, 1.5])
+    def test_invalid_value_raises(self, q_thres):
+        with pytest.raises(ValueError, match="q_thres must be in"):
+            self._run(q_thres=q_thres)
+
+    def test_accepts_one(self):
+        exp = self._run(q_thres=1.0, rho_leak=0.1)
+        assert exp.global_analysis["meth_prob_params"]["q_thres"].iloc[0] == 1.0
+
+    def test_recorded_in_params(self):
+        params = self._run(q_thres=0.7).global_analysis["meth_prob_params"]
+        assert params["q_thres"].iloc[0] == 0.7
+
+    def test_unset_recorded_as_nan(self):
+        params = self._run().global_analysis["meth_prob_params"]
+        assert np.isnan(params["q_thres"].iloc[0])
 
 
 class TestModelProbLbin:

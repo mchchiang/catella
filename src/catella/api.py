@@ -241,6 +241,7 @@ def compute_model_prob(
     *,
     out_file: str | Path | None = None,
     prob_name: str = "meth_prob",
+    q_thres: float | None = None,
     pi0: float = 0.5,
     eta: float | dict[str, float] | None = None,
     eta_max_lag: int = 10,
@@ -278,6 +279,11 @@ def compute_model_prob(
     prob_name : str, default "meth_prob"
         The key used to store the resulting methylation probabilities
         in `exp.analysis`.
+    q_thres : float, optional
+        If given, binarize each `mod_qual` confidence score: 1 if it is
+        at least `q_thres` and 0 otherwise. This applies to all sources,
+        so to rate calibration, eta estimation, and the output alike.
+        None (default) uses the scores as they are. Must be in (0, 1].
     pi0 : float, default 0.5
         Prior probability that an assayable site is methylated, used
         to convert each site's `mod_qual` confidence score into a
@@ -402,6 +408,7 @@ def compute_model_prob(
     ana.model_prob(
         exp=exp,
         prob_name=prob_name,
+        q_thres=q_thres,
         pi0=pi0,
         eta=eta,
         eta_max_lag=eta_max_lag,

@@ -78,6 +78,7 @@ def _score_test_reads(
     mask_name,
     span,
     tmp_dir,
+    q_thres=None,
 ):
     """
     Window-summed probability of each test read being accessible,
@@ -99,6 +100,8 @@ def _score_test_reads(
         As in `MethPrintAnalysis.model_prob`.
     tmp_dir : str or pathlib.Path
         Directory for the scratch file backing the result.
+    q_thres : float, optional
+        Forwarded to `_iter_read_sites`.
 
     Returns
     -------
@@ -127,6 +130,7 @@ def _score_test_reads(
         batch_size=batch_size,
         mask_name=mask_name,
         span=span,
+        q_thres=q_thres,
     )
     call_stats = {}
     with closing(batches):

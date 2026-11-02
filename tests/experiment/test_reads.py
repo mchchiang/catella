@@ -106,7 +106,9 @@ class TestDenseBatches:
 
 
 class TestIterReadSites:
-    def _batches(self, exp, *, batch_size=2, mask_name=None, span="full"):
+    def _batches(
+        self, exp, *, batch_size=2, mask_name=None, span="full", q_thres=None
+    ):
         ctx, assay = _read_args()
         return list(
             _iter_read_sites(
@@ -118,8 +120,42 @@ class TestIterReadSites:
                 batch_size=batch_size,
                 mask_name=mask_name,
                 span=span,
+                q_thres=q_thres,
             )
         )
+
+    def test_q_thres_binarizes_scores(self):
+        exp = _experiment()
+        dense = exp.to_dense("chr1").to_numpy()
+        batches = self._batches(exp, q_thres=0.45)
+        q = np.concatenate([b.q for b in batches], axis=0)
+        called = ~np.isnan(dense)
+        np.testing.assert_array_equal(q[called], dense[called] >= 0.45)
+
+    def test_q_thres_includes_boundary(self):
+        exp = _experiment()
+        batches = self._batches(exp, q_thres=0.5)
+        q = np.concatenate([b.q for b in batches], axis=0)
+        assert q[4, 3] == 1.0
+
+    def test_q_thres_keeps_no_call_sites_at_zero(self):
+        batches = self._batches(_experiment(), q_thres=0.5)
+        q = np.concatenate([b.q for b in batches], axis=0)
+        assert q[0, 1] == 0.0
+
+    def test_q_thres_keeps_unread_sites_nan(self):
+        exp, keep = self._masked_experiment()
+        batches = self._batches(exp, mask_name="dm", q_thres=0.5)
+        q = np.concatenate([b.q for b in batches], axis=0)
+        assert np.isnan(q[~keep]).all()
+
+    def test_q_thres_leaves_read_and_called(self):
+        exp = _experiment()
+        plain = self._batches(exp)
+        binary = self._batches(exp, q_thres=0.5)
+        for p, b in zip(plain, binary):
+            np.testing.assert_array_equal(p.read, b.read)
+            np.testing.assert_array_equal(p.called, b.called)
 
     def _masked_experiment(self):
         exp = _experiment()

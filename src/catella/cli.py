@@ -499,6 +499,13 @@ def compute_model_prob(
     prob_name: Annotated[
         str, typer.Option(help="Key for storing methylation probabilities")
     ] = "meth_prob",
+    q_thres: Annotated[
+        float | None,
+        typer.Option(
+            help="Binarize scores: 1 if at least this value, else 0. "
+            "Omit to use the scores as they are."
+        ),
+    ] = None,
     pi0: Annotated[
         float, typer.Option(help="Prior probability a site is methylated")
     ] = 0.5,
@@ -601,6 +608,7 @@ def compute_model_prob(
     catella.compute_model_prob(
         exp=exp,
         prob_name=prob_name,
+        q_thres=q_thres,
         pi0=pi0,
         eta=eta,
         eta_max_lag=eta_max_lag,

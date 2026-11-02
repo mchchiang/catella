@@ -200,6 +200,7 @@ def _accumulate_eta_source(
     channels,
     norm_by_strand=False,
     span="full",
+    q_thres=None,
 ):
     """
     Stream one raw source and feed its raw (`eta=1`) per-read
@@ -242,6 +243,8 @@ def _accumulate_eta_source(
         dicts requiring a per-strand log-odds computation.
     span : {"full", "calls"}, default "full"
         Forwarded to `_iter_read_sites`.
+    q_thres : float, optional
+        Forwarded to `_iter_read_sites`.
     """
     batches = _iter_read_sites(
         exp,
@@ -252,6 +255,7 @@ def _accumulate_eta_source(
         batch_size=batch_size,
         mask_name=mask_name,
         span=span,
+        q_thres=q_thres,
     )
     with closing(batches):
         for b in batches:
@@ -331,6 +335,7 @@ def _estimate_channel_eta(exp, calib_kwargs, channels, *, pi0, max_lag):
             channels,
             norm_by_strand=norm_by_strand,
             span=calib_kwargs["span"],
+            q_thres=calib_kwargs["q_thres"],
         )
     eta, rho = _finalize_channel_eta(stats, max_lag)
     return eta, rho, calib_cache, calib_records

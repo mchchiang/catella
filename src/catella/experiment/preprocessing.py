@@ -420,6 +420,7 @@ class MethPrintAnalysis:
         exp: MethPrintExperiment,
         *,
         prob_name: str = "meth_prob",
+        q_thres: float | None = None,
         pi0: float = 0.5,
         eta: float | dict[str, float] | None = None,
         eta_max_lag: int = 10,
@@ -461,6 +462,12 @@ class MethPrintAnalysis:
         prob_name : str, default "meth_prob"
             The key used to store the resulting probabilities in
             `exp.analysis`.
+        q_thres : float, optional
+            If given, binarize each `mod_qual` confidence score: 1 if
+            it is at least `q_thres` and 0 otherwise. This applies to
+            all sources, so to rate calibration, eta estimation, and
+            the output alike. None (default) uses the scores as they
+            are. Must be in (0, 1].
         pi0 : float, default 0.5
             Prior probability that an assayable site is methylated, used
             to convert each site's `mod_qual` confidence score into a
@@ -568,8 +575,8 @@ class MethPrintAnalysis:
         ------
         ValueError
             If `lbin` is less than 1, if `nu` is negative, if
-            `min_rel_contrast` is outside [0, 1], if a chromosome has
-            no reference sequence
+            `min_rel_contrast` is outside [0, 1], if `q_thres` is
+            outside (0, 1], if a chromosome has no reference sequence
             (`refseq`), if an expectation-maximization fit cannot find
             enough bins with read sites, if `eta` is a dict with an
             unrecognized channel name, if `span` is not recognized, or
@@ -629,6 +636,8 @@ class MethPrintAnalysis:
             raise ValueError(
                 f"min_rel_contrast must be in [0, 1], got {min_rel_contrast}"
             )
+        if q_thres is not None and not 0.0 < q_thres <= 1.0:
+            raise ValueError(f"q_thres must be in (0, 1], got {q_thres}")
         tmp_dir = exp.resolve_tmp_dir()
 
         channels = _active_channels(exp)
@@ -648,6 +657,7 @@ class MethPrintAnalysis:
             "norm_by_strand": norm_by_strand,
             "channels": channels,
             "span": span,
+            "q_thres": q_thres,
         }
 
         calib_cache = {}
@@ -679,6 +689,7 @@ class MethPrintAnalysis:
         exp.global_analysis[f"{prob_name}_params"] = pd.DataFrame(
             [
                 {
+                    "q_thres": np.nan if q_thres is None else q_thres,
                     "pi0": pi0,
                     "eta_max_lag": eta_max_lag,
                     "nu": np.nan if nu is None else nu,
@@ -723,6 +734,7 @@ class MethPrintAnalysis:
                 mask_name=mask_name,
                 span=span,
                 tmp_dir=tmp_dir,
+                q_thres=q_thres,
             )
             exp.analysis[chrom][prob_name] = prob
 

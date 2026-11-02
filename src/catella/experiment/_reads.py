@@ -199,7 +199,16 @@ def _dense_batches(df, nmol, nbp, batch_size):
 
 
 def _iter_read_sites(
-    exp, chrom, which, ctx, assay, *, batch_size, mask_name, span="full"
+    exp,
+    chrom,
+    which,
+    ctx,
+    assay,
+    *,
+    batch_size,
+    mask_name,
+    span="full",
+    q_thres=None,
 ):
     """
     Stream one raw source in batches as read-site confidence scores
@@ -229,6 +238,10 @@ def _iter_read_sites(
         `filter_dropout(mask_name=mask_name)` are not kept.
     span : {"full", "calls"}, default "full"
         Forwarded to `_read_sites`.
+    q_thres : float, optional
+        If given, each read site's score in `q` becomes 1 if it is at
+        least `q_thres` and 0 otherwise. `read` and `called` are not
+        affected.
 
     Yields
     ------
@@ -255,6 +268,8 @@ def _iter_read_sites(
     )
     for start, stop, batch in dense:
         q, read = _read_sites(batch, stacked[code[start:stop]], ctx_ok, span)
+        if q_thres is not None:
+            q = np.where(np.isnan(q), np.nan, (q >= q_thres).astype(float))
         keep = keep_all[start:stop]
         labels = labels_all[start:stop]
         q[~keep] = np.nan

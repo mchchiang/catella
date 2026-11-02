@@ -9,6 +9,7 @@ from matplotlib.figure import Figure
 TOOL_STYLES = {
     "truth": ("truth", "#52514e"),
     "catella": ("catella", "#2a78d6"),
+    "catella_q05": ("catella (binarized)", "#7a5cd6"),
     "ft": ("ft", "#eb6834"),
     "fiberhmm_pre": ("FiberHMM (pretrained)", "#1baf7a"),
     "fiberhmm": ("FiberHMM (retrained)", "#eda100"),

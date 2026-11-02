@@ -442,6 +442,7 @@ def run_catella(
     emax: float | None = None,
     seed: int = 1,
     mtase: str | list[str] = "A",
+    q_thres: float | None = None,
 ) -> Calls:
     """
     Compute nucleosome occupancy with catella's exact (TM) solver.
@@ -470,6 +471,9 @@ def run_catella(
     mtase : str or list of str, default "A"
         Methyltransferase label(s) passed to `catella.load_raw`, e.g.,
         `["A", "GC"]` for m6A and GpC labelling.
+    q_thres : float, optional
+        Passed to `catella.compute_model_prob`; if given, confidence
+        scores are binarized at this value.
 
     Returns
     -------
@@ -487,7 +491,7 @@ def run_catella(
         ignore_strand=True,
         tmp_dir=workdir,
     )
-    exp = catella.compute_model_prob(exp=exp)
+    exp = catella.compute_model_prob(exp=exp, q_thres=q_thres)
     chrom = exp.chroms[0]
     if emax is None:
         emax = catella.estimate_start_temp(exp, percentile=99.0, seed=seed)
@@ -818,11 +822,14 @@ def load_calls(path: str | Path) -> Calls:
 
 TOOLS = {
     "catella": (run_catella, {}),
+    "catella_q05": (run_catella, {"q_thres": 0.5}),
     "ft": (run_ft, {}),
     "fiberhmm": (run_fiberhmm, {"retrain": True}),
     "fiberhmm_pre": (run_fiberhmm, {"retrain": False}),
     "hiddenfoot": (run_hiddenfoot, {}),
 }
+# Tools whose runners take no conda environment
+NO_ENV_TOOLS = ("catella", "catella_q05", "hiddenfoot")
 
 
 def run_tool(
@@ -853,6 +860,6 @@ def run_tool(
     Calls
     """
     runner, fixed = TOOLS[tool]
-    if tool in ("catella", "hiddenfoot"):
+    if tool in NO_ENV_TOOLS:
         return runner(ddir, workdir, **fixed, **params)
     return runner(ddir, workdir, env=env, **fixed, **params)

@@ -712,6 +712,8 @@ def score(out: str | Path, *, nboot: int = 1000, seed: int = 0) -> dict:
 # supports, and the m6A variants are labelled secondary results
 REAL_TOOLS = {
     "catella": ("catella", {"mtase": ["A", "GC"]}),
+    "catella_q05": ("catella_q05", {"mtase": ["A", "GC"], "q_thres": 0.5}),
+    "catella_q05_gc": ("catella_q05", {"mtase": ["GC"], "q_thres": 0.5}),
     "hiddenfoot": ("hiddenfoot", {"mod_code": "m"}),
     "fiberhmm": ("fiberhmm", {"retrain": True, "channel": "m"}),
     "ft": ("ft", {}),
@@ -751,7 +753,7 @@ def run_real_tool(
     key, fixed = REAL_TOOLS[tool]
     runner = callers.TOOLS[key][0]
     kwargs = {**fixed, **params}
-    if key not in ("catella", "hiddenfoot"):
+    if key not in callers.NO_ENV_TOOLS:
         kwargs["env"] = env
     return runner(ddir, workdir, **kwargs)
 
@@ -849,6 +851,8 @@ def _style(tool):
     label, color = TOOL_STYLES[REAL_TOOLS[tool][0]]
     if tool.endswith("_m6a"):
         label = f"{label} (m6A)"
+    if tool.endswith("_gc"):
+        label = f"{label} (GC)"
     return label, color
 
 

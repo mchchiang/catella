@@ -330,6 +330,36 @@ class TestChannels:
             callers.run_catella(tmp_path, tmp_path, mtase=["A", "GC"])
         assert seen["mtase"] == ["A", "GC"]
 
+    @pytest.mark.parametrize("q_thres", [None, 0.5])
+    def test_catella_q_thres(self, tmp_path, monkeypatch, q_thres):
+        seen = {}
+
+        def fake_model_prob(**kwargs):
+            seen.update(kwargs)
+            raise RuntimeError("stop")
+
+        monkeypatch.setattr(callers.catella, "load_raw", lambda **_: None)
+        monkeypatch.setattr(
+            callers.catella, "compute_model_prob", fake_model_prob
+        )
+        with pytest.raises(RuntimeError, match="stop"):
+            callers.run_catella(tmp_path, tmp_path, q_thres=q_thres)
+        assert seen["q_thres"] == q_thres
+
+    def test_binarized_tool_fixes_threshold(self, tmp_path, monkeypatch):
+        seen = {}
+
+        def fake_runner(ddir, workdir, **kwargs):
+            seen.update(kwargs)
+
+        monkeypatch.setitem(
+            callers.TOOLS,
+            "catella_q05",
+            (fake_runner, callers.TOOLS["catella_q05"][1]),
+        )
+        callers.run_tool("catella_q05", tmp_path, tmp_path, {"llink": 10})
+        assert seen == {"q_thres": 0.5, "llink": 10}
+
 
 class TestHiddenFootWindows:
     def test_starts(self):

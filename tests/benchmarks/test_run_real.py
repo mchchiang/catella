@@ -387,6 +387,30 @@ def prepared(tmp_path, monkeypatch):
     return out, tuned, runs
 
 
+class TestBinarizedVariants:
+    @pytest.mark.parametrize(
+        ("tool", "mtase"),
+        [("catella_q05", ["A", "GC"]), ("catella_q05_gc", ["GC"])],
+    )
+    def test_runner_arguments(self, tmp_path, monkeypatch, tool, mtase):
+        seen = {}
+
+        def fake_runner(ddir, workdir, **kwargs):
+            seen.update(kwargs)
+
+        monkeypatch.setitem(
+            run_real.callers.TOOLS, "catella_q05", (fake_runner, {})
+        )
+        run_real.run_real_tool(tool, tmp_path, tmp_path, {"llink": 10})
+        assert seen == {"mtase": mtase, "q_thres": 0.5, "llink": 10}
+
+    def test_style_labels(self):
+        assert run_real._style("catella_q05")[0] == "catella (binarized)"
+        assert run_real._style("catella_q05_gc")[0] == (
+            "catella (binarized) (GC)"
+        )
+
+
 class TestEvaluate:
     def test_units_and_skip(self, prepared):
         out, tuned, runs = prepared

@@ -10,6 +10,8 @@ TOOL_STYLES = {
     "truth": ("truth", "#52514e"),
     "catella": ("catella", "#2a78d6"),
     "catella_q05": ("catella (binarized)", "#7a5cd6"),
+    "catella_ml": ("catella (ML llink)", "#12a5b8"),
+    "catella_ml_q05": ("catella (ML llink, binarized)", "#0b6b78"),
     "ft": ("ft", "#eb6834"),
     "fiberhmm_pre": ("FiberHMM (pretrained)", "#1baf7a"),
     "fiberhmm": ("FiberHMM (retrained)", "#eda100"),

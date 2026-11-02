@@ -5,7 +5,7 @@ import re
 import shutil
 import subprocess
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import catella
@@ -151,11 +151,14 @@ class Calls:
     count : np.ndarray of float
         Number of called (or expected, for catella) nucleosomes per
         molecule.
+    llink : int, optional
+        `SimSettings.llink` used, for catella.
     """
 
     mol_ids: np.ndarray
     occ: np.ndarray
     count: np.ndarray
+    llink: int | None = None
 
 
 def intervals_to_calls(
@@ -436,7 +439,7 @@ def run_catella(
     ddir: str | Path,
     workdir: str | Path,
     *,
-    llink: int = 50,
+    llink: int | str = 50,
     elink: float = 25.0,
     mu: float = 0.0,
     emax: float | None = None,
@@ -457,8 +460,9 @@ def run_catella(
         Dataset directory.
     workdir : str or Path
         Directory for intermediate files.
-    llink : int, default 50
-        `SimSettings.llink`.
+    llink : int or "ml", default 50
+        `SimSettings.llink`, or "ml" to choose it from the data with
+        `catella.estimate_llink`.
     elink : float, default 25.0
         `SimSettings.elink`.
     mu : float, default 0.0
@@ -495,9 +499,20 @@ def run_catella(
     chrom = exp.chroms[0]
     if emax is None:
         emax = catella.estimate_start_temp(exp, percentile=99.0, seed=seed)
+    fit = llink == "ml"
+    if isinstance(llink, str) and not fit:
+        raise ValueError(f"llink must be an integer or 'ml', got {llink!r}")
     settings = SimSettings(
-        nucbp=147, llink=llink, elink=elink, mu=mu, end_temp=1.0, emax=emax
+        nucbp=147,
+        llink=0 if fit else llink,
+        elink=elink,
+        mu=mu,
+        end_temp=1.0,
+        emax=emax,
     )
+    if fit:
+        best = catella.estimate_llink(exp, settings, seed=seed)
+        settings = replace(settings, llink=best[chrom])
     sim_dir = Path(tempfile.mkdtemp(dir=workdir)) / "sim"
     sim = catella.run(
         chroms=chrom,
@@ -513,7 +528,7 @@ def run_catella(
     occ = np.asarray(sim.analysis[chrom]["occup"][:], dtype=np.float32)
     count = np.asarray(sim.analysis[chrom]["mean_nnuc"][:]).ravel()
     mol_ids = np.asarray(exp.raw[chrom].test_mol_id)
-    return Calls(mol_ids, occ, count)
+    return Calls(mol_ids, occ, count, llink=settings.llink)
 
 
 def _hiddenfoot_binary(binary=None):
@@ -774,7 +789,7 @@ def save_calls(calls: Calls, path: str | Path) -> Path:
     Save calls to an HDF5 file.
 
     The file holds datasets `mol_ids` (bytes), `occ` (float16,
-    gzip-compressed), and `count`.
+    gzip-compressed), and `count`, and the attribute `llink` if set.
 
     Parameters
     ----------
@@ -796,6 +811,8 @@ def save_calls(calls: Calls, path: str | Path) -> Path:
             "occ", data=calls.occ.astype(np.float16), compression="gzip"
         )
         fh.create_dataset("count", data=calls.count)
+        if calls.llink is not None:
+            fh.attrs["llink"] = calls.llink
     return path
 
 
@@ -817,19 +834,28 @@ def load_calls(path: str | Path) -> Calls:
             fh["mol_ids"][:].astype(str),
             fh["occ"][:].astype(np.float32),
             fh["count"][:],
+            int(fh.attrs["llink"]) if "llink" in fh.attrs else None,
         )
 
 
 TOOLS = {
     "catella": (run_catella, {}),
     "catella_q05": (run_catella, {"q_thres": 0.5}),
+    "catella_ml": (run_catella, {"llink": "ml"}),
+    "catella_ml_q05": (run_catella, {"llink": "ml", "q_thres": 0.5}),
     "ft": (run_ft, {}),
     "fiberhmm": (run_fiberhmm, {"retrain": True}),
     "fiberhmm_pre": (run_fiberhmm, {"retrain": False}),
     "hiddenfoot": (run_hiddenfoot, {}),
 }
 # Tools whose runners take no conda environment
-NO_ENV_TOOLS = ("catella", "catella_q05", "hiddenfoot")
+NO_ENV_TOOLS = (
+    "catella",
+    "catella_q05",
+    "catella_ml",
+    "catella_ml_q05",
+    "hiddenfoot",
+)
 
 
 def run_tool(

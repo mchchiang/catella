@@ -219,6 +219,17 @@ class TestSaveLoadCalls:
         assert back.mol_ids.tolist() == ["a", "b"]
         np.testing.assert_allclose(back.occ, calls.occ, atol=1e-3)
         np.testing.assert_array_equal(back.count, calls.count)
+        assert back.llink is None
+
+    def test_llink_round_trip(self, tmp_path):
+        calls = callers.Calls(
+            np.array(["a"]),
+            np.array([[0.0, 1.0]], dtype=np.float32),
+            np.array([1.0]),
+            llink=0,
+        )
+        path = callers.save_calls(calls, tmp_path / "c.h5")
+        assert callers.load_calls(path).llink == 0
 
 
 @pytest.fixture(scope="module")
@@ -251,6 +262,53 @@ class TestRunners:
         _, ddir = quick_data
         calls = callers.run_catella(ddir, tmp_path, llink=10, emax=25.0)
         _check_calls(calls, ddir)
+
+    def test_catella_records_fixed_llink(self, quick_data, tmp_path):
+        _, ddir = quick_data
+        calls = callers.run_catella(ddir, tmp_path, llink=10)
+        assert calls.llink == 10
+
+    def test_catella_ml_uses_estimate(self, quick_data, tmp_path, monkeypatch):
+        _, ddir = quick_data
+        seen = {}
+        original = callers.catella.estimate_llink
+
+        def spy(exp, settings, **kwargs):
+            best = original(exp, settings, **kwargs)
+            seen.update(best)
+            return best
+
+        monkeypatch.setattr(callers.catella, "estimate_llink", spy)
+        calls = callers.run_catella(ddir, tmp_path, llink="ml")
+        _check_calls(calls, ddir)
+        assert len(seen) == 1
+        assert calls.llink == next(iter(seen.values()))
+        scores = run_synth.score_calls(calls, run_synth.read_truth(ddir))
+        assert scores["mcc"].mean() > 0.8
+
+    def test_catella_rejects_unknown_llink_text(self, quick_data, tmp_path):
+        _, ddir = quick_data
+        with pytest.raises(ValueError, match="llink must be an integer"):
+            callers.run_catella(ddir, tmp_path, llink="auto")
+
+    @pytest.mark.parametrize(
+        ("tool", "fixed"),
+        [
+            ("catella_ml", {"llink": "ml"}),
+            ("catella_ml_q05", {"llink": "ml", "q_thres": 0.5}),
+        ],
+    )
+    def test_ml_tools_fix_arguments(self, tmp_path, monkeypatch, tool, fixed):
+        seen = {}
+
+        def fake_runner(ddir, workdir, **kwargs):
+            seen.update(kwargs)
+
+        monkeypatch.setitem(
+            callers.TOOLS, tool, (fake_runner, callers.TOOLS[tool][1])
+        )
+        callers.run_tool(tool, tmp_path, tmp_path, {})
+        assert seen == fixed
 
     @needs_env
     def test_ft(self, quick_data, tmp_path):

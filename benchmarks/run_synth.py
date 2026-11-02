@@ -63,6 +63,8 @@ CONDITIONS = {
 GRIDS = {
     "catella": {"llink": [0, 10, 30, 50]},
     "catella_q05": {"llink": [0, 10, 30, 50]},
+    "catella_ml": {},
+    "catella_ml_q05": {},
     "ft": {"nucleosome_length": [65, 85], "combined_length": [90, 110]},
     "fiberhmm": {"nuc_min_size": [70, 100], "split_min_llr": [2.0, 6.0]},
     "fiberhmm_pre": {

@@ -219,9 +219,14 @@ class TestGridCombos:
             {"a": 2, "b": "y"},
         ]
 
-    def test_all_grids_have_four_combos(self):
+    def test_tuned_grids_have_four_combos(self):
         for tool in run_synth.TOOLS:
-            assert len(run_synth.grid_combos(run_synth.GRIDS[tool])) == 4
+            if "_ml" not in tool:
+                assert len(run_synth.grid_combos(run_synth.GRIDS[tool])) == 4
+
+    def test_ml_variants_are_not_tuned(self):
+        for tool in ("catella_ml", "catella_ml_q05"):
+            assert run_synth.grid_combos(run_synth.GRIDS[tool]) == [{}]
 
     def test_ft_grid_combined_not_shorter(self):
         for params in run_synth.grid_combos(run_synth.GRIDS["ft"]):
@@ -497,7 +502,10 @@ class TestTuneEvaluate:
         assert set(tuned) == set(run_synth.TOOLS)
         assert tuned["ft"]["nucleosome_length"] == 85
         scores = pd.read_csv(tmp_path / "tune_scores.tsv", sep="\t")
-        assert len(scores) == 4 * len(run_synth.TOOLS)
+        assert len(scores) == sum(
+            len(run_synth.grid_combos(run_synth.GRIDS[t]))
+            for t in run_synth.TOOLS
+        )
         saved = json.loads((tmp_path / "tuned_params.json").read_text())
         assert saved == tuned
 

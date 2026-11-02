@@ -714,6 +714,11 @@ REAL_TOOLS = {
     "catella": ("catella", {"mtase": ["A", "GC"]}),
     "catella_q05": ("catella_q05", {"mtase": ["A", "GC"], "q_thres": 0.5}),
     "catella_q05_gc": ("catella_q05", {"mtase": ["GC"], "q_thres": 0.5}),
+    "catella_ml": ("catella_ml", {"mtase": ["A", "GC"], "llink": "ml"}),
+    "catella_ml_q05": (
+        "catella_ml_q05",
+        {"mtase": ["A", "GC"], "llink": "ml", "q_thres": 0.5},
+    ),
     "hiddenfoot": ("hiddenfoot", {"mod_code": "m"}),
     "fiberhmm": ("fiberhmm", {"retrain": True, "channel": "m"}),
     "ft": ("ft", {}),

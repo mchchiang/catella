@@ -522,6 +522,24 @@ class TestTuneEvaluate:
         ]
         assert tuned_ft["diff_mean"].iloc[0] == pytest.approx(0.0)
 
+    def test_tune_selected_tools_keeps_others(self, tuned_out, fake_tools):
+        path = tuned_out / "tuned_params.json"
+        before = json.loads(path.read_text())
+        scores = pd.read_csv(tuned_out / "tune_scores.tsv", sep="\t")
+        before["ft"] = {"stale": 1}
+        path.write_text(json.dumps(before))
+        tuned = run_synth.tune(tuned_out, tools=["catella"])
+        assert set(fake_tools) == {"catella"}
+        assert tuned["ft"] == {"stale": 1}
+        assert set(tuned) == set(before)
+        after = pd.read_csv(tuned_out / "tune_scores.tsv", sep="\t")
+        assert len(after) == len(scores)
+        assert set(after["tool"]) == set(scores["tool"])
+
+    def test_tune_rejects_unknown_tool(self, tuned_out):
+        with pytest.raises(ValueError, match="tools"):
+            run_synth.tune(tuned_out, tools=["nope"])
+
 
 class TestHiddenFootOption:
     @pytest.mark.parametrize("command", ["tune", "evaluate"])

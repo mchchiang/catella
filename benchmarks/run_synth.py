@@ -330,7 +330,11 @@ def _tune_one(out, ddir, tool, params, env):
 
 
 def tune(
-    out: str | Path, *, env: str = ENV, nworker: int = 1
+    out: str | Path,
+    *,
+    env: str = ENV,
+    nworker: int = 1,
+    tools: list[str] | None = None,
 ) -> dict[str, dict]:
     """
     Pick each tool's parameters on the tuning dataset.
@@ -338,7 +342,8 @@ def tune(
     Every combination in `GRIDS` is run on the tuning dataset only and
     scored by mean MCC; the best combination per tool is kept. Writes
     `<out>/tune_scores.tsv` (all combinations) and
-    `<out>/tuned_params.json` (the chosen ones).
+    `<out>/tuned_params.json` (the chosen ones). With `tools`, the
+    existing entries of the other tools in both files are kept.
 
     Parameters
     ----------
@@ -350,27 +355,36 @@ def tune(
         Number of grid combinations run in parallel. If greater than 1,
         the tuning dataset's FiberHMM model is trained first so that
         parallel runs share it.
+    tools : list of str, optional
+        Restrict to these keys of `TOOLS`; all if None.
 
     Returns
     -------
     dict of str to dict
-        Tool -> chosen parameters.
+        Tool -> chosen parameters, including the kept entries.
     """
     out = Path(out)
+    _check_choices("tools", tools or [], set(TOOLS))
+    selected = list(TOOLS) if tools is None else tools
     datasets = _read_record(out)["datasets"]
     spec = next(s for s in datasets if s["cond"] == "tune")
     ddir = dataset_dir(out, spec["cond"], spec["seed"])
-    if nworker > 1 and "fiberhmm" in TOOLS:
+    if nworker > 1 and "fiberhmm" in selected:
         train_fiberhmm(ddir, env=env)
     tasks = [
         (out, ddir, tool, params, env)
-        for tool in TOOLS
+        for tool in selected
         for params in grid_combos(GRIDS[tool])
     ]
     table = pd.DataFrame(_run_tasks(_tune_one, tasks, nworker))
-    table.to_csv(out / "tune_scores.tsv", sep="\t", index=False)
     best = table.loc[table.groupby("tool", sort=False)["mcc"].idxmax()]
     tuned = {r.tool: json.loads(r.params) for r in best.itertuples()}
+    if tools is not None:
+        kept = pd.read_csv(out / "tune_scores.tsv", sep="\t")
+        table = pd.concat([kept[~kept["tool"].isin(tools)], table])
+        old = json.loads((out / "tuned_params.json").read_text())
+        tuned = {**old, **tuned}
+    table.to_csv(out / "tune_scores.tsv", sep="\t", index=False)
     with open(out / "tuned_params.json", "w") as fh:
         json.dump(tuned, fh, indent=2)
     return tuned
@@ -1002,10 +1016,13 @@ def tune_cmd(
         str | None,
         typer.Option(help="HiddenFoot executable; default $HIDDENFOOT"),
     ] = None,
+    tool: Annotated[
+        list[str] | None, typer.Option(help="Only this tool (repeatable)")
+    ] = None,
 ):
     """Pick each tool's parameters on the tuning dataset."""
     _set_hiddenfoot(hiddenfoot)
-    tuned = tune(out, env=env, nworker=nworker)
+    tuned = tune(out, env=env, nworker=nworker, tools=tool)
     typer.echo(json.dumps(tuned, indent=2))
 
 

@@ -148,8 +148,10 @@ fields exactly (unknown keys raise ``TypeError``):
      - int
      - Base pairs occupied by one bound nucleosome (e.g. 147).
    * - ``llink``
-     - int
-     - Linker DNA length (bp) between nucleosomes.
+     - int or mapping
+     - Soft minimum linker DNA length (bp) between nucleosomes, enforced by
+       a repulsion of strength ``elink`` for shorter linkers. Either one value
+       for all chromosomes or a mapping of chromosome to value.
    * - ``elink``
      - float
      - Energy scale of the linker repulsion potential.

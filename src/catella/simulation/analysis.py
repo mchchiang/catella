@@ -9,6 +9,7 @@ from catella_cpp import NucPosTM
 
 from catella import utils
 from catella.h5_array import H5Array
+from catella.simulation.config import SimSettings
 from catella.simulation.results import SimDataset
 
 
@@ -157,17 +158,17 @@ class SimAnalysis:
         """Build and solve a NucPosTM for one molecule, at the
         temperature settings.end_temp evaluates the exact equilibrium
         distribution at."""
-        settings = dataset.settings
+        settings = SimSettings(**dict(dataset.settings)).for_chrom(chrom)
         tm = NucPosTM(
-            settings["nucbp"],
+            settings.nucbp,
             dataset.nbp[chrom],
-            settings["llink"],
-            settings["elink"],
-            settings["mu"],
+            settings.llink,
+            settings.elink,
+            settings.mu,
             1,
         )
-        tm.setEnergy(dataset.eseq[chrom][mol].tolist(), settings["emax"])
-        tm.solve(settings["end_temp"])
+        tm.setEnergy(dataset.eseq[chrom][mol].tolist(), settings.emax)
+        tm.solve(settings.end_temp)
         return tm
 
     def compute_occup(

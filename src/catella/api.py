@@ -553,8 +553,8 @@ def estimate_llink(
     takes effect once placed in the settings:
 
     >>> best = catella.estimate_llink(exp, settings)
-    >>> settings = dataclasses.replace(settings, llink=best["chr1"])
-    >>> catella.run(chroms="chr1", settings=settings, ...)
+    >>> settings = dataclasses.replace(settings, llink=best)
+    >>> catella.run(settings=settings, ...)
 
     Parameters
     ----------
@@ -611,8 +611,8 @@ def estimate_llink(
 
     Notes
     -----
-    `SimSettings.llink` acts as a minimum linker length rather than a
-    preferred one, since the repulsion is zero for longer linkers.
+    `SimSettings.llink` acts as a soft minimum linker length rather than
+    a preferred one, since the repulsion is zero for longer linkers.
     """
     return _estimate_llink(
         exp,
@@ -850,7 +850,8 @@ def run(
         no samples at all).
     settings : str or Path or SimSettings
         Simulation parameters. Can be a path to a configuration file or a
-        `SimSettings` object.
+        `SimSettings` object. `llink` can be a mapping of chromosome to
+        value, which must cover all of `chroms`.
     meth_prob : np.ndarray or Mapping[str, np.ndarray | pd.DataFrame]
         Probability of methylation. If multiple chromosomes are provided, this
         must be a mapping of {chrom_name: data}. Data can be NumPy arrays or

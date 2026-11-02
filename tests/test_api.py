@@ -654,6 +654,37 @@ class TestEstimateLlink:
         assert dataset.settings["llink"] == 10
         assert dataset.raw["chr1", 0, 0].llink == 10
 
+    def test_estimate_dict_runs_directly(self, tmp_path):
+        exp = self._experiment()
+        settings = self._settings()
+        best = catella.estimate_llink(exp, settings, llinks=[0, 10, 30])
+        dataset = catella.run(
+            chroms="chr1",
+            nsim=0,
+            method="tm",
+            settings=replace(settings, llink=best),
+            meth_prob={"chr1": exp.analysis["chr1"]["meth_prob"]},
+            out_dir=tmp_path / "sim",
+            seed=1,
+            verbose=False,
+        )
+        catella.analyze(dataset)
+        direct = catella.run(
+            chroms="chr1",
+            nsim=0,
+            method="tm",
+            settings=replace(settings, llink=10),
+            meth_prob={"chr1": exp.analysis["chr1"]["meth_prob"]},
+            out_dir=tmp_path / "direct",
+            seed=1,
+            verbose=False,
+        )
+        catella.analyze(direct)
+        np.testing.assert_allclose(
+            dataset.analysis["chr1"]["occup"][:],
+            direct.analysis["chr1"]["occup"][:],
+        )
+
 
 class TestRun:
     def test_method_tm_creates_tm_dataset(self, tmp_path):

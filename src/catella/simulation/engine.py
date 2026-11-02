@@ -7,6 +7,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from dataclasses import dataclass, replace
 from itertools import islice
+from numbers import Integral
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -140,6 +141,25 @@ class SimManager:
         self.verbose = verbose
 
     @staticmethod
+    def _check_llink(settings: SimSettings, chroms: Iterable[str]) -> None:
+        """Check that a mapping `llink` covers `chroms` with valid values."""
+        if not isinstance(settings.llink, Mapping):
+            return
+        for chrom in chroms:
+            if chrom not in settings.llink:
+                raise KeyError(f"llink has no value for chromosome '{chrom}'")
+            value = settings.llink[chrom]
+            if (
+                not isinstance(value, Integral)
+                or isinstance(value, bool)
+                or value < 0
+            ):
+                raise ValueError(
+                    "llink must be a non-negative integer for chromosome "
+                    f"'{chrom}', got {value!r}"
+                )
+
+    @staticmethod
     def _job_seed(master_seed: int, chrom_idx: int, mol: int, run: int) -> int:
         """
         Derive a deterministic, order-independent seed for a single run.
@@ -201,7 +221,8 @@ class SimManager:
         settings : str or Path or SimSettings
             The physical constants and Monte Carlo protocol (e.g., nucbp,
             llink, mu) to apply to all runs in this batch. These can be
-            read from a configuration file.
+            read from a configuration file. `llink` can be a mapping of
+            chromosome to value, which must cover all of `chroms`.
         meth_prob : np.ndarray or dict
             The probability of methylation. If multiple chromosomes are
             provided, this must be a mapping of {chrom_name: data}. Data can
@@ -248,7 +269,10 @@ class SimManager:
             If input types for `chroms`, `meth_prob`, or `mols` are
             inconsistent.
         ValueError
-            If the requested `out_types` are not recognized.
+            If the requested `out_types` are not recognized, or if an
+            `llink` value of a mapping is not a non-negative integer.
+        KeyError
+            If a mapping `llink` lacks a chromosome of `chroms`.
         FileExistsError
             If the specified `out_dir` already contains an existing dataset.
         """
@@ -319,6 +343,7 @@ class SimManager:
                 "'settings' must be either a path to the "
                 "simulation setting file or a SimSettings object"
             )
+        SimManager._check_llink(settings, chroms)
 
         if method == "mcmc":
             # Check the MCMC-only protocol fields are present and valid
@@ -373,7 +398,7 @@ class SimManager:
                 model = NucPosMCMC(
                     settings.nucbp,
                     nbp[chrom],
-                    settings.llink,
+                    settings.for_chrom(chrom).llink,
                     settings.elink,
                     settings.mu,
                     0,
@@ -444,7 +469,7 @@ class SimManager:
                         chrom=chrom,
                         mol=idx,
                         run=run,
-                        settings=settings,
+                        settings=settings.for_chrom(chrom),
                         seed=int(seed_table[chrom][idx, run]),
                         seq_energy=eseq,
                         out_type=out_type,
@@ -459,7 +484,7 @@ class SimManager:
                     seeds=tuple(int(s) for s in seed_table[chrom][idx, :]),
                     seq_energy=eseq,
                     out_file=dataset.tm_file(chrom, idx),
-                    settings=settings,
+                    settings=settings.for_chrom(chrom),
                 )
 
         if method == "mcmc":
@@ -624,7 +649,7 @@ class SimManager:
                     chrom=chrom,
                     mol=mol,
                     run=run,
-                    settings=settings,
+                    settings=settings.for_chrom(chrom),
                     seed=resolved_seeds[(chrom, mol, run)],
                     seq_energy=eseq,
                     out_type=resolved_out_type,
@@ -717,7 +742,7 @@ class SimManager:
                     seeds=seeds,
                     seq_energy=eseq,
                     out_file=dataset.tm_file(chrom, mol),
-                    settings=settings,
+                    settings=settings.for_chrom(chrom),
                 )
 
         if nsim > 0:

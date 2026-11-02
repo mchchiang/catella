@@ -1,5 +1,6 @@
 # results.py
 
+import json
 import os
 import re
 import shutil
@@ -933,7 +934,11 @@ class SimDataset:
             nbp = {chrom: nbp_arr[i] for i, chrom in enumerate(chroms)}
             # Load simulation settings
             gset = gmeta["settings"]
-            settings = SimSettings(**dict(gset.attrs.items()))
+            attrs = dict(gset.attrs.items())
+            # A per-chromosome llink is stored as a JSON string
+            if isinstance(attrs["llink"], str):
+                attrs["llink"] = json.loads(attrs["llink"])
+            settings = SimSettings(**attrs)
             # Load methylation energy (if stored)
             if "eseq" in gmeta:
                 geseq = gmeta["eseq"]
@@ -1103,6 +1108,10 @@ class SimDataset:
                     # h5py cannot store None as an attribute; omitting
                     # it lets SimSettings fall back to its own default.
                     value = getattr(self._settings, field.name)
+                    if isinstance(value, Mapping):
+                        value = json.dumps(
+                            {str(k): int(v) for k, v in value.items()}
+                        )
                     if value is not None:
                         gset.attrs[field.name] = value
                 if self._eseq is not None:
@@ -1592,6 +1601,9 @@ class SimDataset:
 
         >>> dataset = SimDataset.load("results/dataset.h5")
         >>> dataset.settings['llink']
+
+        This is an integer, or a mapping of chromosome to value if `llink`
+        was set per chromosome.
 
         Returns
         -------

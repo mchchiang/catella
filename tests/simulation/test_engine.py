@@ -5,6 +5,7 @@ from pathlib import Path
 import h5py
 import numpy as np
 import pytest
+from catella.simulation.analysis import SimAnalysis
 from catella.simulation.config import SimSettings
 from catella.simulation.engine import MCMCJob, SimManager, TMJob
 from catella.simulation.results import SimDataset, _read_tm_sample
@@ -84,6 +85,117 @@ class TestRunJob:
         assert (chrom, mol, run) == ("chr1", 0, 0)
         assert success is False
         assert err_msg
+
+
+class TestPerChromLlink:
+    CHROMS = ("a", "b")
+
+    def _probs(self):
+        return {
+            "a": _make_meth_prob(nmol=2, nbp=400, seed=1),
+            "b": _make_meth_prob(nmol=2, nbp=400, seed=2),
+        }
+
+    def _run(self, out_dir, llink, method, nsim=2):
+        return SimManager(nworker=1, verbose=False).run(
+            chroms=self.CHROMS,
+            nsim=nsim,
+            method=method,
+            settings=_make_settings(nucbp=20, llink=llink),
+            meth_prob=self._probs(),
+            out_dir=out_dir,
+            seed=1,
+        )
+
+    @staticmethod
+    def _position(sample):
+        pos = sample.position
+        if isinstance(pos, tuple):
+            pos = np.concatenate(pos)
+        return np.asarray(pos)
+
+    @pytest.mark.parametrize("method", ["mcmc", "tm"])
+    def test_matches_uniform_runs(self, tmp_path, method):
+        mixed = self._run(tmp_path / "mix", {"a": 0, "b": 30}, method)
+        for chrom, llink in (("a", 0), ("b", 30)):
+            uniform = self._run(tmp_path / f"u{llink}", llink, method)
+            for mol in range(2):
+                for run in range(2):
+                    got = mixed.raw[chrom, mol, run]
+                    want = uniform.raw[chrom, mol, run]
+                    assert got.llink == llink
+                    np.testing.assert_array_equal(
+                        self._position(got), self._position(want)
+                    )
+
+    def test_tm_logz_uses_chromosome_value(self, tmp_path):
+        mixed = self._run(tmp_path / "mix", {"a": 0, "b": 30}, "tm")
+        for chrom, llink in (("a", 0), ("b", 30)):
+            uniform = self._run(tmp_path / f"u{llink}", llink, "tm")
+            assert mixed.raw[chrom, 0, 0].logz == pytest.approx(
+                uniform.raw[chrom, 0, 0].logz
+            )
+
+    def test_occupancy_uses_chromosome_value(self, tmp_path):
+        mixed = self._run(tmp_path / "mix", {"a": 0, "b": 30}, "tm", nsim=0)
+        SimAnalysis().compute_occup(dataset=mixed, batch_size=2)
+        for chrom, llink in (("a", 0), ("b", 30)):
+            uniform = self._run(tmp_path / f"u{llink}", llink, "tm", nsim=0)
+            SimAnalysis().compute_occup(dataset=uniform, batch_size=2)
+            np.testing.assert_allclose(
+                mixed.analysis[chrom]["occup"][:],
+                uniform.analysis[chrom]["occup"][:],
+            )
+        other = self._run(tmp_path / "o", 0, "tm", nsim=0)
+        SimAnalysis().compute_occup(dataset=other, batch_size=2)
+        assert not np.allclose(
+            mixed.analysis["b"]["occup"][:], other.analysis["b"]["occup"][:]
+        )
+
+    def test_values_change_the_result(self, tmp_path):
+        a = self._run(tmp_path / "a", {"a": 0, "b": 30}, "tm")
+        b = self._run(tmp_path / "b", {"a": 0, "b": 0}, "tm")
+        assert a.raw["b", 0, 0].logz != pytest.approx(b.raw["b", 0, 0].logz)
+
+    def test_extra_keys_are_allowed(self, tmp_path):
+        dataset = self._run(
+            tmp_path / "x", {"a": 0, "b": 30, "other": 5}, "tm", nsim=0
+        )
+        assert dataset.settings["llink"]["b"] == 30
+
+    def test_mapping_is_saved_and_loaded(self, tmp_path):
+        dataset = self._run(tmp_path / "s", {"a": 0, "b": 30}, "tm", nsim=0)
+        back = SimDataset.load(tmp_path / "s" / "results.h5")
+        assert dict(back.settings["llink"]) == {"a": 0, "b": 30}
+        assert dict(dataset.settings["llink"]) == {"a": 0, "b": 30}
+
+    def test_integer_is_saved_and_loaded(self, tmp_path):
+        self._run(tmp_path / "s", 30, "tm", nsim=0)
+        back = SimDataset.load(tmp_path / "s" / "results.h5")
+        assert back.settings["llink"] == 30
+
+    def test_mcmc_rerun_keeps_chromosome_value(self, tmp_path):
+        manager = SimManager(nworker=1, verbose=False)
+        dataset = self._run(tmp_path / "r", {"a": 0, "b": 30}, "mcmc", nsim=1)
+        before = self._position(dataset.raw["b", 1, 0])
+        dataset.mcmc_file("b", 1, 0).unlink()
+        manager.rerun(dataset, meth_prob=self._probs())
+        fresh = SimDataset.load(tmp_path / "r" / "results.h5")
+        assert fresh.raw["b", 1, 0].llink == 30
+        np.testing.assert_array_equal(
+            self._position(fresh.raw["b", 1, 0]), before
+        )
+
+    def test_missing_chromosome_raises_before_work(self, tmp_path):
+        with pytest.raises(KeyError, match="no value for chromosome 'b'"):
+            self._run(tmp_path / "m", {"a": 0}, "tm")
+        assert not (tmp_path / "m").exists()
+
+    @pytest.mark.parametrize("value", [-1, 1.5, True, "5"])
+    def test_invalid_value_raises_before_work(self, tmp_path, value):
+        with pytest.raises(ValueError, match="llink must be a non-negative"):
+            self._run(tmp_path / "v", {"a": 0, "b": value}, "tm")
+        assert not (tmp_path / "v").exists()
 
 
 class TestSimManagerRun:

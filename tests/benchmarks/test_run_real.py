@@ -296,6 +296,26 @@ class TestAggregate:
         assert values["per_mol"] == pytest.approx(3.0)
 
 
+class TestFiberScores:
+    def test_columns_and_values(self):
+        table = run_real.molecule_metrics(
+            _calls([DYADS.tolist(), (DYADS + 50).tolist(), []]),
+            _spans(3), DYADS, trim=0,
+        )
+        df = run_real.fiber_scores(table, "test", "tuned", "catella")
+        assert list(df.columns[:4]) == ["dataset", "variant", "tool", "mol_id"]
+        assert "lengths" not in df.columns
+        assert len(df) == 3
+        assert set(df["tool"]) == {"catella"}
+        df = df.set_index("mol_id")
+        assert df.loc["m0", "precision"] == pytest.approx(1.0)
+        assert df.loc["m1", "precision"] == pytest.approx(0.0)
+        assert df.loc["m0", "contrast"] == pytest.approx(1.0)
+        assert df.loc["m0", "spacing"] == pytest.approx(1.0)
+        assert np.isnan(df.loc["m2", "precision"])
+        assert np.isnan(df.loc["m2", "spacing"])
+
+
 class TestEquivalenceLabel:
     def test_labels(self):
         rng = np.random.default_rng(0)
@@ -349,8 +369,14 @@ class TestScore:
             )
         out = run_real.score(tmp_path, nboot=100)
         for name in ("real_results.tsv", "real_paired.tsv",
-                     "real_summary.md"):
+                     "real_summary.md", "real_per_mol.tsv"):
             assert (tmp_path / name).exists()
+        per_mol = pd.read_csv(tmp_path / "real_per_mol.tsv", sep="\t")
+        assert len(per_mol) == 2 * nmol
+        assert set(per_mol["tool"]) == {"catella", "ft"}
+        assert (per_mol.loc[per_mol["tool"] == "catella", "precision"]
+                == 1).all()
+        assert (per_mol.loc[per_mol["tool"] == "ft", "precision"] == 0).all()
         paired = out["paired"].set_index(["dataset", "metric"])["label"]
         assert paired[("test", "precision")] == "better"
         assert paired[("test", "contrast")] == "better"

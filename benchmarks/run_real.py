@@ -499,6 +499,44 @@ def aggregate(table: pd.DataFrame) -> dict[str, float]:
     }
 
 
+def fiber_scores(
+    table: pd.DataFrame, dataset: str, variant: str, tool: str
+) -> pd.DataFrame:
+    """
+    Per-molecule scores for postprocessing.
+
+    Parameters
+    ----------
+    table : pandas.DataFrame
+        From `molecule_metrics`.
+    dataset : str
+        Dataset name.
+    variant : str
+        Parameter variant ("tuned" or "default").
+    tool : str
+        Tool name.
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row per molecule with columns `dataset`, `variant`, `tool`,
+        `mol_id`, the scalar counts of `molecule_metrics`, and the
+        molecule-level `precision` (hits / calls), `contrast` (core
+        minus linker occupancy), and `spacing` (regular / all adjacent
+        pairs); ratios are NaN when their denominator is 0.
+    """
+    df = table.drop(columns="lengths").reset_index()
+    calls = df["n_calls"].where(df["n_calls"] > 0)
+    pairs = df["n_pairs"].where(df["n_pairs"] > 0)
+    df["precision"] = df["n_hits"] / calls
+    df["contrast"] = df["core"] - df["linker"]
+    df["spacing"] = df["n_regular"] / pairs
+    df.insert(0, "tool", tool)
+    df.insert(0, "variant", variant)
+    df.insert(0, "dataset", dataset)
+    return df
+
+
 def bootstrap(
     tables: dict[str, pd.DataFrame], *, nboot: int, seed: int
 ) -> dict[str, pd.DataFrame]:
@@ -601,7 +639,9 @@ def score(out: str | Path, *, nboot: int = 1000, seed: int = 0) -> dict:
     and, on the molecules all tools share, the paired difference
     catella minus each other tool with its `equivalence_label` (margins
     `MARGINS`). Writes `<out>/real_results.tsv`,
-    `<out>/real_paired.tsv`, and `<out>/real_summary.md`.
+    `<out>/real_paired.tsv`, `<out>/real_summary.md`, and
+    `<out>/real_per_mol.tsv` (per-molecule scores on the shared
+    molecules; see `fiber_scores`).
 
     Parameters
     ----------
@@ -616,12 +656,12 @@ def score(out: str | Path, *, nboot: int = 1000, seed: int = 0) -> dict:
     Returns
     -------
     dict
-        "results" and "paired" tables, as written.
+        "results", "paired", and "per_mol" tables, as written.
     """
     out = Path(out)
     annotation = json.loads((out / "annotation.json").read_text())
     dyads = np.asarray(annotation["dyads"], dtype=np.int64)
-    results, paired = [], []
+    results, paired, per_mol = [], [], []
     for dataset, metrics in DATASET_METRICS.items():
         spans = _spans(out / dataset)
         for variant in ("tuned", "default"):
@@ -636,6 +676,8 @@ def score(out: str | Path, *, nboot: int = 1000, seed: int = 0) -> dict:
                 set.intersection(*(set(t.index) for t in tables.values()))
             )
             tables = {t: table.loc[shared] for t, table in tables.items()}
+            for tool, table in tables.items():
+                per_mol.append(fiber_scores(table, dataset, variant, tool))
             boots = bootstrap(tables, nboot=nboot, seed=seed)
             points = {t: aggregate(table) for t, table in tables.items()}
             for tool in tables:
@@ -691,6 +733,11 @@ def score(out: str | Path, *, nboot: int = 1000, seed: int = 0) -> dict:
     paired.to_csv(
         out / "real_paired.tsv", sep="\t", index=False, lineterminator="\n"
     )
+    per_mol = pd.concat(per_mol, ignore_index=True) if per_mol \
+        else pd.DataFrame()
+    per_mol.to_csv(
+        out / "real_per_mol.tsv", sep="\t", index=False, lineterminator="\n"
+    )
     text = [
         "# Real-data benchmark (601 fibre)",
         "",
@@ -704,7 +751,7 @@ def score(out: str | Path, *, nboot: int = 1000, seed: int = 0) -> dict:
         "",
     ]
     (out / "real_summary.md").write_text("\n".join(text))
-    return {"results": results, "paired": paired}
+    return {"results": results, "paired": paired, "per_mol": per_mol}
 
 
 # Real-data tool -> (synthetic tool whose runner and tuned parameters

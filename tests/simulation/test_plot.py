@@ -44,12 +44,6 @@ def _make_dataset(tmp_path, *, nmol=6, nbp=40, nsim=2, seed=1):
     )
 
 
-@pytest.fixture(autouse=True)
-def _close_figures():
-    yield
-    plt.close("all")
-
-
 @pytest.mark.filterwarnings(
     "ignore:__array__ implementation doesn't accept a copy keyword"
     ":DeprecationWarning"

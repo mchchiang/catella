@@ -439,13 +439,12 @@ def run_catella(
     ddir: str | Path,
     workdir: str | Path,
     *,
-    llink: int | str = 50,
+    llink: int | str = "ml",
     elink: float = 25.0,
     mu: float = 0.0,
     emax: float | None = None,
     seed: int = 1,
     mtase: str | list[str] = "A",
-    q_thres: float | None = None,
 ) -> Calls:
     """
     Compute nucleosome occupancy with catella's exact (TM) solver.
@@ -460,7 +459,7 @@ def run_catella(
         Dataset directory.
     workdir : str or Path
         Directory for intermediate files.
-    llink : int or "ml", default 50
+    llink : int or "ml", default "ml"
         `SimSettings.llink`, or "ml" to choose it from the data with
         `catella.estimate_llink`.
     elink : float, default 25.0
@@ -475,9 +474,6 @@ def run_catella(
     mtase : str or list of str, default "A"
         Methyltransferase label(s) passed to `catella.load_raw`, e.g.,
         `["A", "GC"]` for m6A and GpC labelling.
-    q_thres : float, optional
-        Passed to `catella.compute_model_prob`; if given, confidence
-        scores are binarized at this value.
 
     Returns
     -------
@@ -495,7 +491,7 @@ def run_catella(
         ignore_strand=True,
         tmp_dir=workdir,
     )
-    exp = catella.compute_model_prob(exp=exp, q_thres=q_thres)
+    exp = catella.compute_model_prob(exp=exp)
     chrom = exp.chroms[0]
     if emax is None:
         emax = catella.estimate_start_temp(exp, percentile=99.0, seed=seed)
@@ -840,22 +836,13 @@ def load_calls(path: str | Path) -> Calls:
 
 TOOLS = {
     "catella": (run_catella, {}),
-    "catella_q05": (run_catella, {"q_thres": 0.5}),
-    "catella_ml": (run_catella, {"llink": "ml"}),
-    "catella_ml_q05": (run_catella, {"llink": "ml", "q_thres": 0.5}),
     "ft": (run_ft, {}),
     "fiberhmm": (run_fiberhmm, {"retrain": True}),
     "fiberhmm_pre": (run_fiberhmm, {"retrain": False}),
     "hiddenfoot": (run_hiddenfoot, {}),
 }
 # Tools whose runners take no conda environment
-NO_ENV_TOOLS = (
-    "catella",
-    "catella_q05",
-    "catella_ml",
-    "catella_ml_q05",
-    "hiddenfoot",
-)
+NO_ENV_TOOLS = ("catella", "hiddenfoot")
 
 
 def run_tool(

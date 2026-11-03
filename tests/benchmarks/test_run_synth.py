@@ -219,14 +219,13 @@ class TestGridCombos:
             {"a": 2, "b": "y"},
         ]
 
-    def test_tuned_grids_have_four_combos(self):
+    def test_competitor_grids_have_four_combos(self):
         for tool in run_synth.TOOLS:
-            if "_ml" not in tool:
+            if tool != "catella":
                 assert len(run_synth.grid_combos(run_synth.GRIDS[tool])) == 4
 
-    def test_ml_variants_are_not_tuned(self):
-        for tool in ("catella_ml", "catella_ml_q05"):
-            assert run_synth.grid_combos(run_synth.GRIDS[tool]) == [{}]
+    def test_catella_is_not_tuned(self):
+        assert run_synth.grid_combos(run_synth.GRIDS["catella"]) == [{}]
 
     def test_ft_grid_combined_not_shorter(self):
         for params in run_synth.grid_combos(run_synth.GRIDS["ft"]):

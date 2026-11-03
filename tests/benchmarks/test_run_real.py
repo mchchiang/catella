@@ -387,43 +387,29 @@ def prepared(tmp_path, monkeypatch):
     return out, tuned, runs
 
 
-class TestBinarizedVariants:
-    @pytest.mark.parametrize(
-        ("tool", "mtase"),
-        [("catella_q05", ["A", "GC"]), ("catella_q05_gc", ["GC"])],
-    )
-    def test_runner_arguments(self, tmp_path, monkeypatch, tool, mtase):
+class TestRealTools:
+    def test_one_entry_per_tool_family(self):
+        assert set(run_real.REAL_TOOLS) == {
+            "catella",
+            "hiddenfoot",
+            "fiberhmm",
+            "ft",
+            "fiberhmm_pre_m6a",
+        }
+
+    def test_catella_uses_both_channels_with_no_fixed_llink(
+        self, tmp_path, monkeypatch
+    ):
         seen = {}
 
         def fake_runner(ddir, workdir, **kwargs):
             seen.update(kwargs)
 
         monkeypatch.setitem(
-            run_real.callers.TOOLS, "catella_q05", (fake_runner, {})
+            run_real.callers.TOOLS, "catella", (fake_runner, {})
         )
-        run_real.run_real_tool(tool, tmp_path, tmp_path, {"llink": 10})
-        assert seen == {"mtase": mtase, "q_thres": 0.5, "llink": 10}
-
-    @pytest.mark.parametrize(
-        ("tool", "extra"),
-        [("catella_ml", {}), ("catella_ml_q05", {"q_thres": 0.5})],
-    )
-    def test_ml_runner_arguments(self, tmp_path, monkeypatch, tool, extra):
-        seen = {}
-
-        def fake_runner(ddir, workdir, **kwargs):
-            seen.update(kwargs)
-
-        monkeypatch.setitem(run_real.callers.TOOLS, tool, (fake_runner, {}))
-        run_real.run_real_tool(tool, tmp_path, tmp_path, {})
-        assert seen == {"mtase": ["A", "GC"], "llink": "ml", **extra}
-
-    def test_style_labels(self):
-        assert run_real._style("catella_ml")[0] == "catella (ML llink)"
-        assert run_real._style("catella_q05")[0] == "catella (binarized)"
-        assert run_real._style("catella_q05_gc")[0] == (
-            "catella (binarized) (GC)"
-        )
+        run_real.run_real_tool("catella", tmp_path, tmp_path, {})
+        assert seen == {"mtase": ["A", "GC"]}
 
 
 class TestEvaluate:

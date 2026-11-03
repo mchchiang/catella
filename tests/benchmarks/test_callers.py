@@ -268,7 +268,9 @@ class TestRunners:
         calls = callers.run_catella(ddir, tmp_path, llink=10)
         assert calls.llink == 10
 
-    def test_catella_ml_uses_estimate(self, quick_data, tmp_path, monkeypatch):
+    def test_catella_estimates_llink_by_default(
+        self, quick_data, tmp_path, monkeypatch
+    ):
         _, ddir = quick_data
         seen = {}
         original = callers.catella.estimate_llink
@@ -279,7 +281,7 @@ class TestRunners:
             return best
 
         monkeypatch.setattr(callers.catella, "estimate_llink", spy)
-        calls = callers.run_catella(ddir, tmp_path, llink="ml")
+        calls = callers.run_catella(ddir, tmp_path)
         _check_calls(calls, ddir)
         assert len(seen) == 1
         assert calls.llink == next(iter(seen.values()))
@@ -290,25 +292,6 @@ class TestRunners:
         _, ddir = quick_data
         with pytest.raises(ValueError, match="llink must be an integer"):
             callers.run_catella(ddir, tmp_path, llink="auto")
-
-    @pytest.mark.parametrize(
-        ("tool", "fixed"),
-        [
-            ("catella_ml", {"llink": "ml"}),
-            ("catella_ml_q05", {"llink": "ml", "q_thres": 0.5}),
-        ],
-    )
-    def test_ml_tools_fix_arguments(self, tmp_path, monkeypatch, tool, fixed):
-        seen = {}
-
-        def fake_runner(ddir, workdir, **kwargs):
-            seen.update(kwargs)
-
-        monkeypatch.setitem(
-            callers.TOOLS, tool, (fake_runner, callers.TOOLS[tool][1])
-        )
-        callers.run_tool(tool, tmp_path, tmp_path, {})
-        assert seen == fixed
 
     @needs_env
     def test_ft(self, quick_data, tmp_path):
@@ -387,36 +370,6 @@ class TestChannels:
         with pytest.raises(RuntimeError, match="stop"):
             callers.run_catella(tmp_path, tmp_path, mtase=["A", "GC"])
         assert seen["mtase"] == ["A", "GC"]
-
-    @pytest.mark.parametrize("q_thres", [None, 0.5])
-    def test_catella_q_thres(self, tmp_path, monkeypatch, q_thres):
-        seen = {}
-
-        def fake_model_prob(**kwargs):
-            seen.update(kwargs)
-            raise RuntimeError("stop")
-
-        monkeypatch.setattr(callers.catella, "load_raw", lambda **_: None)
-        monkeypatch.setattr(
-            callers.catella, "compute_model_prob", fake_model_prob
-        )
-        with pytest.raises(RuntimeError, match="stop"):
-            callers.run_catella(tmp_path, tmp_path, q_thres=q_thres)
-        assert seen["q_thres"] == q_thres
-
-    def test_binarized_tool_fixes_threshold(self, tmp_path, monkeypatch):
-        seen = {}
-
-        def fake_runner(ddir, workdir, **kwargs):
-            seen.update(kwargs)
-
-        monkeypatch.setitem(
-            callers.TOOLS,
-            "catella_q05",
-            (fake_runner, callers.TOOLS["catella_q05"][1]),
-        )
-        callers.run_tool("catella_q05", tmp_path, tmp_path, {"llink": 10})
-        assert seen == {"q_thres": 0.5, "llink": 10}
 
 
 class TestHiddenFootWindows:

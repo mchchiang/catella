@@ -631,6 +631,22 @@ class TestEstimateLlink:
                 seed=1,
             )
 
+    def test_parallel_matches_serial(self):
+        exp = self._experiment()
+        serial = catella.estimate_llink(
+            exp, self._settings(), llinks=[0, 10, 30]
+        )
+        parallel = catella.estimate_llink(
+            exp, self._settings(), llinks=[0, 10, 30], nworker=2
+        )
+        assert parallel == serial == {"chr1": 10}
+
+    def test_invalid_nworker_raises(self):
+        with pytest.raises(ValueError, match="nworker must be a positive"):
+            catella.estimate_llink(
+                self._experiment(), self._settings(), nworker=0
+            )
+
     def test_does_not_modify_experiment(self):
         exp = self._experiment()
         keys = set(exp.analysis["chr1"])

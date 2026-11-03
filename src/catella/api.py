@@ -542,6 +542,7 @@ def estimate_llink(
     seed: int | None = None,
     batch_size: int = 20000,
     mask_name: str | None = None,
+    nworker: int = 1,
 ) -> dict[str, int]:
     """
     Estimate `SimSettings.llink` per chromosome by maximum likelihood.
@@ -584,6 +585,9 @@ def estimate_llink(
         If given, excludes molecules dropped by
         `filter_dropout(mask_name=mask_name)` on the "test" source,
         without modifying `exp`.
+    nworker : int, default 1
+        Number of parallel processes to spawn. The estimate does not
+        depend on it.
 
     Returns
     -------
@@ -594,8 +598,8 @@ def estimate_llink(
     ------
     ValueError
         If `llinks` is empty or holds a value that is not a non-negative
-        integer, if `max_nmol` is not positive, or if a chromosome has no
-        usable molecules.
+        integer, if `max_nmol` is not positive, if `nworker` is not a
+        positive integer, or if a chromosome has no usable molecules.
     TypeError
         If `settings` is neither a path nor a SimSettings object.
     KeyError
@@ -624,6 +628,7 @@ def estimate_llink(
         seed=seed,
         batch_size=batch_size,
         mask_name=mask_name,
+        nworker=nworker,
     )
 
 

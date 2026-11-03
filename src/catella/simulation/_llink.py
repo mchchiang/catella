@@ -1,6 +1,9 @@
 # _llink.py
 
+import multiprocessing as mp
 import warnings
+from collections import deque
+from concurrent.futures import ProcessPoolExecutor
 from numbers import Integral
 from pathlib import Path
 
@@ -14,6 +17,9 @@ from catella.simulation.config import SimSettings
 
 # Warn below this many molecules, as per-molecule estimates are noisy
 _MIN_NMOL = 50
+
+# Molecules per worker task; large enough that sending data is negligible
+_CHUNK_NMOL = 200
 
 
 def _resolve_settings(settings):
@@ -74,6 +80,63 @@ def _chrom_rows(arr, keep, max_nmol, rng, batch_size):
     return rows
 
 
+def _chrom_array(exp, chrom, prob_name):
+    """Array of `prob_name` for one chromosome, as an array or H5Array."""
+    arr = exp.analysis[chrom][prob_name]
+    if isinstance(arr, pd.DataFrame):
+        arr = arr.to_numpy()
+    return arr
+
+
+def _chunk_evidence(settings, candidates, block, log_z0):
+    """
+    Sum over the rows of `block` of log Z(data) - log Z(no data), one
+    value per candidate.
+    """
+    nbp = block.shape[1]
+    totals = np.zeros(len(candidates))
+    for row in block:
+        energy = logit(row).tolist()
+        for i, ll in enumerate(candidates):
+            totals[i] += _log_z(settings, ll, energy, nbp) - log_z0[i]
+    return totals
+
+
+def _chunk_jobs(exp, settings, candidates, prob_name, selected):
+    """Yield `(chrom, block, log_z0)` for each chunk of selected rows."""
+    for chrom, rows in selected.items():
+        arr = _chrom_array(exp, chrom, prob_name)
+        nbp = arr.shape[1]
+        zero = [0.0] * nbp
+        log_z0 = [_log_z(settings, ll, zero, nbp) for ll in candidates]
+        for start in range(0, len(rows), _CHUNK_NMOL):
+            chunk = rows[start : start + _CHUNK_NMOL]
+            block = np.asarray(arr[chunk, :], dtype=np.float64)
+            yield chrom, block, log_z0
+
+
+def _run_chunks(jobs, settings, candidates, nworker):
+    """Yield `(chrom, totals)` for each job, in submission order."""
+    if nworker == 1:
+        for chrom, block, log_z0 in jobs:
+            yield chrom, _chunk_evidence(settings, candidates, block, log_z0)
+        return
+    ctx = mp.get_context("spawn")
+    with ProcessPoolExecutor(max_workers=nworker, mp_context=ctx) as pool:
+        pending = deque()
+        for chrom, block, log_z0 in jobs:
+            future = pool.submit(
+                _chunk_evidence, settings, candidates, block, log_z0
+            )
+            pending.append((chrom, future))
+            if len(pending) >= 2 * nworker:
+                done_chrom, done = pending.popleft()
+                yield done_chrom, done.result()
+        while pending:
+            done_chrom, done = pending.popleft()
+            yield done_chrom, done.result()
+
+
 def _llink_evidence(
     exp,
     settings,
@@ -85,6 +148,7 @@ def _llink_evidence(
     seed=None,
     batch_size=20000,
     mask_name=None,
+    nworker=1,
 ):
     """
     Marginal likelihood of each candidate `llink`, per chromosome.
@@ -116,6 +180,9 @@ def _llink_evidence(
     mask_name : str, optional
         If given, excludes molecules dropped by
         `filter_dropout(mask_name=mask_name)` on the "test" source.
+    nworker : int, default 1
+        Number of parallel processes to spawn. The result does not
+        depend on it.
 
     Returns
     -------
@@ -127,8 +194,8 @@ def _llink_evidence(
     ------
     ValueError
         If `llinks` is empty or holds a value that is not a non-negative
-        integer, if `max_nmol` is not positive, or if a chromosome has no
-        usable molecules.
+        integer, if `max_nmol` is not positive, if `nworker` is not a
+        positive integer, or if a chromosome has no usable molecules.
     TypeError
         If `settings` is neither a path nor a SimSettings object.
     KeyError
@@ -138,17 +205,23 @@ def _llink_evidence(
     candidates = _resolve_llinks(llinks)
     if max_nmol is not None and max_nmol <= 0:
         raise ValueError(f"max_nmol must be positive, got {max_nmol}")
+    if (
+        not isinstance(nworker, Integral)
+        or isinstance(nworker, bool)
+        or nworker < 1
+    ):
+        raise ValueError(
+            f"nworker must be a positive integer, got {nworker!r}"
+        )
     if chroms is None:
         chroms = exp.chroms
     elif isinstance(chroms, str):
         chroms = (chroms,)
 
     rng = np.random.default_rng(seed)
-    records = []
+    selected = {}
     for chrom in chroms:
-        arr = exp.analysis[chrom][prob_name]
-        if isinstance(arr, pd.DataFrame):
-            arr = arr.to_numpy()
+        arr = _chrom_array(exp, chrom, prob_name)
         keep = None
         if mask_name is not None:
             keep = np.asarray(
@@ -157,27 +230,22 @@ def _llink_evidence(
         rows = _chrom_rows(arr, keep, max_nmol, rng, batch_size)
         if len(rows) == 0:
             raise ValueError(f"chromosome {chrom} has no usable molecules")
+        selected[chrom] = rows
 
-        nbp = arr.shape[1]
-        zero = [0.0] * nbp
-        log_z0 = {ll: _log_z(settings, ll, zero, nbp) for ll in candidates}
-        totals = dict.fromkeys(candidates, 0.0)
-        for start in range(0, len(rows), batch_size):
-            for row in rows[start : start + batch_size]:
-                energy = logit(
-                    np.asarray(arr[int(row), :], dtype=np.float64)
-                ).tolist()
-                for ll in candidates:
-                    totals[ll] += _log_z(settings, ll, energy, nbp) - log_z0[ll]
-        records.extend(
-            {
-                "chrom": chrom,
-                "llink": ll,
-                "evidence": totals[ll],
-                "nmol": len(rows),
-            }
-            for ll in candidates
-        )
+    jobs = _chunk_jobs(exp, settings, candidates, prob_name, selected)
+    totals = {chrom: np.zeros(len(candidates)) for chrom in selected}
+    for chrom, part in _run_chunks(jobs, settings, candidates, nworker):
+        totals[chrom] += part
+    records = [
+        {
+            "chrom": chrom,
+            "llink": ll,
+            "evidence": float(totals[chrom][i]),
+            "nmol": len(rows),
+        }
+        for chrom, rows in selected.items()
+        for i, ll in enumerate(candidates)
+    ]
     return pd.DataFrame(records)
 
 

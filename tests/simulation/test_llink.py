@@ -263,6 +263,57 @@ class TestMaxNmol:
             self._table(max_nmol=value)
 
 
+class TestNworker:
+    def _exp(self):
+        return _exp(
+            {
+                "a": _random_probs(nmol=10),
+                "b": _random_probs(nmol=7, seed=2),
+            }
+        )
+
+    def test_parallel_matches_serial(self, monkeypatch):
+        monkeypatch.setattr("catella.simulation._llink._CHUNK_NMOL", 3)
+        exp = self._exp()
+        serial = _llink_evidence(exp, _settings(), llinks=[0, 5, 10])
+        parallel = _llink_evidence(
+            exp, _settings(), llinks=[0, 5, 10], nworker=2
+        )
+        pd.testing.assert_frame_equal(serial, parallel)
+
+    def test_chunk_size_does_not_change_result(self, monkeypatch):
+        exp = self._exp()
+        whole = _llink_evidence(exp, _settings(), llinks=[0, 5])
+        monkeypatch.setattr("catella.simulation._llink._CHUNK_NMOL", 2)
+        chunked = _llink_evidence(exp, _settings(), llinks=[0, 5])
+        pd.testing.assert_frame_equal(whole, chunked)
+
+    def test_parallel_with_sampling_matches_serial(self):
+        exp = self._exp()
+        kwargs = {"llinks": [5], "max_nmol": 4, "seed": 3}
+        pd.testing.assert_frame_equal(
+            _llink_evidence(exp, _settings(), **kwargs),
+            _llink_evidence(exp, _settings(), nworker=2, **kwargs),
+        )
+
+    def test_parallel_with_h5array(self, tmp_path):
+        probs = _random_probs()
+        stored = H5Array.create(probs.shape, dtype=np.float64, dir=tmp_path)
+        stored.write_batch(0, probs.shape[0], probs)
+        got = _llink_evidence(
+            _exp({"c": stored}), _settings(), llinks=[5], nworker=2
+        )
+        want = _llink_evidence(_exp({"c": probs}), _settings(), llinks=[5])
+        pd.testing.assert_frame_equal(got, want)
+
+    @pytest.mark.parametrize("value", [0, -1, 1.5, True])
+    def test_invalid_raises(self, value):
+        with pytest.raises(ValueError, match="nworker must be a positive"):
+            _llink_evidence(
+                _exp({"c": _random_probs()}), _settings(), nworker=value
+            )
+
+
 class TestEstimate:
     def test_each_chromosome_gets_its_own_maximizer(self):
         exp = _exp(

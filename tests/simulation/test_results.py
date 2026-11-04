@@ -14,6 +14,8 @@ from catella.simulation.results import (
     SimMCMCData,
     SimTMData,
     _read_tm_sample,
+    _write_mcmc_data,
+    _write_mcmc_params,
     _write_tm_samples,
 )
 
@@ -294,6 +296,111 @@ class TestWriteTMSamples:
                 energies=[0.0, 1.0],
                 seeds=[1],
             )
+
+
+def _mcmc_values():
+    return {
+        "time": np.array([0, 1, 2], dtype=np.int64),
+        "energy": np.array([0.0, -1.5, -2.5]),
+        "temp": np.array([1.0, 0.5, 0.1]),
+        "position_flat": np.array([5, 20, 7], dtype=np.int32),
+        "position_offset": np.array([0, 2, 2, 3], dtype=np.uint64),
+    }
+
+
+def _write_mcmc_file(path, values):
+    with h5py.File(path, "w") as f:
+        _write_mcmc_params(
+            f, nucbp=147, nbp=500, llink=20, elink=1.5, mu=-1.0, seed=42
+        )
+        _write_mcmc_data(f, values)
+
+
+class TestWriteMCMCParams:
+    def test_attrs_values_and_dtypes(self, tmp_path):
+        path = tmp_path / "run.h5"
+        _write_mcmc_file(path, _mcmc_values())
+        with h5py.File(path, "r") as f:
+            attrs = f["params"].attrs
+            expected = {
+                "nucbp": (147, np.int32),
+                "nbp": (500, np.int32),
+                "llink": (20, np.int32),
+                "elink": (1.5, np.float64),
+                "mu": (-1.0, np.float64),
+                "seed": (42, np.uint64),
+            }
+            for name, (value, dtype) in expected.items():
+                assert attrs[name] == value
+                assert attrs[name].dtype == dtype
+
+    def test_large_seed_round_trips(self, tmp_path):
+        path = tmp_path / "run.h5"
+        with h5py.File(path, "w") as f:
+            _write_mcmc_params(
+                f, nucbp=1, nbp=1, llink=1, elink=0.0, mu=0.0, seed=2**63
+            )
+        with h5py.File(path, "r") as f:
+            assert int(f["params"].attrs["seed"]) == 2**63
+
+
+class TestWriteMCMCData:
+    def test_datasets_keep_values_and_dtypes(self, tmp_path):
+        path = tmp_path / "run.h5"
+        values = _mcmc_values()
+        _write_mcmc_file(path, values)
+        with h5py.File(path, "r") as f:
+            assert set(f["data"]) == set(values)
+            for name, arr in values.items():
+                assert f["data"][name].dtype == arr.dtype
+                np.testing.assert_array_equal(f["data"][name][()], arr)
+
+    @pytest.mark.parametrize(
+        "n, chunk", [(10, 10), (1024, 1024), (2500, 1024)]
+    )
+    def test_gzip_chunks_capped(self, tmp_path, n, chunk):
+        path = tmp_path / "run.h5"
+        _write_mcmc_file(path, {"time": np.arange(n, dtype=np.int64)})
+        with h5py.File(path, "r") as f:
+            dset = f["data/time"]
+            assert dset.chunks == (chunk,)
+            assert dset.compression == "gzip"
+            assert dset.compression_opts == 4
+
+    def test_empty_array_not_chunked(self, tmp_path):
+        path = tmp_path / "run.h5"
+        _write_mcmc_file(
+            path, {"position_flat": np.array([], dtype=np.int32)}
+        )
+        with h5py.File(path, "r") as f:
+            dset = f["data/position_flat"]
+            assert dset.shape == (0,)
+            assert dset.dtype == np.int32
+            assert dset.chunks is None
+            assert dset.compression is None
+
+    def test_load_round_trip(self, tmp_path):
+        path = tmp_path / "run.h5"
+        values = _mcmc_values()
+        _write_mcmc_file(path, values)
+        data = SimMCMCData.load(path)
+        assert data.nucbp == 147
+        assert data.nbp == 500
+        assert data.llink == 20
+        assert data.seed == 42
+        np.testing.assert_array_equal(data.time, values["time"])
+        np.testing.assert_array_equal(data.energy, values["energy"])
+        np.testing.assert_array_equal(data.temp, values["temp"])
+        for got, want in zip(data.position, [[5, 20], [], [7]]):
+            np.testing.assert_array_equal(got, want)
+
+    def test_extract_round_trip(self, tmp_path):
+        path = tmp_path / "run.h5"
+        _write_mcmc_file(path, _mcmc_values())
+        np.testing.assert_array_equal(
+            SimMCMCData.extract(path, 0, "position"), [5, 20]
+        )
+        assert SimMCMCData.extract(path, 2, "energy") == pytest.approx(-2.5)
 
 
 class TestTMDataset:

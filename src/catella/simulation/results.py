@@ -28,6 +28,9 @@ from catella.simulation.config import SimSettings
 # Limit the concurrent open files to stay under OS limits
 MAX_OPEN_FILES = Semaphore(500)
 
+# Largest chunk (in elements) of a compressed MCMC run dataset
+_MAX_CHUNK_SIZE = 1024
+
 
 @utils.add_frozen_properties
 @dataclass(frozen=True, slots=True, init=False)
@@ -475,6 +478,75 @@ def _write_tm_samples(
         gdata.create_dataset("position_offset", data=offset)
         gdata.create_dataset("energy", data=np.asarray(energies))
         gdata.create_dataset("seed", data=np.asarray(seeds))
+
+
+def _write_mcmc_params(
+    h5file: h5py.File,
+    *,
+    nucbp: int,
+    nbp: int,
+    llink: int,
+    elink: float,
+    mu: float,
+    seed: int,
+) -> None:
+    """
+    Write an MCMC run's parameters as attrs on the '/params' group.
+
+    Integer parameters are stored as int32 and the seed as uint64, matching
+    the C++ types of the simulation.
+
+    Parameters
+    ----------
+    h5file : h5py.File
+        The run's HDF5 file, open for writing.
+    nucbp, nbp, llink : int
+        Nucleosome size, fiber length, and linker length in base pairs.
+    elink, mu : float
+        Linker repulsion energy and chemical potential.
+    seed : int
+        The seed of the run.
+    """
+    g = h5file.create_group("params")
+    g.attrs["nucbp"] = np.int32(nucbp)
+    g.attrs["nbp"] = np.int32(nbp)
+    g.attrs["llink"] = np.int32(llink)
+    g.attrs["elink"] = np.float64(elink)
+    g.attrs["mu"] = np.float64(mu)
+    g.attrs["seed"] = np.uint64(seed)
+
+
+def _write_mcmc_data(
+    h5file: h5py.File, values: Mapping[str, np.ndarray]
+) -> None:
+    """
+    Write an MCMC run's recorded observables to the '/data' group.
+
+    Each observable is stored as a 1D dataset, gzip-compressed (level 4) in
+    chunks of at most 1024 elements; empty arrays are stored uncompressed.
+
+    Parameters
+    ----------
+    h5file : h5py.File
+        The run's HDF5 file, open for writing.
+    values : mapping of str to np.ndarray
+        Observable name to 1D array, as returned by ``Dump.values()``
+        (e.g., 'time', 'energy', 'temp', 'position_flat', and
+        'position_offset').
+    """
+    g = h5file.create_group("data")
+    for name, arr in values.items():
+        arr = np.asarray(arr)
+        if len(arr) == 0:
+            g.create_dataset(name, data=arr)
+        else:
+            g.create_dataset(
+                name,
+                data=arr,
+                chunks=(min(len(arr), _MAX_CHUNK_SIZE),),
+                compression="gzip",
+                compression_opts=4,
+            )
 
 
 def _read_tm_sample(combined_file: str | Path, run: int) -> SimTMData:

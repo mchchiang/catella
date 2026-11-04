@@ -9,10 +9,10 @@ from matplotlib.figure import Figure
 TOOL_STYLES = {
     "truth": ("truth", "#52514e"),
     "catella": ("catella", "#2a78d6"),
-    "hiddenfoot": ("HiddenFoot", "#c8407e"),
+    "hiddenfoot": ("hiddenfoot", "#c8407e"),
     "ft": ("ft", "#eb6834"),
-    "fiberhmm_pre": ("FiberHMM (pretrained)", "#1baf7a"),
-    "fiberhmm": ("FiberHMM (retrained)", "#eda100"),
+    "fiberhmm_pre": ("fiberhmm (pretrained)", "#1baf7a"),
+    "fiberhmm": ("fiberhmm (retrained)", "#eda100"),
 }
 
 

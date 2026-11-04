@@ -5,6 +5,7 @@ import re
 import shutil
 import subprocess
 import sys
+from typing import ClassVar
 from unittest.mock import patch
 
 import h5py
@@ -88,7 +89,7 @@ class TestSaveLoadDf:
 
 
 class TestAppendableDF:
-    SPEC = {
+    SPEC: ClassVar[dict[str, str]] = {
         "i": "integer",
         "x": "numeric",
         "s": "S4",

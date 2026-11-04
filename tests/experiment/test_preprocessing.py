@@ -1967,7 +1967,8 @@ class TestModelProbQThres:
 
     def test_accepts_one(self):
         exp = self._run(q_thres=1.0, rho_leak=0.1)
-        assert exp.global_analysis["meth_prob_params"]["q_thres"].iloc[0] == 1.0
+        params = exp.global_analysis["meth_prob_params"]
+        assert params["q_thres"].iloc[0] == 1.0
 
     def test_recorded_in_params(self):
         params = self._run(q_thres=0.7).global_analysis["meth_prob_params"]

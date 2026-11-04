@@ -7,19 +7,15 @@
 #include <vector>
 #include <hdf5.h>
 #include "dtype.hpp"
+#include "pytrack_obs.hpp"
 #include "tracker.hpp"
 
 class DumpH5 : public Tracker {
 
 public:
 
-  enum class OutputType : uint {
-    Energy = 1 << 0,
-    Position = 1 << 1,
-    Temp = 1 << 2,
-    All = Energy | Position | Temp
-  };
-  
+  using OutputType = PyTrackObs::OutputType;
+
   DumpH5(lint freq, const std::string& file, OutputType opt);
   ~DumpH5();
 

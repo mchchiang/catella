@@ -12,6 +12,7 @@
 #include "tracker.hpp"
 #include "pytrack.hpp"
 #include "pytrack_factory.hpp"
+#include "pytrack_obs.hpp"
 #include "dump_h5.hpp"
 
 namespace py = pybind11;
@@ -75,14 +76,19 @@ PYBIND11_MODULE(catella_cpp, m) {
     return factory.createEnergyTrack(freq);
   }, py::arg("freq"));
 
-  py::class_<DumpH5, Tracker, shared_ptr<DumpH5> > dumpcls(m, "Dump");
-  
-  py::enum_<DumpH5::OutputType>(dumpcls, "OutputType", py::arithmetic())
-    .value("Energy", DumpH5::OutputType::Energy)
-    .value("Position", DumpH5::OutputType::Position)
-    .value("Temp", DumpH5::OutputType::Temp)
-    .value("All", DumpH5::OutputType::All);
-  
+  py::class_<PyTrackObs, PyTrackBase, shared_ptr<PyTrackObs> >
+    dumpcls(m, "Dump");
+
+  py::enum_<PyTrackObs::OutputType>(dumpcls, "OutputType", py::arithmetic())
+    .value("Energy", PyTrackObs::OutputType::Energy)
+    .value("Position", PyTrackObs::OutputType::Position)
+    .value("Temp", PyTrackObs::OutputType::Temp)
+    .value("All", PyTrackObs::OutputType::All);
+
+  m.def("createDump", [](lint freq, PyTrackObs::OutputType otype) {
+    return std::make_shared<PyTrackObs>(freq, otype);
+  }, py::arg("freq"), py::arg("out_type"));
+
   m.def("createDump", [](lint freq, const string& file,
 			 DumpH5::OutputType otype) ->
 	shared_ptr<Tracker> {

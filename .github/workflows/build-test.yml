@@ -35,10 +35,32 @@ jobs:
           else
             MAMBA="mamba"
           fi
-          "$MAMBA" install -y hdf5 pybind11 cxx-compiler cmake ninja pkg-config "pip>=25.1"
+          "$MAMBA" install -y pybind11 cxx-compiler cmake ninja "pip>=25.1"
 
       - name: Build and install package
         run: pip install -e . --group test -v
+
+      - name: Run tests
+        run: pytest tests/
+
+  test-pip:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Upgrade pip
+        run: python -m pip install -U pip
+
+      - name: Build and install package
+        run: pip install . --group test -v
 
       - name: Run tests
         run: pytest tests/

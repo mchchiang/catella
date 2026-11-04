@@ -760,9 +760,9 @@ def score(out: str | Path, *, nboot: int = 1000, seed: int = 0) -> dict:
 REAL_TOOLS = {
     "catella": ("catella", {"mtase": ["A", "GC"]}),
     "hiddenfoot": ("hiddenfoot", {"mod_code": "m"}),
-    "fiberhmm": ("fiberhmm", {"retrain": True, "channel": "m"}),
     "ft": ("ft", {}),
     "fiberhmm_pre_m6a": ("fiberhmm_pre", {"retrain": False, "channel": "a"}),
+    "fiberhmm": ("fiberhmm", {"retrain": True, "channel": "m"}),
 }
 DATASETS = ("test",)
 

@@ -27,20 +27,29 @@ The theoretical background is described in full in the
 
 ## Installation
 
-catella requires a C++ compiler in addition to Python, so the
-recommended way to install it is via the provided Conda environment,
-which manages both.
+catella requires Python 3.13 or newer and a C++ compiler (e.g.,
+`xcode-select --install` on macOS, `build-essential` on Debian/Ubuntu,
+or Visual Studio Build Tools on Windows). Install it with pip, ideally
+in a virtual environment:
 
 ```bash
 git clone https://github.com/mchchiang/catella.git
 cd catella
+python3 -m venv .venv
+source .venv/bin/activate
+pip install .
+```
+
+This triggers a scikit-build-core/CMake build of the `catella_cpp`
+extension; pip fetches CMake automatically if needed. Alternatively,
+the provided Conda environment supplies the compiler too:
+
+```bash
 conda env create -f environment.yml
 conda activate catella
 ```
 
-This installs catella in editable mode, which triggers a
-scikit-build-core/CMake build of the `catella_cpp` extension. Verify
-the installation with:
+Verify the installation with:
 
 ```bash
 catella --help

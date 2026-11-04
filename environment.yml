@@ -6,8 +6,6 @@ dependencies:
   - pip
   # Build-time and C++ dependencies
   - pybind11
-  - hdf5
-  - pkg-config
   - cxx-compiler
   - cmake
   - ninja

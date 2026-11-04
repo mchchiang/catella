@@ -333,7 +333,7 @@ that must not already exist:
                              sharded into subdirectories of 100
                              molecules each
 
-Each per-run raw file (``SimData``, written by the C++ engine) has:
+Each per-run raw file (``SimData``, written by ``SimManager``) has:
 
 .. code-block:: text
 

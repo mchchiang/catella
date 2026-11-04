@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 import catella_cpp as sim
+import h5py
 import numpy as np
 import pandas as pd
 from catella_cpp import Dump, NucPosMCMC, NucPosTM
@@ -26,7 +27,12 @@ from scipy.special import logit
 
 from catella import utils
 from catella.simulation.config import SimSettings
-from catella.simulation.results import SimDataset, _write_tm_samples
+from catella.simulation.results import (
+    SimDataset,
+    _write_mcmc_data,
+    _write_mcmc_params,
+    _write_tm_samples,
+)
 from catella.utils import IndexType
 
 
@@ -882,18 +888,26 @@ class SimManager:
             )
             model.setEnergy(eseq_list, settings.emax)
             # For tracking all simulation data
-            model.addTracker(
-                sim.createDump(
-                    settings.print_freq, str(p.out_file), p.out_type
+            dump = sim.createDump(settings.print_freq, p.out_type)
+            model.addTracker(dump)
+            # Open the file first so a bad output path fails before the run
+            with h5py.File(p.out_file, "w") as f:
+                _write_mcmc_params(
+                    f,
+                    nucbp=settings.nucbp,
+                    nbp=nbp,
+                    llink=settings.llink,
+                    elink=settings.elink,
+                    mu=settings.mu,
+                    seed=p.seed,
                 )
-            )
-            # Run the simulation
-            model.run(
-                settings.nsweep,
-                settings.start_temp,
-                settings.end_temp,
-                cool_option,
-            )
+                model.run(
+                    settings.nsweep,
+                    settings.start_temp,
+                    settings.end_temp,
+                    cool_option,
+                )
+                _write_mcmc_data(f, dump.values())
             return (p.chrom, p.mol, p.run, True, None)
         except Exception as e:  # noqa: BLE001
             return (p.chrom, p.mol, p.run, False, str(e))

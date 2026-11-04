@@ -88,10 +88,4 @@ PYBIND11_MODULE(catella_cpp, m) {
   m.def("createDump", [](lint freq, PyTrackObs::OutputType otype) {
     return std::make_shared<PyTrackObs>(freq, otype);
   }, py::arg("freq"), py::arg("out_type"));
-
-  m.def("createDump", [](lint freq, const string& file,
-			 DumpH5::OutputType otype) ->
-	shared_ptr<Tracker> {
-	  return std::make_shared<DumpH5>(freq, file, otype);
-	}, py::arg("freq"), py::arg("file"), py::arg("out_type"));
 }

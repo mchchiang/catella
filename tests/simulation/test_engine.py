@@ -86,6 +86,29 @@ class TestRunJob:
         assert success is False
         assert err_msg
 
+    def test_unwritable_out_file_returns_false(self, tmp_path):
+        out_dir = tmp_path / "out.h5"
+        out_dir.mkdir()
+        p = _make_sim_run(out_dir)
+        _, _, _, success, err_msg = SimManager._run_mcmc_job(p)
+        assert success is False
+        assert err_msg
+        assert out_dir.is_dir()
+
+    def test_writes_selected_observables(self, tmp_path):
+        p = _make_sim_run(tmp_path / "out.h5", out_type=Dump.OutputType.Energy)
+        assert SimManager._run_mcmc_job(p)[3] is True
+        with h5py.File(tmp_path / "out.h5", "r") as f:
+            assert set(f["data"]) == {"time", "energy"}
+            assert set(f["params"].attrs) == {
+                "nucbp",
+                "nbp",
+                "llink",
+                "elink",
+                "mu",
+                "seed",
+            }
+
 
 class TestPerChromLlink:
     CHROMS = ("a", "b")

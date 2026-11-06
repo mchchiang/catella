@@ -207,6 +207,43 @@ class TestScoreCalls:
         )
         scores = run_synth.score_calls(calls, truth_mid, nbp=80, trim=20)
         assert scores["mcc"].iloc[0] == pytest.approx(1.0)
+        assert scores["brier"].iloc[0] == pytest.approx(0.0)
+
+    def test_brier_perfect(self):
+        truth = self._truth()
+        calls = run_synth.intervals_to_calls(truth, ["a", "b"], 80)
+        scores = run_synth.score_calls(calls, truth, nbp=80, trim=5)
+        assert scores["brier"].tolist() == pytest.approx([0.0, 0.0])
+
+    def test_brier_probability_occupancy(self):
+        truth = self._truth()
+        calls = run_synth.intervals_to_calls(truth, ["a", "b"], 80)
+        calls.occ = 0.4 + 0.2 * calls.occ
+        scores = run_synth.score_calls(calls, truth, nbp=80, trim=5)
+        assert scores["brier"].tolist() == pytest.approx([0.16, 0.16])
+
+    def test_columns(self):
+        truth = self._truth()
+        calls = run_synth.intervals_to_calls(truth, ["a", "b"], 80)
+        scores = run_synth.score_calls(calls, truth, nbp=80, trim=5)
+        assert scores.columns.tolist() == [
+            "mol_id", "mcc", "count_err", "brier"
+        ]
+
+
+class TestBrier:
+    def test_perfect(self):
+        truth = np.array([True, False, True])
+        assert run_synth.brier(truth, truth.astype(float)) == 0.0
+
+    def test_all_wrong(self):
+        truth = np.array([True, False])
+        assert run_synth.brier(truth, np.array([0.0, 1.0])) == 1.0
+
+    def test_known_value(self):
+        truth = np.array([1, 0])
+        prob = np.array([0.6, 0.4])
+        assert run_synth.brier(truth, prob) == pytest.approx(0.16)
 
 
 class TestGridCombos:
@@ -252,6 +289,16 @@ class TestSummarize:
         assert cat["mcc_sd"] == pytest.approx(np.std([0.9, 0.8], ddof=1))
         assert cat["count_err_mean"] == pytest.approx(1.0)
         assert cat["n"] == 2
+        assert "brier_mean" not in per_tool.columns
+
+    def test_per_tool_brier(self):
+        results = self._results()
+        results["brier"] = np.where(results["seed"] == 1, 0.1, 0.3)
+        per_tool, _ = run_synth.summarize(results)
+        cat = per_tool[per_tool["tool"] == "catella"].iloc[0]
+        assert cat["brier_mean"] == pytest.approx(0.2)
+        assert cat["brier_sd"] == pytest.approx(np.std([0.1, 0.3], ddof=1))
+        assert cat["mcc_mean"] == pytest.approx(0.85)
 
     def test_paired(self):
         _, paired = run_synth.summarize(self._results())

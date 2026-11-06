@@ -246,6 +246,27 @@ def mcc(truth: np.ndarray, pred: np.ndarray) -> float:
     return (tp * tn - fp * fn) / denom if denom else 0.0
 
 
+def brier(truth: np.ndarray, prob: np.ndarray) -> float:
+    """
+    Brier score of predicted probabilities against binary labels.
+
+    Parameters
+    ----------
+    truth : np.ndarray of bool or {0, 1}
+        True labels.
+    prob : np.ndarray of float
+        Predicted probabilities in [0, 1], same shape as `truth`.
+
+    Returns
+    -------
+    float
+        Mean squared difference between `prob` and `truth`; 0 is
+        perfect, and lower is better.
+    """
+    diff = np.asarray(prob, dtype=float) - np.asarray(truth, dtype=float)
+    return float(np.mean(diff**2))
+
+
 def score_calls(
     calls: Calls,
     truth: pd.DataFrame,
@@ -265,15 +286,18 @@ def score_calls(
     nbp : int, default `NBP`
         Molecule length in bp.
     trim : int, default `TRIM`
-        Bases excluded at each molecule end when computing the MCC.
+        Bases excluded at each molecule end when computing the MCC and
+        the Brier score.
 
     Returns
     -------
     pandas.DataFrame
         Columns `mol_id`; `mcc`, the MCC of occupancy >= 0.5 against
-        the true nucleosome coverage over `[trim, nbp - trim)`; and
+        the true nucleosome coverage over `[trim, nbp - trim)`;
         `count_err`, the called (or expected) minus the true number of
-        nucleosomes on the whole molecule.
+        nucleosomes on the whole molecule; and `brier`, the Brier score
+        of the occupancy against the true coverage over the same bases
+        as `mcc`.
     """
     true = intervals_to_calls(truth, list(calls.mol_ids), nbp)
     inner = slice(trim, nbp - trim)
@@ -284,9 +308,12 @@ def score_calls(
                 mol_id,
                 mcc(true.occ[i, inner] >= 0.5, calls.occ[i, inner] >= 0.5),
                 calls.count[i] - true.count[i],
+                brier(true.occ[i, inner] >= 0.5, calls.occ[i, inner]),
             )
         )
-    return pd.DataFrame(rows, columns=["mol_id", "mcc", "count_err"])
+    return pd.DataFrame(
+        rows, columns=["mol_id", "mcc", "count_err", "brier"]
+    )
 
 
 def grid_combos(grid: dict[str, list]) -> list[dict]:
@@ -410,31 +437,33 @@ def summarize(results: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     Parameters
     ----------
     results : pandas.DataFrame
-        Columns `tool`, `variant`, `cond`, `seed`, `mcc`, `count_err`
-        (one row per molecule).
+        Columns `tool`, `variant`, `cond`, `seed`, `mcc`, `count_err`,
+        and optionally `brier` (one row per molecule).
 
     Returns
     -------
     per_tool : pandas.DataFrame
         Per (`tool`, `variant`, `cond`): mean and SD over datasets of
-        `mcc` and `count_err`, and the number of datasets `n`.
+        `mcc`, `count_err` and, if present, `brier`, and the number of
+        datasets `n`.
     paired : pandas.DataFrame
         Per (`variant`, `cond`, `other` tool): mean and SD over datasets
         of the MCC difference catella minus `other`, and `wins`, the
         number of datasets where catella has the higher MCC, out of `n`.
     """
     keys = ["tool", "variant", "cond", "seed"]
-    ds = results.groupby(keys, sort=False)[["mcc", "count_err"]].mean()
-    ds = ds.reset_index()
+    metrics = [
+        m for m in ("mcc", "count_err", "brier") if m in results.columns
+    ]
+    ds = results.groupby(keys, sort=False)[metrics].mean().reset_index()
+    aggs = {}
+    for m in metrics:
+        aggs[f"{m}_mean"] = (m, "mean")
+        aggs[f"{m}_sd"] = (m, "std")
+    aggs["n"] = ("mcc", "size")
     per_tool = (
         ds.groupby(["tool", "variant", "cond"], sort=False)
-        .agg(
-            mcc_mean=("mcc", "mean"),
-            mcc_sd=("mcc", "std"),
-            count_err_mean=("count_err", "mean"),
-            count_err_sd=("count_err", "std"),
-            n=("mcc", "size"),
-        )
+        .agg(**aggs)
         .reset_index()
     )
     wide = ds.pivot_table(

@@ -166,7 +166,7 @@ class TestRun:
                 assert not list(Path(ddir).glob("fiberhmm_model*"))
             if tool == "hiddenfoot":
                 raise RuntimeError("measuring hiddenfoot failed; boom")
-            return {"wall": 1.0, "peak_rss": 2.0, "fit_time": None}
+            return {"wall": 1.0, "peak_mem": 2.0, "fit_time": None}
 
         monkeypatch.setattr(run_perf, "measure_tool", fake_measure)
         monkeypatch.setattr(run_perf, "tool_versions", lambda env: {})
@@ -279,7 +279,7 @@ class TestRun:
             result = json.loads(path.read_text())
             assert "error" not in result
             assert result["wall"] > 0
-            assert result["peak_rss"] > result["base_rss"]
+            assert result["peak_mem"] > result["base_mem"]
 
 
 def _write_result(out, tool, axis, value, rep, wall, fit=None, error=None):
@@ -298,8 +298,9 @@ def _write_result(out, tool, axis, value, rep, wall, fit=None, error=None):
             {
                 "wall": wall,
                 "cpu": 2 * wall,
-                "peak_rss": 300.0,
-                "base_rss": 100.0,
+                "peak_mem": 300.0,
+                "base_mem": 100.0,
+                "mem_metric": "footprint",
                 "fit_time": fit,
             }
         )
@@ -333,7 +334,15 @@ class TestCollect:
         results, _ = run_perf.collect(results_dir)
         catella = results[results["tool"] == "catella"]
         assert (catella["call_time"] == catella["wall"] - 0.5).all()
-        assert (results["tool_rss"] == 200.0).all()
+        assert (results["tool_mem"] == 200.0).all()
+
+    def test_old_measure_rejected(self, results_dir):
+        path = run_perf.result_path(results_dir, "ft", "nmol", 10, 0)
+        result = json.loads(path.read_text())
+        result["peak_rss"] = result.pop("peak_mem")
+        path.write_text(json.dumps(result))
+        with pytest.raises(ValueError, match="rerun with --overwrite"):
+            run_perf.collect(results_dir)
 
     def test_no_fit_gives_nan(self, results_dir):
         results, _ = run_perf.collect(results_dir)
@@ -384,6 +393,7 @@ class TestWriteSummary:
         assert "- cpu: X1" in text
         assert "- catella: 9.9" in text
         assert "## Notes" in text
+        assert "Memory measure: footprint" in text
 
     def test_all_failed_raises(self, tmp_path):
         _write_result(tmp_path, "ft", "nmol", 10, 0, None, error="boom")
@@ -416,35 +426,79 @@ class TestPlotPerf:
             run_perf.plot_perf(tmp_path)
 
 
-class TestTreeRss:
+needs_macos = pytest.mark.skipif(
+    sys.platform != "darwin", reason="physical footprint is macOS only"
+)
+
+
+class TestProcessMemory:
+    def test_metric_matches_platform(self):
+        expected = "footprint" if sys.platform == "darwin" else "rss"
+        assert perf_worker.MEMORY_METRIC == expected
+
     def test_positive_for_current_process(self):
-        assert perf_worker.tree_rss(psutil.Process()) > 0
+        assert perf_worker.process_memory(psutil.Process()) > 0
+
+    def test_rss_fallback(self, monkeypatch):
+        monkeypatch.setattr(perf_worker, "MEMORY_METRIC", "rss")
+        me = psutil.Process()
+        rss = me.memory_info().rss
+        assert abs(perf_worker.process_memory(me) - rss) < 50 * perf_worker.MB
+        assert perf_worker.lifetime_peak_memory() == 0
+
+    def test_exited_process_raises(self):
+        proc = subprocess.Popen([sys.executable, "-c", "pass"])
+        child = psutil.Process(proc.pid)
+        proc.wait()
+        with pytest.raises(psutil.Error):
+            perf_worker.process_memory(child)
+
+    @needs_macos
+    def test_footprint_drops_after_free(self):
+        me = psutil.Process()
+        before = perf_worker.process_memory(me)
+        blocks = [bytes(range(256)) * 400 for _ in range(2000)]
+        during = perf_worker.process_memory(me)
+        del blocks
+        after = perf_worker.process_memory(me)
+        assert during - before > 150 * perf_worker.MB
+        assert after - before < 50 * perf_worker.MB
+
+    @needs_macos
+    def test_lifetime_peak_at_least_current(self):
+        current = perf_worker.process_memory(psutil.Process())
+        assert perf_worker.lifetime_peak_memory() >= current
+
+
+class TestTreeMemory:
+    def test_positive_for_current_process(self):
+        assert perf_worker.tree_memory(psutil.Process()) > 0
 
     def test_includes_children(self):
         me = psutil.Process()
-        before = perf_worker.tree_rss(me)
+        before = perf_worker.tree_memory(me)
         hog = _start_hog()
         try:
-            during = perf_worker.tree_rss(me)
+            during = perf_worker.tree_memory(me)
         finally:
             hog.kill()
             hog.wait()
         assert during - before > 0.8 * HOG_MB * perf_worker.MB
 
 
-class TestPeakRSS:
+class TestPeakMemory:
     def test_peak_at_least_start(self):
-        with perf_worker.PeakRSS() as rss:
-            start = rss.peak
-        assert rss.peak >= start > 0
+        with perf_worker.PeakMemory() as mem:
+            start = mem.peak
+        assert mem.peak >= start > 0
 
     def test_catches_finished_child(self):
         me = psutil.Process()
-        before = perf_worker.tree_rss(me)
-        with perf_worker.PeakRSS(interval=0.02) as rss:
+        before = perf_worker.tree_memory(me)
+        with perf_worker.PeakMemory(interval=0.02) as mem:
             hog = _start_hog(sleep=0.5)
             hog.wait()
-        assert rss.peak - before > 0.8 * HOG_MB * perf_worker.MB
+        assert mem.peak - before > 0.8 * HOG_MB * perf_worker.MB
 
 
 class TestMeasureTool:
@@ -455,13 +509,15 @@ class TestMeasureTool:
         assert set(result) == {
             "wall",
             "cpu",
-            "peak_rss",
-            "base_rss",
+            "peak_mem",
+            "base_mem",
+            "mem_metric",
             "fit_time",
         }
         assert result["wall"] > 0
         assert result["cpu"] > 0
-        assert result["peak_rss"] >= result["base_rss"] > 0
+        assert result["peak_mem"] >= result["base_mem"] > 0
+        assert result["mem_metric"] == perf_worker.MEMORY_METRIC
         assert result["fit_time"] == 0.0
 
     def test_fit_time_reported(self, quick_ddir):

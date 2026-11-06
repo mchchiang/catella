@@ -1,6 +1,8 @@
 # perf_worker.py
 
+import ctypes
 import json
+import os
 import resource
 import sys
 import threading
@@ -10,11 +12,95 @@ import callers
 import psutil
 
 MB = 1024 * 1024
+# On macOS, RSS keeps freed pages the system has not yet reclaimed, so
+# the physical footprint (the memory the kernel charges) is used instead
+MEMORY_METRIC = "footprint" if sys.platform == "darwin" else "rss"
+_RUSAGE_INFO_V4 = 4
+_RUSAGE_FIELDS = (
+    "user_time", "system_time", "pkg_idle_wkups", "interrupt_wkups",
+    "pageins", "wired_size", "resident_size", "phys_footprint",
+    "proc_start_abstime", "proc_exit_abstime", "child_user_time",
+    "child_system_time", "child_pkg_idle_wkups", "child_interrupt_wkups",
+    "child_pageins", "child_elapsed_abstime", "diskio_bytesread",
+    "diskio_byteswritten", "cpu_time_qos_default",
+    "cpu_time_qos_maintenance", "cpu_time_qos_background",
+    "cpu_time_qos_utility", "cpu_time_qos_legacy",
+    "cpu_time_qos_user_initiated", "cpu_time_qos_user_interactive",
+    "billed_system_time", "serviced_system_time", "logical_writes",
+    "lifetime_max_phys_footprint", "instructions", "cycles",
+    "billed_energy", "serviced_energy", "interval_max_phys_footprint",
+    "runnable_time",
+)
 
 
-def tree_rss(proc: psutil.Process) -> int:
+class _RusageInfoV4(ctypes.Structure):
+    # Layout of `struct rusage_info_v4` (macOS), padded for safety
+    _fields_ = [
+        ("uuid", ctypes.c_uint8 * 16),
+        *((name, ctypes.c_uint64) for name in _RUSAGE_FIELDS),
+        ("padding", ctypes.c_uint64 * 32),
+    ]
+
+
+_libproc = None
+
+
+def _rusage(pid):
+    global _libproc
+    if _libproc is None:
+        _libproc = ctypes.CDLL("/usr/lib/libproc.dylib")
+    info = _RusageInfoV4()
+    err = _libproc.proc_pid_rusage(
+        int(pid), _RUSAGE_INFO_V4, ctypes.byref(info)
+    )
+    if err != 0:
+        raise psutil.NoSuchProcess(pid)
+    return info
+
+
+def process_memory(proc: psutil.Process) -> int:
     """
-    Resident memory of a process and all its descendants.
+    Memory in use by one process.
+
+    Parameters
+    ----------
+    proc : psutil.Process
+        The process.
+
+    Returns
+    -------
+    int
+        Bytes: the physical footprint on macOS, else the RSS (see
+        `MEMORY_METRIC`).
+
+    Raises
+    ------
+    psutil.Error
+        If the process cannot be read (e.g., it has exited).
+    """
+    if MEMORY_METRIC == "footprint":
+        return _rusage(proc.pid).phys_footprint
+    return proc.memory_info().rss
+
+
+def lifetime_peak_memory() -> int:
+    """
+    Peak memory of the current process over its lifetime so far.
+
+    Returns
+    -------
+    int
+        Bytes: the lifetime peak physical footprint on macOS; 0 on other
+        platforms, where it is not tracked.
+    """
+    if MEMORY_METRIC == "footprint":
+        return _rusage(os.getpid()).lifetime_max_phys_footprint
+    return 0
+
+
+def tree_memory(proc: psutil.Process) -> int:
+    """
+    Memory in use by a process and all its descendants.
 
     Parameters
     ----------
@@ -24,8 +110,8 @@ def tree_rss(proc: psutil.Process) -> int:
     Returns
     -------
     int
-        Summed RSS in bytes; processes that exit while being read count
-        as 0.
+        Summed `process_memory` in bytes; processes that exit while
+        being read count as 0.
     """
     total = 0
     try:
@@ -34,17 +120,18 @@ def tree_rss(proc: psutil.Process) -> int:
         return 0
     for p in procs:
         try:
-            total += p.memory_info().rss
+            total += process_memory(p)
         except psutil.Error:
             pass
     return total
 
 
-class PeakRSS:
+class PeakMemory:
     """
-    Track the peak summed RSS of a process tree in a background thread.
+    Track the peak memory of a process tree in a background thread.
 
-    Use as a context manager; the peak is read from `peak` afterward.
+    Samples `tree_memory`. Use as a context manager; the peak is read
+    from `peak` afterward.
 
     Parameters
     ----------
@@ -56,7 +143,7 @@ class PeakRSS:
     Attributes
     ----------
     peak : int
-        Largest summed RSS seen, in bytes.
+        Largest summed memory seen, in bytes.
     """
 
     def __init__(self, pid: int | None = None, interval: float = 0.05):
@@ -68,19 +155,19 @@ class PeakRSS:
 
     def _sample(self):
         while True:
-            self.peak = max(self.peak, tree_rss(self.proc))
+            self.peak = max(self.peak, tree_memory(self.proc))
             if self._stop.wait(self.interval):
                 return
 
     def __enter__(self):
-        self.peak = tree_rss(self.proc)
+        self.peak = tree_memory(self.proc)
         self._thread.start()
         return self
 
     def __exit__(self, *exc):
         self._stop.set()
         self._thread.join()
-        self.peak = max(self.peak, tree_rss(self.proc))
+        self.peak = max(self.peak, tree_memory(self.proc))
         return False
 
 
@@ -107,14 +194,16 @@ def measure(spec: dict) -> dict:
     -------
     dict
         "wall" (s), "cpu" (s, user + system of this process and its
-        finished children), "peak_rss" (MB, peak summed RSS of the
-        process tree), "base_rss" (MB, RSS just before the tool started)
+        finished children), "peak_mem" (MB, peak summed memory of the
+        process tree; on macOS at least the worker's own lifetime peak,
+        which catches spikes between samples), "base_mem" (MB, memory
+        just before the tool started), "mem_metric" (`MEMORY_METRIC`)
         and "fit_time" (s, or None; see `callers.Calls`).
     """
     interval = spec.get("interval", 0.05)
-    base = tree_rss(psutil.Process())
+    base = tree_memory(psutil.Process())
     cpu0 = _cpu_seconds()
-    with PeakRSS(interval=interval) as rss:
+    with PeakMemory(interval=interval) as mem:
         start = time.perf_counter()
         calls = callers.run_tool(
             spec["tool"],
@@ -124,11 +213,13 @@ def measure(spec: dict) -> dict:
             spec["env"],
         )
         wall = time.perf_counter() - start
+    peak = max(mem.peak, lifetime_peak_memory())
     return {
         "wall": wall,
         "cpu": _cpu_seconds() - cpu0,
-        "peak_rss": rss.peak / MB,
-        "base_rss": base / MB,
+        "peak_mem": peak / MB,
+        "base_mem": base / MB,
+        "mem_metric": MEMORY_METRIC,
         "fit_time": calls.fit_time,
     }
 

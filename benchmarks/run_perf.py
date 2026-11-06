@@ -34,7 +34,7 @@ SEED = 1
 NREP = 3
 # FiberHMM files cached in a dataset directory by `train_fiberhmm`
 FIBERHMM_CACHE = ("fiberhmm_model", "fiberhmm_probs")
-METRICS = ("wall", "cpu", "fit_time", "call_time", "peak_rss", "tool_rss")
+METRICS = ("wall", "cpu", "fit_time", "call_time", "peak_mem", "tool_mem")
 NOTES = (
     (
         "Times are end to end per tool run: input loading, the tool "
@@ -48,12 +48,15 @@ NOTES = (
         "step, so it has no split."
     ),
     (
-        "peak_rss is the peak summed memory of the worker process and "
-        "all its child processes; tool_rss = peak_rss - base_rss, the "
+        "peak_mem is the peak summed memory of the worker process and "
+        "all its child processes; tool_mem = peak_mem - base_mem, the "
         "memory above the worker's baseline (Python with catella "
-        "imported). Summed memory counts shared libraries once per "
-        "process, so tools running several processes (catella with "
-        "nworker > 1) are slightly overestimated."
+        "imported). Memory is the physical footprint on macOS (RSS "
+        "there also counts freed pages the system has not reclaimed "
+        "yet) and the RSS elsewhere; see the mem_metric column. Summed "
+        "memory counts shared libraries once per process, so tools "
+        "running several processes (catella with nworker > 1) are "
+        "slightly overestimated."
     ),
     (
         "FiberHMM training (fiberhmm-probs, fiberhmm-train) has no "
@@ -236,7 +239,8 @@ def measure_tool(
     Returns
     -------
     dict
-        "wall", "cpu", "peak_rss", "base_rss" and "fit_time"; see
+        "wall", "cpu", "peak_mem", "base_mem", "mem_metric" and
+        "fit_time"; see
         `perf_worker.measure`.
 
     Raises
@@ -507,18 +511,19 @@ def collect(out: str | Path) -> tuple[pd.DataFrame, pd.DataFrame]:
     -------
     results : pandas.DataFrame
         One row per successful run: tool, axis, value, rep, nmol, nbp,
-        nthread, and the measures "wall", "cpu", "fit_time",
-        "call_time" (wall - fit_time), "peak_rss", "base_rss" and
-        "tool_rss" (peak_rss - base_rss). Times in seconds, memory in
-        MB; fit_time and call_time are NaN for tools with no fitting
-        step.
+        nthread, mem_metric, and the measures "wall", "cpu",
+        "fit_time", "call_time" (wall - fit_time), "peak_mem",
+        "base_mem" and "tool_mem" (peak_mem - base_mem). Times in
+        seconds, memory in MB; fit_time and call_time are NaN for tools
+        with no fitting step.
     errors : pandas.DataFrame
         One row per failed run: tool, axis, value, rep and error.
 
     Raises
     ------
     ValueError
-        If no result files are found.
+        If no result files are found, or if a result file predates the
+        "peak_mem" measure.
     """
     files = sorted((Path(out) / "results").glob("*/*.json"))
     if not files:
@@ -527,13 +532,18 @@ def collect(out: str | Path) -> tuple[pd.DataFrame, pd.DataFrame]:
     for path in files:
         result = json.loads(path.read_text())
         result.pop("params", None)
+        if "peak_rss" in result:
+            raise ValueError(
+                f"{path} has the old peak_rss measure; rerun with "
+                "--overwrite"
+            )
         (errors if "error" in result else rows).append(result)
     keys = ["tool", "axis", "value", "rep"]
     results = pd.DataFrame(rows)
     if not results.empty:
         results["fit_time"] = results["fit_time"].astype(float)
         results["call_time"] = results["wall"] - results["fit_time"]
-        results["tool_rss"] = results["peak_rss"] - results["base_rss"]
+        results["tool_mem"] = results["peak_mem"] - results["base_mem"]
         results = results.sort_values(keys, ignore_index=True)
     errors = pd.DataFrame(errors, columns=[*keys, "error"])
     return results, errors
@@ -591,7 +601,9 @@ def write_summary(out: str | Path) -> pd.DataFrame:
     table = summarize(results)
     nthread = sorted(results["nthread"].unique().tolist())
     text = ["# Runtime and memory benchmark", ""]
+    metrics = sorted(results["mem_metric"].unique().tolist())
     text += [f"Threads per tool: {', '.join(map(str, nthread))}", ""]
+    text += [f"Memory measure: {', '.join(metrics)}", ""]
     for axis, label in (("nmol", "molecule count"), ("nbp", "length")):
         sub = table[table["axis"] == axis].drop(columns="axis")
         if sub.empty:
@@ -624,7 +636,7 @@ _FIT_COLORS = {"fit_time": "#52514e", "call_time": "#b8b6b0"}
 def _scaling_page(results, tools):
     fig = Figure(figsize=(8.27, 11.69))
     axes = fig.subplots(2, 2, gridspec_kw={"hspace": 0.3, "wspace": 0.3})
-    rows = (("wall", "Wall time (s)"), ("tool_rss", "Peak memory (MB)"))
+    rows = (("wall", "Wall time (s)"), ("tool_mem", "Peak memory (MB)"))
     for i, (metric, ylabel) in enumerate(rows):
         for j, axis in enumerate(("nmol", "nbp")):
             ax = axes[i, j]
@@ -725,7 +737,7 @@ def plot_perf(out: str | Path, path: str | Path | None = None) -> Path:
     Reads `<out>/perf.tsv` (see `write_summary`). Pages:
 
     1. Wall time and peak memory above the worker baseline
-       (`tool_rss`) against molecule count and against length, log-log,
+       (`tool_mem`) against molecule count and against length, log-log,
        one line per tool (median, min-max over repeats).
     2. Fit and call time against molecule count, one panel per tool
        with a fitting step (skipped if there is none).

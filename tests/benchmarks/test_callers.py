@@ -263,6 +263,24 @@ class TestRunners:
         calls = callers.run_catella(ddir, tmp_path, llink=10, emax=25.0)
         _check_calls(calls, ddir)
 
+    @pytest.mark.parametrize(
+        ("emax", "expected"), [(None, 200.0), (25.0, 25.0)]
+    )
+    def test_catella_emax_passed_to_run(
+        self, quick_data, tmp_path, monkeypatch, emax, expected
+    ):
+        _, ddir = quick_data
+        seen = {}
+        original = callers.catella.run
+
+        def spy(*args, settings, **kwargs):
+            seen["emax"] = settings.emax
+            return original(*args, settings=settings, **kwargs)
+
+        monkeypatch.setattr(callers.catella, "run", spy)
+        callers.run_catella(ddir, tmp_path, llink=10, emax=emax)
+        assert seen["emax"] == expected
+
     def test_catella_records_fixed_llink(self, quick_data, tmp_path):
         _, ddir = quick_data
         calls = callers.run_catella(ddir, tmp_path, llink=10)

@@ -450,8 +450,7 @@ def run_catella(
     Compute nucleosome occupancy with catella's exact (TM) solver.
 
     Uses both controls for the methylation probability calibration and
-    reads both strands of each molecule (`ignore_strand=True`). By
-    default, `emax` is estimated from the data.
+    reads both strands of each molecule (`ignore_strand=True`).
 
     Parameters
     ----------
@@ -467,10 +466,9 @@ def run_catella(
     mu : float, default 0.0
         `SimSettings.mu`.
     emax : float, optional
-        `SimSettings.emax`. If None (default), the 99th percentile of
-        abs(logit(meth_prob)) from `catella.estimate_start_temp`.
+        `SimSettings.emax`. If None (default), the `SimSettings` default.
     seed : int, default 1
-        Seed passed to `catella.run` and `catella.estimate_start_temp`.
+        Seed passed to `catella.run` and `catella.estimate_llink`.
     mtase : str or list of str, default "A"
         Methyltransferase label(s) passed to `catella.load_raw`, e.g.,
         `["A", "GC"]` for m6A and GpC labelling.
@@ -493,8 +491,6 @@ def run_catella(
     )
     exp = catella.compute_model_prob(exp=exp)
     chrom = exp.chroms[0]
-    if emax is None:
-        emax = catella.estimate_start_temp(exp, percentile=99.0, seed=seed)
     fit = llink == "ml"
     if isinstance(llink, str) and not fit:
         raise ValueError(f"llink must be an integer or 'ml', got {llink!r}")
@@ -504,7 +500,7 @@ def run_catella(
         elink=elink,
         mu=mu,
         end_temp=1.0,
-        emax=emax,
+        **({} if emax is None else {"emax": emax}),
     )
     if fit:
         best = catella.estimate_llink(exp, settings, seed=seed)

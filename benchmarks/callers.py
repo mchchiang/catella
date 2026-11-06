@@ -281,9 +281,14 @@ def _dataset_length(ddir):
     return int(sizes["length"].iloc[0])
 
 
-def _ft_calls(bam, ddir, env):
+def _ft_threads(threads):
+    return [] if threads is None else ["-t", str(threads)]
+
+
+def _ft_calls(bam, ddir, env, threads=None):
     table = Path(bam).with_suffix(".tsv.gz")
-    run_in_env(env, ["ft", "extract", str(bam), "--all", str(table)])
+    args = ["ft", "extract", *_ft_threads(threads), str(bam), "--all"]
+    run_in_env(env, [*args, str(table)])
     return intervals_to_calls(
         parse_ft_extract(table), _test_mol_ids(ddir), _dataset_length(ddir)
     )
@@ -296,6 +301,7 @@ def run_ft(
     env: str = ENV,
     nucleosome_length: int | None = None,
     combined_length: int | None = None,
+    threads: int | None = None,
 ) -> Calls:
     """
     Call nucleosomes with `ft add-nucleosomes`.
@@ -311,19 +317,22 @@ def run_ft(
     nucleosome_length, combined_length : int, optional
         Values for `--nucleosome-length` and
         `--combined-nucleosome-length`; tool defaults if None.
+    threads : int, optional
+        Value for `--threads` of every `ft` command; tool default if
+        None.
 
     Returns
     -------
     Calls
     """
     out = Path(workdir) / "ft.bam"
-    args = ["ft", "add-nucleosomes", "--ml", "128"]
+    args = ["ft", "add-nucleosomes", *_ft_threads(threads), "--ml", "128"]
     if nucleosome_length is not None:
         args += ["--nucleosome-length", str(nucleosome_length)]
     if combined_length is not None:
         args += ["--combined-nucleosome-length", str(combined_length)]
     run_in_env(env, [*args, str(Path(ddir) / "synth.bam"), str(out)])
-    return _ft_calls(out, ddir, env)
+    return _ft_calls(out, ddir, env, threads)
 
 
 def _fiberhmm_channel(channel):
@@ -427,6 +436,8 @@ def run_fiberhmm(
     split_min_llr: float | None = None,
     iterations: int = 10,
     channel: str = "a",
+    threads: int = 2,
+    io_threads: int | None = None,
 ) -> Calls:
     """
     Call nucleosomes with `fiberhmm-call`.
@@ -451,6 +462,12 @@ def run_fiberhmm(
     channel : {"a", "m"}, default "a"
         Labelling channel; see `train_fiberhmm`. The pretrained model
         is m6A only.
+    threads : int, default 2
+        Worker processes of `fiberhmm-call` (`--cores`). Training has
+        no such option.
+    io_threads : int, optional
+        Value for `--io-threads` of `fiberhmm-call` and `--threads` of
+        `ft extract`; tool defaults if None.
 
     Returns
     -------
@@ -464,7 +481,9 @@ def run_fiberhmm(
         )
     out = Path(workdir) / "fiberhmm.bam"
     args = ["fiberhmm-call", "-i", str(Path(ddir) / f"synth{suffix}.bam")]
-    args += ["-o", str(out), "--prob-threshold", "128", "-c", "2"]
+    args += ["-o", str(out), "--prob-threshold", "128", "-c", str(threads)]
+    if io_threads is not None:
+        args += ["--io-threads", str(io_threads)]
     if retrain:
         model = train_fiberhmm(
             ddir, env=env, iterations=iterations, channel=channel
@@ -477,7 +496,7 @@ def run_fiberhmm(
     if split_min_llr is not None:
         args += ["--split-min-llr", str(split_min_llr)]
     run_in_env(env, args)
-    return _ft_calls(out, ddir, env)
+    return _ft_calls(out, ddir, env, io_threads)
 
 
 def run_catella(
@@ -490,6 +509,7 @@ def run_catella(
     emax: float | None = None,
     seed: int = 1,
     mtase: str | list[str] = "A",
+    nworker: int = 1,
 ) -> Calls:
     """
     Compute nucleosome occupancy with catella's exact (TM) solver.
@@ -517,6 +537,9 @@ def run_catella(
     mtase : str or list of str, default "A"
         Methyltransferase label(s) passed to `catella.load_raw`, e.g.,
         `["A", "GC"]` for m6A and GpC labelling.
+    nworker : int, default 1
+        Number of parallel processes passed to `catella.run` and
+        `catella.estimate_llink`.
 
     Returns
     -------
@@ -548,7 +571,9 @@ def run_catella(
         **{k: v for k, v in optional.items() if v is not None},
     )
     if fit:
-        best = catella.estimate_llink(exp, settings, seed=seed)
+        best = catella.estimate_llink(
+            exp, settings, seed=seed, nworker=nworker
+        )
         settings = replace(settings, llink=best[chrom])
     sim_dir = Path(tempfile.mkdtemp(dir=workdir)) / "sim"
     sim = catella.run(
@@ -559,6 +584,7 @@ def run_catella(
         out_dir=sim_dir,
         method="tm",
         seed=seed,
+        nworker=nworker,
         verbose=False,
     )
     catella.analyze(sim)

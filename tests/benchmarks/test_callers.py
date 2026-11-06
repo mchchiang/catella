@@ -471,6 +471,74 @@ class TestChannels:
         assert seen["mtase"] == ["A", "GC"]
 
 
+class TestThreads:
+    def _record(self, monkeypatch):
+        seen = []
+
+        def fake_run_in_env(env, args, cwd=None):
+            seen.append(args)
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        monkeypatch.setattr(callers, "run_in_env", fake_run_in_env)
+        monkeypatch.setattr(callers, "parse_ft_extract", lambda path: None)
+        monkeypatch.setattr(callers, "_test_mol_ids", lambda ddir: [])
+        monkeypatch.setattr(callers, "_dataset_length", lambda ddir: 0)
+        monkeypatch.setattr(
+            callers, "intervals_to_calls", lambda *args: "calls"
+        )
+        return seen
+
+    def test_ft_threads_on_every_command(self, tmp_path, monkeypatch):
+        seen = self._record(monkeypatch)
+        callers.run_ft(tmp_path, tmp_path, threads=3)
+        assert [args[:2] for args in seen] == [
+            ["ft", "add-nucleosomes"],
+            ["ft", "extract"],
+        ]
+        for args in seen:
+            assert args[args.index("-t") + 1] == "3"
+
+    def test_ft_default_uses_tool_threads(self, tmp_path, monkeypatch):
+        seen = self._record(monkeypatch)
+        callers.run_ft(tmp_path, tmp_path)
+        assert all("-t" not in args for args in seen)
+
+    def test_fiberhmm_threads(self, tmp_path, monkeypatch):
+        seen = self._record(monkeypatch)
+        callers.run_fiberhmm(
+            tmp_path, tmp_path, retrain=False, threads=3, io_threads=5
+        )
+        call, extract = seen
+        assert call[call.index("-c") + 1] == "3"
+        assert call[call.index("--io-threads") + 1] == "5"
+        assert extract[extract.index("-t") + 1] == "5"
+
+    def test_fiberhmm_default_threads(self, tmp_path, monkeypatch):
+        seen = self._record(monkeypatch)
+        callers.run_fiberhmm(tmp_path, tmp_path, retrain=False)
+        call, extract = seen
+        assert call[call.index("-c") + 1] == "2"
+        assert "--io-threads" not in call
+        assert "-t" not in extract
+
+    @pytest.mark.parametrize("nworker", [None, 2])
+    def test_catella_nworker(self, quick_data, tmp_path, monkeypatch, nworker):
+        _, ddir = quick_data
+        seen = {}
+        for name in ("run", "estimate_llink"):
+            original = getattr(callers.catella, name)
+
+            def spy(*args, _name=name, _original=original, **kwargs):
+                seen[_name] = kwargs.get("nworker")
+                return _original(*args, **kwargs)
+
+            monkeypatch.setattr(callers.catella, name, spy)
+        extra = {} if nworker is None else {"nworker": nworker}
+        callers.run_catella(ddir, tmp_path, **extra)
+        expected = nworker or 1
+        assert seen == {"run": expected, "estimate_llink": expected}
+
+
 class TestHiddenFootWindows:
     def test_starts(self):
         assert callers.hiddenfoot_windows(5000, 1000, 500) == list(

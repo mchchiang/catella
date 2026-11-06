@@ -10,11 +10,16 @@ import tempfile
 from pathlib import Path
 from typing import Annotated
 
+import numpy as np
 import pandas as pd
 import psutil
 import run_synth
 import typer
 from callers import ENV, NO_ENV_TOOLS, TOOLS, env_bin_dir, tool_versions
+from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.figure import Figure
+from matplotlib.ticker import FormatStrFormatter, LogLocator
+from plotting import TOOL_STYLES, _style_axes
 
 WORKER = Path(__file__).resolve().parent / "perf_worker.py"
 # Scaling axes: molecule count at BASE_NBP, length at BASE_NMOL
@@ -612,6 +617,154 @@ def write_summary(out: str | Path) -> pd.DataFrame:
     return table
 
 
+_AXIS_LABELS = {"nmol": "Molecules", "nbp": "Molecule length (bp)"}
+_FIT_COLORS = {"fit_time": "#52514e", "call_time": "#b8b6b0"}
+
+
+def _scaling_page(results, tools):
+    fig = Figure(figsize=(8.27, 11.69))
+    axes = fig.subplots(2, 2, gridspec_kw={"hspace": 0.3, "wspace": 0.3})
+    rows = (("wall", "Wall time (s)"), ("tool_rss", "Peak memory (MB)"))
+    for i, (metric, ylabel) in enumerate(rows):
+        for j, axis in enumerate(("nmol", "nbp")):
+            ax = axes[i, j]
+            sub = results[results["axis"] == axis]
+            for tool in tools:
+                pts = sub[sub["tool"] == tool].groupby("value")[metric]
+                if pts.ngroups == 0:
+                    continue
+                med, lo, hi = pts.median(), pts.min(), pts.max()
+                label, color = TOOL_STYLES.get(tool, (tool, "#52514e"))
+                ax.vlines(med.index, lo, hi, color=color, linewidth=1)
+                ax.plot(
+                    med.index,
+                    med.to_numpy(),
+                    color=color,
+                    linewidth=1.5,
+                    marker="o",
+                    markersize=4,
+                    markeredgecolor="white",
+                    markeredgewidth=0.8,
+                    label=label,
+                )
+            ax.set_xscale("log")
+            ax.set_yscale("log")
+            values = sorted(sub["value"].unique())
+            ax.set_xticks(values, [str(v) for v in values])
+            ax.yaxis.set_major_locator(LogLocator(subs=(1.0, 2.0, 5.0)))
+            ax.yaxis.set_major_formatter(FormatStrFormatter("%g"))
+            ax.minorticks_off()
+            ax.set_xlabel(_AXIS_LABELS[axis], fontsize=8)
+            ax.set_ylabel(ylabel, fontsize=8)
+            _style_axes(ax)
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    fig.legend(
+        handles,
+        labels,
+        loc="upper center",
+        ncol=len(labels),
+        frameon=False,
+        fontsize=8,
+        bbox_to_anchor=(0.5, 0.95),
+    )
+    fig.suptitle("Runtime and memory scaling (median, min-max over repeats)")
+    return fig
+
+
+def _fit_page(results, tools):
+    sub = results[(results["axis"] == "nmol") & results["fit_time"].notna()]
+    tools = [t for t in tools if t in set(sub["tool"])]
+    if not tools:
+        return None
+    fig = Figure(figsize=(8.27, 11.69))
+    axes = np.atleast_1d(
+        fig.subplots(len(tools), 1, gridspec_kw={"hspace": 0.4})
+    )
+    for ax, tool in zip(axes, tools):
+        med = sub[sub["tool"] == tool].groupby("value")[
+            ["fit_time", "call_time"]
+        ].median()
+        x = np.arange(len(med))
+        bottom = np.zeros(len(med))
+        for metric, name in (("fit_time", "fit"), ("call_time", "call")):
+            ax.bar(
+                x,
+                med[metric],
+                bottom=bottom,
+                width=0.6,
+                color=_FIT_COLORS[metric],
+                edgecolor="white",
+                linewidth=1,
+                label=name,
+            )
+            bottom = bottom + med[metric].to_numpy()
+        for xi, top, call in zip(x, bottom, med["call_time"]):
+            ax.annotate(
+                f"call {call:.2g} s",
+                (xi, top),
+                xytext=(0, 3),
+                textcoords="offset points",
+                ha="center",
+                fontsize=7,
+                color="#52514e",
+            )
+        ax.set_xticks(x, [str(v) for v in med.index])
+        ax.set_xlabel(_AXIS_LABELS["nmol"], fontsize=8)
+        ax.set_ylabel("Wall time (s)", fontsize=8)
+        ax.set_title(TOOL_STYLES.get(tool, (tool,))[0], fontsize=9)
+        ax.legend(frameon=False, fontsize=7)
+        _style_axes(ax)
+    fig.suptitle("Fit and call time (median over repeats)")
+    return fig
+
+
+def plot_perf(out: str | Path, path: str | Path | None = None) -> Path:
+    """
+    Plot the runtime and memory benchmark.
+
+    Reads `<out>/perf.tsv` (see `write_summary`). Pages:
+
+    1. Wall time and peak memory above the worker baseline
+       (`tool_rss`) against molecule count and against length, log-log,
+       one line per tool (median, min-max over repeats).
+    2. Fit and call time against molecule count, one panel per tool
+       with a fitting step (skipped if there is none).
+
+    Parameters
+    ----------
+    out : str or Path
+        Benchmark output directory (after `summarize`).
+    path : str or Path, optional
+        Output PDF path; defaults to `<out>/plots/perf.pdf`.
+
+    Returns
+    -------
+    Path
+        The PDF written.
+
+    Raises
+    ------
+    ValueError
+        If `<out>/perf.tsv` does not exist.
+    """
+    out = Path(out)
+    tsv = out / "perf.tsv"
+    if not tsv.exists():
+        raise ValueError(f"{tsv} not found; run summarize first")
+    results = pd.read_csv(tsv, sep="\t")
+    present = set(results["tool"])
+    tools = [t for t in TOOL_STYLES if t in present]
+    tools += sorted(present - set(tools))
+    path = out / "plots" / "perf.pdf" if path is None else Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with PdfPages(path) as pdf:
+        pdf.savefig(_scaling_page(results, tools))
+        fit = _fit_page(results, tools)
+        if fit is not None:
+            pdf.savefig(fit)
+    return path
+
+
 @app.command(name="make_data")
 def make_data_cmd(
     out: Annotated[Path, typer.Argument(help="Benchmark output directory")],
@@ -680,6 +833,14 @@ def summarize_cmd(
     """Write perf.tsv and perf.md from the run results."""
     write_summary(out)
     typer.echo(f"wrote {out / 'perf.md'}")
+
+
+@app.command(name="plot")
+def plot_cmd(
+    out: Annotated[Path, typer.Argument(help="Benchmark output directory")],
+):
+    """Plot runtime and memory scaling."""
+    typer.echo(f"wrote {plot_perf(out)}")
 
 
 if __name__ == "__main__":

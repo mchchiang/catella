@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -388,6 +389,31 @@ class TestWriteSummary:
         _write_result(tmp_path, "ft", "nmol", 10, 0, None, error="boom")
         with pytest.raises(ValueError, match="every run"):
             run_perf.write_summary(tmp_path)
+
+
+def _pdf_pages(path):
+    return len(re.findall(rb"/Type\s*/Page\b(?!s)", path.read_bytes()))
+
+
+class TestPlotPerf:
+    def test_default_path_two_pages(self, results_dir):
+        run_perf.write_summary(results_dir)
+        path = run_perf.plot_perf(results_dir)
+        assert path == results_dir / "plots" / "perf.pdf"
+        assert _pdf_pages(path) == 2
+
+    def test_no_fit_step_one_page(self, tmp_path):
+        for rep in range(2):
+            _write_result(tmp_path, "ft", "nmol", 10, rep, 1.0)
+            _write_result(tmp_path, "ft", "nbp", 2000, rep, 1.0)
+        run_perf.write_summary(tmp_path)
+        path = run_perf.plot_perf(tmp_path, tmp_path / "a.pdf")
+        assert path == tmp_path / "a.pdf"
+        assert _pdf_pages(path) == 1
+
+    def test_missing_summary_raises(self, tmp_path):
+        with pytest.raises(ValueError, match="run summarize first"):
+            run_perf.plot_perf(tmp_path)
 
 
 class TestTreeRss:

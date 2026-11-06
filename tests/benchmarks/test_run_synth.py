@@ -544,23 +544,30 @@ class TestPlotSummary:
     def test_all_pages(self, evaluated_out):
         path = run_synth.plot_summary(evaluated_out)
         assert path == evaluated_out / "plots" / "summary.pdf"
-        assert _pdf_pages(path) == 5
+        assert _pdf_pages(path) == 6
 
     def test_partial_results(self, tuned_out):
         run_synth.evaluate(tuned_out, tools=["catella", "ft"])
         path = run_synth.plot_summary(tuned_out)
-        assert _pdf_pages(path) == 5
+        assert _pdf_pages(path) == 6
 
     def test_without_catella_skips_paired_page(self, tuned_out):
         run_synth.evaluate(tuned_out, tools=["ft", "fiberhmm"])
         path = run_synth.plot_summary(tuned_out)
-        assert _pdf_pages(path) == 4
+        assert _pdf_pages(path) == 5
+
+    def test_without_brier_skips_brier_page(self, evaluated_out, tmp_path):
+        path = evaluated_out / "results.tsv"
+        results = pd.read_csv(path, sep="\t").drop(columns="brier")
+        results.to_csv(path, sep="\t", index=False)
+        path = run_synth.plot_summary(evaluated_out, path=tmp_path / "s.pdf")
+        assert _pdf_pages(path) == 5
 
     def test_without_tune_scores(self, evaluated_out, tmp_path):
         (evaluated_out / "tune_scores.tsv").unlink()
         path = run_synth.plot_summary(evaluated_out, path=tmp_path / "s.pdf")
         assert path == tmp_path / "s.pdf"
-        assert _pdf_pages(path) == 4
+        assert _pdf_pages(path) == 5
 
     def test_without_results_raises(self, tmp_path):
         with pytest.raises(ValueError):
@@ -571,7 +578,7 @@ class TestPlotSummary:
         (evaluated_out / "plots" / "summary.pdf").unlink(missing_ok=True)
         result = runner.invoke(run_synth.app, [command, str(evaluated_out)])
         assert result.exit_code == 0, result.output
-        assert _pdf_pages(evaluated_out / "plots" / "summary.pdf") == 5
+        assert _pdf_pages(evaluated_out / "plots" / "summary.pdf") == 6
 
 
 class TestTuneEvaluate:

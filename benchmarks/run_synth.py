@@ -915,9 +915,10 @@ def plot_summary(out: str | Path, path: str | Path | None = None) -> Path:
 
     1. MCC by condition and tool (tuned parameters).
     2. Count error by condition and tool (tuned parameters).
-    3. MCC difference, catella minus each other tool, by condition.
-    4. MCC with tuned and default parameters, per tool.
-    5. Tuning-set MCC of every grid combination, per tool.
+    3. Brier score by condition and tool (tuned parameters).
+    4. MCC difference, catella minus each other tool, by condition.
+    5. MCC with tuned and default parameters, per tool.
+    6. Tuning-set MCC of every grid combination, per tool.
 
     Parameters
     ----------
@@ -937,7 +938,10 @@ def plot_summary(out: str | Path, path: str | Path | None = None) -> Path:
         raise ValueError(f"{results_path} not found; run summarize first")
     results = pd.read_csv(results_path, sep="\t")
     keys = ["tool", "variant", "cond", "seed"]
-    ds = results.groupby(keys)[["mcc", "count_err"]].mean().reset_index()
+    metrics = [
+        m for m in ("mcc", "count_err", "brier") if m in results.columns
+    ]
+    ds = results.groupby(keys)[metrics].mean().reset_index()
     tools = [t for t in TOOL_STYLES if t in set(ds["tool"])]
     conds = [c for c in CONDITIONS if c in set(ds["cond"])]
     tuned = ds[ds["variant"] == "tuned"]
@@ -954,7 +958,14 @@ def plot_summary(out: str | Path, path: str | Path | None = None) -> Path:
                 "called - true nucleosomes",
                 "Nucleosome count error by condition (tuned parameters)",
             ),
+            (
+                "brier",
+                "Brier score (lower is better)",
+                "Brier score by condition (tuned parameters)",
+            ),
         ):
+            if metric not in ds.columns:
+                continue
             fig = Figure(figsize=size)
             ax = fig.add_subplot(2, 1, 1)
             _dodged_panel(ax, tuned, metric, tools, conds, ylabel)

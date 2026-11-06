@@ -440,7 +440,7 @@ def run_catella(
     workdir: str | Path,
     *,
     llink: int | str = "ml",
-    elink: float = 25.0,
+    elink: float | None = None,
     mu: float = 0.0,
     emax: float | None = None,
     seed: int = 1,
@@ -461,8 +461,8 @@ def run_catella(
     llink : int or "ml", default "ml"
         `SimSettings.llink`, or "ml" to choose it from the data with
         `catella.estimate_llink`.
-    elink : float, default 25.0
-        `SimSettings.elink`.
+    elink : float, optional
+        `SimSettings.elink`. If None (default), the `SimSettings` default.
     mu : float, default 0.0
         `SimSettings.mu`.
     emax : float, optional
@@ -494,13 +494,13 @@ def run_catella(
     fit = llink == "ml"
     if isinstance(llink, str) and not fit:
         raise ValueError(f"llink must be an integer or 'ml', got {llink!r}")
+    optional = {"elink": elink, "emax": emax}
     settings = SimSettings(
         nucbp=147,
         llink=0 if fit else llink,
-        elink=elink,
         mu=mu,
         end_temp=1.0,
-        **({} if emax is None else {"emax": emax}),
+        **{k: v for k, v in optional.items() if v is not None},
     )
     if fit:
         best = catella.estimate_llink(exp, settings, seed=seed)

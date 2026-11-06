@@ -5,6 +5,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -198,12 +199,17 @@ class Calls:
         molecule.
     llink : int, optional
         `SimSettings.llink` used, for catella.
+    fit_time : float, optional
+        Wall time in seconds spent fitting to the dataset (training for
+        FiberHMM, the `llink` fit for catella); None if the tool has no
+        separate fitting step. Not saved by `save_calls`.
     """
 
     mol_ids: np.ndarray
     occ: np.ndarray
     count: np.ndarray
     llink: int | None = None
+    fit_time: float | None = None
 
 
 def intervals_to_calls(
@@ -484,10 +490,13 @@ def run_fiberhmm(
     args += ["-o", str(out), "--prob-threshold", "128", "-c", str(threads)]
     if io_threads is not None:
         args += ["--io-threads", str(io_threads)]
+    fit_time = None
     if retrain:
+        start = time.perf_counter()
         model = train_fiberhmm(
             ddir, env=env, iterations=iterations, channel=channel
         )
+        fit_time = time.perf_counter() - start
         args += ["-m", str(model)]
     else:
         args += ["--enzyme", "hia5", "--seq", "pacbio"]
@@ -496,7 +505,8 @@ def run_fiberhmm(
     if split_min_llr is not None:
         args += ["--split-min-llr", str(split_min_llr)]
     run_in_env(env, args)
-    return _ft_calls(out, ddir, env, io_threads)
+    calls = _ft_calls(out, ddir, env, io_threads)
+    return replace(calls, fit_time=fit_time)
 
 
 def run_catella(
@@ -570,11 +580,13 @@ def run_catella(
         end_temp=1.0,
         **{k: v for k, v in optional.items() if v is not None},
     )
+    start = time.perf_counter()
     if fit:
         best = catella.estimate_llink(
             exp, settings, seed=seed, nworker=nworker
         )
         settings = replace(settings, llink=best[chrom])
+    fit_time = time.perf_counter() - start if fit else 0.0
     sim_dir = Path(tempfile.mkdtemp(dir=workdir)) / "sim"
     sim = catella.run(
         chroms=chrom,
@@ -591,7 +603,9 @@ def run_catella(
     occ = np.asarray(sim.analysis[chrom]["occup"][:], dtype=np.float32)
     count = np.asarray(sim.analysis[chrom]["mean_nnuc"][:]).ravel()
     mol_ids = np.asarray(exp.raw[chrom].test_mol_id)
-    return Calls(mol_ids, occ, count, llink=settings.llink)
+    return Calls(
+        mol_ids, occ, count, llink=settings.llink, fit_time=fit_time
+    )
 
 
 def _hiddenfoot_binary(binary=None):

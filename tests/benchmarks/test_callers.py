@@ -3,6 +3,7 @@
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import callers
@@ -304,6 +305,10 @@ def quick_data(tmp_path_factory):
     return out, specs[1]["dir"]
 
 
+def _empty_calls(*args):
+    return callers.Calls(np.array([]), np.zeros((0, 0)), np.array([]))
+
+
 def _check_calls(calls, ddir):
     truth = run_synth.read_truth(ddir)
     nmol = run_synth.QUICK_NMOL
@@ -445,9 +450,9 @@ class TestChannels:
 
     def test_fiberhmm_gpc_calling(self, tmp_path, monkeypatch):
         seen = self._record(monkeypatch)
-        monkeypatch.setattr(callers, "_ft_calls", lambda *a: "calls")
+        monkeypatch.setattr(callers, "_ft_calls", _empty_calls)
         out = callers.run_fiberhmm(tmp_path, tmp_path, channel="m")
-        assert out == "calls"
+        assert isinstance(out, callers.Calls)
         call = seen[-1]
         assert call[call.index("-i") + 1] == str(tmp_path / "synth.gpc.bam")
 
@@ -483,9 +488,7 @@ class TestThreads:
         monkeypatch.setattr(callers, "parse_ft_extract", lambda path: None)
         monkeypatch.setattr(callers, "_test_mol_ids", lambda ddir: [])
         monkeypatch.setattr(callers, "_dataset_length", lambda ddir: 0)
-        monkeypatch.setattr(
-            callers, "intervals_to_calls", lambda *args: "calls"
-        )
+        monkeypatch.setattr(callers, "intervals_to_calls", _empty_calls)
         return seen
 
     def test_ft_threads_on_every_command(self, tmp_path, monkeypatch):
@@ -537,6 +540,62 @@ class TestThreads:
         callers.run_catella(ddir, tmp_path, **extra)
         expected = nworker or 1
         assert seen == {"run": expected, "estimate_llink": expected}
+
+
+class TestFitTime:
+    def _fake_tools(self, monkeypatch, train_seconds=0.0):
+        def fake_train(ddir, **kwargs):
+            time.sleep(train_seconds)
+            return Path("model.json")
+
+        monkeypatch.setattr(callers, "train_fiberhmm", fake_train)
+        monkeypatch.setattr(
+            callers,
+            "run_in_env",
+            lambda env, args, cwd=None: subprocess.CompletedProcess(
+                args, 0, "", ""
+            ),
+        )
+        monkeypatch.setattr(callers, "_ft_calls", _empty_calls)
+
+    def test_default_is_none(self):
+        assert _empty_calls().fit_time is None
+
+    def test_fiberhmm_retrained_times_training(self, tmp_path, monkeypatch):
+        self._fake_tools(monkeypatch, train_seconds=0.2)
+        calls = callers.run_fiberhmm(tmp_path, tmp_path, retrain=True)
+        assert 0.2 <= calls.fit_time < 2.0
+
+    def test_fiberhmm_pretrained_has_no_fit(self, tmp_path, monkeypatch):
+        self._fake_tools(monkeypatch)
+        calls = callers.run_fiberhmm(tmp_path, tmp_path, retrain=False)
+        assert calls.fit_time is None
+
+    def test_catella_fixed_llink_has_zero_fit(self, quick_data, tmp_path):
+        _, ddir = quick_data
+        calls = callers.run_catella(ddir, tmp_path, llink=10)
+        assert calls.fit_time == 0.0
+
+    def test_catella_ml_times_llink_fit(
+        self, quick_data, tmp_path, monkeypatch
+    ):
+        _, ddir = quick_data
+        original = callers.catella.estimate_llink
+
+        def slow(*args, **kwargs):
+            time.sleep(0.2)
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(callers.catella, "estimate_llink", slow)
+        calls = callers.run_catella(ddir, tmp_path)
+        assert calls.fit_time >= 0.2
+
+    def test_not_saved(self, tmp_path):
+        calls = callers.Calls(
+            np.array(["m"]), np.zeros((1, 3)), np.array([0.0]), fit_time=1.5
+        )
+        path = callers.save_calls(calls, tmp_path / "c.h5")
+        assert callers.load_calls(path).fit_time is None
 
 
 class TestHiddenFootWindows:

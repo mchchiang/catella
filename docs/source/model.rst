@@ -712,6 +712,14 @@ diverging as :math:`p^{\text{meth}}_{x,\alpha}\to\{0,1\}`, we arrive at
    \frac{p^{\text{meth}}_{x,\alpha}} {1-p^{\text{meth}}_{x,\alpha}},
    \,-\epsilon_\text{max},\,\epsilon_\text{max}\right] \;.
 
+For the empirical probabilities, which reach exactly 0 and 1 by
+construction, :math:`\epsilon_\text{max}` sets the energy scale and
+should be chosen explicitly. For the model probabilities, the window
+energies are finite and :math:`\epsilon_\text{max}` only needs to
+exceed them; the package default of :math:`200\,k_BT` lies well above
+the window energies seen in practice, so the clip then acts only as a
+guard against infinite values.
+
 With this definition of the energy, :math:`E^{\text{data}}_\alpha(x) = 0`
 when :math:`p^{\text{meth}}_{x,\alpha} = p^{\text{nuc}}_{x,\alpha} =
 1/2`, where it is favorable neither to bind nor not to bind. Similar to

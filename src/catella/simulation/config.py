@@ -58,8 +58,13 @@ class SimSettings:
     """Frequency (in sweeps) at which to record simulation data.
     Required for method='mcmc'; unused for method='tm'."""
 
-    emax: float
-    """The maximum methylation energy (in $k_BT$)."""
+    emax: float = 200.0
+    """The maximum methylation energy (in $k_BT$); energies are clamped to
+    [-emax, emax]. The default lies well above the window energies of the
+    model route (`compute_model_prob`), so it only turns infinite energies
+    into finite ones. With the empirical route (`compute_empirical_prob`),
+    whose probabilities reach exactly 0 and 1, `emax` sets the energy
+    scale and should be set explicitly."""
 
     _cool_map: ClassVar[dict[str, NucPosMCMC.Cooling]] = {
         "linear": NucPosMCMC.Cooling.Linear,

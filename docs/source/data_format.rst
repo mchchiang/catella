@@ -176,7 +176,10 @@ fields exactly (unknown keys raise ``TypeError``):
      - Sweep interval at which frames are recorded.
    * - ``emax``
      - float
-     - Maximum methylation energy cost (:math:`k_BT`).
+     - Maximum methylation energy cost (:math:`k_BT`); energies are clamped
+       to ``[-emax, emax]``. Optional, default 200, which only guards
+       against infinite energies from the model route. Set it explicitly
+       with the empirical route, where it sets the energy scale.
 
 Methylation probability array
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

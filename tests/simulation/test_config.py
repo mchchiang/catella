@@ -51,6 +51,23 @@ class TestForChrom:
             settings.for_chrom("b")
 
 
+class TestEmax:
+    def test_default(self):
+        values = _values()
+        del values["emax"]
+        assert SimSettings(**values).emax == 200.0
+
+    def test_explicit_value_kept(self):
+        assert SimSettings(**_values(emax=25.0)).emax == 25.0
+
+    def test_default_when_missing_from_file(self, tmp_path):
+        values = _values()
+        del values["emax"]
+        path = tmp_path / "settings.yml"
+        path.write_text(yaml.safe_dump(values))
+        assert SimSettings.load(path).emax == 200.0
+
+
 class TestLoad:
     @pytest.mark.parametrize(
         ("name", "dump"),

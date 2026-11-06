@@ -10,6 +10,7 @@ import tempfile
 from pathlib import Path
 from typing import Annotated
 
+import pandas as pd
 import psutil
 import run_synth
 import typer
@@ -28,6 +29,34 @@ SEED = 1
 NREP = 3
 # FiberHMM files cached in a dataset directory by `train_fiberhmm`
 FIBERHMM_CACHE = ("fiberhmm_model", "fiberhmm_probs")
+METRICS = ("wall", "cpu", "fit_time", "call_time", "peak_rss", "tool_rss")
+NOTES = (
+    (
+        "Times are end to end per tool run: input loading, the tool "
+        "itself, and the parsing of its output (ft extract tables, "
+        "HiddenFoot windows)."
+    ),
+    (
+        "fit_time is the time spent fitting to the dataset: FiberHMM "
+        "training (retrained model) and the catella llink fit; "
+        "call_time = wall - fit_time. HiddenFoot fits and calls in one "
+        "step, so it has no split."
+    ),
+    (
+        "peak_rss is the peak summed memory of the worker process and "
+        "all its child processes; tool_rss = peak_rss - base_rss, the "
+        "memory above the worker's baseline (Python with catella "
+        "imported). Summed memory counts shared libraries once per "
+        "process, so tools running several processes (catella with "
+        "nworker > 1) are slightly overestimated."
+    ),
+    (
+        "FiberHMM training (fiberhmm-probs, fiberhmm-train) has no "
+        "thread option; numerical library threads are capped by "
+        "environment variables."
+    ),
+    "Tables show the median over repeats.",
+)
 # Thread pools of numerical libraries, capped to the tool thread count
 THREAD_ENV_VARS = (
     "OMP_NUM_THREADS",
@@ -460,6 +489,129 @@ def run(
     return written
 
 
+def collect(out: str | Path) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Read every run result.
+
+    Parameters
+    ----------
+    out : str or Path
+        Benchmark output directory.
+
+    Returns
+    -------
+    results : pandas.DataFrame
+        One row per successful run: tool, axis, value, rep, nmol, nbp,
+        nthread, and the measures "wall", "cpu", "fit_time",
+        "call_time" (wall - fit_time), "peak_rss", "base_rss" and
+        "tool_rss" (peak_rss - base_rss). Times in seconds, memory in
+        MB; fit_time and call_time are NaN for tools with no fitting
+        step.
+    errors : pandas.DataFrame
+        One row per failed run: tool, axis, value, rep and error.
+
+    Raises
+    ------
+    ValueError
+        If no result files are found.
+    """
+    files = sorted((Path(out) / "results").glob("*/*.json"))
+    if not files:
+        raise ValueError(f"no run results found in {Path(out) / 'results'}")
+    rows, errors = [], []
+    for path in files:
+        result = json.loads(path.read_text())
+        result.pop("params", None)
+        (errors if "error" in result else rows).append(result)
+    keys = ["tool", "axis", "value", "rep"]
+    results = pd.DataFrame(rows)
+    if not results.empty:
+        results["fit_time"] = results["fit_time"].astype(float)
+        results["call_time"] = results["wall"] - results["fit_time"]
+        results["tool_rss"] = results["peak_rss"] - results["base_rss"]
+        results = results.sort_values(keys, ignore_index=True)
+    errors = pd.DataFrame(errors, columns=[*keys, "error"])
+    return results, errors
+
+
+def summarize(results: pd.DataFrame) -> pd.DataFrame:
+    """
+    Take the median of each measure over repeats.
+
+    Parameters
+    ----------
+    results : pandas.DataFrame
+        Output of `collect`.
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row per (axis, value, tool) with nmol, nbp, the number of
+        repeats "nrep", and the median of each of `METRICS`.
+    """
+    keys = ["axis", "value", "tool", "nmol", "nbp"]
+    grouped = results.groupby(keys, sort=True)
+    table = grouped[list(METRICS)].median()
+    table.insert(0, "nrep", grouped.size())
+    return table.reset_index()
+
+
+def _read_json(path):
+    return json.loads(path.read_text()) if path.exists() else {}
+
+
+def write_summary(out: str | Path) -> pd.DataFrame:
+    """
+    Combine all run results and write the summary files.
+
+    Writes `<out>/perf.tsv` (every successful run) and `<out>/perf.md`
+    (median tables per axis, failed runs, notes, machine and tool
+    versions).
+
+    Parameters
+    ----------
+    out : str or Path
+        Benchmark output directory.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Medians, as returned by `summarize`.
+    """
+    out = Path(out)
+    results, errors = collect(out)
+    if results.empty:
+        raise ValueError(f"every run in {out / 'results'} failed")
+    results.to_csv(out / "perf.tsv", sep="\t", index=False)
+    table = summarize(results)
+    nthread = sorted(results["nthread"].unique().tolist())
+    text = ["# Runtime and memory benchmark", ""]
+    text += [f"Threads per tool: {', '.join(map(str, nthread))}", ""]
+    for axis, label in (("nmol", "molecule count"), ("nbp", "length")):
+        sub = table[table["axis"] == axis].drop(columns="axis")
+        if sub.empty:
+            continue
+        text += [f"## Scaling with {label}", ""]
+        text += [run_synth._markdown_table(sub), ""]
+    if not errors.empty:
+        text += ["## Failed runs", ""]
+        for row in errors.itertuples(index=False):
+            reason = row.error.strip().splitlines()[-1]
+            text.append(
+                f"- {row.tool} {row.axis}={row.value} rep {row.rep}: {reason}"
+            )
+        text += [""]
+    text += ["## Notes", ""] + [f"- {note}" for note in NOTES] + [""]
+    for name, title in (("machine", "Machine"), ("versions", "Tool versions")):
+        info = _read_json(out / f"{name}.json")
+        if info:
+            text += [f"## {title}", ""]
+            text += [f"- {key}: {value}" for key, value in info.items()]
+            text += [""]
+    (out / "perf.md").write_text("\n".join(text))
+    return table
+
+
 @app.command(name="make_data")
 def make_data_cmd(
     out: Annotated[Path, typer.Argument(help="Benchmark output directory")],
@@ -519,6 +671,15 @@ def run_cmd(
         overwrite=overwrite,
     )
     typer.echo(f"measured {len(paths)} runs in {out}")
+
+
+@app.command(name="summarize")
+def summarize_cmd(
+    out: Annotated[Path, typer.Argument(help="Benchmark output directory")],
+):
+    """Write perf.tsv and perf.md from the run results."""
+    write_summary(out)
+    typer.echo(f"wrote {out / 'perf.md'}")
 
 
 if __name__ == "__main__":

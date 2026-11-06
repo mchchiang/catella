@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 import callers
+import pandas as pd
 import perf_worker
 import psutil
 import pytest
@@ -278,6 +279,115 @@ class TestRun:
             assert "error" not in result
             assert result["wall"] > 0
             assert result["peak_rss"] > result["base_rss"]
+
+
+def _write_result(out, tool, axis, value, rep, wall, fit=None, error=None):
+    result = {
+        "tool": tool,
+        "axis": axis,
+        "value": value,
+        "rep": rep,
+        "nmol": value if axis == "nmol" else 10,
+        "nbp": value if axis == "nbp" else 5000,
+        "nthread": 2,
+        "params": {"threads": 2},
+    }
+    if error is None:
+        result.update(
+            {
+                "wall": wall,
+                "cpu": 2 * wall,
+                "peak_rss": 300.0,
+                "base_rss": 100.0,
+                "fit_time": fit,
+            }
+        )
+    else:
+        result["error"] = error
+    path = run_perf.result_path(out, tool, axis, value, rep)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(result))
+
+
+@pytest.fixture
+def results_dir(tmp_path):
+    for rep, wall in enumerate((1.0, 3.0, 2.0)):
+        _write_result(tmp_path, "ft", "nmol", 10, rep, wall)
+        _write_result(tmp_path, "catella", "nmol", 10, rep, wall, fit=0.5)
+        _write_result(tmp_path, "catella", "nbp", 2000, rep, wall, fit=0.5)
+    _write_result(
+        tmp_path, "hiddenfoot", "nmol", 10, 0, None,
+        error="measuring hiddenfoot failed; Traceback\nOSError: no binary",
+    )
+    return tmp_path
+
+
+class TestCollect:
+    def test_rows_and_errors(self, results_dir):
+        results, errors = run_perf.collect(results_dir)
+        assert len(results) == 9
+        assert errors["tool"].tolist() == ["hiddenfoot"]
+
+    def test_derived_measures(self, results_dir):
+        results, _ = run_perf.collect(results_dir)
+        catella = results[results["tool"] == "catella"]
+        assert (catella["call_time"] == catella["wall"] - 0.5).all()
+        assert (results["tool_rss"] == 200.0).all()
+
+    def test_no_fit_gives_nan(self, results_dir):
+        results, _ = run_perf.collect(results_dir)
+        ft = results[results["tool"] == "ft"]
+        assert ft["fit_time"].isna().all()
+        assert ft["call_time"].isna().all()
+
+    def test_params_dropped(self, results_dir):
+        results, _ = run_perf.collect(results_dir)
+        assert "params" not in results
+
+    def test_empty_raises(self, tmp_path):
+        with pytest.raises(ValueError, match="no run results found"):
+            run_perf.collect(tmp_path)
+
+
+class TestSummarize:
+    def test_median_over_repeats(self, results_dir):
+        results, _ = run_perf.collect(results_dir)
+        table = run_perf.summarize(results)
+        row = table[(table["tool"] == "ft") & (table["axis"] == "nmol")]
+        assert row["wall"].item() == 2.0
+        assert row["cpu"].item() == 4.0
+        assert row["nrep"].item() == 3
+
+    def test_one_row_per_point_and_tool(self, results_dir):
+        results, _ = run_perf.collect(results_dir)
+        table = run_perf.summarize(results)
+        assert len(table) == 3
+        for metric in run_perf.METRICS:
+            assert metric in table
+
+
+class TestWriteSummary:
+    def test_files_written(self, results_dir):
+        (results_dir / "machine.json").write_text(json.dumps({"cpu": "X1"}))
+        (results_dir / "versions.json").write_text(
+            json.dumps({"catella": "9.9"})
+        )
+        table = run_perf.write_summary(results_dir)
+        assert len(table) == 3
+        tsv = pd.read_csv(results_dir / "perf.tsv", sep="\t")
+        assert len(tsv) == 9
+        text = (results_dir / "perf.md").read_text()
+        assert "## Scaling with molecule count" in text
+        assert "## Scaling with length" in text
+        assert "hiddenfoot nmol=10 rep 0: OSError: no binary" in text
+        assert "- cpu: X1" in text
+        assert "- catella: 9.9" in text
+        assert "## Notes" in text
+
+    def test_all_failed_raises(self, tmp_path):
+        _write_result(tmp_path, "ft", "nmol", 10, 0, None, error="boom")
+        with pytest.raises(ValueError, match="every run"):
+            run_perf.write_summary(tmp_path)
 
 
 class TestTreeRss:

@@ -154,7 +154,8 @@ fields exactly (unknown keys raise ``TypeError``):
        for all chromosomes or a mapping of chromosome to value.
    * - ``elink``
      - float
-     - Energy scale of the linker repulsion potential.
+     - Energy scale (:math:`k_BT`) of the linker repulsion potential.
+       Optional, default 1.
    * - ``mu``
      - float
      - Chemical potential (:math:`k_BT`); energy gained per bound

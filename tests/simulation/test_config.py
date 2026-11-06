@@ -68,6 +68,23 @@ class TestEmax:
         assert SimSettings.load(path).emax == 200.0
 
 
+class TestElink:
+    def test_default(self):
+        values = _values()
+        del values["elink"]
+        assert SimSettings(**values).elink == 1.0
+
+    def test_explicit_value_kept(self):
+        assert SimSettings(**_values(elink=25.0)).elink == 25.0
+
+    def test_default_when_missing_from_file(self, tmp_path):
+        values = _values()
+        del values["elink"]
+        path = tmp_path / "settings.yml"
+        path.write_text(yaml.safe_dump(values))
+        assert SimSettings.load(path).elink == 1.0
+
+
 class TestLoad:
     @pytest.mark.parametrize(
         ("name", "dump"),

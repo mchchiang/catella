@@ -30,8 +30,10 @@ class SimSettings:
     a repulsion of strength `elink` for shorter linkers. Either one value
     for all chromosomes or a mapping of chromosome to value."""
 
-    elink: float
-    """The energy scale of the linker repulsion potential."""
+    elink: float = 1.0
+    """The energy scale (in $k_BT$) of the linker repulsion potential.
+    Mostly shifts the effective minimum linker length, so fitting `llink`
+    (see `estimate_llink`) absorbs most of its effect."""
 
     mu: float
     """The chemical potential; energy gained by adding a nucleosome."""

@@ -1066,6 +1066,179 @@ def plot_summary(out: str | Path, path: str | Path | None = None) -> Path:
     return path
 
 
+def reliability(
+    calls: Calls,
+    truth: pd.DataFrame,
+    *,
+    nbins: int = 10,
+    nbp: int = NBP,
+    trim: int = TRIM,
+) -> pd.DataFrame:
+    """
+    Bin occupancy against true coverage, for a reliability diagram.
+
+    Bases over `[trim, nbp - trim)` of every molecule are pooled and
+    binned by occupancy into `nbins` equal bins of [0, 1]; occupancy 1
+    falls in the last bin.
+
+    Parameters
+    ----------
+    calls : Calls
+        Calls to bin.
+    truth : pandas.DataFrame
+        Ground truth with columns `mol_id`, `start`, `end`.
+    nbins : int, default 10
+        Number of bins.
+    nbp : int, default `NBP`
+        Molecule length in bp.
+    trim : int, default `TRIM`
+        Bases excluded at each molecule end.
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row per bin, with columns `lo` and `hi`, the bin edges; `n`,
+        the number of bases; `occ_sum`, the sum of their occupancy; and
+        `y_sum`, the number of them inside a true nucleosome.
+    """
+    if nbins <= 0:
+        raise ValueError(f"nbins must be positive, got {nbins}")
+    true = intervals_to_calls(truth, list(calls.mol_ids), nbp)
+    inner = slice(trim, nbp - trim)
+    occ = np.asarray(calls.occ[:, inner], dtype=float).ravel()
+    y = (true.occ[:, inner] >= 0.5).ravel()
+    idx = np.clip((occ * nbins).astype(int), 0, nbins - 1)
+    edges = np.linspace(0, 1, nbins + 1)
+    return pd.DataFrame(
+        {
+            "lo": edges[:-1],
+            "hi": edges[1:],
+            "n": np.bincount(idx, minlength=nbins),
+            "occ_sum": np.bincount(idx, weights=occ, minlength=nbins),
+            "y_sum": np.bincount(idx, weights=y, minlength=nbins),
+        }
+    )
+
+
+def plot_reliability(
+    out: str | Path,
+    *,
+    conds: list[str] | None = None,
+    tools: list[str] | None = None,
+    variant: str = "tuned",
+    nbins: int = 10,
+    min_n: int = 1000,
+    path: str | Path | None = None,
+) -> Path:
+    """
+    Plot reliability diagrams of the benchmark occupancy.
+
+    One panel per condition. For each tool, the bins of `reliability`
+    are pooled over the test datasets (seeds) of the condition, and the
+    fraction of bases inside a true nucleosome is plotted against the
+    mean occupancy of each bin. A calibrated tool lies on the diagonal.
+    Tools or conditions without saved calls are left out.
+
+    Parameters
+    ----------
+    out : str or Path
+        Benchmark output directory (after `evaluate`).
+    conds : list of str, optional
+        Conditions, one panel each; ["default", "biased"] if None.
+    tools : list of str, optional
+        Tools to plot; ["catella", "hiddenfoot"] if None.
+    variant : {"tuned", "default"}, default "tuned"
+        Parameter variant whose calls are plotted.
+    nbins : int, default 10
+        Number of occupancy bins.
+    min_n : int, default 1000
+        Bins with fewer bases are not plotted.
+    path : str or Path, optional
+        Output PDF path; defaults to
+        `<out>/plots/reliability_<variant>.pdf`.
+
+    Returns
+    -------
+    Path
+        The PDF written.
+    """
+    out = Path(out)
+    conds = ["default", "biased"] if conds is None else conds
+    tools = ["catella", "hiddenfoot"] if tools is None else tools
+    _check_choices("conds", conds, set(CONDITIONS))
+    _check_choices("tools", tools, set(TOOLS))
+    panels = {}
+    for cond in conds:
+        curves = {}
+        for tool in tools:
+            cdir = out / "calls" / f"{tool}_{variant}" / cond
+            files = sorted(cdir.glob("s*.h5"))
+            if not files:
+                continue
+            bins = None
+            for h5 in files:
+                ddir = dataset_dir(out, cond, int(h5.stem[1:]))
+                b = reliability(
+                    load_calls(h5),
+                    read_truth(ddir),
+                    nbins=nbins,
+                    nbp=_dataset_length(ddir),
+                )
+                if bins is None:
+                    bins = b
+                else:
+                    bins[["n", "occ_sum", "y_sum"]] += b[
+                        ["n", "occ_sum", "y_sum"]
+                    ]
+            curves[tool] = (bins, len(files))
+        if curves:
+            panels[cond] = curves
+    if not panels:
+        raise ValueError(
+            f"no saved calls for conds {conds}, tools {tools}, variant "
+            f"{variant!r}; run evaluate first"
+        )
+    if path is None:
+        path = out / "plots" / f"reliability_{variant}.pdf"
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig = Figure(figsize=(8.27, 11.69))
+    ncol = 2
+    nrow = max(-(-len(panels) // ncol), 2)
+    for k, (cond, curves) in enumerate(panels.items()):
+        ax = fig.add_subplot(nrow, ncol, k + 1)
+        ax.plot([0, 1], [0, 1], color="#52514e", lw=0.8, ls="--")
+        for tool, (bins, nseed) in curves.items():
+            label, color = TOOL_STYLES[tool]
+            keep = bins[bins["n"] >= min_n]
+            ax.plot(
+                keep["occ_sum"] / keep["n"],
+                keep["y_sum"] / keep["n"],
+                color=color,
+                marker="o",
+                ms=4,
+                lw=1,
+                label=f"{label} ({nseed} seeds)",
+            )
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.set_aspect("equal")
+        ax.set_xlabel("mean stated occupancy", fontsize=8)
+        ax.set_ylabel("fraction inside a true nucleosome", fontsize=8)
+        ax.set_title(cond, fontsize=9)
+        ax.legend(fontsize=7, frameon=False, loc="upper left")
+        _style_axes(ax)
+    fig.suptitle(
+        f"Reliability of occupancy ({variant} parameters; bins with "
+        f"fewer than {min_n} bases not shown)",
+        fontsize=10,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    with PdfPages(path) as pdf:
+        pdf.savefig(fig)
+    return path
+
+
 app = typer.Typer(help="Benchmark catella against fibertools and FiberHMM")
 
 
@@ -1190,6 +1363,26 @@ def plot_summary_cmd(
 ):
     """Plot summary figures of the benchmark comparison."""
     typer.echo(f"wrote {plot_summary(out)}")
+
+
+@app.command(name="plot_reliability")
+def plot_reliability_cmd(
+    out: Annotated[Path, typer.Argument(help="Benchmark output directory")],
+    cond: Annotated[
+        list[str] | None,
+        typer.Option(help="Condition (repeatable); default and biased"),
+    ] = None,
+    tool: Annotated[
+        list[str] | None,
+        typer.Option(help="Tool (repeatable); catella and hiddenfoot"),
+    ] = None,
+    variant: Annotated[
+        str, typer.Option(help="Parameter variant: tuned or default")
+    ] = "tuned",
+):
+    """Plot reliability diagrams of the occupancy."""
+    path = plot_reliability(out, conds=cond, tools=tool, variant=variant)
+    typer.echo(f"wrote {path}")
 
 
 @app.command(name="plot_occupancy")

@@ -581,6 +581,77 @@ class TestPlotSummary:
         assert _pdf_pages(evaluated_out / "plots" / "summary.pdf") == 6
 
 
+class TestReliability:
+    def _truth(self):
+        return pd.DataFrame({"mol_id": ["a"], "start": [10], "end": [30]})
+
+    def test_perfect_calls_fill_end_bins(self):
+        truth = self._truth()
+        calls = run_synth.intervals_to_calls(truth, ["a"], 40)
+        bins = run_synth.reliability(calls, truth, nbins=10, nbp=40, trim=0)
+        assert len(bins) == 10
+        assert bins["n"].tolist() == [20] + [0] * 8 + [20]
+        assert bins["y_sum"].tolist() == [0] + [0] * 8 + [20]
+        assert bins["occ_sum"].iloc[-1] == pytest.approx(20.0)
+
+    def test_known_binning(self):
+        truth = self._truth()
+        calls = run_synth.intervals_to_calls(truth, ["a"], 40)
+        calls.occ = 0.3 + 0.4 * calls.occ
+        bins = run_synth.reliability(calls, truth, nbins=2, nbp=40, trim=5)
+        assert bins["lo"].tolist() == [0.0, 0.5]
+        assert bins["n"].tolist() == [10, 20]
+        assert bins["y_sum"].tolist() == [0, 20]
+        assert bins["occ_sum"].tolist() == pytest.approx([3.0, 14.0])
+
+    def test_invalid_nbins(self):
+        truth = self._truth()
+        calls = run_synth.intervals_to_calls(truth, ["a"], 40)
+        with pytest.raises(ValueError):
+            run_synth.reliability(calls, truth, nbins=0, nbp=40)
+
+
+class TestPlotReliability:
+    def test_default_path(self, evaluated_out):
+        path = run_synth.plot_reliability(evaluated_out)
+        assert path == evaluated_out / "plots" / "reliability_tuned.pdf"
+        assert _pdf_pages(path) == 1
+
+    def test_missing_tool_skipped(self, evaluated_out, tmp_path):
+        shutil.rmtree(evaluated_out / "calls" / "hiddenfoot_tuned")
+        path = run_synth.plot_reliability(
+            evaluated_out, path=tmp_path / "r.pdf"
+        )
+        assert path.exists()
+
+    def test_no_calls_raises(self, tuned_out):
+        with pytest.raises(ValueError):
+            run_synth.plot_reliability(tuned_out)
+
+    @pytest.mark.parametrize(
+        "kwargs", [{"conds": ["nope"]}, {"tools": ["nope"]}]
+    )
+    def test_invalid_args(self, evaluated_out, kwargs):
+        with pytest.raises(ValueError):
+            run_synth.plot_reliability(evaluated_out, **kwargs)
+
+    def test_cli(self, evaluated_out):
+        result = runner.invoke(
+            run_synth.app,
+            [
+                "plot_reliability",
+                str(evaluated_out),
+                "--tool",
+                "ft",
+                "--variant",
+                "default",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        path = evaluated_out / "plots" / "reliability_default.pdf"
+        assert path.exists()
+
+
 class TestTuneEvaluate:
     def test_pipeline(self, tmp_path, fake_tools):
         run_synth.make_data(tmp_path, quick=True, convert=False)

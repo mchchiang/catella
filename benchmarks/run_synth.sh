@@ -12,9 +12,11 @@ finished units.
 
 Options:
   --steps LIST       Comma-separated steps to run, always in pipeline
-                     order: make_data, tune, evaluate, plot_summary,
-                     plot_occupancy; or "all" (default) or "plot"
-                     (plot_summary and plot_occupancy)
+                     order: make_data, tune, evaluate, rescore,
+                     plot_summary, plot_reliability, plot_occupancy; or
+                     "all" (default; every step but rescore) or "plot"
+                     (the three plot steps). rescore scores the saved
+                     calls again without running tools
   --quick            Use the small quick-run dataset set
   --nworker N        Number of parallel processes (default 1)
   --env ENV          Conda env for the external tools
@@ -57,14 +59,16 @@ if [[ -z "$out" ]]; then
     exit 1
 fi
 
-all_steps="make_data,tune,evaluate,plot_summary,plot_occupancy"
+plot_steps="plot_summary,plot_reliability,plot_occupancy"
+all_steps="make_data,tune,evaluate,$plot_steps"
 selected=","
 for s in ${steps//,/ }; do
     case "$s" in
         all) selected+="$all_steps," ;;
-        plot) selected+="plot_summary,plot_occupancy," ;;
-        make_data|tune|evaluate|plot_summary|plot_occupancy)
+        plot) selected+="$plot_steps," ;;
+        make_data|tune|evaluate|rescore|plot_summary|plot_reliability)
             selected+="$s," ;;
+        plot_occupancy) selected+="$s," ;;
         *) echo "unknown step: $s" >&2; usage >&2; exit 1 ;;
     esac
 done
@@ -107,8 +111,14 @@ if wants evaluate; then
     step evaluate "${bench[@]}" evaluate "$out" ${env[@]+"${env[@]}"} \
         --nworker "$nworker" ${hf[@]+"${hf[@]}"}
 fi
+if wants rescore; then
+    step rescore "${bench[@]}" rescore "$out"
+fi
 if wants plot_summary; then
     step plot_summary "${bench[@]}" plot_summary "$out"
+fi
+if wants plot_reliability; then
+    step plot_reliability "${bench[@]}" plot_reliability "$out"
 fi
 
 if wants plot_occupancy; then

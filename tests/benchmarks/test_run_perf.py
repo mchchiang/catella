@@ -3,7 +3,9 @@
 import json
 import subprocess
 import sys
+from pathlib import Path
 
+import callers
 import perf_worker
 import psutil
 import pytest
@@ -32,6 +34,72 @@ def quick_ddir(tmp_path_factory):
     out = tmp_path_factory.mktemp("perf")
     specs = run_synth.make_data(out, quick=True, convert=False)
     return specs[1]["dir"]
+
+
+class TestPerfSpecs:
+    def test_full_axes(self):
+        specs = run_perf.perf_specs()
+        nmol = [s["value"] for s in specs if s["axis"] == "nmol"]
+        nbp = [s["value"] for s in specs if s["axis"] == "nbp"]
+        assert nmol == list(run_perf.NMOL_AXIS)
+        assert nbp == list(run_perf.NBP_AXIS)
+
+    def test_quick_axes(self):
+        specs = run_perf.perf_specs(quick=True)
+        assert len(specs) == len(run_perf.QUICK_NMOL_AXIS) + len(
+            run_perf.QUICK_NBP_AXIS
+        )
+        for spec in specs:
+            if spec["axis"] == "nbp":
+                assert spec["params"]["nmol"] == run_perf.QUICK_BASE_NMOL
+
+    def test_axis_sizes(self):
+        for spec in run_perf.perf_specs():
+            params = spec["params"]
+            if spec["axis"] == "nmol":
+                assert params["nmol"] == spec["value"]
+                assert params["nbp"] == run_perf.BASE_NBP
+            else:
+                assert params["nbp"] == spec["value"]
+                assert params["nmol"] == run_perf.BASE_NMOL
+
+    def test_default_condition(self):
+        params = run_perf.perf_specs()[0]["params"]
+        for key, value in run_synth.BASE_PARAMS.items():
+            assert params[key] == value
+        assert params["controls"] and params["double_strand"]
+        assert params["seed"] == run_perf.SEED
+
+    def test_shared_dataset_has_one_name(self):
+        specs = run_perf.perf_specs()
+        name = run_perf.dataset_name(run_perf.BASE_NMOL, run_perf.BASE_NBP)
+        assert sum(s["cond"] == name for s in specs) == 2
+
+
+@pytest.fixture(scope="module")
+def made(tmp_path_factory):
+    out = tmp_path_factory.mktemp("perf_data")
+    return out, run_perf.make_data(out, quick=True, convert=False)
+
+
+class TestMakeData:
+    def test_one_directory_per_dataset(self, made):
+        _, specs = made
+        dirs = {s["dir"] for s in specs}
+        assert len(dirs) == len({s["cond"] for s in specs}) == 3
+
+    def test_datasets_written(self, made):
+        _, specs = made
+        for spec in specs:
+            assert (Path(spec["dir"]) / "synth.tsv").exists()
+            nmol = len(callers._test_mol_ids(spec["dir"]))
+            assert nmol == spec["params"]["nmol"]
+
+    def test_record_written(self, made):
+        out, specs = made
+        record = json.loads((out / "perf_datasets.json").read_text())
+        assert record["quick"] is True
+        assert record["datasets"] == specs
 
 
 class TestTreeRss:

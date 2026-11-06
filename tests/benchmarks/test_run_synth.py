@@ -422,6 +422,39 @@ def evaluated_out(tuned_out):
     return tuned_out
 
 
+class TestRescore:
+    def test_scores_unchanged(self, evaluated_out, fake_tools):
+        before = pd.read_csv(evaluated_out / "results.tsv", sep="\t")
+        fake_tools.clear()
+        after = run_synth.rescore(evaluated_out)
+        assert fake_tools == []
+        pd.testing.assert_frame_equal(
+            before.reset_index(drop=True), after.reset_index(drop=True)
+        )
+
+    def test_adds_new_columns(self, evaluated_out):
+        path = run_synth.unit_result_path(evaluated_out, "ft", "default", 1)
+        table = pd.read_csv(path, sep="\t").drop(columns="brier")
+        table.to_csv(path, sep="\t", index=False)
+        results = run_synth.rescore(evaluated_out)
+        assert results["brier"].notna().all()
+        assert "brier" in pd.read_csv(path, sep="\t").columns
+
+    def test_missing_calls_raise(self, evaluated_out):
+        shutil.rmtree(evaluated_out / "calls" / "ft_default")
+        with pytest.raises(ValueError):
+            run_synth.rescore(evaluated_out)
+
+    def test_no_results_raise(self, tmp_path):
+        with pytest.raises(ValueError):
+            run_synth.rescore(tmp_path)
+
+    def test_cli(self, evaluated_out):
+        result = runner.invoke(run_synth.app, ["rescore", str(evaluated_out)])
+        assert result.exit_code == 0, result.output
+        assert (evaluated_out / "summary.md").exists()
+
+
 PER_PAGE = run_synth._occupancy_per_page(len(run_synth.TOOLS) + 2)
 
 

@@ -564,15 +564,19 @@ def evaluate_unit(
         save_calls(
             calls, out / "calls" / f"{tool}_{variant}" / cond / f"s{seed}.h5"
         )
-        scores = score_calls(calls, truth)
-        scores.insert(0, "seed", seed)
-        scores.insert(0, "cond", cond)
-        scores.insert(0, "variant", variant)
-        scores.insert(0, "tool", tool)
-        frames.append(scores)
+        frames.append(_label_scores(calls, truth, tool, variant, cond, seed))
     path.parent.mkdir(parents=True, exist_ok=True)
     pd.concat(frames, ignore_index=True).to_csv(path, sep="\t", index=False)
     return path
+
+
+def _label_scores(calls, truth, tool, variant, cond, seed):
+    scores = score_calls(calls, truth)
+    scores.insert(0, "seed", seed)
+    scores.insert(0, "cond", cond)
+    scores.insert(0, "variant", variant)
+    scores.insert(0, "tool", tool)
+    return scores
 
 
 def _check_choices(name, values, allowed):
@@ -643,6 +647,56 @@ def evaluate(
     with open(out / "versions.json", "w") as fh:
         json.dump(tool_versions(env), fh, indent=2)
     _run_tasks(evaluate_unit, units, nworker)
+    return write_summary(out)
+
+
+def rescore(out: str | Path) -> pd.DataFrame:
+    """
+    Score the saved calls again and rewrite the summary.
+
+    For every unit result present (see `unit_result_path`), reloads the
+    saved calls of both variants and the ground truth, reruns
+    `score_calls`, and overwrites the unit result. No tool is run. Use
+    this after a change to `score_calls`.
+
+    Parameters
+    ----------
+    out : str or Path
+        Benchmark output directory (after `evaluate`).
+
+    Returns
+    -------
+    pandas.DataFrame
+        Per-molecule results of all units, as returned by
+        `write_summary`.
+
+    Raises
+    ------
+    ValueError
+        If no unit results exist, or the saved calls of a unit are
+        missing.
+    """
+    out = Path(out)
+    files = sorted((out / "results").glob("*/*/s*.tsv"))
+    if not files:
+        raise ValueError(f"no unit results found in {out / 'results'}")
+    for path in files:
+        tool, cond = path.parent.parent.name, path.parent.name
+        seed = int(path.stem[1:])
+        truth = read_truth(dataset_dir(out, cond, seed))
+        frames = []
+        for variant in ("tuned", "default"):
+            h5 = out / "calls" / f"{tool}_{variant}" / cond / f"s{seed}.h5"
+            if not h5.exists():
+                raise ValueError(f"saved calls not found: {h5}")
+            frames.append(
+                _label_scores(
+                    load_calls(h5), truth, tool, variant, cond, seed
+                )
+            )
+        pd.concat(frames, ignore_index=True).to_csv(
+            path, sep="\t", index=False
+        )
     return write_summary(out)
 
 
@@ -1108,6 +1162,15 @@ def summarize_cmd(
     write_summary(out)
     typer.echo(f"wrote {Path(out) / 'summary.md'}")
     typer.echo(f"wrote {plot_summary(out)}")
+
+
+@app.command(name="rescore")
+def rescore_cmd(
+    out: Annotated[Path, typer.Argument(help="Benchmark output directory")],
+):
+    """Score the saved calls again, without running tools."""
+    rescore(out)
+    typer.echo(f"wrote {Path(out) / 'summary.md'}")
 
 
 @app.command(name="plot_summary")

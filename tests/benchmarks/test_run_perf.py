@@ -1,6 +1,8 @@
 # test_run_perf.py
 
 import json
+import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -100,6 +102,182 @@ class TestMakeData:
         record = json.loads((out / "perf_datasets.json").read_text())
         assert record["quick"] is True
         assert record["datasets"] == specs
+
+
+class TestThreadParams:
+    @pytest.mark.parametrize(
+        ("tool", "expected"),
+        [
+            ("catella", {"nworker": 3}),
+            ("ft", {"threads": 3}),
+            ("hiddenfoot", {"threads": 3}),
+            ("fiberhmm", {"threads": 3, "io_threads": 3}),
+            ("fiberhmm_pre", {"threads": 3, "io_threads": 3}),
+        ],
+    )
+    def test_tools(self, tool, expected):
+        assert run_perf.thread_params(tool, 3) == expected
+
+    def test_every_tool_covered(self):
+        for tool in callers.TOOLS:
+            run_perf.thread_params(tool, 1)
+
+    def test_unknown_raises(self):
+        with pytest.raises(ValueError, match="unknown tool 'x'"):
+            run_perf.thread_params("x", 1)
+
+
+class TestResultPath:
+    def test_layout(self, tmp_path):
+        path = run_perf.result_path(tmp_path, "ft", "nmol", 25, 2)
+        assert path == tmp_path / "results" / "ft" / "nmol_25_r2.json"
+
+
+class TestMachineInfo:
+    def test_keys(self):
+        info = run_perf.machine_info()
+        assert set(info) == {
+            "platform",
+            "machine",
+            "cpu",
+            "physical_cores",
+            "logical_cores",
+            "memory_gb",
+            "python",
+        }
+        assert info["logical_cores"] >= 1
+        assert info["memory_gb"] > 0
+
+
+class TestRun:
+    @pytest.fixture
+    def fake(self, made, monkeypatch, tmp_path):
+        src, _ = made
+        out = tmp_path / "out"
+        out.mkdir()
+        shutil.copy(src / "perf_datasets.json", out)
+        calls = []
+
+        def fake_measure(tool, ddir, params, **kwargs):
+            calls.append({"tool": tool, "ddir": ddir, "params": params})
+            if tool == "fiberhmm":
+                assert not list(Path(ddir).glob("fiberhmm_model*"))
+            if tool == "hiddenfoot":
+                raise RuntimeError("measuring hiddenfoot failed; boom")
+            return {"wall": 1.0, "peak_rss": 2.0, "fit_time": None}
+
+        monkeypatch.setattr(run_perf, "measure_tool", fake_measure)
+        monkeypatch.setattr(run_perf, "tool_versions", lambda env: {})
+        monkeypatch.setattr(
+            run_perf, "env_bin_dir", lambda env: tmp_path / "bin"
+        )
+        monkeypatch.setenv("BENCH_TOOL_BIN", "unset")
+        monkeypatch.delenv("BENCH_TOOL_BIN")
+        return out, calls
+
+    def test_every_run_written(self, fake):
+        out, calls = fake
+        record = json.loads((out / "perf_datasets.json").read_text())
+        paths = run_perf.run(out, nrep=2)
+        expected = 2 * len(record["datasets"]) * len(callers.TOOLS)
+        assert len(paths) == len(calls) == expected
+        assert all(p.exists() for p in paths)
+
+    def test_quick_defaults_to_one_repeat(self, fake):
+        out, _ = fake
+        paths = run_perf.run(out, tools=["catella"])
+        assert {json.loads(p.read_text())["rep"] for p in paths} == {0}
+
+    def test_result_metadata(self, fake):
+        out, _ = fake
+        run_perf.run(out, tools=["catella"], nthread=3)
+        path = run_perf.result_path(out, "catella", "nbp", 2000, 0)
+        result = json.loads(path.read_text())
+        assert result["tool"] == "catella"
+        assert result["axis"] == "nbp"
+        assert result["value"] == 2000
+        assert result["nbp"] == 2000
+        assert result["nmol"] == run_perf.QUICK_BASE_NMOL
+        assert result["nthread"] == 3
+        assert result["params"] == {"nworker": 3}
+        assert result["wall"] == 1.0
+
+    def test_resume_skips_finished(self, fake):
+        out, calls = fake
+        run_perf.run(out, tools=["catella"])
+        n = len(calls)
+        assert run_perf.run(out, tools=["catella"]) == []
+        assert len(calls) == n
+
+    def test_overwrite_reruns(self, fake):
+        out, _ = fake
+        first = run_perf.run(out, tools=["catella"])
+        second = run_perf.run(out, tools=["catella"], overwrite=True)
+        assert second == first
+
+    def test_failure_recorded_and_retried(self, fake):
+        out, _ = fake
+        paths = run_perf.run(out, tools=["hiddenfoot"])
+        for path in paths:
+            assert "boom" in json.loads(path.read_text())["error"]
+        assert run_perf.run(out, tools=["hiddenfoot"]) == paths
+
+    def test_tuned_params_merged(self, fake, tmp_path):
+        out, calls = fake
+        tuned = tmp_path / "tuned_params.json"
+        tuned.write_text(json.dumps({"ft": {"nucleosome_length": 75}}))
+        run_perf.run(out, tools=["ft"], tuned=tuned, nthread=4)
+        assert calls[0]["params"] == {"nucleosome_length": 75, "threads": 4}
+
+    def test_fiberhmm_cache_removed(self, fake):
+        out, calls = fake
+        record = json.loads((out / "perf_datasets.json").read_text())
+        for spec in record["datasets"]:
+            cache = Path(spec["dir"]) / "fiberhmm_model"
+            cache.mkdir(exist_ok=True)
+            (cache / "best-model.json").write_text("{}")
+        run_perf.run(out, tools=["fiberhmm"])
+        assert calls
+
+    def test_bin_dir_set_for_external_tools(self, fake, tmp_path):
+        out, _ = fake
+        run_perf.run(out, tools=["ft"])
+        assert os.environ["BENCH_TOOL_BIN"] == str(tmp_path / "bin")
+
+    def test_bin_dir_not_needed_for_catella(self, fake, monkeypatch):
+        out, _ = fake
+
+        def fail(env):
+            raise AssertionError("env_bin_dir called")
+
+        monkeypatch.setattr(run_perf, "env_bin_dir", fail)
+        run_perf.run(out, tools=["catella"])
+        assert "BENCH_TOOL_BIN" not in os.environ
+
+    def test_metadata_files_written(self, fake):
+        out, _ = fake
+        run_perf.run(out, tools=["catella"])
+        assert json.loads((out / "versions.json").read_text()) == {}
+        machine = json.loads((out / "machine.json").read_text())
+        assert "cpu" in machine
+
+    def test_unknown_tool_raises(self, fake):
+        out, _ = fake
+        with pytest.raises(ValueError, match="unknown tools"):
+            run_perf.run(out, tools=["nosuch"])
+
+    def test_real_catella_run(self, made, tmp_path, monkeypatch):
+        src, _ = made
+        out = tmp_path / "out"
+        out.mkdir()
+        shutil.copy(src / "perf_datasets.json", out)
+        monkeypatch.setattr(run_perf, "tool_versions", lambda env: {})
+        paths = run_perf.run(out, tools=["catella"], nthread=1)
+        for path in paths:
+            result = json.loads(path.read_text())
+            assert "error" not in result
+            assert result["wall"] > 0
+            assert result["peak_rss"] > result["base_rss"]
 
 
 class TestTreeRss:

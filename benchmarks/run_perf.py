@@ -2,15 +2,18 @@
 
 import json
 import os
+import platform
+import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 from typing import Annotated
 
+import psutil
 import run_synth
 import typer
-from callers import ENV
+from callers import ENV, NO_ENV_TOOLS, TOOLS, env_bin_dir, tool_versions
 
 WORKER = Path(__file__).resolve().parent / "perf_worker.py"
 # Scaling axes: molecule count at BASE_NBP, length at BASE_NMOL
@@ -22,6 +25,9 @@ QUICK_NMOL_AXIS = (10, 20)
 QUICK_NBP_AXIS = (2000, 5000)
 QUICK_BASE_NMOL = 10
 SEED = 1
+NREP = 3
+# FiberHMM files cached in a dataset directory by `train_fiberhmm`
+FIBERHMM_CACHE = ("fiberhmm_model", "fiberhmm_probs")
 # Thread pools of numerical libraries, capped to the tool thread count
 THREAD_ENV_VARS = (
     "OMP_NUM_THREADS",
@@ -236,6 +242,224 @@ def measure_tool(
         return json.loads(result_path.read_text())
 
 
+def thread_params(tool: str, nthread: int) -> dict:
+    """
+    Runner keyword arguments that set a tool's thread count.
+
+    Parameters
+    ----------
+    tool : str
+        A key of `callers.TOOLS`.
+    nthread : int
+        Number of threads (worker processes for catella and
+        `fiberhmm-call`).
+
+    Returns
+    -------
+    dict
+        Keyword arguments for the tool's runner. FiberHMM training has
+        no thread option.
+
+    Raises
+    ------
+    ValueError
+        If `tool` is unknown.
+    """
+    if tool == "catella":
+        return {"nworker": nthread}
+    if tool in ("ft", "hiddenfoot"):
+        return {"threads": nthread}
+    if tool in ("fiberhmm", "fiberhmm_pre"):
+        return {"threads": nthread, "io_threads": nthread}
+    raise ValueError(
+        f"unknown tool {tool!r}; expected one of {sorted(TOOLS)}"
+    )
+
+
+def result_path(
+    out: str | Path, tool: str, axis: str, value: int, rep: int
+) -> Path:
+    """
+    Result file of one measured run.
+
+    Parameters
+    ----------
+    out : str or Path
+        Benchmark output directory.
+    tool : str
+        A key of `callers.TOOLS`.
+    axis : {"nmol", "nbp"}
+        Scaling axis.
+    value : int
+        Axis value.
+    rep : int
+        Repeat index.
+
+    Returns
+    -------
+    Path
+        `<out>/results/<tool>/<axis>_<value>_r<rep>.json`.
+    """
+    return Path(out) / "results" / tool / f"{axis}_{value}_r{rep}.json"
+
+
+def machine_info() -> dict:
+    """
+    Describe the machine the benchmark runs on.
+
+    Returns
+    -------
+    dict
+        Keys "platform", "machine", "cpu", "physical_cores",
+        "logical_cores", "memory_gb" and "python".
+    """
+    cpu = platform.processor()
+    if sys.platform == "darwin":
+        proc = subprocess.run(
+            ["sysctl", "-n", "machdep.cpu.brand_string"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        cpu = proc.stdout.strip() or cpu
+    elif Path("/proc/cpuinfo").exists():
+        for line in Path("/proc/cpuinfo").read_text().splitlines():
+            if line.startswith("model name"):
+                cpu = line.split(":", 1)[1].strip()
+                break
+    return {
+        "platform": platform.platform(),
+        "machine": platform.machine(),
+        "cpu": cpu,
+        "physical_cores": psutil.cpu_count(logical=False),
+        "logical_cores": psutil.cpu_count(logical=True),
+        "memory_gb": round(psutil.virtual_memory().total / 1024**3, 1),
+        "python": platform.python_version(),
+    }
+
+
+def _clear_fiberhmm_cache(ddir):
+    for name in FIBERHMM_CACHE:
+        for path in Path(ddir).glob(f"{name}*"):
+            shutil.rmtree(path, ignore_errors=True)
+
+
+def _is_done(path):
+    if not path.exists():
+        return False
+    return "error" not in json.loads(path.read_text())
+
+
+def run(
+    out: str | Path,
+    *,
+    env: str = ENV,
+    nthread: int = 2,
+    nrep: int | None = None,
+    tools: list[str] | None = None,
+    tuned: str | Path | None = None,
+    overwrite: bool = False,
+    interval: float = 0.05,
+) -> list[Path]:
+    """
+    Measure every tool on every scaling dataset, one run at a time.
+
+    Runs are ordered by repeat, then axis point, then tool. A run whose
+    result file exists is skipped unless `overwrite`; a failed run is
+    saved with an "error" key and run again next time. Before each
+    retrained FiberHMM run, its cached model is removed so that
+    training is always timed. External tools are run directly from
+    their conda environment (see `callers.run_in_env`). Also writes
+    `<out>/versions.json` and `<out>/machine.json`.
+
+    Parameters
+    ----------
+    out : str or Path
+        Benchmark output directory (after `make_data`).
+    env : str, default "catella"
+        Conda environment for the external tools.
+    nthread : int, default 2
+        Threads per tool; see `thread_params`.
+    nrep : int, optional
+        Repeats per run; `NREP`, or 1 for quick datasets, if None.
+    tools : list of str, optional
+        Restrict to these tools (keys of `callers.TOOLS`); all if None.
+    tuned : str or Path, optional
+        `tuned_params.json` of a synthetic benchmark (`run_synth.py`);
+        tool defaults if None.
+    overwrite : bool, default False
+        If True, rerun runs whose results exist.
+    interval : float, default 0.05
+        Seconds between memory samples.
+
+    Returns
+    -------
+    list of Path
+        Result files of the runs measured in this call.
+    """
+    out = Path(out)
+    with open(out / "perf_datasets.json") as fh:
+        record = json.load(fh)
+    tools = list(TOOLS) if tools is None else tools
+    run_synth._check_choices("tools", tools, set(TOOLS))
+    if nrep is None:
+        nrep = 1 if record["quick"] else NREP
+    tuned_params = {}
+    if tuned is not None:
+        with open(tuned) as fh:
+            tuned_params = json.load(fh)
+    if any(t not in NO_ENV_TOOLS for t in tools):
+        os.environ.setdefault("BENCH_TOOL_BIN", str(env_bin_dir(env)))
+    with open(out / "versions.json", "w") as fh:
+        json.dump(tool_versions(env), fh, indent=2)
+    with open(out / "machine.json", "w") as fh:
+        json.dump(machine_info(), fh, indent=2)
+    work = out / "work"
+    work.mkdir(parents=True, exist_ok=True)
+    written = []
+    for rep in range(nrep):
+        for spec in record["datasets"]:
+            for tool in tools:
+                path = result_path(out, tool, spec["axis"], spec["value"], rep)
+                if _is_done(path) and not overwrite:
+                    continue
+                if tool == "fiberhmm":
+                    _clear_fiberhmm_cache(spec["dir"])
+                params = {
+                    **tuned_params.get(tool, {}),
+                    **thread_params(tool, nthread),
+                }
+                result = {
+                    "tool": tool,
+                    "axis": spec["axis"],
+                    "value": spec["value"],
+                    "rep": rep,
+                    "nmol": spec["params"]["nmol"],
+                    "nbp": spec["params"]["nbp"],
+                    "nthread": nthread,
+                    "params": params,
+                }
+                try:
+                    result.update(
+                        measure_tool(
+                            tool,
+                            spec["dir"],
+                            params,
+                            env=env,
+                            nthread=nthread,
+                            interval=interval,
+                            workdir=work,
+                        )
+                    )
+                except RuntimeError as err:
+                    result["error"] = str(err)
+                    typer.echo(f"warning: {err}", err=True)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(json.dumps(result, indent=2))
+                written.append(path)
+    return written
+
+
 @app.command(name="make_data")
 def make_data_cmd(
     out: Annotated[Path, typer.Argument(help="Benchmark output directory")],
@@ -253,6 +477,48 @@ def make_data_cmd(
     specs = make_data(out, quick=quick, env=env, nworker=nworker)
     ndata = len({spec["cond"] for spec in specs})
     typer.echo(f"wrote {ndata} datasets to {out}")
+
+
+@app.command(name="run")
+def run_cmd(
+    out: Annotated[Path, typer.Argument(help="Benchmark output directory")],
+    env: Annotated[
+        str, typer.Option(help="Conda env with samtools/ft/FiberHMM")
+    ] = ENV,
+    nthread: Annotated[
+        int, typer.Option(help="Threads (or worker processes) per tool")
+    ] = 2,
+    nrep: Annotated[
+        int | None,
+        typer.Option(help=f"Repeats per run; default {NREP} (1 if quick)"),
+    ] = None,
+    tool: Annotated[
+        list[str] | None, typer.Option(help="Only this tool (repeatable)")
+    ] = None,
+    tuned: Annotated[
+        Path | None,
+        typer.Option(help="tuned_params.json from run_synth.py"),
+    ] = None,
+    hiddenfoot: Annotated[
+        str | None,
+        typer.Option(help="HiddenFoot executable; default $HIDDENFOOT"),
+    ] = None,
+    overwrite: Annotated[
+        bool, typer.Option(help="Rerun runs whose results exist")
+    ] = False,
+):
+    """Measure the runtime and memory use of each tool."""
+    run_synth._set_hiddenfoot(hiddenfoot)
+    paths = run(
+        out,
+        env=env,
+        nthread=nthread,
+        nrep=nrep,
+        tools=tool,
+        tuned=tuned,
+        overwrite=overwrite,
+    )
+    typer.echo(f"measured {len(paths)} runs in {out}")
 
 
 if __name__ == "__main__":

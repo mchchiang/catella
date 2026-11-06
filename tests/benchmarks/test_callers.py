@@ -71,6 +71,7 @@ class TestRunInEnv:
     def test_executable_choice(
         self, monkeypatch, conda_exe, mamba_exe, expected
     ):
+        monkeypatch.delenv("BENCH_TOOL_BIN", raising=False)
         env_vars = (("CONDA_EXE", conda_exe), ("MAMBA_EXE", mamba_exe))
         for name, value in env_vars:
             if value is None:
@@ -95,6 +96,68 @@ class TestRunInEnv:
     def test_success_returns_process(self):
         proc = callers.run_in_env(callers.ENV, ["samtools", "--version"])
         assert isinstance(proc, subprocess.CompletedProcess)
+        assert "samtools" in proc.stdout
+
+    def test_bin_dir_runs_command_directly(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("BENCH_TOOL_BIN", str(tmp_path))
+        seen = []
+
+        def fake_run(args, **kwargs):
+            seen.append((args, kwargs["env"]["PATH"]))
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        monkeypatch.setattr(callers.subprocess, "run", fake_run)
+        callers.run_in_env("e", ["samtools", "--version"])
+        args, path = seen[0]
+        assert args == [str(tmp_path / "samtools"), "--version"]
+        assert path.split(os.pathsep)[0] == str(tmp_path)
+
+    @pytest.mark.skipif(os.name == "nt", reason="needs a POSIX shell")
+    def test_bin_dir_returns_output(self, monkeypatch, tmp_path):
+        exe = tmp_path / "tool"
+        exe.write_text('#!/bin/sh\necho "args $*"\n')
+        exe.chmod(0o755)
+        monkeypatch.setenv("BENCH_TOOL_BIN", str(tmp_path))
+        proc = callers.run_in_env("e", ["tool", "-x"])
+        assert proc.stdout.strip() == "args -x"
+
+    @pytest.mark.skipif(os.name == "nt", reason="needs a POSIX shell")
+    def test_bin_dir_failure_raises(self, monkeypatch, tmp_path):
+        exe = tmp_path / "tool"
+        exe.write_text("#!/bin/sh\necho bad >&2\nexit 3\n")
+        exe.chmod(0o755)
+        monkeypatch.setenv("BENCH_TOOL_BIN", str(tmp_path))
+        with pytest.raises(RuntimeError, match="bad"):
+            callers.run_in_env("e", ["tool"])
+
+
+class TestEnvBinDir:
+    def test_uses_conda_even_with_bin_dir(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("BENCH_TOOL_BIN", str(tmp_path))
+        monkeypatch.setenv("CONDA_EXE", "/x/conda")
+        seen = []
+
+        def fake_run(args, **kwargs):
+            seen.append(args)
+            return subprocess.CompletedProcess(args, 0, "/p/env\n", "")
+
+        monkeypatch.setattr(callers.subprocess, "run", fake_run)
+        assert callers.env_bin_dir("e") == Path("/p/env/bin")
+        assert seen[0][:4] == ["/x/conda", "run", "-n", "e"]
+
+    def test_missing_env_raises(self):
+        with pytest.raises((RuntimeError, FileNotFoundError)):
+            callers.env_bin_dir("no_such_env_xyz")
+
+    @needs_env
+    def test_holds_tools(self):
+        assert (callers.env_bin_dir(callers.ENV) / "samtools").exists()
+
+    @needs_env
+    def test_tools_run_directly(self, monkeypatch):
+        bin_dir = callers.env_bin_dir(callers.ENV)
+        monkeypatch.setenv("BENCH_TOOL_BIN", str(bin_dir))
+        proc = callers.run_in_env(callers.ENV, ["samtools", "--version"])
         assert "samtools" in proc.stdout
 
 

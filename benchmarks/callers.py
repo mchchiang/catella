@@ -24,12 +24,20 @@ HF_MAX_WINDOW = 2000
 FIBERHMM_CHANNELS = {"a": ("", "pacbio-fiber"), "m": (".gpc", "gpc")}
 
 
+def _conda_exe():
+    conda = os.environ.get("CONDA_EXE") or os.environ.get("MAMBA_EXE")
+    return conda or "conda"
+
+
 def run_in_env(env: str, args: list[str], cwd: str | Path | None = None):
     """
     Run a command inside a conda environment.
 
     Uses the executable in `$CONDA_EXE`, else `$MAMBA_EXE`, else
-    `conda` on the `PATH`.
+    `conda` on the `PATH`. If `$BENCH_TOOL_BIN` is set, runs
+    `$BENCH_TOOL_BIN/<command>` directly instead, with that directory
+    first on the `PATH`, to avoid the overhead of `conda run` (see
+    `env_bin_dir`).
 
     Parameters
     ----------
@@ -45,14 +53,16 @@ def run_in_env(env: str, args: list[str], cwd: str | Path | None = None):
     subprocess.CompletedProcess
         The finished process, with captured text output.
     """
-    conda = os.environ.get("CONDA_EXE") or os.environ.get("MAMBA_EXE")
-    conda = conda or "conda"
+    bin_dir = os.environ.get("BENCH_TOOL_BIN")
+    if bin_dir:
+        path = os.pathsep.join([bin_dir, os.environ.get("PATH", "")])
+        cmd = [str(Path(bin_dir) / args[0]), *args[1:]]
+        extra = {"env": {**os.environ, "PATH": path}}
+    else:
+        cmd = [_conda_exe(), "run", "-n", env, *args]
+        extra = {}
     proc = subprocess.run(
-        [conda, "run", "-n", env, *args],
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        check=False,
+        cmd, cwd=cwd, capture_output=True, text=True, check=False, **extra
     )
     if proc.returncode != 0:
         raise RuntimeError(
@@ -60,6 +70,41 @@ def run_in_env(env: str, args: list[str], cwd: str | Path | None = None):
             f"{proc.stderr.strip()}"
         )
     return proc
+
+
+def env_bin_dir(env: str) -> Path:
+    """
+    Find the directory holding a conda environment's executables.
+
+    Always resolved with `conda run`, even if `$BENCH_TOOL_BIN` is set.
+
+    Parameters
+    ----------
+    env : str
+        Conda environment name.
+
+    Returns
+    -------
+    Path
+        `<prefix>/bin` of the environment.
+
+    Raises
+    ------
+    RuntimeError
+        If the environment cannot be run.
+    """
+    args = ["python", "-c", "import sys; print(sys.prefix)"]
+    proc = subprocess.run(
+        [_conda_exe(), "run", "-n", env, *args],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"cannot find env {env!r}; {proc.stderr.strip()}"
+        )
+    return Path(proc.stdout.strip().splitlines()[-1]) / "bin"
 
 
 VERSION_CMDS = {

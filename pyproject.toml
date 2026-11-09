@@ -5,7 +5,7 @@ build-backend = "scikit_build_core.build"
 [project]
 name = "catella"
 dynamic = ["version"]
-description = "A Monte-Carlo simulator for predicting nucleosome positions based on DNA methylation footprinting data"
+description = "A Python/C++ package for predicting nucleosome positions from single-molecule DNA methylation footprinting data"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.13"

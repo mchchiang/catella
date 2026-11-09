@@ -5,8 +5,8 @@ title: catella
 version: 0.1.0
 # TODO: set date-released once a version is tagged, e.g. 2026-09-08
 abstract: >-
-  A Monte Carlo simulator for predicting nucleosome positions based on
-  DNA methylation footprinting data.
+  A Python/C++ package for predicting nucleosome positions from
+  single-molecule DNA methylation footprinting data.
 authors:
   - family-names: Chiang
     given-names: Michael

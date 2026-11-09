@@ -8,7 +8,7 @@ __maintainers__ = [
     {"name": "Nick Gilbert"},
 ]
 __summary__ = (
-    "A Monte-Carlo simulator for predicting nucleosome positions "
-    "based on DNA methylation footprinting data"
+    "A Python/C++ package for predicting nucleosome positions from "
+    "single-molecule DNA methylation footprinting data"
 )
 __url__ = "https://github.com/mchchiang/catella"

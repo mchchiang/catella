@@ -55,6 +55,7 @@ PYBIND11_MODULE(catella_cpp, m) {
   tmcls.def("getVarN", &NucPosTM::getVarN, py::arg("dmu") = 1e-4);
   tmcls.def("getVarOccup", &NucPosTM::getVarOccup);
   tmcls.def("sampleConfig", &NucPosTM::sampleConfig);
+  tmcls.def("getMostLikelyConfig", &NucPosTM::getMostLikelyConfig);
   tmcls.def("getSeqEnergy", &NucPosTM::getSeqEnergy);
   tmcls.def("reset", &NucPosTM::reset);
   tmcls.def("setSeed", &NucPosTM::setSeed, py::arg("seed"));

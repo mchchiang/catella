@@ -268,3 +268,65 @@ std::pair<vector<int>, double> NucPosTM::sampleConfig() {
   double energy = configEnergy(positions);
   return {positions, energy};
 }
+
+vector<int> NucPosTM::maxScoreConfig(const vector<double>& siteScore,
+				     const vector<double>& stateScore) const {
+  int W = model.nucbp() + model.llink();
+  int npos = model.npos();
+
+  vector<double> cur(W, NINF), nxt(W);
+  cur[W-1] = 0.0;
+  vector<int> prev(npos, -1);
+  int lastW = -1;
+
+  for (int x = 0; x < npos; x++) {
+    double best = NINF;
+    int kBest = -1;
+    for (int k = W-1; k >= 0; k--) {
+      if (stateScore[k] == NINF || cur[k] == NINF) continue;
+      double v = cur[k] + siteScore[x] + stateScore[k];
+      if (v > best) {
+	best = v;
+	kBest = k;
+      }
+    }
+    if (kBest >= 0) prev[x] = (kBest < W-1) ? x - (kBest+1) : lastW;
+    nxt[0] = best;
+    for (int k = 1; k < W-1; k++) nxt[k] = cur[k-1];
+    if (cur[W-2] > cur[W-1]) {
+      nxt[W-1] = cur[W-2];
+      lastW = x - W + 1;
+    } else {
+      nxt[W-1] = cur[W-1];
+    }
+    std::swap(cur, nxt);
+  }
+
+  int kEnd = W-1;
+  for (int k = W-1; k >= 0; k--) {
+    if (cur[k] > cur[kEnd]) kEnd = k;
+  }
+  vector<int> positions;
+  int y = (kEnd < W-1) ? npos - (kEnd+1) : lastW;
+  while (y >= 0) {
+    positions.push_back(y);
+    y = prev[y];
+  }
+  std::reverse(positions.begin(), positions.end());
+  return positions;
+}
+
+std::pair<vector<int>, double> NucPosTM::getMostLikelyConfig() const {
+  int W = model.nucbp() + model.llink();
+  int npos = model.npos();
+  int nucbp = model.nucbp();
+  double mu = model.mu();
+
+  vector<double> siteScore(npos);
+  for (int x = 0; x < npos; x++) siteScore[x] = -(model.eseq()[x] - mu);
+  vector<double> stateScore(W, NINF);
+  for (int k = nucbp-1; k < W; k++) stateScore[k] = -model.erep(k+1);
+
+  vector<int> positions = maxScoreConfig(siteScore, stateScore);
+  return {positions, configEnergy(positions)};
+}

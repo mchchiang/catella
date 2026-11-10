@@ -296,3 +296,76 @@ class TestRequireSolve:
         tm.setEnergy([0.0] * 10, 1e9)
         # Should not raise, even though solve() was never called.
         tm.getVarN()
+
+
+def _config_energy(nucbp, llink, elink, mu, eseq, placed):
+    energy = sum(eseq[x] - mu for x in placed)
+    energy += sum(
+        _erep(b - a, nucbp, llink, elink)
+        for a, b in itertools.pairwise(placed)
+    )
+    return energy
+
+
+PARAM_SETS = [
+    (2, 2, 1.0, 0.5, 10),
+    (3, 2, 0.7, -0.3, 14),
+    (2, 3, 2.0, 1.2, 12),
+    (4, 1, 0.5, 0.0, 13),
+    (3, 0, 1.0, 0.5, 14),
+]
+
+
+class TestMostLikelyConfig:
+    @pytest.mark.parametrize("nucbp,llink,elink,mu,nbp", PARAM_SETS)
+    @pytest.mark.parametrize("seed", [0, 1, 2])
+    def test_matches_brute_force_ground_state(
+        self, nucbp, llink, elink, mu, nbp, seed
+    ):
+        rng = np.random.default_rng(seed)
+        eseq = rng.normal(size=nbp).tolist()
+        _, _, ground = _brute_force_log(nucbp, llink, elink, mu, eseq, 1.0)
+        tm = _tm(nucbp, llink, elink, mu, eseq)
+
+        positions, energy = tm.getMostLikelyConfig()
+
+        assert list(positions) == ground
+        assert energy == pytest.approx(
+            _config_energy(nucbp, llink, elink, mu, eseq, ground)
+        )
+
+    def test_does_not_require_solve(self):
+        tm = NucPosTM(2, 10, 2, 1.0, 0.5, seed=1)
+        tm.setEnergy([-1.0] * 10, 1e9)
+        positions, energy = tm.getMostLikelyConfig()
+        assert len(positions) > 0
+        assert np.isfinite(energy)
+
+    def test_empty_when_placement_is_unfavorable(self):
+        tm = NucPosTM(3, 12, 2, 1.0, 0.0, seed=1)
+        tm.setEnergy([5.0] * 12, 1e9)
+        positions, energy = tm.getMostLikelyConfig()
+        assert list(positions) == []
+        assert energy == 0.0
+
+    def test_independent_of_solve_temperature(self):
+        rng = np.random.default_rng(7)
+        eseq = rng.normal(size=14).tolist()
+        cold = _tm(3, 2, 1.0, 0.5, eseq, temp=0.1).getMostLikelyConfig()
+        hot = _tm(3, 2, 1.0, 0.5, eseq, temp=5.0).getMostLikelyConfig()
+        assert list(cold[0]) == list(hot[0])
+
+    def test_long_fiber_is_valid(self):
+        rng = np.random.default_rng(5)
+        eseq = np.clip(rng.normal(size=2000) - 1.0, -10.0, 10.0).tolist()
+        tm = NucPosTM(147, 2000, 50, 1.0, 0.0, seed=1)
+        tm.setEnergy(eseq, 1e9)
+        positions, energy = tm.getMostLikelyConfig()
+        positions = np.asarray(positions)
+
+        assert len(positions) > 0
+        assert np.all(np.diff(positions) >= 147)
+        assert positions.min() >= 0 and positions.max() <= 2000 - 147
+        assert energy == pytest.approx(
+            _config_energy(147, 50, 1.0, 0.0, eseq, positions.tolist())
+        )

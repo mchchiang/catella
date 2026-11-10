@@ -44,6 +44,10 @@ public:
   // start positions plus that configuration's exact energy.
   std::pair<std::vector<int>, double> sampleConfig();
 
+  // Most probable (MAP) configuration via forward max-recursion; does
+  // not need solve(). Returns start positions and exact energy.
+  std::pair<std::vector<int>, double> getMostLikelyConfig() const;
+
   const std::vector<double>& getSeqEnergy() const;
 
   // Re-seeds the sampling RNG from the original seed.
@@ -80,6 +84,10 @@ private:
 		   std::vector<double>& nxt, int x, double t,
 		   double mu) const;
   double configEnergy(const std::vector<int>& positions) const;
+  // Valid configuration maximizing sum of siteScore[x] + stateScore[k]
+  // over placements (stateScore indexed like logV; -inf forbids).
+  std::vector<int> maxScoreConfig(const std::vector<double>& siteScore,
+				  const std::vector<double>& stateScore) const;
   void requireSolved() const;
 };
 

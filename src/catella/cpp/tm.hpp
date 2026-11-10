@@ -48,6 +48,11 @@ public:
   // not need solve(). Returns start positions and exact energy.
   std::pair<std::vector<int>, double> getMostLikelyConfig() const;
 
+  // Configuration best matching the occupancy profile (MEA); gamma
+  // weights occupied sites. Requires solve().
+  std::pair<std::vector<int>, double> getBestMatchConfig(
+    double gamma = 1.0) const;
+
   const std::vector<double>& getSeqEnergy() const;
 
   // Re-seeds the sampling RNG from the original seed.

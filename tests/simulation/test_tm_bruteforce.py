@@ -369,3 +369,101 @@ class TestMostLikelyConfig:
         assert energy == pytest.approx(
             _config_energy(147, 50, 1.0, 0.0, eseq, positions.tolist())
         )
+
+
+def _valid_configs(nucbp, npos):
+    configs = []
+
+    def recurse(idx, placed):
+        if idx == npos:
+            configs.append(placed)
+            return
+        recurse(idx + 1, placed)
+        if not placed or idx - placed[-1] >= nucbp:
+            recurse(idx + 1, [*placed, idx])
+
+    recurse(0, [])
+    return configs
+
+
+def _footprint_gain(occup, nucbp, gamma):
+    c = (1.0 + gamma) * np.asarray(occup) - 1.0
+    npos = len(occup) - nucbp + 1
+    return np.array([c[x : x + nucbp].sum() for x in range(npos)])
+
+
+class TestBestMatchConfig:
+    @pytest.mark.parametrize("nucbp,llink,elink,mu,nbp", PARAM_SETS)
+    @pytest.mark.parametrize("gamma", [0.5, 1.0, 2.0])
+    def test_matches_brute_force_expected_accuracy(
+        self, nucbp, llink, elink, mu, nbp, gamma
+    ):
+        rng = np.random.default_rng(nbp)
+        eseq = rng.normal(size=nbp).tolist()
+        tm = _tm(nucbp, llink, elink, mu, eseq)
+        gain = _footprint_gain(tm.getOccup(), nucbp, gamma)
+        configs = _valid_configs(nucbp, nbp - nucbp + 1)
+        scores = [gain[c].sum() if c else 0.0 for c in configs]
+        best = configs[int(np.argmax(scores))]
+
+        positions, energy = tm.getBestMatchConfig(gamma)
+
+        assert list(positions) == best
+        assert gain[list(positions)].sum() == pytest.approx(max(scores))
+        assert energy == pytest.approx(
+            _config_energy(nucbp, llink, elink, mu, eseq, best)
+        )
+
+    def test_default_gamma_covers_sites_above_half(self):
+        tm = NucPosTM(3, 8, 0, 0.0, 0.0, seed=1)
+        tm.setEnergy([-3.0, 2.0, 2.0, 5.0, -3.0, 2.0, 2.0, 5.0], 1e9)
+        tm.solve()
+        occup = np.asarray(tm.getOccup())
+        positions, _ = tm.getBestMatchConfig()
+        covered = np.zeros(8, dtype=bool)
+        for x in positions:
+            covered[x : x + 3] = True
+        np.testing.assert_array_equal(covered, occup > 0.5)
+
+    @pytest.mark.parametrize("seed", [11, 12, 13])
+    def test_covered_occupancy_grows_with_gamma(self, seed):
+        rng = np.random.default_rng(seed)
+        eseq = rng.normal(size=14).tolist()
+        tm = _tm(3, 2, 1.0, 0.5, eseq)
+        occup = np.asarray(tm.getOccup())
+
+        def covered_mass(gamma):
+            covered = np.zeros(14, dtype=bool)
+            for x in tm.getBestMatchConfig(gamma)[0]:
+                covered[x : x + 3] = True
+            return occup[covered].sum()
+
+        masses = [covered_mass(g) for g in (0.25, 1.0, 4.0)]
+        assert masses[0] <= masses[1] + 1e-12
+        assert masses[1] <= masses[2] + 1e-12
+
+    def test_requires_solve(self):
+        tm = NucPosTM(2, 10, 2, 1.0, 0.5, seed=1)
+        tm.setEnergy([0.0] * 10, 1e9)
+        with pytest.raises(RuntimeError):
+            tm.getBestMatchConfig()
+
+    @pytest.mark.parametrize("gamma", [0.0, -1.0])
+    def test_nonpositive_gamma_raises(self, gamma):
+        tm = _tm(2, 2, 1.0, 0.5, [0.0] * 10)
+        with pytest.raises(ValueError, match="gamma must be positive"):
+            tm.getBestMatchConfig(gamma)
+
+    def test_long_fiber_is_valid(self):
+        rng = np.random.default_rng(5)
+        eseq = np.clip(rng.normal(size=2000) - 1.0, -10.0, 10.0).tolist()
+        tm = _tm(147, 50, 1.0, 0.0, eseq)
+        positions, energy = tm.getBestMatchConfig()
+        positions = np.asarray(positions)
+
+        assert len(positions) > 0
+        assert np.all(np.diff(positions) >= 147)
+        assert positions.min() >= 0 and positions.max() <= 2000 - 147
+        assert energy == pytest.approx(
+            _config_energy(147, 50, 1.0, 0.0, eseq, positions.tolist())
+        )

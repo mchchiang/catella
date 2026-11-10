@@ -4,6 +4,7 @@
 #include <cmath>
 #include <limits>
 #include <numeric>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -326,6 +327,33 @@ std::pair<vector<int>, double> NucPosTM::getMostLikelyConfig() const {
   for (int x = 0; x < npos; x++) siteScore[x] = -(model.eseq()[x] - mu);
   vector<double> stateScore(W, NINF);
   for (int k = nucbp-1; k < W; k++) stateScore[k] = -model.erep(k+1);
+
+  vector<int> positions = maxScoreConfig(siteScore, stateScore);
+  return {positions, configEnergy(positions)};
+}
+
+std::pair<vector<int>, double> NucPosTM::getBestMatchConfig(
+  double gamma) const {
+  requireSolved();
+  if (!(gamma > 0)) {
+    std::ostringstream msg;
+    msg << "gamma must be positive, got " << gamma;
+    throw std::invalid_argument(msg.str());
+  }
+  int W = model.nucbp() + model.llink();
+  int npos = model.npos();
+  int nucbp = model.nucbp();
+
+  vector<double> prefix(occup.size()+1, 0.0);
+  for (size_t y = 0; y < occup.size(); y++) {
+    prefix[y+1] = prefix[y] + (1.0 + gamma)*occup[y] - 1.0;
+  }
+  vector<double> siteScore(npos);
+  for (int x = 0; x < npos; x++) {
+    siteScore[x] = prefix[x+nucbp] - prefix[x];
+  }
+  vector<double> stateScore(W, NINF);
+  for (int k = nucbp-1; k < W; k++) stateScore[k] = 0.0;
 
   vector<int> positions = maxScoreConfig(siteScore, stateScore);
   return {positions, configEnergy(positions)};

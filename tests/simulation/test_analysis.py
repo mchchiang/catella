@@ -9,6 +9,7 @@ from catella.simulation.analysis import SimAnalysis
 from catella.simulation.config import SimSettings
 from catella.simulation.engine import SimManager
 from catella.simulation.results import SimDataset
+from catella_cpp import NucPosTM
 
 
 def _make_settings(**overrides):
@@ -540,3 +541,139 @@ class TestComputeVarOccup:
         ana = SimAnalysis()
         with pytest.raises(ValueError):
             ana.compute_var_occup(dataset=dataset)
+
+
+def _direct_tm(dataset, mol, settings):
+    tm = NucPosTM(
+        settings.nucbp,
+        dataset.nbp["chr1"],
+        settings.llink,
+        settings.elink,
+        settings.mu,
+        1,
+    )
+    tm.setEnergy(dataset.eseq["chr1"][mol].tolist(), settings.emax)
+    tm.solve(settings.end_temp)
+    return tm
+
+
+class TestComputeConfigs:
+    @pytest.mark.parametrize(
+        "method,name,call",
+        [
+            (
+                "compute_most_likely_config",
+                "most_likely",
+                lambda tm: tm.getMostLikelyConfig(),
+            ),
+            (
+                "compute_best_match_config",
+                "best_match",
+                lambda tm: tm.getBestMatchConfig(1.0),
+            ),
+        ],
+    )
+    def test_matches_direct_solver(self, tmp_path, method, name, call):
+        settings = _make_tm_settings()
+        dataset = _make_tm_dataset(tmp_path, nmol=3, nbp=20, seed=5)
+        ana = SimAnalysis()
+        getattr(ana, method)(dataset=dataset)
+        energy_df = dataset.analysis["chr1"][f"{name}_energy"]
+        for mol in range(3):
+            tm = _direct_tm(dataset, mol, settings)
+            positions, energy = call(tm)
+            np.testing.assert_array_equal(
+                ana.get_config(dataset, "chr1", mol, name=name), positions
+            )
+            assert energy_df["energy"].iloc[mol] == pytest.approx(energy)
+            assert energy_df["log_prob"].iloc[mol] == pytest.approx(
+                -energy / settings.end_temp - tm.getLogZ()
+            )
+
+    def test_flat_offset_layout(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=3, nbp=20, seed=5)
+        ana = SimAnalysis()
+        ana.compute_most_likely_config(dataset=dataset)
+        flat = dataset.analysis["chr1"]["most_likely_position_flat"]
+        offset = dataset.analysis["chr1"]["most_likely_position_offset"]
+        assert list(flat.columns) == ["position"]
+        assert list(offset.columns) == ["offset"]
+        assert len(offset) == 4
+        assert offset["offset"].iloc[0] == 0
+        assert offset["offset"].iloc[-1] == len(flat)
+
+    def test_custom_name_and_gamma(self, tmp_path):
+        settings = _make_tm_settings()
+        dataset = _make_tm_dataset(tmp_path, nmol=2, nbp=20, seed=5)
+        ana = SimAnalysis()
+        ana.compute_best_match_config(dataset=dataset, name="calls", gamma=3.0)
+        tm = _direct_tm(dataset, 1, settings)
+        np.testing.assert_array_equal(
+            ana.get_config(dataset, "chr1", 1, name="calls"),
+            tm.getBestMatchConfig(3.0)[0],
+        )
+
+    def test_round_trips_through_save(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=3, nbp=20, seed=5)
+        ana = SimAnalysis()
+        ana.compute_best_match_config(dataset=dataset)
+        expected = [
+            ana.get_config(dataset, "chr1", mol, name="best_match")
+            for mol in range(3)
+        ]
+        dataset.save()
+        loaded = SimDataset.load(dataset._dataset_file)
+        for mol in range(3):
+            np.testing.assert_array_equal(
+                ana.get_config(loaded, "chr1", mol, name="best_match"),
+                expected[mol],
+            )
+
+    def test_get_config_out_of_range_raises(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=2, nbp=20, seed=5)
+        ana = SimAnalysis()
+        ana.compute_most_likely_config(dataset=dataset)
+        with pytest.raises(IndexError):
+            ana.get_config(dataset, "chr1", 2, name="most_likely")
+
+    def test_get_config_missing_name_raises(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=2, nbp=20, seed=5)
+        ana = SimAnalysis()
+        with pytest.raises(KeyError):
+            ana.get_config(dataset, "chr1", 0, name="most_likely")
+
+    @pytest.mark.parametrize("gamma", [0.0, -1.0])
+    def test_nonpositive_gamma_raises(self, tmp_path, gamma):
+        dataset = _make_tm_dataset(tmp_path, nmol=1, nbp=20, seed=5)
+        ana = SimAnalysis()
+        with pytest.raises(ValueError, match="gamma must be positive"):
+            ana.compute_best_match_config(dataset=dataset, gamma=gamma)
+
+    @pytest.mark.parametrize(
+        "method", ["compute_most_likely_config", "compute_best_match_config"]
+    )
+    def test_requires_tm_method(self, tmp_path, method):
+        dataset = _make_dataset(tmp_path, nmol=2, nbp=20)
+        ana = SimAnalysis()
+        with pytest.raises(ValueError, match="requires a method='tm'"):
+            getattr(ana, method)(dataset=dataset)
+
+    @pytest.mark.parametrize(
+        "method", ["compute_most_likely_config", "compute_best_match_config"]
+    )
+    def test_requires_eseq(self, tmp_path, method):
+        rng = np.random.default_rng(1)
+        manager = SimManager(nworker=1, verbose=False)
+        dataset = manager.run(
+            chroms="chr1",
+            nsim=0,
+            method="tm",
+            settings=_make_tm_settings(),
+            meth_prob=rng.random((2, 16)),
+            out_dir=tmp_path / "no_eseq",
+            seed=1,
+            store_eseq=False,
+        )
+        ana = SimAnalysis()
+        with pytest.raises(ValueError):
+            getattr(ana, method)(dataset=dataset)

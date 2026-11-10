@@ -582,6 +582,182 @@ class SimAnalysis:
                 out.write_batch(start, stop, block)
             dataset.analysis[chrom][name] = out
 
+    def compute_most_likely_config(
+        self,
+        dataset: SimDataset,
+        *,
+        chroms: str | Iterable[str] | None = None,
+        name: str = "most_likely",
+    ):
+        """
+        Calculate the most likely nucleosome configuration of each molecule.
+
+        This is the single most probable configuration under the posterior
+        (maximum a posteriori, MAP), found exactly by a forward
+        max-recursion through the transfer matrix. It ignores the
+        positional uncertainty of the nucleosomes and tends to be more
+        densely packed than typical posterior configurations; see
+        `compute_best_match_config` for a call that agrees with the
+        occupancy profile. Only available for `dataset.method == "tm"`
+        datasets.
+
+        Positions are stored in the flat/offset layout of the raw
+        simulation data, together with the energy and log posterior
+        probability of each configuration; use `get_config` to read one
+        molecule.
+
+        Parameters
+        ----------
+        dataset : SimDataset
+            The dataset containing the stored energy landscape.
+        chroms : str or iterable of str, optional
+            The chromosome(s) to process. If None (default), all chromosomes
+            in the dataset are analyzed.
+        name : str, default "most_likely"
+            Prefix of the keys used to store the results in
+            `dataset.analysis`.
+
+        Raises
+        ------
+        ValueError
+            If `dataset.method != "tm"`, or the dataset has no stored
+            energy landscape.
+        """
+        self._compute_configs(
+            dataset,
+            chroms=chroms,
+            name=name,
+            caller="compute_most_likely_config",
+            get_config=lambda tm: tm.getMostLikelyConfig(),
+        )
+
+    def compute_best_match_config(
+        self,
+        dataset: SimDataset,
+        *,
+        chroms: str | Iterable[str] | None = None,
+        name: str = "best_match",
+        gamma: float = 1.0,
+    ):
+        """
+        Calculate the configuration that best matches the occupancy profile.
+
+        For each molecule, this is the configuration of non-overlapping
+        nucleosome footprints that maximizes the expected number of base
+        pairs whose occupancy is called correctly under the posterior
+        (maximum expected accuracy, MEA). With `gamma = 1`, it is the
+        valid configuration closest to the occupancy profile thresholded
+        at 0.5. Only available for `dataset.method == "tm"` datasets.
+        Results are stored as for `compute_most_likely_config`.
+
+        Parameters
+        ----------
+        dataset : SimDataset
+            The dataset containing the stored energy landscape.
+        chroms : str or iterable of str, optional
+            The chromosome(s) to process. If None (default), all chromosomes
+            in the dataset are analyzed.
+        name : str, default "best_match"
+            Prefix of the keys used to store the results in
+            `dataset.analysis`.
+        gamma : float, default 1.0
+            Weight of correctly called occupied sites relative to
+            correctly called empty sites. A site favors being covered when
+            its occupancy exceeds 1/(1 + gamma), so larger values call more
+            nucleosomes. Must be positive.
+
+        Raises
+        ------
+        ValueError
+            If `dataset.method != "tm"`, the dataset has no stored energy
+            landscape, or `gamma` is not positive.
+        """
+        if not gamma > 0:
+            raise ValueError(f"gamma must be positive, got {gamma}")
+        self._compute_configs(
+            dataset,
+            chroms=chroms,
+            name=name,
+            caller="compute_best_match_config",
+            get_config=lambda tm: tm.getBestMatchConfig(gamma),
+        )
+
+    def _compute_configs(self, dataset, *, chroms, name, caller, get_config):
+        if dataset.method != "tm":
+            raise ValueError(f"{caller} requires a method='tm' dataset")
+        self._require_tm_eseq(dataset)
+        chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)
+        for chrom in chroms:
+            settings = SimSettings(**dict(dataset.settings)).for_chrom(chrom)
+            nmol = dataset.nmol[chrom]
+            positions = []
+            energy = np.empty(nmol, dtype=np.float64)
+            log_prob = np.empty(nmol, dtype=np.float64)
+            for mol in range(nmol):
+                tm = self._solved_tm(dataset, chrom, mol)
+                pos, energy[mol] = get_config(tm)
+                positions.append(np.asarray(pos, dtype=np.int32))
+                log_prob[mol] = -energy[mol] / settings.end_temp - tm.getLogZ()
+            offset = np.zeros(nmol + 1, dtype=np.uint64)
+            offset[1:] = np.cumsum([len(p) for p in positions])
+            flat = (
+                np.concatenate(positions)
+                if positions
+                else np.array([], dtype=np.int32)
+            )
+            analysis = dataset.analysis[chrom]
+            analysis[f"{name}_position_flat"] = pd.DataFrame(
+                {"position": flat}
+            )
+            analysis[f"{name}_position_offset"] = pd.DataFrame(
+                {"offset": offset}
+            )
+            analysis[f"{name}_energy"] = pd.DataFrame(
+                {"energy": energy, "log_prob": log_prob}
+            )
+
+    def get_config(
+        self, dataset: SimDataset, chrom: str, mol: int, *, name: str
+    ) -> np.ndarray:
+        """
+        Get the stored configuration of one molecule.
+
+        Reads the results of `compute_most_likely_config` or
+        `compute_best_match_config`.
+
+        Parameters
+        ----------
+        dataset : SimDataset
+            The dataset holding the analysis results.
+        chrom : str
+            The chromosome of the molecule.
+        mol : int
+            The molecule index within `chrom`.
+        name : str
+            The prefix the configurations were stored under (e.g.,
+            "most_likely" or "best_match").
+
+        Returns
+        -------
+        np.ndarray
+            The nucleosome start positions of the molecule, in increasing
+            order.
+
+        Raises
+        ------
+        KeyError
+            If no configurations are stored under `name` for `chrom`.
+        IndexError
+            If `mol` is out of range.
+        """
+        analysis = dataset.analysis[chrom]
+        flat = analysis[f"{name}_position_flat"]["position"].to_numpy()
+        offset = analysis[f"{name}_position_offset"]["offset"].to_numpy()
+        nmol = len(offset) - 1
+        if not 0 <= mol < nmol:
+            raise IndexError(f"mol must be in [0, {nmol}), got {mol}")
+        return flat[int(offset[mol]) : int(offset[mol + 1])]
+
     def sort_by_linkage(
         self,
         dataset: SimDataset,

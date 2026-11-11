@@ -30,6 +30,9 @@ needs_hiddenfoot = pytest.mark.skipif(
     callers._hiddenfoot_binary() is None,
     reason="HiddenFoot executable not available",
 )
+few_molecules = pytest.mark.filterwarnings(
+    "ignore:chromosome .*llink estimated from:UserWarning"
+)
 
 FAKE_HF = """import os, sys
 nrow = sum(1 for _ in open("met.txt")) - 1
@@ -372,6 +375,7 @@ class TestRunners:
         calls = callers.run_catella(ddir, tmp_path, llink=10)
         assert calls.llink == 10
 
+    @few_molecules
     def test_catella_estimates_llink_by_default(
         self, quick_data, tmp_path, monkeypatch
     ):
@@ -524,6 +528,7 @@ class TestThreads:
         assert "--io-threads" not in call
         assert "-t" not in extract
 
+    @few_molecules
     @pytest.mark.parametrize("nworker", [None, 2])
     def test_catella_nworker(self, quick_data, tmp_path, monkeypatch, nworker):
         _, ddir = quick_data
@@ -576,6 +581,7 @@ class TestFitTime:
         calls = callers.run_catella(ddir, tmp_path, llink=10)
         assert calls.fit_time == 0.0
 
+    @few_molecules
     def test_catella_ml_times_llink_fit(
         self, quick_data, tmp_path, monkeypatch
     ):

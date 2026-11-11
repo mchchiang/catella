@@ -9,8 +9,14 @@ from catella_cpp import NucPosTM
 
 from catella import utils
 from catella.h5_array import H5Array
-from catella.simulation._io import _pack_jagged
-from catella.simulation.config import SimSettings
+from catella.simulation._exact import (
+    _reject_time,
+    _require_eseq,
+    _require_tm,
+    _tm_configs,
+    _tm_per_bp,
+    _tm_per_mol,
+)
 from catella.simulation.results import SimDataset
 
 
@@ -148,13 +154,6 @@ class SimAnalysis:
     analysis map.
     """
 
-    def _require_tm_eseq(self, dataset: SimDataset):
-        if not dataset.has_eseq:
-            raise ValueError(
-                "exact computation requires the per-molecule energy "
-                "landscape; recreate the dataset with store_eseq=True"
-            )
-
     def _final_time(self, dataset: SimDataset, chroms) -> int:
         """Return the final time of the first simulation run on disk."""
         run_id = next(dataset.iter_runs(chroms), None)
@@ -163,23 +162,6 @@ class SimAnalysis:
                 f"no simulation files found for chroms {list(chroms)}"
             )
         return dataset.raw[run_id].time[-1]
-
-    def _solved_tm(self, dataset: SimDataset, chrom: str, mol: int):
-        """Build and solve a NucPosTM for one molecule, at the
-        temperature settings.end_temp evaluates the exact equilibrium
-        distribution at."""
-        settings = SimSettings(**dict(dataset.settings)).for_chrom(chrom)
-        tm = NucPosTM(
-            settings.nucbp,
-            dataset.nbp[chrom],
-            settings.llink,
-            settings.elink,
-            settings.mu,
-            1,
-        )
-        tm.setEnergy(dataset.eseq[chrom][mol].tolist(), settings.emax)
-        tm.solve(settings.end_temp)
-        return tm
 
     def compute_occup(
         self,
@@ -232,14 +214,9 @@ class SimAnalysis:
         """
         chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)
         if dataset.method == "tm":
-            if time is not None or record_time:
-                raise ValueError(
-                    "'time'/'record_time' are not meaningful for "
-                    "method='tm' datasets (no time axis)"
-                )
-            self._compute_occup_tm(
-                dataset, chroms=chroms, name=name, batch_size=batch_size
-            )
+            _reject_time(time, record_time)
+            _require_eseq(dataset)
+            _tm_per_bp(dataset, chroms, name, batch_size, NucPosTM.getOccup)
             return
         self._compute_occup_mcmc(
             dataset,
@@ -295,22 +272,6 @@ class SimAnalysis:
                 )
             dataset.analysis[chrom][name] = out
 
-    def _compute_occup_tm(self, dataset, *, chroms, name, batch_size):
-        self._require_tm_eseq(dataset)
-        tmp_dir = dataset.resolve_tmp_dir()
-        for chrom in chroms:
-            nmol = dataset.nmol[chrom]
-            nbp = dataset.nbp[chrom]
-            out = H5Array.create((nmol, nbp), dtype=np.float64, dir=tmp_dir)
-            for start in range(0, nmol, batch_size):
-                stop = min(start + batch_size, nmol)
-                block = np.empty((stop - start, nbp), dtype=np.float64)
-                for i, mol in enumerate(range(start, stop)):
-                    tm = self._solved_tm(dataset, chrom, mol)
-                    block[i] = tm.getOccup()
-                out.write_batch(start, stop, block)
-            dataset.analysis[chrom][name] = out
-
     def compute_mean_nnuc(
         self,
         dataset: SimDataset,
@@ -356,12 +317,9 @@ class SimAnalysis:
         """
         chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)
         if dataset.method == "tm":
-            if time is not None or record_time:
-                raise ValueError(
-                    "'time'/'record_time' are not meaningful for "
-                    "method='tm' datasets (no time axis)"
-                )
-            self._compute_mean_nnuc_tm(dataset, chroms=chroms, name=name)
+            _reject_time(time, record_time)
+            _require_eseq(dataset)
+            _tm_per_mol(dataset, chroms, name, NucPosTM.getMeanN)
             return
         self._compute_mean_nnuc_mcmc(
             dataset,
@@ -393,16 +351,6 @@ class SimAnalysis:
         for chrom in chroms:
             dataset.analysis[chrom][name] = pd.DataFrame(mean_nnuc[chrom])
 
-    def _compute_mean_nnuc_tm(self, dataset, *, chroms, name):
-        self._require_tm_eseq(dataset)
-        for chrom in chroms:
-            nmol = dataset.nmol[chrom]
-            values = np.empty(nmol, dtype=np.float64)
-            for mol in range(nmol):
-                tm = self._solved_tm(dataset, chrom, mol)
-                values[mol] = tm.getMeanN()
-            dataset.analysis[chrom][name] = pd.DataFrame(values)
-
     def compute_var_nnuc(
         self,
         dataset: SimDataset,
@@ -433,19 +381,9 @@ class SimAnalysis:
             If `dataset.method != "tm"`, or the dataset has no stored
             energy landscape.
         """
-        if dataset.method != "tm":
-            raise ValueError(
-                "compute_var_nnuc requires a method='tm' dataset"
-            )
-        self._require_tm_eseq(dataset)
+        _require_tm(dataset, "compute_var_nnuc")
         chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)
-        for chrom in chroms:
-            nmol = dataset.nmol[chrom]
-            values = np.empty(nmol, dtype=np.float64)
-            for mol in range(nmol):
-                tm = self._solved_tm(dataset, chrom, mol)
-                values[mol] = tm.getVarN()
-            dataset.analysis[chrom][name] = pd.DataFrame(values)
+        _tm_per_mol(dataset, chroms, name, NucPosTM.getVarN)
 
     def compute_var_occup(
         self,
@@ -482,25 +420,9 @@ class SimAnalysis:
             If `dataset.method != "tm"`, or the dataset has no stored
             energy landscape.
         """
-        if dataset.method != "tm":
-            raise ValueError(
-                "compute_var_occup requires a method='tm' dataset"
-            )
-        self._require_tm_eseq(dataset)
+        _require_tm(dataset, "compute_var_occup")
         chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)
-        tmp_dir = dataset.resolve_tmp_dir()
-        for chrom in chroms:
-            nmol = dataset.nmol[chrom]
-            nbp = dataset.nbp[chrom]
-            out = H5Array.create((nmol, nbp), dtype=np.float64, dir=tmp_dir)
-            for start in range(0, nmol, batch_size):
-                stop = min(start + batch_size, nmol)
-                block = np.empty((stop - start, nbp), dtype=np.float64)
-                for i, mol in enumerate(range(start, stop)):
-                    tm = self._solved_tm(dataset, chrom, mol)
-                    block[i] = tm.getVarOccup()
-                out.write_batch(start, stop, block)
-            dataset.analysis[chrom][name] = out
+        _tm_per_bp(dataset, chroms, name, batch_size, NucPosTM.getVarOccup)
 
     def compute_most_likely_config(
         self,
@@ -543,13 +465,9 @@ class SimAnalysis:
             If `dataset.method != "tm"`, or the dataset has no stored
             energy landscape.
         """
-        self._compute_configs(
-            dataset,
-            chroms=chroms,
-            name=name,
-            caller="compute_most_likely_config",
-            get_config=lambda tm: tm.getMostLikelyConfig(),
-        )
+        _require_tm(dataset, "compute_most_likely_config")
+        chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)
+        _tm_configs(dataset, chroms, name, NucPosTM.getMostLikelyConfig)
 
     def compute_best_match_config(
         self,
@@ -594,41 +512,11 @@ class SimAnalysis:
         """
         if not gamma > 0:
             raise ValueError(f"gamma must be positive, got {gamma}")
-        self._compute_configs(
-            dataset,
-            chroms=chroms,
-            name=name,
-            caller="compute_best_match_config",
-            get_config=lambda tm: tm.getBestMatchConfig(gamma),
-        )
-
-    def _compute_configs(self, dataset, *, chroms, name, caller, get_config):
-        if dataset.method != "tm":
-            raise ValueError(f"{caller} requires a method='tm' dataset")
-        self._require_tm_eseq(dataset)
+        _require_tm(dataset, "compute_best_match_config")
         chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)
-        for chrom in chroms:
-            settings = SimSettings(**dict(dataset.settings)).for_chrom(chrom)
-            nmol = dataset.nmol[chrom]
-            positions = []
-            energy = np.empty(nmol, dtype=np.float64)
-            log_prob = np.empty(nmol, dtype=np.float64)
-            for mol in range(nmol):
-                tm = self._solved_tm(dataset, chrom, mol)
-                pos, energy[mol] = get_config(tm)
-                positions.append(np.asarray(pos, dtype=np.int32))
-                log_prob[mol] = -energy[mol] / settings.end_temp - tm.getLogZ()
-            flat, offset = _pack_jagged(positions)
-            analysis = dataset.analysis[chrom]
-            analysis[f"{name}_position_flat"] = pd.DataFrame(
-                {"position": flat}
-            )
-            analysis[f"{name}_position_offset"] = pd.DataFrame(
-                {"offset": offset}
-            )
-            analysis[f"{name}_energy"] = pd.DataFrame(
-                {"energy": energy, "log_prob": log_prob}
-            )
+        _tm_configs(
+            dataset, chroms, name, lambda tm: tm.getBestMatchConfig(gamma)
+        )
 
     def get_config(
         self, dataset: SimDataset, chrom: str, mol: int, *, name: str

@@ -95,6 +95,36 @@ class TestComputeOccup:
         ana.compute_occup(dataset, batch_size=2)
         assert "occup" in dataset.analysis["chr1"]
 
+    def test_default_time_with_first_molecule_missing(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=3, nbp=16, nsim=2)
+        for run in range(dataset.nsim):
+            dataset.mcmc_file("chr1", 0, run).unlink()
+
+        ana = SimAnalysis()
+        ana.compute_occup(dataset=dataset, batch_size=2)
+
+        occup = dataset.analysis["chr1"]["occup"].to_numpy()
+        assert np.isnan(occup[0]).all()
+        assert not np.isnan(occup[1:]).any()
+
+    def test_default_time_with_first_run_missing(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=2, nbp=16, nsim=2)
+        dataset.mcmc_file("chr1", 0, 0).unlink()
+
+        ana = SimAnalysis()
+        ana.compute_occup(dataset=dataset, batch_size=2)
+
+        occup = dataset.analysis["chr1"]["occup"].to_numpy()
+        assert not np.isnan(occup).any()
+
+    def test_no_simulation_files_raises(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=2, nbp=16, nsim=1)
+        for mol in range(2):
+            dataset.mcmc_file("chr1", mol, 0).unlink()
+
+        with pytest.raises(ValueError):
+            SimAnalysis().compute_occup(dataset=dataset)
+
 
 class TestComputeMeanNnuc:
     def test_dataset_accepted_positionally(self, tmp_path):
@@ -102,6 +132,25 @@ class TestComputeMeanNnuc:
         ana = SimAnalysis()
         ana.compute_mean_nnuc(dataset)
         assert "mean_nnuc" in dataset.analysis["chr1"]
+
+    def test_default_time_with_first_molecule_missing(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=3, nbp=20, nsim=2)
+        for run in range(dataset.nsim):
+            dataset.mcmc_file("chr1", 0, run).unlink()
+
+        SimAnalysis().compute_mean_nnuc(dataset)
+
+        df = dataset.analysis["chr1"]["mean_nnuc"]
+        assert len(df) == 3
+        assert df.iloc[1:, 0].notna().all()
+
+    def test_no_simulation_files_raises(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=2, nbp=20, nsim=1)
+        for mol in range(2):
+            dataset.mcmc_file("chr1", mol, 0).unlink()
+
+        with pytest.raises(ValueError):
+            SimAnalysis().compute_mean_nnuc(dataset)
 
     def test_only_requested_chroms_extracted(self, tmp_path):
         rng = np.random.default_rng(0)

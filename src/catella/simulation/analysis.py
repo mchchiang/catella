@@ -154,6 +154,15 @@ class SimAnalysis:
                 "landscape; recreate the dataset with store_eseq=True"
             )
 
+    def _final_time(self, dataset: SimDataset, chroms) -> int:
+        """Return the final time of the first simulation run on disk."""
+        run_id = next(dataset.iter_runs(chroms), None)
+        if run_id is None:
+            raise ValueError(
+                f"no simulation files found for chroms {list(chroms)}"
+            )
+        return dataset.raw[run_id].time[-1]
+
     def _solved_tm(self, dataset: SimDataset, chrom: str, mol: int):
         """Build and solve a NucPosTM for one molecule, at the
         temperature settings.end_temp evaluates the exact equilibrium
@@ -216,7 +225,9 @@ class SimAnalysis:
         ------
         ValueError
             If `time` or `record_time` is given for a `"tm"` dataset, or
-            (for `"tm"`) if the dataset has no stored energy landscape.
+            (for `"tm"`) if the dataset has no stored energy landscape,
+            or (for `"mcmc"`) if `time` is None and no simulation files
+            exist for `chroms`.
         """
         chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)
         if dataset.method == "tm":
@@ -246,7 +257,7 @@ class SimAnalysis:
             for chrom in chroms
         }
         if time is None:
-            time = dataset.raw[chroms[0], 0, 0].time[-1]
+            time = self._final_time(dataset, chroms)
 
         def occup_agg(chrom, mol, nucpos):
             return nuc_map[chrom].aggregate(nucpos, norm=True)
@@ -338,7 +349,9 @@ class SimAnalysis:
         ------
         ValueError
             If `time` or `record_time` is given for a `"tm"` dataset, or
-            (for `"tm"`) if the dataset has no stored energy landscape.
+            (for `"tm"`) if the dataset has no stored energy landscape,
+            or (for `"mcmc"`) if `time` is None and no simulation files
+            exist for `chroms`.
         """
         chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)
         if dataset.method == "tm":
@@ -361,7 +374,7 @@ class SimAnalysis:
         self, dataset, *, time, chroms, name, record_time
     ):
         if time is None:
-            time = dataset.raw[chroms[0], 0, 0].time[-1]
+            time = self._final_time(dataset, chroms)
 
         def mean_nnuc_agg(chrom, mol, nucpos):
             mean_nnuc = 0.0

@@ -1355,7 +1355,8 @@ class SimDataset:
         agg_func : callable, optional
             A function used to aggregate results once all runs for a specific
             molecule are finished. If provided, it is called as:
-            ``agg_func(chrom, mol, raw_data, **agg_kwargs)``.
+            ``agg_func(chrom, mol, raw_data, **agg_kwargs)``, where
+            `raw_data` holds only the runs with a simulation file on disk.
         **agg_kwargs : Any
             Additional keyword arguments passed directly to `agg_func`.
 
@@ -1400,6 +1401,19 @@ class SimDataset:
             chrom, mol, _ = sim_id
             expected_counts[(chrom, mol)] += 1
 
+        def store(chrom, mol, run, data):
+            # Aggregate the runs on disk once all of them are extracted
+            results[chrom][mol][run] = data
+            key = (chrom, mol)
+            finished_counts[key] += 1
+            if agg_func and finished_counts[key] == expected_counts[key]:
+                raw_data = [x for x in results[chrom][mol] if x is not None]
+                if obs != "position":
+                    raw_data = np.asarray(raw_data)
+                results[chrom][mol] = agg_func(
+                    chrom, mol, raw_data, **agg_kwargs
+                )
+
         if nworker > 1:
             with ThreadPoolExecutor(max_workers=nworker) as executor:
                 run_gen = self.iter_runs(chroms, mols)
@@ -1422,22 +1436,7 @@ class SimDataset:
                     for future in as_completed(tasks):
                         chrom, mol, run = tasks[future]
                         try:
-                            data = future.result()
-                            results[chrom][mol][run] = data
-                            key = (chrom, mol)
-                            finished_counts[key] += 1
-                            # Aggregate results from different runs if needed
-                            if (
-                                agg_func
-                                and finished_counts[key]
-                                == expected_counts[key]
-                            ):
-                                raw_data = results[chrom][mol]
-                                if obs != "position":
-                                    raw_data = np.asarray(raw_data)
-                                results[chrom][mol] = agg_func(
-                                    chrom, mol, raw_data, **agg_kwargs
-                                )
+                            store(chrom, mol, run, future.result())
                         except Exception as e:  # noqa: BLE001
                             print(
                                 f"Fail to extract '{obs}' from chrom "
@@ -1451,19 +1450,8 @@ class SimDataset:
                 sim_file = self._file_map.params_to_mcmc_file(
                     chrom, mol, run
                 )
-                results[chrom][mol][run] = SimMCMCData.extract(
-                    sim_file, time, obs
-                )
-                key = (chrom, mol)
-                finished_counts[key] += 1
-                # Aggregate results from different runs if needed
-                if agg_func and finished_counts[key] == self._nsim:
-                    raw_data = results[chrom][mol]
-                    if obs != "position":
-                        raw_data = np.asarray(raw_data)
-                    results[chrom][mol] = agg_func(
-                        chrom, mol, raw_data, **agg_kwargs
-                    )
+                data = SimMCMCData.extract(sim_file, time, obs)
+                store(chrom, mol, run, data)
 
         # Mark molecules with no simulation files on disk as missing
         if agg_func is not None:

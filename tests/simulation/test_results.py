@@ -145,6 +145,23 @@ class TestExtractMissingMolecules:
 
         assert all(v is not None for v in results["chr1"])
 
+    @pytest.mark.parametrize("nworker", [1, 2])
+    def test_partially_missing_molecule_aggregates_present_runs(
+        self, tmp_path, nworker
+    ):
+        dataset = _make_dataset(tmp_path, nmol=2, nsim=3)
+        dataset.mcmc_file("chr1", 0, 1).unlink()
+
+        def nrun_agg(chrom, mol, raw_data):
+            return len(raw_data)
+
+        time = dataset.raw["chr1", 0, 0].time[-1]
+        results = dataset.extract(
+            time=time, obs="position", nworker=nworker, agg_func=nrun_agg
+        )
+
+        assert results["chr1"] == [2, 3]
+
 
 class TestExtractParallel:
     def test_matches_serial_without_agg_func(self, tmp_path):

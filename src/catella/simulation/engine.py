@@ -23,6 +23,11 @@ from catella.simulation._inputs import (
     _parse_out_types,
     _resolve_settings,
 )
+from catella.simulation._io import (
+    _write_mcmc_data,
+    _write_mcmc_params,
+    _write_tm_samples,
+)
 from catella.simulation._jobs import (
     MCMCJob,
     TMJob,
@@ -44,12 +49,7 @@ from catella.simulation._parallel import (
     _report_crash,
 )
 from catella.simulation.config import SimSettings
-from catella.simulation.results import (
-    SimDataset,
-    _write_mcmc_data,
-    _write_mcmc_params,
-    _write_tm_samples,
-)
+from catella.simulation.results import SimDataset
 from catella.utils import IndexType
 
 

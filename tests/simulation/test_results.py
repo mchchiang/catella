@@ -7,6 +7,11 @@ import h5py
 import numpy as np
 import pytest
 from catella.h5_array import H5Array
+from catella.simulation._io import (
+    _write_mcmc_data,
+    _write_mcmc_params,
+    _write_tm_samples,
+)
 from catella.simulation.config import SimSettings
 from catella.simulation.engine import SimManager
 from catella.simulation.results import (
@@ -14,9 +19,6 @@ from catella.simulation.results import (
     SimMCMCData,
     SimTMData,
     _read_tm_sample,
-    _write_mcmc_data,
-    _write_mcmc_params,
-    _write_tm_samples,
 )
 
 
@@ -67,6 +69,19 @@ class TestOutTypeSeedPersistence:
         assert loaded.out_type == dataset.out_type
         assert loaded.seed == dataset.seed
         assert (loaded.seed_table["chr1"] == dataset.seed_table["chr1"]).all()
+
+    def test_load_with_new_raw_dir(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=2, nsim=1)
+        moved = tmp_path / "moved_raw"
+        dataset._raw_dir.rename(moved)
+
+        with pytest.raises(FileNotFoundError):
+            SimDataset.load(dataset._dataset_file)
+        loaded = SimDataset.load(dataset._dataset_file, new_raw_dir=moved)
+
+        assert loaded._raw_dir == moved.resolve()
+        expected_seed = dataset.seed_table["chr1"][1, 0]
+        assert loaded.raw["chr1", 1, 0].seed == expected_seed
 
     def test_legacy_dataset_defaults_to_none(self, tmp_path):
         dataset = SimDataset.create(

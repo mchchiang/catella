@@ -1,12 +1,10 @@
 # results.py
 
-import json
 import os
-import re
 import shutil
 import weakref
 from collections import Counter
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field, fields
 from functools import lru_cache
 from pathlib import Path
@@ -16,19 +14,26 @@ from typing import Any, Self
 
 import h5py
 import numpy as np
-from catella_cpp import Dump
 
 from catella import h5_utils, utils
 from catella.containers import DataclassPublicProxy, DataFrameMap, FixedKeyMap
 from catella.h5_array import H5Array
+from catella.simulation._io import (
+    SimFileMapper,
+    _read_entries,
+    _read_mcmc_file,
+    _read_metadata,
+    _read_tm_file,
+    _replace_group,
+    _tm_sample_fields,
+    _write_entries,
+    _write_metadata,
+)
 from catella.simulation._parallel import _threaded_map
 from catella.simulation.config import SimSettings
 
 # Limit the concurrent open files to stay under OS limits
 MAX_OPEN_FILES = Semaphore(500)
-
-# Largest chunk (in elements) of a compressed MCMC run dataset
-_MAX_CHUNK_SIZE = 1024
 
 
 @utils.add_frozen_properties
@@ -185,49 +190,7 @@ class SimMCMCData:
             If the file cannot be opened or does not follow the
             SimMCMCData schema.
         """
-        with h5py.File(sim_file, "r") as f:
-            # Load model parameters
-            g = f["params"]
-            nucbp = g.attrs["nucbp"]
-            nbp = g.attrs["nbp"]
-            llink = g.attrs["llink"]
-            elink = g.attrs["elink"]
-            mu = g.attrs["mu"]
-            seed = g.attrs["seed"]
-
-            # Load data
-            g = f["data"]
-
-            def load_data(g, name):
-                # Unpack nucleosome position from a flatten array
-                if name == "position":
-                    flat = g["position_flat"][()]
-                    offset = g["position_offset"][()]
-                    data = [
-                        flat[offset[i] : offset[i + 1]]
-                        for i in range(len(offset) - 1)
-                    ]
-                    return tuple(np.asarray(d, dtype=flat.dtype) for d in data)
-                elif name in g:
-                    return g[name][()]
-                return np.nan
-
-            time = load_data(g, "time")
-            energy = load_data(g, "energy")
-            position = load_data(g, "position")
-            temp = load_data(g, "temp")
-            return cls._create(
-                nucbp=nucbp,
-                nbp=nbp,
-                llink=llink,
-                elink=elink,
-                mu=mu,
-                seed=seed,
-                time=time,
-                energy=energy,
-                position=position,
-                temp=temp,
-            )
+        return cls._create(**_read_mcmc_file(sim_file))
 
     # Extract the data for a specific obesrvable for a single time point
     @classmethod
@@ -411,143 +374,6 @@ class SimTMData:
         return repr_str
 
 
-def _write_tm_samples(
-    out_file: str | Path,
-    *,
-    nucbp: int,
-    nbp: int,
-    llink: int,
-    elink: float,
-    mu: float,
-    logz: float,
-    positions: Sequence[np.ndarray],
-    energies: Sequence[float],
-    seeds: Sequence[int],
-) -> None:
-    """
-    Write a molecule's exact transfer-matrix samples to one HDF5 file.
-
-    Uses the same flat/offset jagged layout already used for MCMC
-    position trajectories, but indexed by sample instead of frame.
-
-    Parameters
-    ----------
-    out_file : str or Path
-        Destination HDF5 file.
-    nucbp, nbp, llink, elink, mu : int or float
-        Physical parameters, stored as attrs on '/params'.
-    logz : float
-        The log partition function for this molecule.
-    positions : sequence of np.ndarray
-        The sampled nucleosome start positions, one array per sample.
-    energies : sequence of float
-        The exact Hamiltonian energy of each sample.
-    seeds : sequence of int
-        The seed each sample was drawn with.
-
-    Raises
-    ------
-    ValueError
-        If `positions`, `energies`, and `seeds` differ in length.
-    """
-    if not len(positions) == len(energies) == len(seeds):
-        raise ValueError(
-            "positions, energies, and seeds must have the same length, "
-            f"got {len(positions)}, {len(energies)}, and {len(seeds)}"
-        )
-
-    offset = np.zeros(len(positions) + 1, dtype=np.uint64)
-    for i, p in enumerate(positions):
-        offset[i + 1] = offset[i] + len(p)
-    flat = (
-        np.concatenate(positions) if positions else np.array([], dtype=int)
-    )
-
-    with h5py.File(out_file, "w") as f:
-        gparams = f.create_group("params")
-        gparams.attrs["nucbp"] = nucbp
-        gparams.attrs["nbp"] = nbp
-        gparams.attrs["llink"] = llink
-        gparams.attrs["elink"] = elink
-        gparams.attrs["mu"] = mu
-
-        gdata = f.create_group("data")
-        gdata.attrs["logz"] = logz
-        gdata.create_dataset("position_flat", data=flat.astype(np.int32))
-        gdata.create_dataset("position_offset", data=offset)
-        gdata.create_dataset("energy", data=np.asarray(energies))
-        gdata.create_dataset("seed", data=np.asarray(seeds))
-
-
-def _write_mcmc_params(
-    h5file: h5py.File,
-    *,
-    nucbp: int,
-    nbp: int,
-    llink: int,
-    elink: float,
-    mu: float,
-    seed: int,
-) -> None:
-    """
-    Write an MCMC run's parameters as attrs on the '/params' group.
-
-    Integer parameters are stored as int32 and the seed as uint64, matching
-    the C++ types of the simulation.
-
-    Parameters
-    ----------
-    h5file : h5py.File
-        The run's HDF5 file, open for writing.
-    nucbp, nbp, llink : int
-        Nucleosome size, fiber length, and linker length in base pairs.
-    elink, mu : float
-        Linker repulsion energy and chemical potential.
-    seed : int
-        The seed of the run.
-    """
-    g = h5file.create_group("params")
-    g.attrs["nucbp"] = np.int32(nucbp)
-    g.attrs["nbp"] = np.int32(nbp)
-    g.attrs["llink"] = np.int32(llink)
-    g.attrs["elink"] = np.float64(elink)
-    g.attrs["mu"] = np.float64(mu)
-    g.attrs["seed"] = np.uint64(seed)
-
-
-def _write_mcmc_data(
-    h5file: h5py.File, values: Mapping[str, np.ndarray]
-) -> None:
-    """
-    Write an MCMC run's recorded observables to the '/data' group.
-
-    Each observable is stored as a 1D dataset, gzip-compressed (level 4) in
-    chunks of at most 1024 elements; empty arrays are stored uncompressed.
-
-    Parameters
-    ----------
-    h5file : h5py.File
-        The run's HDF5 file, open for writing.
-    values : mapping of str to np.ndarray
-        Observable name to 1D array, as returned by ``Dump.values()``
-        (e.g., 'time', 'energy', 'temp', 'position_flat', and
-        'position_offset').
-    """
-    g = h5file.create_group("data")
-    for name, arr in values.items():
-        arr = np.asarray(arr)
-        if len(arr) == 0:
-            g.create_dataset(name, data=arr)
-        else:
-            g.create_dataset(
-                name,
-                data=arr,
-                chunks=(min(len(arr), _MAX_CHUNK_SIZE),),
-                compression="gzip",
-                compression_opts=4,
-            )
-
-
 def _read_tm_sample(combined_file: str | Path, run: int) -> SimTMData:
     """
     Load one sample by index from a combined per-molecule TM file.
@@ -564,83 +390,8 @@ def _read_tm_sample(combined_file: str | Path, run: int) -> SimTMData:
     SimTMData
         The requested sample.
     """
-    with h5py.File(combined_file, "r") as f:
-        g = f["params"]
-        nucbp = g.attrs["nucbp"]
-        nbp = g.attrs["nbp"]
-        llink = g.attrs["llink"]
-        elink = g.attrs["elink"]
-        mu = g.attrs["mu"]
-
-        g = f["data"]
-        logz = g.attrs["logz"]
-        offset = g["position_offset"][()]
-        flat = g["position_flat"]
-        position = flat[offset[run] : offset[run + 1]]
-        energy = g["energy"][run]
-        seed = g["seed"][run]
-        return SimTMData._create(
-            nucbp=nucbp,
-            nbp=nbp,
-            llink=llink,
-            elink=elink,
-            mu=mu,
-            seed=seed,
-            position=position,
-            energy=energy,
-            logz=logz,
-        )
-
-
-class SimFileMapper:
-    def __init__(
-        self,
-        root_dir: str,
-        total_mols: int,
-        max_mols_per_dir: int = 100,
-        max_runs_per_mol: int = 100,
-    ):
-        self.root_dir = Path(root_dir)
-        self.max_mols_per_dir = max_mols_per_dir
-        self.max_runs_per_mol = max_runs_per_mol
-        self.mol_pad = max(1, int(np.ceil(np.log10(total_mols))))
-        self.run_pad = max(1, int(np.ceil(np.log10(max_runs_per_mol))))
-
-    def params_to_mcmc_file(self, chrom: str, molidx: int, run: int) -> Path:
-        # Compute range
-        start = int((molidx // self.max_mols_per_dir) * self.max_mols_per_dir)
-        end = int(start + self.max_mols_per_dir - 1)
-        # Get name at each level
-        z = self.mol_pad
-        r = self.run_pad
-        shard_name = f"mol_{int(start):0{z}d}-{int(end):0{z}d}"
-        mol_name = f"mol_{int(molidx):0{z}d}"
-        run_name = f"run_{int(run):0{r}d}"
-        sim_h5 = f"{chrom}_{mol_name}_{run_name}.h5"
-        return self.root_dir / chrom / shard_name / mol_name / sim_h5
-
-    def params_to_tm_file(self, chrom: str, molidx: int) -> Path:
-        # A molecule's TM samples live in one file (generated once), so
-        # unlike params_to_mcmc_file there is no per-molecule directory,
-        # just the file directly in the shard directory.
-        start = int((molidx // self.max_mols_per_dir) * self.max_mols_per_dir)
-        end = int(start + self.max_mols_per_dir - 1)
-        z = self.mol_pad
-        shard_name = f"mol_{int(start):0{z}d}-{int(end):0{z}d}"
-        mol_name = f"mol_{int(molidx):0{z}d}"
-        sim_h5 = f"{chrom}_{mol_name}_tm.h5"
-        return self.root_dir / chrom / shard_name / sim_h5
-
-    def file_to_params(self, sim_file: str | Path):
-        sim_file = Path(sim_file)
-        chrom = sim_file.parts[-4]
-        filename = sim_file.name
-        match = re.search(r"mol_(\d+)_run_(\d+)\.h5$", filename)
-        if match:
-            molidx = int(match.group(1))
-            run = int(match.group(2))
-            return chrom, molidx, run
-        raise ValueError(f"could not parse parameters from file: {sim_file}")
+    arrays = _read_tm_file(combined_file)
+    return SimTMData._create(**_tm_sample_fields(arrays, run))
 
 
 @dataclass(slots=True, init=False, weakref_slot=True)
@@ -708,33 +459,11 @@ class SimDataset:
         @staticmethod
         @lru_cache(maxsize=1024)
         def _load_tm_combined(combined_file: str):
-            with h5py.File(combined_file, "r") as f:
-                gparams = f["params"]
-                params = {
-                    k: gparams.attrs[k]
-                    for k in ("nucbp", "nbp", "llink", "elink", "mu")
-                }
-                gdata = f["data"]
-                return {
-                    "params": params,
-                    "logz": gdata.attrs["logz"],
-                    "flat": gdata["position_flat"][()],
-                    "offset": gdata["position_offset"][()],
-                    "energy": gdata["energy"][()],
-                    "seed": gdata["seed"][()],
-                }
+            return _read_tm_file(combined_file)
 
         @staticmethod
         def _slice_tm_sample(arrays, run: int) -> "SimTMData":
-            offset = arrays["offset"]
-            position = arrays["flat"][offset[run] : offset[run + 1]]
-            return SimTMData._create(
-                **arrays["params"],
-                seed=arrays["seed"][run],
-                position=position,
-                energy=arrays["energy"][run],
-                logz=arrays["logz"],
-            )
+            return SimTMData._create(**_tm_sample_fields(arrays, run))
 
     _chroms: Iterable[str]
     _nmol: Mapping[str, int]
@@ -978,94 +707,30 @@ class SimDataset:
         """
         dataset_file = Path(dataset_file).resolve()
         with h5py.File(dataset_file, "r") as h5stream:
-            # Load metadata associated with raw simulation data
-            gmeta = h5stream["metadata"]
-            if new_raw_dir is None:
-                if "raw_path" in gmeta.attrs:  # For old versions
-                    raw_dir = Path(gmeta.attrs["raw_path"]).resolve()
-                else:
-                    raw_dir = Path(gmeta.attrs["raw_dir"]).resolve()
-                if not raw_dir.exists():
-                    raise FileNotFoundError(
-                        "the raw simulation data directory cannot be found"
-                    )
-            else:
-                new_raw_dir = Path(new_raw_dir).resolve()
-                if not new_raw_dir.exists():
-                    raise FileNotFoundError(
-                        "the raw simulation data directory cannot be found"
-                    )
-                raw_dir = new_raw_dir
-            nsim = gmeta.attrs["nsim"]
-            chroms = list(gmeta["chroms"].asstr()[()])
-            nmol_arr = gmeta["nmol"][()]
-            nmol = {chrom: nmol_arr[i] for i, chrom in enumerate(chroms)}
-            file_map = SimFileMapper(raw_dir, max(nmol_arr))
-            nbp_arr = gmeta["nbp"][()]
-            nbp = {chrom: nbp_arr[i] for i, chrom in enumerate(chroms)}
-            # Load simulation settings
-            gset = gmeta["settings"]
-            attrs = dict(gset.attrs.items())
-            # A per-chromosome llink is stored as a JSON string
-            if isinstance(attrs["llink"], str):
-                attrs["llink"] = json.loads(attrs["llink"])
-            settings = SimSettings(**attrs)
-            # Load methylation energy (if stored)
-            if "eseq" in gmeta:
-                geseq = gmeta["eseq"]
-                eseq = {}
-                for chrom in chroms:
-                    eseq[chrom] = geseq[chrom][()]
-            else:
-                eseq = None
-            # Load out_type, seed and the per-run seed table (if stored)
-            if "out_type" in gmeta.attrs:
-                out_type = Dump.OutputType(int(gmeta.attrs["out_type"]))
-            else:
-                out_type = None
-            method = gmeta.attrs.get("method", "mcmc")
-            seed = int(gmeta.attrs["seed"]) if "seed" in gmeta.attrs else None
-            if "seed_table" in gmeta:
-                gseeds = gmeta["seed_table"]
-                seed_table = {chrom: gseeds[chrom][()] for chrom in chroms}
-            else:
-                seed_table = None
+            meta = _read_metadata(h5stream)
+            stored_raw_dir = meta.pop("raw_dir")
+            raw_dir = Path(
+                stored_raw_dir if new_raw_dir is None else new_raw_dir
+            ).resolve()
+            if not raw_dir.exists():
+                raise FileNotFoundError(
+                    "the raw simulation data directory cannot be found"
+                )
+            file_map = SimFileMapper(raw_dir, max(meta["nmol"].values()))
             obj = cls._create(
-                chroms=chroms,
-                nmol=nmol,
-                nsim=nsim,
-                nbp=nbp,
-                settings=settings,
-                eseq=eseq,
+                **meta,
                 raw_dir=raw_dir,
                 file_map=file_map,
                 dataset_file=dataset_file,
-                method=method,
-                out_type=out_type,
-                seed=seed,
-                seed_table=seed_table,
             )
-            # Load any analysis data
             gana = h5stream["analysis"]
             for chrom in gana:
-                gchrom = gana[chrom]
-                for name in gchrom:
-                    if isinstance(gchrom[name], h5py.Dataset):
-                        obj._analysis[chrom][name] = H5Array.load_from(
-                            dataset_file, f"analysis/{chrom}/{name}"
-                        )
-                    else:
-                        obj._analysis[chrom][name] = h5_utils.load_df(
-                            name, gchrom
-                        )
-            gana = h5stream["global_analysis"]
-            for name in gana:
-                if isinstance(gana[name], h5py.Dataset):
-                    obj._global_analysis[name] = H5Array.load_from(
-                        dataset_file, f"global_analysis/{name}"
-                    )
-                else:
-                    obj._global_analysis[name] = h5_utils.load_df(name, gana)
+                entries = _read_entries(gana[chrom], dataset_file)
+                for name, entry in entries.items():
+                    obj._analysis[chrom][name] = entry
+            entries = _read_entries(h5stream["global_analysis"], dataset_file)
+            for name, entry in entries.items():
+                obj._global_analysis[name] = entry
             return obj
 
     def save(
@@ -1100,19 +765,11 @@ class SimDataset:
             analysis entry already held by this dataset, and `overwrite`
             is False.
         """
-        dt = h5py.string_dtype(encoding="utf-8")
         if dataset_file is None:
             dataset_file = self._dataset_file
-
         dest_path = Path(dataset_file)
-        dest = str(dest_path.resolve())
-        collision = any(
-            isinstance(entry, H5Array)
-            and str(Path(entry.path).resolve()) == dest
-            for data in list(self._analysis.values()) + [self._global_analysis]
-            for entry in data.values()
-        )
-        if collision:
+        colliding = self._entries_backed_by(dest_path)
+        if colliding:
             if not overwrite:
                 raise ValueError(
                     "cannot save to the same file that backs an "
@@ -1120,106 +777,59 @@ class SimDataset:
                     "different path, or pass overwrite=True to safely "
                     "replace it in place"
                 )
-            colliding = [
-                (data, name, entry.dataset_path)
-                for data in list(self._analysis.values())
-                + [self._global_analysis]
-                for name, entry in data.items()
-                if isinstance(entry, H5Array)
-                and str(Path(entry.path).resolve()) == dest
-            ]
-            tmp_path = dest_path.with_name(
-                dest_path.name + f".tmp{os.getpid()}"
-            )
-            closed = False
-            try:
-                self.save(tmp_path)
-                # Release the OS-level handles on dest before
-                # replacing it: unlike POSIX, Windows refuses to
-                # rename over a file that is still open.
-                for data, name, _ in colliding:
-                    data[name].close()
-                closed = True
-                os.replace(tmp_path, dest_path)
-            except BaseException:
-                tmp_path.unlink(missing_ok=True)
-                raise
-            finally:
-                if closed:
-                    for data, name, dataset_path in colliding:
-                        data[name] = H5Array.load_from(dest_path, dataset_path)
+            self._save_replacing(dest_path, colliding)
             return
 
         with h5py.File(dataset_file, "a") as h5stream:
-            # Ensure that the raw file directory is up-to-date
-            if "metadata" in h5stream:
-                gmeta = h5stream["metadata"]
-                gmeta.attrs["raw_dir"] = str(self._raw_dir)
-                # A TM dataset may start at nsim=0 and transition once
-                # to nsim=N after samples are generated, so refresh it
-                # on every save (unlike the fixed fields below).
-                gmeta.attrs["nsim"] = self._nsim
-            else:  # if "metadata" not in h5stream:
-                # Save metadata asssociated with raw simulation data
-                gmeta = h5stream.create_group("metadata")
-                gmeta.attrs["raw_dir"] = str(self._raw_dir)
-                gmeta.attrs["nsim"] = self._nsim
-                gmeta.attrs["method"] = self._method
-                gmeta.create_dataset("chroms", data=self._chroms, dtype=dt)
-                nmol_arr = np.asarray(
-                    [self._nmol[chrom] for chrom in self._chroms]
-                )
-                gmeta.create_dataset("nmol", data=nmol_arr)
-                nbp_arr = np.asarray(
-                    [self._nbp[chrom] for chrom in self._chroms]
-                )
-                gmeta.create_dataset("nbp", data=nbp_arr)
-                gset = gmeta.create_group("settings")
-                for field in fields(self._settings):
-                    # h5py cannot store None as an attribute; omitting
-                    # it lets SimSettings fall back to its own default.
-                    value = getattr(self._settings, field.name)
-                    if isinstance(value, Mapping):
-                        value = json.dumps(
-                            {str(k): int(v) for k, v in value.items()}
-                        )
-                    if value is not None:
-                        gset.attrs[field.name] = value
-                if self._eseq is not None:
-                    geseq = gmeta.create_group("eseq")
-                    for chrom in self._chroms:
-                        geseq.create_dataset(
-                            chrom, data=self._eseq[chrom], compression="gzip"
-                        )
-                if self._out_type is not None:
-                    gmeta.attrs["out_type"] = int(self._out_type)
-                if self._seed is not None:
-                    gmeta.attrs["seed"] = int(self._seed)
-                if self._seed_table is not None:
-                    gseeds = gmeta.create_group("seed_table")
-                    for chrom in self._chroms:
-                        gseeds.create_dataset(
-                            chrom, data=self._seed_table[chrom]
-                        )
-            # Save any analysis data
-            if "analysis" in h5stream:
-                del h5stream["analysis"]
-            gana = h5stream.create_group("analysis")
+            _write_metadata(
+                h5stream,
+                raw_dir=self._raw_dir,
+                nsim=self._nsim,
+                method=self._method,
+                chroms=self._chroms,
+                nmol=self._nmol,
+                nbp=self._nbp,
+                settings=self._settings,
+                eseq=self._eseq,
+                out_type=self._out_type,
+                seed=self._seed,
+                seed_table=self._seed_table,
+            )
+            gana = _replace_group(h5stream, "analysis")
             for chrom, data in self._analysis.items():
-                gchrom = gana.create_group(chrom)
-                for name, entry in data.items():
-                    if isinstance(entry, H5Array):
-                        entry.save_to(gchrom, name)
-                    else:
-                        h5_utils.save_df(name, entry, gchrom)
-            if "global_analysis" in h5stream:
-                del h5stream["global_analysis"]
-            gana = h5stream.create_group("global_analysis")
-            for name, entry in self._global_analysis.items():
-                if isinstance(entry, H5Array):
-                    entry.save_to(gana, name)
-                else:
-                    h5_utils.save_df(name, entry, gana)
+                _write_entries(gana.create_group(chrom), data)
+            gglobal = _replace_group(h5stream, "global_analysis")
+            _write_entries(gglobal, self._global_analysis)
+
+    def _entries_backed_by(self, path):
+        """Return `(data, name, dataset_path)` of H5Array entries in `path`."""
+        dest = str(Path(path).resolve())
+        return [
+            (data, name, entry.dataset_path)
+            for data in [*self._analysis.values(), self._global_analysis]
+            for name, entry in data.items()
+            if isinstance(entry, H5Array)
+            and str(Path(entry.path).resolve()) == dest
+        ]
+
+    def _save_replacing(self, dest_path, colliding):
+        """Save to a sibling file, then atomically replace `dest_path`."""
+        tmp_path = dest_path.with_name(dest_path.name + f".tmp{os.getpid()}")
+        closed = False
+        try:
+            self.save(tmp_path)
+            # Windows cannot rename over an open file, so close entries first
+            for data, name, _ in colliding:
+                data[name].close()
+            closed = True
+            os.replace(tmp_path, dest_path)
+        except BaseException:
+            tmp_path.unlink(missing_ok=True)
+            raise
+        finally:
+            if closed:
+                for data, name, dataset_path in colliding:
+                    data[name] = H5Array.load_from(dest_path, dataset_path)
 
     @staticmethod
     def _cleanup_tmp_dir(tmp_dir):

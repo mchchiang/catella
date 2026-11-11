@@ -9,6 +9,7 @@ from catella_cpp import NucPosTM
 
 from catella import utils
 from catella.h5_array import H5Array
+from catella.simulation._io import _pack_jagged
 from catella.simulation.config import SimSettings
 from catella.simulation.results import SimDataset
 
@@ -617,13 +618,7 @@ class SimAnalysis:
                 pos, energy[mol] = get_config(tm)
                 positions.append(np.asarray(pos, dtype=np.int32))
                 log_prob[mol] = -energy[mol] / settings.end_temp - tm.getLogZ()
-            offset = np.zeros(nmol + 1, dtype=np.uint64)
-            offset[1:] = np.cumsum([len(p) for p in positions])
-            flat = (
-                np.concatenate(positions)
-                if positions
-                else np.array([], dtype=np.int32)
-            )
+            flat, offset = _pack_jagged(positions)
             analysis = dataset.analysis[chrom]
             analysis[f"{name}_position_flat"] = pd.DataFrame(
                 {"position": flat}

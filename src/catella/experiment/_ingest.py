@@ -230,17 +230,24 @@ def _ensure_fasta_index(fasta_file):
     The index is written under a unique temporary name in the same
     directory and then renamed into place, so processes reading the
     same FASTA file concurrently never see a partially written index.
+    If the rename is refused (Windows cannot replace a file another
+    process has open) but a fresh index is already in place, that
+    index is kept.
 
     Parameters
     ----------
     fasta_file : str or pathlib.Path
         FASTA file; its index is `<fasta_file>.fai`.
+
+    Raises
+    ------
+    PermissionError
+        If the index cannot be renamed into place and no fresh index
+        exists.
     """
     fasta_file = os.path.abspath(fasta_file)
     fai = fasta_file + ".fai"
-    if os.path.exists(fai) and (
-        os.path.getmtime(fai) >= os.path.getmtime(fasta_file)
-    ):
+    if _fresh_index(fasta_file, fai):
         return
     fd, tmp = tempfile.mkstemp(
         prefix=os.path.basename(fai) + ".",
@@ -251,10 +258,22 @@ def _ensure_fasta_index(fasta_file):
     os.remove(tmp)
     try:
         pyfaidx.Faidx(fasta_file, indexname=tmp).close()
-        os.replace(tmp, fai)
+        try:
+            os.replace(tmp, fai)
+        except PermissionError:
+            # Another process put its index in place and has it open
+            if not _fresh_index(fasta_file, fai):
+                raise
     finally:
         if os.path.exists(tmp):
             os.remove(tmp)
+
+
+def _fresh_index(fasta_file, fai):
+    """Return True if `fai` exists and is not older than `fasta_file`."""
+    return os.path.exists(fai) and (
+        os.path.getmtime(fai) >= os.path.getmtime(fasta_file)
+    )
 
 
 def _parse_fasta(fasta_file, wanted_chroms):

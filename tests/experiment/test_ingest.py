@@ -1,6 +1,7 @@
 import multiprocessing
 import os
 from concurrent.futures import ProcessPoolExecutor
+from unittest.mock import patch
 
 import pytest
 from catella.experiment._ingest import (
@@ -111,3 +112,37 @@ class TestEnsureFastaIndex:
         os.utime(fai, (mtime + 10, mtime + 10))
         _ensure_fasta_index(f)
         assert fai.read_text() == "current\n"
+
+    def test_refused_rename_keeps_index_from_other_process(self, tmp_path):
+        f = _write(tmp_path / "r.fa", ">c1\nACGT\n")
+        fai = tmp_path / "r.fa.fai"
+
+        def other_process_wins(src, dst):
+            _write(fai, "c1\t4\t4\t4\t5\n")
+            raise PermissionError("Access is denied")
+
+        with patch(
+            "catella.experiment._ingest.os.replace",
+            side_effect=other_process_wins,
+        ):
+            _ensure_fasta_index(f)
+
+        assert fai.read_text() == "c1\t4\t4\t4\t5\n"
+        assert sorted(p.name for p in tmp_path.iterdir()) == [
+            "r.fa",
+            "r.fa.fai",
+        ]
+
+    def test_refused_rename_without_index_raises(self, tmp_path):
+        f = _write(tmp_path / "r.fa", ">c1\nACGT\n")
+
+        with (
+            patch(
+                "catella.experiment._ingest.os.replace",
+                side_effect=PermissionError("Access is denied"),
+            ),
+            pytest.raises(PermissionError),
+        ):
+            _ensure_fasta_index(f)
+
+        assert [p.name for p in tmp_path.iterdir()] == ["r.fa"]

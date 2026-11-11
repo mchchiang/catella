@@ -146,6 +146,34 @@ class TestExtractMissingMolecules:
         assert all(v is not None for v in results["chr1"])
 
 
+class TestExtractParallel:
+    def test_matches_serial_without_agg_func(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=3, nsim=2)
+        time = dataset.raw["chr1", 0, 0].time[-1]
+        serial = dataset.extract(time=time, obs="energy")
+        parallel = dataset.extract(
+            time=time, obs="energy", nworker=2, batch_size=2
+        )
+        np.testing.assert_array_equal(parallel["chr1"], serial["chr1"])
+
+    def test_matches_serial_with_agg_func(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=3, nsim=2)
+        time = dataset.raw["chr1", 0, 0].time[-1]
+
+        def count_agg(chrom, mol, raw_data):
+            return sum(len(x) for x in raw_data)
+
+        serial = dataset.extract(time=time, obs="position", agg_func=count_agg)
+        parallel = dataset.extract(
+            time=time,
+            obs="position",
+            nworker=2,
+            batch_size=2,
+            agg_func=count_agg,
+        )
+        assert parallel["chr1"] == serial["chr1"]
+
+
 class TestFindIncompleteRuns:
     def test_missing_run_detected(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=2, nsim=1)

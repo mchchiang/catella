@@ -1402,11 +1402,10 @@ class SimDataset:
 
         if nworker > 1:
             with ThreadPoolExecutor(max_workers=nworker) as executor:
+                run_gen = self.iter_runs(chroms, mols)
                 while True:
                     # Grab a chunk of work
-                    batch = list(
-                        islice(self.iter_runs(chroms, mols), batch_size)
-                    )
+                    batch = list(islice(run_gen, batch_size))
                     if not batch:
                         break
                     # Submit only this batch

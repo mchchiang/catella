@@ -8,11 +8,18 @@ import subprocess
 import sys
 from pathlib import Path
 
-import callers
 import pandas as pd
-import perf_worker
-import psutil
 import pytest
+
+if sys.platform == "win32":
+    pytest.skip(
+        "perf benchmarks need the Unix-only resource module",
+        allow_module_level=True,
+    )
+psutil = pytest.importorskip("psutil")
+
+import callers
+import perf_worker
 import run_perf
 import run_synth
 

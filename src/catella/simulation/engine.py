@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import multiprocessing as mp
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from dataclasses import dataclass, replace
 from itertools import islice
-from numbers import Integral
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any
 
 import catella_cpp as sim
 import h5py
@@ -26,6 +25,15 @@ from rich.progress import (
 from scipy.special import logit
 
 from catella import utils
+from catella.simulation._inputs import (
+    _check_llink,
+    _check_mcmc_settings,
+    _count_mols,
+    _normalize_meth_prob,
+    _normalize_mols,
+    _parse_out_types,
+    _resolve_settings,
+)
 from catella.simulation.config import SimSettings
 from catella.simulation.results import (
     SimDataset,
@@ -77,13 +85,6 @@ class MCMCJob:
 
     settings: SimSettings
     """The physical constants and Monte Carlo protocol used for this run."""
-
-    _out_map: ClassVar[dict[str, Dump.OutputType]] = {
-        "energy": Dump.OutputType.Energy,
-        "position": Dump.OutputType.Position,
-        "temp": Dump.OutputType.Temp,
-        "all": Dump.OutputType.All,
-    }
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -145,25 +146,6 @@ class SimManager:
 
         self.nworker = nworker
         self.verbose = verbose
-
-    @staticmethod
-    def _check_llink(settings: SimSettings, chroms: Iterable[str]) -> None:
-        """Check that a mapping `llink` covers `chroms` with valid values."""
-        if not isinstance(settings.llink, Mapping):
-            return
-        for chrom in chroms:
-            if chrom not in settings.llink:
-                raise KeyError(f"llink has no value for chromosome '{chrom}'")
-            value = settings.llink[chrom]
-            if (
-                not isinstance(value, Integral)
-                or isinstance(value, bool)
-                or value < 0
-            ):
-                raise ValueError(
-                    "llink must be a non-negative integer for chromosome "
-                    f"'{chrom}', got {value!r}"
-                )
 
     @staticmethod
     def _job_seed(master_seed: int, chrom_idx: int, mol: int, run: int) -> int:
@@ -287,112 +269,17 @@ class SimManager:
             raise ValueError("'method' must be 'mcmc' or 'tm'")
 
         chroms = utils.normalize_chroms(chroms)
-
-        # Normalize methylation data
-        if isinstance(meth_prob, np.ndarray):
-            if not len(chroms) == 1:
-                raise TypeError(
-                    "methylation probability array 'meth_prob' "
-                    "provided but multiple chroms requested"
-                )
-            meth_prob = {chroms[0]: meth_prob}
-        elif isinstance(meth_prob, Mapping):
-            meth_prob = {chrom: meth_prob[chrom] for chrom in chroms}
-        else:
-            raise TypeError("'meth_prob' must be a numpy array or a mapping")
-
-        # Normalize molecule indices (unparameterized base types, since
-        # isinstance() rejects IndexType.__args__'s Sequence[int])
-        if isinstance(mols, (int, slice, Sequence)):
-            # Apply the same set of indices across all chromosomes
-            mols = {chrom: mols for chrom in chroms}
-        elif isinstance(mols, Mapping):
-            mols = {chrom: mols[chrom] for chrom in chroms}
-        else:
-            raise TypeError("'mols' must be an IndexType or a mapping")
-
-        # Check that the molecule indices are valid and compute total number
-        # of molecules to simulate
-        nmol = {}
-        nbp = {}
-        total_mol = 0
-        for chrom in chroms:
-            # Determine the maximum number of molecules and all molecule ids
-            size = meth_prob[chrom].shape[0]
-            nmol[chrom] = size
-
-            # Convert any data frames to numpy arrays in meth_prob
-            if isinstance(meth_prob[chrom], pd.DataFrame):
-                meth_prob[chrom] = meth_prob[chrom].to_numpy()
-            meth_prob[chrom] = np.atleast_2d(meth_prob[chrom])
-            nbp[chrom] = meth_prob[chrom].shape[1]
-
-            try:
-                # Apply the index/slice to an 0-element view to trigger errors
-                # without allocating memory for the full index list
-                text_idx = np.empty(size, dtype=np.int8)[mols[chrom]]
-                if text_idx.size == 0:
-                    raise ValueError(
-                        f"selection 'mols' for chromosome '{chrom}' is empty"
-                    )
-                total_mol += text_idx.size
-            except IndexError as e:
-                raise IndexError(
-                    f"mols index for chromosome '{chrom}': {e}"
-                ) from None
-
-        # Read simulation settings from file if needed
-        if isinstance(settings, (str | Path)):
-            settings = SimSettings.load(settings)
-        elif not isinstance(settings, SimSettings):
-            raise TypeError(
-                "'settings' must be either a path to the "
-                "simulation setting file or a SimSettings object"
-            )
-        SimManager._check_llink(settings, chroms)
-
+        meth_prob = _normalize_meth_prob(meth_prob, chroms)
+        mols = _normalize_mols(mols, chroms)
+        nmol = {chrom: meth_prob[chrom].shape[0] for chrom in chroms}
+        nbp = {chrom: meth_prob[chrom].shape[1] for chrom in chroms}
+        total_mol = _count_mols(mols, nmol)
+        settings = _resolve_settings(settings)
+        _check_llink(settings, chroms)
         if method == "mcmc":
-            # Check the MCMC-only protocol fields are present and valid
-            # (they are optional on SimSettings so 'tm' configs can omit
-            # them, so 'mcmc' must check for their presence itself).
-            for field_name in (
-                "start_temp", "cool_option", "nsweep", "print_freq"
-            ):
-                if getattr(settings, field_name) is None:
-                    raise ValueError(
-                        f"'{field_name}' is required for method='mcmc'"
-                    )
-            if settings.end_temp > settings.start_temp:
-                raise ValueError("expect 'end_temp' <= 'start_temp'")
-            if settings.cool_option not in SimSettings._cool_map:
-                raise KeyError(
-                    "invalid value for 'cool_option'; expect either "
-                    "'linear', 'geometric', or 'constant'"
-                )
-
-            # Combine output types
-            if isinstance(out_types, str):
-                if out_types not in MCMCJob._out_map:
-                    raise ValueError(
-                        f"output type '{out_types}' is not a valid option"
-                    )
-                out_types = [out_types]
-            elif not isinstance(out_types, Iterable):
-                raise TypeError("'out_types' must be a str or an iterable")
-
-            out_type = MCMCJob._out_map[out_types[0]]
-            for i in range(1, len(out_types)):
-                if out_types[i] not in MCMCJob._out_map:
-                    raise ValueError(
-                        f"output type '{out_types[i]}' is not a valid "
-                        "option"
-                    )
-                otype = MCMCJob._out_map[out_types[i]]
-                # Dump.OutputType is a scoped C++ enum class, so pybind11
-                # doesn't bind '|' between two enum values directly;
-                # combine via their underlying int values instead.
-                out_type = Dump.OutputType(int(out_type) | int(otype))
-        else:  # method == "tm"
+            _check_mcmc_settings(settings)
+            out_type = _parse_out_types(out_types)
+        else:
             out_type = None
 
         # Compute the methylation energy landscape (also needed to compute
@@ -627,24 +514,7 @@ class SimManager:
             }
 
         settings = SimSettings(**dict(dataset.settings))
-
-        # Normalize methylation data the same way run() does
-        chroms = dataset.chroms
-        if isinstance(meth_prob, np.ndarray):
-            if not len(chroms) == 1:
-                raise TypeError(
-                    "methylation probability array 'meth_prob' "
-                    "provided but dataset has multiple chroms"
-                )
-            meth_prob = {chroms[0]: meth_prob}
-        elif isinstance(meth_prob, Mapping):
-            meth_prob = {chrom: meth_prob[chrom] for chrom in chroms}
-        else:
-            raise TypeError("'meth_prob' must be a numpy array or a mapping")
-        for chrom in chroms:
-            if isinstance(meth_prob[chrom], pd.DataFrame):
-                meth_prob[chrom] = meth_prob[chrom].to_numpy()
-            meth_prob[chrom] = np.atleast_2d(meth_prob[chrom])
+        meth_prob = _normalize_meth_prob(meth_prob, dataset.chroms)
 
         def mcmc_jobs():
             for chrom, mol, run in targets:
@@ -707,23 +577,7 @@ class SimManager:
                 "dataset predates seed persistence; pass seed= explicitly"
             )
 
-        # Normalize methylation data the same way run() does
-        if isinstance(meth_prob, np.ndarray):
-            if not len(chroms) == 1:
-                raise TypeError(
-                    "methylation probability array 'meth_prob' "
-                    "provided but dataset has multiple chroms"
-                )
-            meth_prob = {chroms[0]: meth_prob}
-        elif isinstance(meth_prob, Mapping):
-            meth_prob = {chrom: meth_prob[chrom] for chrom in chroms}
-        else:
-            raise TypeError("'meth_prob' must be a numpy array or a mapping")
-        for chrom in chroms:
-            if isinstance(meth_prob[chrom], pd.DataFrame):
-                meth_prob[chrom] = meth_prob[chrom].to_numpy()
-            meth_prob[chrom] = np.atleast_2d(meth_prob[chrom])
-
+        meth_prob = _normalize_meth_prob(meth_prob, chroms)
         settings = SimSettings(**dict(dataset.settings))
 
         def tm_jobs():

@@ -5,7 +5,6 @@ import warnings
 from collections import deque
 from concurrent.futures import ProcessPoolExecutor
 from numbers import Integral
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -13,7 +12,7 @@ from catella_cpp import NucPosTM
 from scipy.special import logit
 
 from catella.experiment._reads import _lookup_mask
-from catella.simulation.config import SimSettings
+from catella.simulation._inputs import _is_valid_llink, _resolve_settings
 
 # Warn below this many molecules, as per-molecule estimates are noisy
 _MIN_NMOL = 50
@@ -22,29 +21,13 @@ _MIN_NMOL = 50
 _CHUNK_NMOL = 200
 
 
-def _resolve_settings(settings):
-    """Return `settings` as a SimSettings, loading it from a file if needed."""
-    if isinstance(settings, (str, Path)):
-        return SimSettings.load(settings)
-    if not isinstance(settings, SimSettings):
-        raise TypeError(
-            "'settings' must be either a path to the simulation setting "
-            "file or a SimSettings object"
-        )
-    return settings
-
-
 def _resolve_llinks(llinks):
     """Validate candidate linker lengths and return them sorted and unique."""
     values = list(llinks)
     if not values:
         raise ValueError("llinks must not be empty")
     for value in values:
-        if (
-            not isinstance(value, Integral)
-            or isinstance(value, bool)
-            or value < 0
-        ):
+        if not _is_valid_llink(value):
             raise ValueError(
                 f"llinks must be non-negative integers, got {value!r}"
             )

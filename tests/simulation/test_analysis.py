@@ -1,5 +1,7 @@
 # test_analysis.py
 
+from unittest.mock import patch
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -100,6 +102,31 @@ class TestComputeMeanNnuc:
         ana = SimAnalysis()
         ana.compute_mean_nnuc(dataset)
         assert "mean_nnuc" in dataset.analysis["chr1"]
+
+    def test_only_requested_chroms_extracted(self, tmp_path):
+        rng = np.random.default_rng(0)
+        meth_prob = {c: rng.random((2, 20)) for c in ("chr1", "chr2")}
+        dataset = SimManager(nworker=1, verbose=False).run(
+            chroms=["chr1", "chr2"],
+            nsim=2,
+            settings=_make_settings(),
+            meth_prob=meth_prob,
+            out_dir=tmp_path / "dataset",
+            seed=1,
+        )
+        ana = SimAnalysis()
+        with patch.object(
+            SimDataset,
+            "extract",
+            autospec=True,
+            side_effect=SimDataset.extract,
+        ) as spy:
+            ana.compute_mean_nnuc(dataset, chroms="chr1")
+
+        for call in spy.call_args_list:
+            assert list(call.kwargs["chroms"]) == ["chr1"]
+        assert "mean_nnuc" in dataset.analysis["chr1"]
+        assert "mean_nnuc" not in dataset.analysis["chr2"]
 
 
 class TestSaveLoadRoundTrip:

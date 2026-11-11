@@ -371,7 +371,7 @@ class SimAnalysis:
             return mean_nnuc
 
         mean_nnuc = dataset.extract(
-            time=time, obs="position", agg_func=mean_nnuc_agg
+            time=time, obs="position", chroms=chroms, agg_func=mean_nnuc_agg
         )
         # Store the results
         if record_time:

@@ -290,6 +290,85 @@ class TestSimTMData:
             SimTMData(nucbp=1, nbp=1, llink=1, elink=1.0, mu=1.0, seed=1)
 
 
+def _tm_fields(**overrides):
+    values = {
+        "nucbp": 147,
+        "nbp": 40,
+        "llink": 20,
+        "elink": 1.0,
+        "mu": -1.0,
+        "seed": 3,
+        "position": np.array([1, 5]),
+        "energy": -1.0,
+        "logz": 2.0,
+    }
+    values.update(overrides)
+    return values
+
+
+def _mcmc_fields(**overrides):
+    values = {
+        "nucbp": 147,
+        "nbp": 40,
+        "llink": 20,
+        "elink": 1.0,
+        "mu": -1.0,
+        "seed": 3,
+        "time": np.array([0, 1]),
+        "energy": np.array([0.0, 1.0]),
+        "position": (np.array([1]), np.array([2])),
+        "temp": np.array([1.0, 0.5]),
+    }
+    values.update(overrides)
+    return values
+
+
+class TestInitFields:
+    def test_fields_set_from_unprefixed_names(self):
+        sample = SimTMData._create(**_tm_fields())
+        assert sample.nucbp == 147
+        assert sample.logz == pytest.approx(2.0)
+        np.testing.assert_array_equal(sample.position, [1, 5])
+
+    def test_missing_internal_flag_raises_with_message(self):
+        with pytest.raises(TypeError, match="SimMCMCData.load"):
+            SimMCMCData(**_mcmc_fields())
+
+
+class TestCheckRunParams:
+    @pytest.mark.parametrize("cls", [SimMCMCData, SimTMData])
+    @pytest.mark.parametrize("name", ["nucbp", "nbp", "seed"])
+    def test_non_positive_raises(self, cls, name):
+        make = _mcmc_fields if cls is SimMCMCData else _tm_fields
+        with pytest.raises(ValueError, match="must be positive"):
+            cls._create(**make(**{name: 0}))
+
+    @pytest.mark.parametrize("cls", [SimMCMCData, SimTMData])
+    def test_zero_llink_accepted(self, cls):
+        make = _mcmc_fields if cls is SimMCMCData else _tm_fields
+        assert cls._create(**make(llink=0)).llink == 0
+
+    def test_mcmc_length_mismatch_raises(self):
+        with pytest.raises(ValueError, match="same length"):
+            SimMCMCData._create(**_mcmc_fields(temp=np.array([1.0])))
+
+
+class TestPublicRepr:
+    def test_mcmc_names_public_fields(self):
+        text = repr(SimMCMCData._create(**_mcmc_fields()))
+        assert text == (
+            "SimMCMCData(nucbp, nbp, llink, elink, mu, seed, time, "
+            "energy, position, temp)"
+        )
+
+    def test_tm_names_public_fields(self):
+        text = repr(SimTMData._create(**_tm_fields()))
+        assert text == (
+            "SimTMData(nucbp, nbp, llink, elink, mu, seed, position, "
+            "energy, logz)"
+        )
+
+
 class TestLlinkValidation:
     @pytest.mark.parametrize("cls", [SimMCMCData, SimTMData])
     def test_negative_llink_raises(self, cls):

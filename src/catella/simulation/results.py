@@ -36,6 +36,84 @@ from catella.simulation.config import SimSettings
 MAX_OPEN_FILES = Semaphore(500)
 
 
+def _init_fields(obj, kwargs, msg):
+    """
+    Set the dataclass fields of a frozen run-data object from `kwargs`.
+
+    A field named `_frozen_<name>` is also set from `kwargs[<name>]`.
+
+    Parameters
+    ----------
+    obj : dataclass instance
+        The object to initialize.
+    kwargs : dict
+        The field values; must contain `_internal=True`, which is removed.
+    msg : str
+        The error message if `_internal` is missing.
+
+    Raises
+    ------
+    TypeError
+        If `kwargs` lacks `_internal=True`.
+    """
+    if not kwargs.pop("_internal", False):
+        raise TypeError(msg)
+    for f in fields(obj):
+        val = kwargs.get(f.name)
+        if val is None:
+            val = kwargs.get(f.name.removeprefix("_frozen_"))
+        object.__setattr__(obj, f.name, val)
+
+
+def _check_run_params(nucbp, nbp, llink, seed):
+    """
+    Check the physical parameters and seed of a run.
+
+    Parameters
+    ----------
+    nucbp, nbp : int
+        The nucleosome size and fiber length in base pairs.
+    llink : int
+        The linker length in base pairs.
+    seed : int
+        The seed of the run.
+
+    Raises
+    ------
+    ValueError
+        If `nucbp`, `nbp`, or `seed` is not positive, or `llink` is
+        negative.
+    """
+    if nucbp <= 0 or nbp <= 0 or seed <= 0:
+        raise ValueError("nucbp, nbp, and seed must be positive")
+    if llink < 0:
+        raise ValueError(f"llink must be non-negative, got {llink}")
+
+
+def _public_repr(obj):
+    """
+    Name the public slots and properties of `obj`, without values.
+
+    Parameters
+    ----------
+    obj : object
+        A slotted object.
+
+    Returns
+    -------
+    str
+        For example "SimTMData(nucbp, nbp, ...)".
+    """
+    cls = type(obj)
+    names = [name for name in cls.__slots__ if not name.startswith("_")]
+    names += [
+        name
+        for name, value in cls.__dict__.items()
+        if isinstance(value, property) and not name.startswith("_")
+    ]
+    return f"{cls.__name__}({', '.join(names)})"
+
+
 @utils.add_frozen_properties
 @dataclass(frozen=True, slots=True, init=False)
 class SimMCMCData:
@@ -99,16 +177,12 @@ class SimMCMCData:
     _obs_map: dict[str, Any]
     _obs_list = ("energy", "position", "temp")
 
-    def __init__(self, **kwargs: Any):
-        if not kwargs.pop("_internal", False):
-            raise TypeError("use SimMCMCData.load() to instantiate this class")
+    __repr__ = _public_repr
 
-        # Bulk assignment of fields
-        for f in fields(self):
-            val = kwargs.get(f.name)
-            if val is None:
-                val = kwargs.get(f.name.removeprefix("_frozen_"))
-            object.__setattr__(self, f.name, val)
+    def __init__(self, **kwargs: Any):
+        _init_fields(
+            self, kwargs, "use SimMCMCData.load() to instantiate this class"
+        )
 
         # Build time index lookup
         time_map = {t: i for i, t in enumerate(self.time)}
@@ -252,39 +326,16 @@ class SimMCMCData:
 
     @classmethod
     def _create(cls, **kwargs) -> Self:
-        nucbp = kwargs.get("nucbp")
-        nbp = kwargs.get("nbp")
-        llink = kwargs.get("llink")
-        seed = kwargs.get("seed")
-        time = kwargs.get("time")
-        energy = kwargs.get("energy")
-        position = kwargs.get("position")
-        temp = kwargs.get("temp")
-        # Some validation
-        if nucbp <= 0 or nbp <= 0 or seed <= 0:
-            raise ValueError("nucbp, nbp, and seed must be positive")
-        if llink < 0:
-            raise ValueError(f"llink must be non-negative, got {llink}")
-        if not (len(time) == len(energy) == len(temp) == len(position)):
+        _check_run_params(
+            kwargs["nucbp"], kwargs["nbp"], kwargs["llink"], kwargs["seed"]
+        )
+        obs = ("time", "energy", "position", "temp")
+        if len({len(kwargs[name]) for name in obs}) > 1:
             raise ValueError(
                 "time, energy, position, and temp must have the "
                 "same length"
             )
         return cls(**kwargs, _internal=True)
-
-    def __repr__(self):
-        # Get all public attributes by filtering out private attributes
-        # (those starting with '_')
-        public_attrs = [
-            attr for attr in self.__slots__ if not attr.startswith("_")
-        ]
-        # Add public properties explicitly (we check for them in __dict__)
-        for attr, value in self.__class__.__dict__.items():
-            if isinstance(value, property) and not attr.startswith("_"):
-                public_attrs.append(attr)
-        # Create a string of the public attribute names (not values)
-        repr_str = f"{self.__class__.__name__}({', '.join(public_attrs)})"
-        return repr_str
 
 
 @utils.add_frozen_properties
@@ -338,40 +389,22 @@ class SimTMData:
         }
     )
 
-    def __init__(self, **kwargs: Any):
-        if not kwargs.pop("_internal", False):
-            raise TypeError(
-                "SimTMData cannot be instantiated directly; access samples "
-                "via SimDataset.raw"
-            )
+    __repr__ = _public_repr
 
-        for f in fields(self):
-            val = kwargs.get(f.name)
-            if val is None:
-                val = kwargs.get(f.name.removeprefix("_frozen_"))
-            object.__setattr__(self, f.name, val)
+    def __init__(self, **kwargs: Any):
+        _init_fields(
+            self,
+            kwargs,
+            "SimTMData cannot be instantiated directly; access samples "
+            "via SimDataset.raw",
+        )
 
     @classmethod
     def _create(cls, **kwargs) -> Self:
-        nucbp = kwargs.get("nucbp")
-        nbp = kwargs.get("nbp")
-        llink = kwargs.get("llink")
-        seed = kwargs.get("seed")
-        if nucbp <= 0 or nbp <= 0 or seed <= 0:
-            raise ValueError("nucbp, nbp, and seed must be positive")
-        if llink < 0:
-            raise ValueError(f"llink must be non-negative, got {llink}")
+        _check_run_params(
+            kwargs["nucbp"], kwargs["nbp"], kwargs["llink"], kwargs["seed"]
+        )
         return cls(**kwargs, _internal=True)
-
-    def __repr__(self):
-        public_attrs = [
-            attr for attr in self.__slots__ if not attr.startswith("_")
-        ]
-        for attr, value in self.__class__.__dict__.items():
-            if isinstance(value, property) and not attr.startswith("_"):
-                public_attrs.append(attr)
-        repr_str = f"{self.__class__.__name__}({', '.join(public_attrs)})"
-        return repr_str
 
 
 def _read_tm_sample(combined_file: str | Path, run: int) -> SimTMData:

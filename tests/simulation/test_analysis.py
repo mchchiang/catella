@@ -94,64 +94,6 @@ class TestComputeOccup:
         assert "occup" in dataset.analysis["chr1"]
 
 
-class TestComputeAccess:
-    def test_output_is_h5array_and_complement_of_occup(self, tmp_path):
-        dataset = _make_dataset(tmp_path, nmol=5, nbp=25)
-        ana = SimAnalysis()
-        ana.compute_access(dataset=dataset, batch_size=2)
-
-        occup = dataset.analysis["chr1"]["occup"]
-        access = dataset.analysis["chr1"]["access"]
-        assert isinstance(occup, H5Array)
-        assert isinstance(access, H5Array)
-        assert np.allclose(access.to_numpy(), 1.0 - occup.to_numpy())
-
-    def test_batching_matches_single_batch(self, tmp_path):
-        dataset = _make_dataset(tmp_path, nmol=6, nbp=18)
-        ana = SimAnalysis()
-        ana.compute_access(
-            dataset=dataset, access_name="access_batched", batch_size=2
-        )
-        ana.compute_access(
-            dataset=dataset, access_name="access_full", batch_size=1000
-        )
-
-        batched = dataset.analysis["chr1"]["access_batched"].to_numpy()
-        full = dataset.analysis["chr1"]["access_full"].to_numpy()
-        assert np.allclose(batched, full)
-
-    def test_reuses_existing_occup(self, tmp_path):
-        dataset = _make_dataset(tmp_path, nmol=4, nbp=15)
-        ana = SimAnalysis()
-        ana.compute_occup(dataset=dataset, batch_size=2)
-        occup_before = dataset.analysis["chr1"]["occup"].to_numpy().copy()
-
-        ana.compute_access(dataset=dataset, batch_size=2)
-
-        occup_after = dataset.analysis["chr1"]["occup"].to_numpy()
-        assert np.allclose(occup_before, occup_after)
-
-    def test_missing_molecule_stays_nan(self, tmp_path, capsys):
-        dataset = _make_dataset(tmp_path, nmol=5, nbp=15, nsim=2)
-        for run in range(dataset.nsim):
-            dataset.mcmc_file("chr1", 3, run).unlink()
-
-        ana = SimAnalysis()
-        ana.compute_access(dataset=dataset, batch_size=2)
-
-        access = dataset.analysis["chr1"]["access"].to_numpy()
-        assert np.isnan(access[3]).all()
-        for mol in (0, 1, 2, 4):
-            assert not np.isnan(access[mol]).any()
-        assert "chr1" in capsys.readouterr().out
-
-    def test_dataset_accepted_positionally(self, tmp_path):
-        dataset = _make_dataset(tmp_path, nmol=4, nbp=15)
-        ana = SimAnalysis()
-        ana.compute_access(dataset, batch_size=2)
-        assert "access" in dataset.analysis["chr1"]
-
-
 class TestComputeMeanNnuc:
     def test_dataset_accepted_positionally(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=4, nbp=20)
@@ -165,22 +107,18 @@ class TestSaveLoadRoundTrip:
         dataset = _make_dataset(tmp_path, nmol=4, nbp=20)
         ana = SimAnalysis()
         ana.compute_occup(dataset=dataset, batch_size=2)
-        ana.compute_access(dataset=dataset, batch_size=2)
         ana.compute_mean_nnuc(dataset=dataset)
 
         dataset.save()
         loaded = SimDataset.load(dataset._dataset_file)
 
         occup = loaded.analysis["chr1"]["occup"]
-        access = loaded.analysis["chr1"]["access"]
         mean_nnuc = loaded.analysis["chr1"]["mean_nnuc"]
         assert isinstance(occup, H5Array)
-        assert isinstance(access, H5Array)
         assert isinstance(mean_nnuc, pd.DataFrame)
         assert np.allclose(
             occup.to_numpy(), dataset.analysis["chr1"]["occup"].to_numpy()
         )
-        assert np.allclose(access.to_numpy(), 1.0 - occup.to_numpy())
 
     def test_save_rejects_same_path_as_backing_h5array(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=3, nbp=10)
@@ -452,16 +390,6 @@ class TestComputeMeanNnucTM:
         ana = SimAnalysis()
         with pytest.raises(ValueError):
             ana.compute_mean_nnuc(dataset=dataset, record_time=True)
-
-
-class TestComputeAccessTM:
-    def test_matches_one_minus_occup(self, tmp_path):
-        dataset = _make_tm_dataset(tmp_path, nmol=2, nbp=16, seed=5)
-        ana = SimAnalysis()
-        ana.compute_access(dataset=dataset)
-        occup = dataset.analysis["chr1"]["occup"].to_numpy()
-        access = dataset.analysis["chr1"]["access"].to_numpy()
-        np.testing.assert_allclose(access, 1.0 - occup)
 
 
 class TestComputeVarNnuc:

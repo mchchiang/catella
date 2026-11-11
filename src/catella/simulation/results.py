@@ -1249,9 +1249,8 @@ class SimDataset:
     def close(self):
         """
         Delete this dataset's scratch directory (all temporary HDF5
-        files created for it, e.g. by `SimAnalysis.compute_occup` or
-        `compute_access`), if one was created. No-op for datasets with
-        no scratch directory.
+        files created for it, e.g. by `SimAnalysis.compute_occup`), if
+        one was created. No-op for datasets with no scratch directory.
         """
         if self._finalizer is not None:
             self._finalizer()

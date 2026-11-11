@@ -113,28 +113,68 @@ class TestEnsureFastaIndex:
         _ensure_fasta_index(f)
         assert fai.read_text() == "current\n"
 
-    def test_refused_rename_keeps_index_from_other_process(self, tmp_path):
+    def test_index_installed_first_by_other_process_kept(self, tmp_path):
         f = _write(tmp_path / "r.fa", ">c1\nACGT\n")
         fai = tmp_path / "r.fa.fai"
 
         def other_process_wins(src, dst):
-            _write(fai, "c1\t4\t4\t4\t5\n")
-            raise PermissionError("Access is denied")
+            _write(fai, "other\n")
+            raise FileExistsError(dst)
 
-        with patch(
-            "catella.experiment._ingest.os.replace",
-            side_effect=other_process_wins,
+        with (
+            patch(
+                "catella.experiment._ingest.os.rename",
+                side_effect=other_process_wins,
+            ),
+            patch("catella.experiment._ingest.os.replace") as replace,
         ):
             _ensure_fasta_index(f)
 
-        assert fai.read_text() == "c1\t4\t4\t4\t5\n"
+        replace.assert_not_called()
+        assert fai.read_text() == "other\n"
         assert sorted(p.name for p in tmp_path.iterdir()) == [
             "r.fa",
             "r.fa.fai",
         ]
 
-    def test_refused_rename_without_index_raises(self, tmp_path):
+    def test_missing_index_never_replaced(self, tmp_path):
         f = _write(tmp_path / "r.fa", ">c1\nACGT\n")
+        with patch("catella.experiment._ingest.os.replace") as replace:
+            _ensure_fasta_index(f)
+        replace.assert_not_called()
+        assert (tmp_path / "r.fa.fai").read_text().split("\t")[:2] == [
+            "c1",
+            "4",
+        ]
+
+    def _stale_index(self, tmp_path):
+        f = _write(tmp_path / "r.fa", ">c1\nACGT\n")
+        fai = _write(tmp_path / "r.fa.fai", "stale\n")
+        mtime = os.path.getmtime(f)
+        os.utime(fai, (mtime - 10, mtime - 10))
+        return f, fai
+
+    def test_refused_replace_keeps_refreshed_index(self, tmp_path):
+        f, fai = self._stale_index(tmp_path)
+
+        def other_process_refreshes(src, dst):
+            _write(fai, "other\n")
+            raise PermissionError("Access is denied")
+
+        with patch(
+            "catella.experiment._ingest.os.replace",
+            side_effect=other_process_refreshes,
+        ):
+            _ensure_fasta_index(f)
+
+        assert fai.read_text() == "other\n"
+        assert sorted(p.name for p in tmp_path.iterdir()) == [
+            "r.fa",
+            "r.fa.fai",
+        ]
+
+    def test_refused_replace_of_stale_index_raises(self, tmp_path):
+        f, fai = self._stale_index(tmp_path)
 
         with (
             patch(
@@ -145,4 +185,8 @@ class TestEnsureFastaIndex:
         ):
             _ensure_fasta_index(f)
 
-        assert [p.name for p in tmp_path.iterdir()] == ["r.fa"]
+        assert fai.read_text() == "stale\n"
+        assert sorted(p.name for p in tmp_path.iterdir()) == [
+            "r.fa",
+            "r.fa.fai",
+        ]

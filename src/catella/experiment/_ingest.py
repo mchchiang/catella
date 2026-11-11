@@ -228,11 +228,10 @@ def _ensure_fasta_index(fasta_file):
     Build the `.fai` index of a FASTA file if it is missing or stale.
 
     The index is written under a unique temporary name in the same
-    directory and then renamed into place, so processes reading the
+    directory and then moved into place, so processes reading the
     same FASTA file concurrently never see a partially written index.
-    If the rename is refused (Windows cannot replace a file another
-    process has open) but a fresh index is already in place, that
-    index is kept.
+    A fresh index is never replaced, since Windows refuses to open a
+    file while another process replaces it.
 
     Parameters
     ----------
@@ -242,8 +241,7 @@ def _ensure_fasta_index(fasta_file):
     Raises
     ------
     PermissionError
-        If the index cannot be renamed into place and no fresh index
-        exists.
+        If a stale index cannot be replaced and no fresh index exists.
     """
     fasta_file = os.path.abspath(fasta_file)
     fai = fasta_file + ".fai"
@@ -258,15 +256,44 @@ def _ensure_fasta_index(fasta_file):
     os.remove(tmp)
     try:
         pyfaidx.Faidx(fasta_file, indexname=tmp).close()
-        try:
-            os.replace(tmp, fai)
-        except PermissionError:
-            # Another process put its index in place and has it open
-            if not _fresh_index(fasta_file, fai):
-                raise
+        _install_index(fasta_file, tmp, fai)
     finally:
         if os.path.exists(tmp):
             os.remove(tmp)
+
+
+def _install_index(fasta_file, tmp, fai):
+    """
+    Move a newly built index into place unless a fresh one exists.
+
+    Parameters
+    ----------
+    fasta_file : str
+        FASTA file the index belongs to.
+    tmp : str
+        The newly built index.
+    fai : str
+        The index path.
+
+    Raises
+    ------
+    PermissionError
+        If a stale index cannot be replaced and no fresh index exists.
+    """
+    if not os.path.exists(fai):
+        try:
+            # Unlike os.replace, os.rename never overwrites on Windows
+            os.rename(tmp, fai)
+        except FileExistsError:
+            pass  # Another process installed its index first
+        return
+    if _fresh_index(fasta_file, fai):
+        return
+    try:
+        os.replace(tmp, fai)
+    except PermissionError:
+        if not _fresh_index(fasta_file, fai):
+            raise
 
 
 def _fresh_index(fasta_file, fai):

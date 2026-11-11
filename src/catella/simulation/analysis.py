@@ -149,9 +149,8 @@ class SimAnalysis:
     A collection of post-processing tools for simulation data.
 
     This class provides methods to calculate physical properties such as
-    nucleosome occupancy and DNA accessibility from raw simulation
-    trajectories. Results are stored directly in the provided dataset's
-    analysis map.
+    nucleosome occupancy from raw simulation trajectories. Results are
+    stored directly in the provided dataset's analysis map.
     """
 
     def _final_time(self, dataset: SimDataset, chroms) -> int:

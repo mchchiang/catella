@@ -7,10 +7,8 @@ import shutil
 import weakref
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
-from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, fields
 from functools import lru_cache
-from itertools import islice
 from pathlib import Path
 from threading import Semaphore
 from types import MappingProxyType
@@ -23,6 +21,7 @@ from catella_cpp import Dump
 from catella import h5_utils, utils
 from catella.containers import DataclassPublicProxy, DataFrameMap, FixedKeyMap
 from catella.h5_array import H5Array
+from catella.simulation._parallel import _threaded_map
 from catella.simulation.config import SimSettings
 
 # Limit the concurrent open files to stay under OS limits
@@ -1414,44 +1413,18 @@ class SimDataset:
                     chrom, mol, raw_data, **agg_kwargs
                 )
 
-        if nworker > 1:
-            with ThreadPoolExecutor(max_workers=nworker) as executor:
-                run_gen = self.iter_runs(chroms, mols)
-                while True:
-                    # Grab a chunk of work
-                    batch = list(islice(run_gen, batch_size))
-                    if not batch:
-                        break
-                    # Submit only this batch
-                    tasks: dict[Future, tuple] = {
-                        executor.submit(
-                            SimMCMCData.extract,
-                            self._file_map.params_to_mcmc_file(*sim_id),
-                            time,
-                            obs,
-                        ): sim_id
-                        for sim_id in batch
-                    }
-                    # Process this batch as it completes
-                    for future in as_completed(tasks):
-                        chrom, mol, run = tasks[future]
-                        try:
-                            store(chrom, mol, run, future.result())
-                        except Exception as e:  # noqa: BLE001
-                            print(
-                                f"Fail to extract '{obs}' from chrom "
-                                f"{chrom}, molecule {mol}, run {run}: {e}"
-                            )
-                    # Clean up batch
-                    tasks.clear()
-        else:  # nworker = 1
-            for sim_id in self.iter_runs(chroms, mols):
-                chrom, mol, run = sim_id
-                sim_file = self._file_map.params_to_mcmc_file(
-                    chrom, mol, run
-                )
-                data = SimMCMCData.extract(sim_file, time, obs)
-                store(chrom, mol, run, data)
+        def extract_one(sim_id):
+            sim_file = self._file_map.params_to_mcmc_file(*sim_id)
+            return SimMCMCData.extract(sim_file, time, obs)
+
+        extracted = _threaded_map(
+            extract_one,
+            self.iter_runs(chroms, mols),
+            nworker=nworker,
+            batch_size=batch_size,
+        )
+        for (chrom, mol, run), data in extracted:
+            store(chrom, mol, run, data)
 
         # Mark molecules with no simulation files on disk as missing
         if agg_func is not None:
@@ -1562,30 +1535,15 @@ class SimDataset:
                         yield (chrom, mol, run)
 
         incomplete = {"missing": [], "corrupted": [], "truncated": []}
-
-        if nworker > 1:
-            with ThreadPoolExecutor(max_workers=nworker) as executor:
-                triplet_gen = all_triplets()
-                while True:
-                    batch = list(islice(triplet_gen, batch_size))
-                    if not batch:
-                        break
-                    tasks: dict[Future, tuple] = {
-                        executor.submit(self._classify_run, *sim_id): sim_id
-                        for sim_id in batch
-                    }
-                    for future in as_completed(tasks):
-                        sim_id = tasks[future]
-                        status = future.result()
-                        if status is not None:
-                            incomplete[status].append(sim_id)
-                    tasks.clear()
-        else:  # nworker = 1
-            for sim_id in all_triplets():
-                status = self._classify_run(*sim_id)
-                if status is not None:
-                    incomplete[status].append(sim_id)
-
+        statuses = _threaded_map(
+            lambda sim_id: self._classify_run(*sim_id),
+            all_triplets(),
+            nworker=nworker,
+            batch_size=batch_size,
+        )
+        for sim_id, status in statuses:
+            if status is not None:
+                incomplete[status].append(sim_id)
         return incomplete
 
     def mcmc_file(self, chrom: str, mol: int, run: int) -> Path:

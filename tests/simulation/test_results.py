@@ -190,6 +190,19 @@ class TestExtractParallel:
         )
         assert parallel["chr1"] == serial["chr1"]
 
+    @pytest.mark.parametrize("nworker", [1, 2])
+    def test_agg_func_error_propagates(self, tmp_path, nworker):
+        dataset = _make_dataset(tmp_path, nmol=2, nsim=1)
+        time = dataset.raw["chr1", 0, 0].time[-1]
+
+        def bad_agg(chrom, mol, raw_data):
+            raise RuntimeError("agg failed")
+
+        with pytest.raises(RuntimeError, match="agg failed"):
+            dataset.extract(
+                time=time, obs="energy", nworker=nworker, agg_func=bad_agg
+            )
+
 
 class TestFindIncompleteRuns:
     def test_missing_run_detected(self, tmp_path):

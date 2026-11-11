@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import multiprocessing as mp
 from collections.abc import Callable, Iterable, Iterator, Mapping
-from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from dataclasses import replace
-from itertools import islice
 from pathlib import Path
 from typing import Any
 
@@ -15,13 +12,6 @@ import h5py
 import numpy as np
 import pandas as pd
 from catella_cpp import NucPosMCMC, NucPosTM
-from rich.progress import (
-    BarColumn,
-    Progress,
-    SpinnerColumn,
-    TextColumn,
-    TimeRemainingColumn,
-)
 
 from catella import utils
 from catella.simulation._inputs import (
@@ -46,6 +36,12 @@ from catella.simulation._jobs import (
     _resolve_master_seed,
     _seed_table,
     _tm_rerun_targets,
+)
+from catella.simulation._parallel import (
+    _job_label,
+    _process_map,
+    _progress_bar,
+    _report_crash,
 )
 from catella.simulation.config import SimSettings
 from catella.simulation.results import (
@@ -399,78 +395,24 @@ class SimManager:
         progress_desc : str, default "[cyan]Running simulations ..."
             The label shown next to the progress bar.
         """
-
-        def _label(chrom, mol, run):
-            label = f"chrom={chrom}, mol={mol}"
-            return label if run is None else f"{label}, run={run}"
-
-        # Progress bar
-        progress = Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-            TimeRemainingColumn(),
-            disable=not self.verbose,
-        )
-
+        progress = _progress_bar(self.verbose)
         with progress:
-            main_task = progress.add_task(progress_desc, total=total)
-
-            def _handle_result(result):
-                chrom, mol, run, success, err_msg = result
+            task = progress.add_task(progress_desc, total=total)
+            results = _process_map(
+                run_job,
+                param_gen,
+                nworker=self.nworker,
+                on_crash=lambda jobs: _report_crash(
+                    progress.console, dataset, jobs
+                ),
+            )
+            for _, (chrom, mol, run, success, err_msg) in results:
                 if not success:
                     progress.console.print(
                         "[red]Error[/red] Simulation failed "
-                        f"({_label(chrom, mol, run)}): {err_msg}"
+                        f"({_job_label(chrom, mol, run)}): {err_msg}"
                     )
-                progress.update(main_task, advance=1)
-
-            if self.nworker > 1:
-                ctx = mp.get_context("spawn")
-                window = self.nworker * 2
-                with ProcessPoolExecutor(
-                    max_workers=self.nworker, mp_context=ctx
-                ) as executor:
-                    in_flight = {}
-                    for param in islice(param_gen, window):
-                        future = executor.submit(run_job, param)
-                        in_flight[future] = param
-                    while in_flight:
-                        done, _ = wait(in_flight, return_when=FIRST_COMPLETED)
-                        for future in done:
-                            param = in_flight[future]
-                            try:
-                                result = future.result()
-                            except Exception:
-                                progress.console.print(
-                                    "[red]Error[/red] Worker pool crashed; "
-                                    "aborting the remaining batch."
-                                )
-                                for p in in_flight.values():
-                                    run = getattr(p, "run", None)
-                                    try:
-                                        status = (
-                                            dataset._classify_run(
-                                                p.chrom, p.mol, run or 0
-                                            )
-                                            or "ok"
-                                        )
-                                    except Exception:  # noqa: BLE001
-                                        status = "unknown"
-                                    progress.console.print(
-                                        f"  {_label(p.chrom, p.mol, run)}: "
-                                        f"{status}"
-                                    )
-                                raise
-                            del in_flight[future]
-                            _handle_result(result)
-                        for param in islice(param_gen, len(done)):
-                            future = executor.submit(run_job, param)
-                            in_flight[future] = param
-            else:  # nworker = 1
-                for param in param_gen:
-                    _handle_result(run_job(param))
+                progress.update(task, advance=1)
 
     # Run a single MCMC simulation
     @staticmethod

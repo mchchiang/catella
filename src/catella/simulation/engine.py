@@ -5,7 +5,7 @@ from __future__ import annotations
 import multiprocessing as mp
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from itertools import islice
 from pathlib import Path
 from typing import Any
@@ -14,7 +14,7 @@ import catella_cpp as sim
 import h5py
 import numpy as np
 import pandas as pd
-from catella_cpp import Dump, NucPosMCMC, NucPosTM
+from catella_cpp import NucPosMCMC, NucPosTM
 from rich.progress import (
     BarColumn,
     Progress,
@@ -22,7 +22,6 @@ from rich.progress import (
     TextColumn,
     TimeRemainingColumn,
 )
-from scipy.special import logit
 
 from catella import utils
 from catella.simulation._inputs import (
@@ -34,6 +33,20 @@ from catella.simulation._inputs import (
     _parse_out_types,
     _resolve_settings,
 )
+from catella.simulation._jobs import (
+    MCMCJob,
+    TMJob,
+    _check_seed_source,
+    _compute_eseq,
+    _iter_mcmc_jobs,
+    _iter_selected,
+    _iter_tm_jobs,
+    _mcmc_rerun_targets,
+    _median_eseq_mu,
+    _resolve_master_seed,
+    _seed_table,
+    _tm_rerun_targets,
+)
 from catella.simulation.config import SimSettings
 from catella.simulation.results import (
     SimDataset,
@@ -42,81 +55,6 @@ from catella.simulation.results import (
     _write_tm_samples,
 )
 from catella.utils import IndexType
-
-
-# Store parameters for a specific simulation run
-@dataclass(frozen=True, kw_only=True)
-class MCMCJob:
-    """
-    Inputs for one MCMC run of a single molecule.
-
-    Combines the physical parameters and annealing protocol
-    (SimSettings) with the identifiers of the run. All fields are
-    self-contained so an instance can be sent as-is to a freshly
-    spawned worker process.
-    """
-
-    chrom: str
-    """The name or identifier of the chromosome being simulated."""
-
-    mol: int
-    """The index or identifier of the specific molecule within the
-    chromosome."""
-
-    run: int
-    """The iteration or replica index for this specific molecule-chromosome
-    pair."""
-
-    seed: int
-    """The specific random seed used for this execution. Note: This may differ
-    from the batch seed if per-run offsets are applied.
-    """
-
-    seq_energy: bytes
-    """Binary representation of the sequence-specific nucleosome binding
-    energy derived from the methylation data."""
-
-    out_type: Dump.OutputType
-    """The format or scope of data to be recorded (e.g., Energy, Position,
-    All)."""
-
-    out_file: Path
-    """The HDF5 file where the simulation results are stored."""
-
-    settings: SimSettings
-    """The physical constants and Monte Carlo protocol used for this run."""
-
-
-@dataclass(frozen=True, kw_only=True)
-class TMJob:
-    """
-    Inputs for the exact sampling of a single molecule.
-
-    One transfer-matrix solve, followed by one exact sample per entry
-    of `seeds`. All fields are self-contained so an instance can be
-    sent as-is to a freshly spawned worker process.
-    """
-
-    chrom: str
-    """The name or identifier of the chromosome being simulated."""
-
-    mol: int
-    """The index or identifier of the specific molecule within the
-    chromosome."""
-
-    seeds: tuple[int, ...]
-    """One seed per sample; sample `i` is drawn after re-seeding the
-    sampler with `seeds[i]`."""
-
-    seq_energy: bytes
-    """Binary representation of the sequence-specific nucleosome binding
-    energy derived from the methylation data."""
-
-    out_file: Path
-    """The HDF5 file where all of the molecule's samples are stored."""
-
-    settings: SimSettings
-    """The physical constants used for this molecule."""
 
 
 class SimManager:
@@ -146,34 +84,6 @@ class SimManager:
 
         self.nworker = nworker
         self.verbose = verbose
-
-    @staticmethod
-    def _job_seed(master_seed: int, chrom_idx: int, mol: int, run: int) -> int:
-        """
-        Derive a deterministic, order-independent seed for a single run.
-
-        Parameters
-        ----------
-        master_seed : int
-            The batch-level seed the whole dataset was generated from.
-        chrom_idx : int
-            The index of the chromosome within the dataset's chromosome
-            list.
-        mol : int
-            The molecule index.
-        run : int
-            The replicate run index.
-
-        Returns
-        -------
-        int
-            A seed depending only on its inputs, not on generation order.
-        """
-        return int(
-            np.random.SeedSequence(
-                entropy=master_seed, spawn_key=(chrom_idx, mol, run)
-            ).generate_state(1)[0]
-        )
 
     def run(
         self,
@@ -282,53 +192,16 @@ class SimManager:
         else:
             out_type = None
 
-        # Compute the methylation energy landscape (also needed to compute
-        # the median-based chemical potential when it is not stored)
         eseq = None
         if store_eseq or use_median_eseq_mu:
-            eseq = {}
-            for chrom in chroms:
-                model = NucPosMCMC(
-                    settings.nucbp,
-                    nbp[chrom],
-                    settings.for_chrom(chrom).llink,
-                    settings.elink,
-                    settings.mu,
-                    0,
-                )
-                eseq[chrom] = np.empty(meth_prob[chrom].shape)
-                for i in range(meth_prob[chrom].shape[0]):
-                    model.setEnergy(logit(meth_prob[chrom][i]), settings.emax)
-                    eseq[chrom][i] = model.getSeqEnergy()
-
-        # Adjust the chemical potential if needed
+            eseq = _compute_eseq(settings, meth_prob, chroms)
         if use_median_eseq_mu:
-            avg_eseq = np.empty(len(chroms))
-            for i, chrom in enumerate(chroms):
-                avg_eseq[i] = np.nanmedian(eseq[chrom])
-            avg_eseq = np.mean(avg_eseq)
-            print(f"Using median eseq mu: {avg_eseq}")
-            settings = replace(settings, mu=avg_eseq)
+            mu = _median_eseq_mu(eseq)
+            print(f"Using median eseq mu: {mu}")
+            settings = replace(settings, mu=mu)
+        seed = _resolve_master_seed(seed)
 
-        # Resolve the master seed and precompute a full per-run seed table
-        # (covers every (chrom, mol, run) combination, independent of any
-        # 'mols' filtering, so it can be persisted and later used to
-        # reproduce or rerun any individual simulation exactly)
-        if seed is None:
-            # Bounded so it fits a signed 64-bit HDF5 attribute
-            seed = int(np.random.default_rng().integers(2**63))
-        seed_table = {}
-        for chrom_idx, chrom in enumerate(chroms):
-            arr = np.empty((nmol[chrom], nsim), dtype=np.uint32)
-            for mol in range(nmol[chrom]):
-                for run in range(nsim):
-                    arr[mol, run] = SimManager._job_seed(
-                        seed, chrom_idx, mol, run
-                    )
-            seed_table[chrom] = arr
-
-        # Prepare the dataset object and save it immediately so a valid,
-        # loadable manifest exists on disk even if the run is interrupted
+        # Save now so a loadable dataset exists even if the run is cut short
         dataset = SimDataset.create(
             chroms=chroms,
             nmol=nmol,
@@ -341,64 +214,35 @@ class SimManager:
             method=method,
             out_type=out_type,
             seed=seed,
-            seed_table=seed_table,
+            seed_table=_seed_table(seed, chroms, nmol, nsim),
         )
         dataset.save()
 
-        # Generate the jobs: one per run for MCMC, one per molecule for TM
-        def molecules():
-            for chrom in chroms:
-                molidxs = np.arange(nmol[chrom])[mols[chrom]]
-                for molidx in molidxs:
-                    eseq = np.asarray(
-                        logit(meth_prob[chrom][molidx, :]), dtype=np.float64
-                    ).tobytes()
-                    yield chrom, int(molidx), eseq
-
-        def mcmc_jobs():
-            for chrom, idx, eseq in molecules():
-                for run in range(nsim):
-                    yield MCMCJob(
-                        chrom=chrom,
-                        mol=idx,
-                        run=run,
-                        settings=settings.for_chrom(chrom),
-                        seed=int(seed_table[chrom][idx, run]),
-                        seq_energy=eseq,
-                        out_type=out_type,
-                        out_file=dataset.mcmc_file(chrom, idx, run),
-                    )
-
-        def tm_jobs():
-            for chrom, idx, eseq in molecules():
-                yield TMJob(
-                    chrom=chrom,
-                    mol=idx,
-                    seeds=tuple(int(s) for s in seed_table[chrom][idx, :]),
-                    seq_energy=eseq,
-                    out_file=dataset.tm_file(chrom, idx),
-                    settings=settings.for_chrom(chrom),
-                )
-
+        selected = _iter_selected(chroms, nmol, mols)
         if method == "mcmc":
+            targets = (
+                (chrom, mol, run)
+                for chrom, mol in selected
+                for run in range(nsim)
+            )
             self._dispatch(
                 dataset,
-                mcmc_jobs(),
+                _iter_mcmc_jobs(
+                    dataset, settings, meth_prob, targets, out_type
+                ),
                 total_mol * nsim,
                 SimManager._run_mcmc_job,
             )
         elif nsim > 0:
             self._dispatch(
                 dataset,
-                tm_jobs(),
+                _iter_tm_jobs(dataset, settings, meth_prob, selected),
                 total_mol,
                 SimManager._run_tm_job,
                 progress_desc="[cyan]Solving molecules ...",
             )
 
-        # Save the dataset to file
         dataset.save()
-
         return dataset
 
     def rerun(
@@ -485,63 +329,21 @@ class SimManager:
                 "pass out_type= explicitly"
             )
 
-        if only is None:
-            incomplete = dataset.find_incomplete_runs()
-            targets = (
-                incomplete["missing"]
-                + incomplete["corrupted"]
-                + incomplete["truncated"]
-            )
-        else:
-            targets = list(only)
-
-        if seed is None:
-            if dataset.seed_table is None:
-                raise ValueError(
-                    "dataset predates seed persistence; pass seed= explicitly"
-                )
-            resolved_seeds = {
-                (chrom, mol, run): int(dataset.seed_table[chrom][mol, run])
-                for chrom, mol, run in targets
-            }
-        else:
-            # Caller explicitly wants different (not reproduced) seeds.
-            resolved_seeds = {
-                (chrom, mol, run): SimManager._job_seed(
-                    seed, dataset.chroms.index(chrom), mol, run
-                )
-                for chrom, mol, run in targets
-            }
-
+        targets = _mcmc_rerun_targets(dataset, only)
+        _check_seed_source(dataset, seed)
         settings = SimSettings(**dict(dataset.settings))
         meth_prob = _normalize_meth_prob(meth_prob, dataset.chroms)
-
-        def mcmc_jobs():
-            for chrom, mol, run in targets:
-                eseq = np.asarray(
-                    logit(meth_prob[chrom][mol, :]), dtype=np.float64
-                ).tobytes()
-                yield MCMCJob(
-                    chrom=chrom,
-                    mol=mol,
-                    run=run,
-                    settings=settings.for_chrom(chrom),
-                    seed=resolved_seeds[(chrom, mol, run)],
-                    seq_energy=eseq,
-                    out_type=resolved_out_type,
-                    out_file=dataset.mcmc_file(chrom, mol, run),
-                )
-
+        jobs = _iter_mcmc_jobs(
+            dataset, settings, meth_prob, targets, resolved_out_type, seed
+        )
         self._dispatch(
             dataset,
-            mcmc_jobs(),
+            jobs,
             len(targets),
             SimManager._run_mcmc_job,
             progress_desc="[cyan]Rerunning simulations ...",
         )
-
         dataset.save()
-
         return dataset
 
     def _rerun_tm(
@@ -554,68 +356,19 @@ class SimManager:
     ) -> SimDataset:
         """Regenerate a TM dataset's exact samples, at molecule
         granularity (see `rerun`'s docstring for why)."""
-        if only is None:
-            incomplete = dataset.find_incomplete_runs()
-            triplets = incomplete["missing"] + incomplete["corrupted"]
-            targets = sorted({(chrom, mol) for chrom, mol, _ in triplets})
-        else:
-            targets = list(only)
-            for target in targets:
-                if len(target) != 2:
-                    raise ValueError(
-                        "for a 'tm' dataset, 'only' must contain "
-                        "(chrom, mol) pairs, not (chrom, mol, run) "
-                        "triplets; TM samples are regenerated at "
-                        "molecule granularity"
-                    )
-
-        nsim = dataset.nsim
-        chroms = dataset.chroms
-
-        if seed is None and dataset.seed_table is None:
-            raise ValueError(
-                "dataset predates seed persistence; pass seed= explicitly"
-            )
-
-        meth_prob = _normalize_meth_prob(meth_prob, chroms)
+        targets = _tm_rerun_targets(dataset, only)
+        _check_seed_source(dataset, seed)
+        meth_prob = _normalize_meth_prob(meth_prob, dataset.chroms)
         settings = SimSettings(**dict(dataset.settings))
-
-        def tm_jobs():
-            for chrom, mol in targets:
-                eseq = np.asarray(
-                    logit(meth_prob[chrom][mol, :]), dtype=np.float64
-                ).tobytes()
-                if seed is None:
-                    seeds = tuple(
-                        int(s) for s in dataset.seed_table[chrom][mol, :]
-                    )
-                else:
-                    seeds = tuple(
-                        SimManager._job_seed(
-                            seed, chroms.index(chrom), mol, run
-                        )
-                        for run in range(nsim)
-                    )
-                yield TMJob(
-                    chrom=chrom,
-                    mol=mol,
-                    seeds=seeds,
-                    seq_energy=eseq,
-                    out_file=dataset.tm_file(chrom, mol),
-                    settings=settings.for_chrom(chrom),
-                )
-
-        if nsim > 0:
+        if dataset.nsim > 0:
             self._dispatch(
                 dataset,
-                tm_jobs(),
+                _iter_tm_jobs(dataset, settings, meth_prob, targets, seed),
                 len(targets),
                 SimManager._run_tm_job,
                 progress_desc="[cyan]Regenerating exact samples ...",
             )
-
         dataset.save()
-
         return dataset
 
     def _dispatch(

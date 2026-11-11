@@ -460,6 +460,19 @@ class TestSimManagerRun:
         )
         assert (full.seed_table["chr1"] == subset.seed_table["chr1"]).all()
 
+    def test_single_int_mols_runs_one_molecule(self, tmp_path):
+        manager = SimManager(nworker=1, verbose=False)
+        dataset = manager.run(
+            chroms="chr1",
+            nsim=2,
+            settings=_make_settings(),
+            meth_prob=_make_meth_prob(nmol=3, nbp=50),
+            out_dir=tmp_path / "ds",
+            seed=3,
+            mols=1,
+        )
+        assert sorted(dataset.iter_runs()) == [("chr1", 1, 0), ("chr1", 1, 1)]
+
     def test_broken_pool_is_reported_and_reraised(self, tmp_path, capsys):
         # Regression test for the sliding-window dispatch: if a future's
         # result() raises for a reason _run_mcmc_job's own try/except can't

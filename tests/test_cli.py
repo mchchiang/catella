@@ -633,6 +633,70 @@ class TestComputeModelProb:
         got = MethPrintExperiment.load(cli_out)
         assert got.global_analysis["meth_prob_params"]["span"][0] == "calls"
 
+    def _load_model_raw(self, tmp_path):
+        rows = _make_test_rows(nmol=5, nbp=len(_MODEL_SEQ), step=1)
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": len(_MODEL_SEQ)})
+        fasta_file = tmp_path / "ref.fa"
+        _write_fasta(fasta_file, {"chr1": _MODEL_SEQ})
+        raw_file = tmp_path / "raw_exp.h5"
+        load_result = runner.invoke(
+            app,
+            [
+                "load_raw",
+                str(chromsize),
+                str(test_file),
+                str(raw_file),
+                "--fasta-file",
+                str(fasta_file),
+            ],
+        )
+        assert load_result.exit_code == 0, load_result.output
+        return raw_file
+
+    def test_channels_option_is_forwarded(self, tmp_path):
+        raw_file = self._load_model_raw(tmp_path)
+        cli_out = tmp_path / "cli_exp.h5"
+        result = runner.invoke(
+            app,
+            [
+                "compute_model_prob",
+                str(raw_file),
+                "--out-file",
+                str(cli_out),
+                "--lnuc",
+                "30",
+                "--channels",
+                "GCG,GCH",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        got = MethPrintExperiment.load(cli_out)
+        params = got.global_analysis["meth_prob_params"]
+        assert params["channels"][0] == "GCH,GCG"
+        eta_row = got.global_analysis["meth_prob_eta"].iloc[0]
+        assert set(eta_row.index) == {"eta_GCH", "eta_GCG"}
+
+    def test_unknown_channel_fails(self, tmp_path):
+        raw_file = self._load_model_raw(tmp_path)
+        result = runner.invoke(
+            app,
+            [
+                "compute_model_prob",
+                str(raw_file),
+                "--out-file",
+                str(tmp_path / "cli_exp.h5"),
+                "--lnuc",
+                "30",
+                "--channels",
+                "GpC",
+            ],
+        )
+        assert result.exit_code != 0
+        assert isinstance(result.exception, ValueError)
+
     def test_q_thres_option_is_forwarded(self, tmp_path):
         rows = _make_test_rows(nmol=5, nbp=len(_MODEL_SEQ), step=1)
         test_file = tmp_path / "test.tsv"

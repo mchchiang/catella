@@ -243,6 +243,7 @@ def compute_model_prob(
     out_file: str | Path | None = None,
     prob_name: str = "meth_prob",
     q_thres: float | None = None,
+    channels: str | Iterable[str] | None = None,
     eta: float | dict[str, float] | None = None,
     eta_max_lag: int = 10,
     store_rho: bool = False,
@@ -284,6 +285,11 @@ def compute_model_prob(
         at least `q_thres` and 0 otherwise. This applies to all sources,
         so to rate calibration, eta estimation, and the output alike.
         None (default) uses the scores as they are. Must be in (0, 1].
+    channels : str or iterable of str, optional
+        Context channel(s) to use as evidence, among "A", "GCH", "HCG"
+        and "GCG"; each must be assayed by `exp.mtase`. If None
+        (default), all assayed channels are used. A selected channel is
+        still dropped if it fails the tests of `min_rel_contrast`.
     eta : float, dict of str to float, or None, default None
         Per-channel multiplicative correction for inflated log-
         likelihood ratios from correlated nearby sites (e.g.
@@ -404,6 +410,7 @@ def compute_model_prob(
         exp=exp,
         prob_name=prob_name,
         q_thres=q_thres,
+        channels=channels,
         eta=eta,
         eta_max_lag=eta_max_lag,
         store_rho=store_rho,

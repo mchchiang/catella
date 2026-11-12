@@ -506,6 +506,14 @@ def compute_model_prob(
             "Omit to use the scores as they are."
         ),
     ] = None,
+    channels: Annotated[
+        str | None,
+        typer.Option(
+            callback=csv_parser(str),
+            help="Channel(s) to use as evidence: A, GCH, HCG, GCG "
+            "(comma-separated). Omit to use all assayed channels.",
+        ),
+    ] = None,
     eta: Annotated[
         str | None,
         typer.Option(
@@ -606,6 +614,7 @@ def compute_model_prob(
         exp=exp,
         prob_name=prob_name,
         q_thres=q_thres,
+        channels=channels,
         eta=eta,
         eta_max_lag=eta_max_lag,
         store_rho=store_rho,

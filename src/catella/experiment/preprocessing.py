@@ -14,7 +14,9 @@ from catella.experiment._calibration import (
     _warn_call_frac_mismatch,
 )
 from catella.experiment._contexts import (
+    CG,
     CONTEXT_NAMES,
+    GC,
     GCG,
     GCH,
     HCG,
@@ -40,7 +42,9 @@ from catella.experiment.methdata import MethPrintExperiment
 from catella.h5_array import H5Array
 
 __all__ = [
+    "CG",
     "CONTEXT_NAMES",
+    "GC",
     "GCG",
     "GCH",
     "HCG",

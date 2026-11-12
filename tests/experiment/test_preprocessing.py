@@ -2207,6 +2207,43 @@ class TestResolveChannels:
         with pytest.raises(ValueError, match="assayed by mtase"):
             _resolve_channels(self._exp(("GC",)), "HCG")
 
+    def test_merged_channels_resolve(self):
+        from catella.experiment.preprocessing import CG, GC
+
+        assert _resolve_channels(self._exp(("A", "GC")), "GC") == (GC,)
+        assert _resolve_channels(self._exp(("CG",)), ["CG"]) == (CG,)
+
+    def test_merged_channel_after_unmerged(self):
+        from catella.experiment.preprocessing import GC
+
+        exp = self._exp(("A", "GC"))
+        assert _resolve_channels(exp, ["GC", "A"]) == (A, GC)
+
+    def test_none_stays_unmerged(self):
+        from catella.experiment.preprocessing import GCG, HCG
+
+        assert _resolve_channels(self._exp(("CG",)), None) == (HCG, GCG)
+
+    @pytest.mark.parametrize(
+        "mtase, name",
+        [
+            (None, "GC"),
+            (("A",), "GC"),
+            (("CG",), "GC"),
+            (("GC", "CG"), "GC"),
+            (("GC", "CG"), "CG"),
+            (("GC",), "CG"),
+        ],
+    )
+    def test_merged_channel_bad_mtase_raises(self, mtase, name):
+        with pytest.raises(ValueError, match=f"channel '{name}' requires"):
+            _resolve_channels(self._exp(mtase), name)
+
+    @pytest.mark.parametrize("part", ["GCH", "GCG"])
+    def test_merged_channel_with_part_raises(self, part):
+        with pytest.raises(ValueError, match="combined with its parts"):
+            _resolve_channels(self._exp(("GC",)), ["GC", part])
+
 
 class TestModelProbChannels:
     @staticmethod

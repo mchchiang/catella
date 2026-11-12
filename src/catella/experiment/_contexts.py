@@ -4,13 +4,25 @@ import numpy as np
 
 from catella.experiment._ingest import _methylatable_positions
 
-NONE, A, GCH, HCG, GCG = 0, 1, 2, 3, 4
-CONTEXT_NAMES = {NONE: "none", A: "A", GCH: "GCH", HCG: "HCG", GCG: "GCG"}
+NONE, A, GCH, HCG, GCG, GC, CG = 0, 1, 2, 3, 4, 5, 6
+CONTEXT_NAMES = {
+    NONE: "none",
+    A: "A",
+    GCH: "GCH",
+    HCG: "HCG",
+    GCG: "GCG",
+    GC: "GC",
+    CG: "CG",
+}
 
 # The four assayable context channels, and the reverse of
 # CONTEXT_NAMES restricted to them, for parsing user eta overrides.
 _ALL_CHANNELS = (A, GCH, HCG, GCG)
-_CHANNEL_NAME_TO_CODE = {CONTEXT_NAMES[c]: c for c in _ALL_CHANNELS}
+
+# Opt-in merged channels, each pooling the channels of one C mtase.
+_MERGED_CHANNELS = {GC: (GCH, GCG), CG: (HCG, GCG)}
+_ALL_CODES = _ALL_CHANNELS + tuple(_MERGED_CHANNELS)
+_CHANNEL_NAME_TO_CODE = {CONTEXT_NAMES[c]: c for c in _ALL_CODES}
 
 # Context channel(s) each mtase label actually methylates. "CG"/"GC"
 # both include GCG, since that position matches both rules (see
@@ -48,19 +60,25 @@ def _resolve_channels(exp, channels):
     exp : MethPrintExperiment
         The experiment object.
     channels : str, iterable of str, or None
-        Channel name(s) among "A", "GCH", "HCG" and "GCG". If None, all
-        channels assayed by `exp.mtase` are used.
+        Channel name(s) among "A", "GCH", "HCG", "GCG", "GC" and "CG".
+        "GC" merges GCH and GCG into one channel, and "CG" merges HCG
+        and GCG; each needs `exp.mtase` to hold its own label but not
+        the other one. If None, all channels assayed by `exp.mtase`
+        are used, unmerged.
 
     Returns
     -------
     tuple of int
-        Subset of `_active_channels(exp)`, in `_ALL_CHANNELS` order.
+        Selected channel codes, in `_ALL_CODES` order.
 
     Raises
     ------
     ValueError
-        If `channels` is empty, holds an unrecognized name, or names a
-        channel that `exp.mtase` does not assay.
+        If `channels` is empty, holds an unrecognized name, names a
+        channel that `exp.mtase` does not assay, names a merged channel
+        without its mtase label alone among "GC" and "CG" in
+        `exp.mtase`, or combines a merged channel with one of its
+        parts.
     """
     active = _active_channels(exp)
     if channels is None:
@@ -82,7 +100,25 @@ def _resolve_channels(exp, channels):
             f"channels must be assayed by mtase {list(exp.mtase)}, "
             f"got {missing}"
         )
-    return tuple(c for c in _ALL_CHANNELS if c in codes)
+    mtase = set(exp.mtase) if exp.mtase is not None else None
+    for code, parts in _MERGED_CHANNELS.items():
+        if code not in codes:
+            continue
+        name = CONTEXT_NAMES[code]
+        other = "CG" if name == "GC" else "GC"
+        if mtase is None or name not in mtase or other in mtase:
+            got = None if mtase is None else list(exp.mtase)
+            raise ValueError(
+                f"channel {name!r} requires mtase {name!r} without "
+                f"{other!r}, got mtase {got}"
+            )
+        clash = [CONTEXT_NAMES[c] for c in parts if c in codes]
+        if clash:
+            raise ValueError(
+                f"channel {name!r} cannot be combined with its parts, "
+                f"got {clash}"
+            )
+    return tuple(c for c in _ALL_CODES if c in codes)
 
 
 def _reference_contexts(seq):

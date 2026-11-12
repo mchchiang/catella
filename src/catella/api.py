@@ -16,6 +16,7 @@ from catella.experiment.methdata import MethPrintExperiment
 from catella.experiment.plot import MethPlot
 from catella.experiment.preprocessing import MethPrintAnalysis
 from catella.h5_array import H5Array
+from catella.simulation._exact import TMStat, _reject_time
 from catella.simulation._llink import _estimate_llink
 from catella.simulation.analysis import SimAnalysis
 from catella.simulation.config import SimSettings
@@ -926,6 +927,7 @@ def analyze(
     compute_var: bool = False,
     var_nnuc_name: str = "var_nnuc",
     var_occup_name: str = "var_occup",
+    nworker: int = 1,
 ):
     """
     Perform post-simulation statistical analysis on a dataset.
@@ -934,8 +936,8 @@ def analyze(
     nucleosome counts. For `dataset.method == "mcmc"`, these are computed
     across the simulated trajectories at a given time point; for
     `"tm"`, they are computed exactly via the transfer-matrix solver,
-    with no time axis. Results are stored directly back into the
-    provided SimDataset.
+    with no time axis, solving each molecule only once for all metrics.
+    Results are stored directly back into the provided SimDataset.
 
     Parameters
     ----------
@@ -960,15 +962,34 @@ def analyze(
     var_occup_name : str, default "var_occup"
         The key/name under which to store the computed per-bp occupancy
         variance. Only used if `compute_var` is True.
+    nworker : int, default 1
+        Number of worker processes. Values above 1 are only supported
+        for `dataset.method == "tm"`.
 
     Raises
     ------
     ValueError
-        If `time` is given for a `dataset.method == "tm"` dataset, or
-        if `compute_var` is True but `dataset.method != "tm"`.
+        If `time` is given for a `dataset.method == "tm"` dataset, if
+        `compute_var` is True but `dataset.method != "tm"`, or if
+        `nworker` is not positive or above 1 for a non-"tm" dataset.
     """
     ana = SimAnalysis()
-    ana.compute_occup(dataset=dataset, time=time, name=occup_name)
+    if dataset.method == "tm":
+        _reject_time(time, False)
+        stats = [
+            TMStat(occup_name, "getOccup", per_bp=True),
+            TMStat(mean_nnuc_name, "getMeanN"),
+        ]
+        if compute_var:
+            stats += [
+                TMStat(var_nnuc_name, "getVarN"),
+                TMStat(var_occup_name, "getVarOccup", per_bp=True),
+            ]
+        ana._compute_tm_stats(dataset, stats, nworker=nworker)
+        return
+    ana.compute_occup(
+        dataset=dataset, time=time, name=occup_name, nworker=nworker
+    )
     ana.compute_mean_nnuc(dataset=dataset, time=time, name=mean_nnuc_name)
     if compute_var:
         ana.compute_var_nnuc(dataset=dataset, name=var_nnuc_name)

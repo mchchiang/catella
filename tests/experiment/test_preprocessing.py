@@ -14,6 +14,7 @@ from catella.experiment._contexts import (
     _strand_assay_masks,
 )
 from catella.experiment._controls import _context_prior_rate
+from catella.experiment._eta import _resolve_eta_overrides
 from catella.experiment._reads import _read_sites
 from catella.experiment.methdata import MethPrintData, MethPrintExperiment
 from catella.experiment.preprocessing import (
@@ -2288,6 +2289,39 @@ class TestModelProbChannels:
     def test_channel_not_assayed_raises(self):
         with pytest.raises(ValueError, match="assayed by mtase"):
             self._run(mtase=["GC"], channels="HCG")
+
+    def test_merged_gc_auto_eta(self):
+        exp = self._run(mtase=["A", "GC"], channels=["A", "GC"])
+        eta_row = exp.global_analysis["meth_prob_eta"].iloc[0]
+        assert list(eta_row.index) == ["eta_A", "eta_GC"]
+        assert np.isfinite(eta_row.to_numpy(dtype=float)).all()
+        params = exp.global_analysis["meth_prob_params"].iloc[0]
+        assert params["channels"] == "A,GC"
+
+    def test_float_eta_pins_merged_channel(self):
+        exp = self._run(mtase=["A", "GC"], channels=["A", "GC"], eta=0.7)
+        eta_row = exp.global_analysis["meth_prob_eta"].iloc[0]
+        assert eta_row["eta_A"] == 0.7
+        assert eta_row["eta_GC"] == 0.7
+
+
+class TestResolveEtaOverrides:
+    def test_none_is_empty(self):
+        assert _resolve_eta_overrides(None, (A,)) == {}
+
+    def test_float_covers_given_channels(self):
+        from catella.experiment.preprocessing import GC
+
+        assert _resolve_eta_overrides(0.5, (A, GC)) == {A: 0.5, GC: 0.5}
+
+    def test_dict_accepts_merged_name(self):
+        from catella.experiment.preprocessing import CG
+
+        assert _resolve_eta_overrides({"CG": 0.8}, (CG,)) == {CG: 0.8}
+
+    def test_dict_unknown_name_raises(self):
+        with pytest.raises(ValueError, match="unrecognized eta channel"):
+            _resolve_eta_overrides({"GpC": 0.8}, (A,))
 
 
 class TestModelProbTheta:

@@ -647,7 +647,7 @@ class MethPrintAnalysis:
         tmp_dir = exp.resolve_tmp_dir()
 
         channels = _resolve_channels(exp, channels)
-        overrides = _resolve_eta_overrides(eta)
+        overrides = _resolve_eta_overrides(eta, channels)
         need_auto = set(channels) - set(overrides)
         channel_eta = dict(overrides)
 

@@ -9,11 +9,11 @@ from catella.experiment._calibration import (
     _chrom_calibration,
     _per_base_log_odds,
 )
-from catella.experiment._contexts import _ALL_CHANNELS, _CHANNEL_NAME_TO_CODE
+from catella.experiment._contexts import _CHANNEL_NAME_TO_CODE
 from catella.experiment._reads import _iter_read_sites
 
 
-def _resolve_eta_overrides(eta):
+def _resolve_eta_overrides(eta, channels):
     """
     Validate and normalize a user-supplied `eta` into per-channel
     overrides.
@@ -22,9 +22,11 @@ def _resolve_eta_overrides(eta):
     ----------
     eta : float, dict of str to float, or None
         `None` requests auto-estimation for every channel; a float
-        pins every channel to that value; a dict pins only the named
-        channels (keys from `CONTEXT_NAMES`, e.g. "A"), leaving any
-        channel not mentioned to be auto-estimated.
+        pins every channel in `channels` to that value; a dict pins
+        only the named channels (keys from `CONTEXT_NAMES`, e.g. "A"),
+        leaving any channel not mentioned to be auto-estimated.
+    channels : iterable of int
+        Selected channel codes, as from `_resolve_channels`.
 
     Returns
     -------
@@ -49,11 +51,14 @@ def _resolve_eta_overrides(eta):
                 )
             overrides[_CHANNEL_NAME_TO_CODE[name]] = float(val)
         return overrides
-    return {c: float(eta) for c in _ALL_CHANNELS}
+    return {c: float(eta) for c in channels}
 
 
-def _init_autocorr_stats(max_lag):
-    """Zeroed per-channel accumulators for `_accumulate_autocorr_stats`."""
+def _init_autocorr_stats(max_lag, channels):
+    """
+    Zeroed per-channel accumulators for `_accumulate_autocorr_stats`,
+    one per code in `channels`.
+    """
     return {
         c: {
             "n": 0.0,
@@ -64,7 +69,7 @@ def _init_autocorr_stats(max_lag):
             "psumA": np.zeros(max_lag),
             "psumB": np.zeros(max_lag),
         }
-        for c in _ALL_CHANNELS
+        for c in channels
     }
 
 
@@ -97,11 +102,11 @@ def _accumulate_autocorr_stats(
     max_lag : int
         Maximum lag (bp) to accumulate pair sums for.
     channels : iterable of int, optional
-        Channel codes to accumulate. Defaults to all of
-        `_ALL_CHANNELS`.
+        Channel codes to accumulate, each a key of `stats`. Defaults
+        to all keys of `stats`.
     """
     if channels is None:
-        channels = _ALL_CHANNELS
+        channels = stats.keys()
     L = log_odds.shape[1]
     for c in channels:
         mask_c = called & (ctx == c)[None, :]
@@ -308,7 +313,7 @@ def _estimate_channel_eta(exp, calib_kwargs, channels, *, max_lag):
         Calibration rows from `_calib_rows`, over all chromosomes.
     """
     norm_by_strand = calib_kwargs["norm_by_strand"]
-    stats = _init_autocorr_stats(max_lag)
+    stats = _init_autocorr_stats(max_lag, channels)
     calib_cache = {}
     calib_records = []
     for chrom in exp.chroms:

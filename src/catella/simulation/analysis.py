@@ -10,14 +10,67 @@ from catella_cpp import NucPosTM
 from catella import utils
 from catella.h5_array import H5Array
 from catella.simulation._exact import (
+    TM_BATCH_SIZE,
+    TMStat,
     _reject_time,
     _require_eseq,
     _require_tm,
     _tm_configs,
     _tm_per_bp,
     _tm_per_mol,
+    _tm_stats,
 )
 from catella.simulation.results import SimDataset
+
+MCMC_BATCH_SIZE = 20000
+
+
+def _check_nworker(dataset, nworker):
+    """
+    Check the number of worker processes of an analysis.
+
+    Parameters
+    ----------
+    dataset : SimDataset
+        The dataset being analyzed.
+    nworker : int
+        The requested number of worker processes.
+
+    Raises
+    ------
+    ValueError
+        If `nworker` is not positive, or `nworker > 1` for a dataset
+        whose method is not "tm".
+    """
+    if nworker < 1:
+        raise ValueError(f"nworker must be positive, got {nworker}")
+    if nworker > 1 and dataset.method != "tm":
+        raise ValueError(
+            "nworker > 1 requires a method='tm' dataset, "
+            f"got method={dataset.method!r}"
+        )
+
+
+def _resolve_batch_size(dataset, batch_size):
+    """
+    Return `batch_size`, or the default for the method of `dataset`.
+
+    Parameters
+    ----------
+    dataset : SimDataset
+        The dataset being analyzed.
+    batch_size : int or None
+        The requested batch size.
+
+    Returns
+    -------
+    int
+        `batch_size` if given; otherwise `TM_BATCH_SIZE` for "tm" and
+        `MCMC_BATCH_SIZE` for "mcmc" datasets.
+    """
+    if batch_size is not None:
+        return batch_size
+    return TM_BATCH_SIZE if dataset.method == "tm" else MCMC_BATCH_SIZE
 
 
 @dataclass(slots=True)
@@ -170,7 +223,8 @@ class SimAnalysis:
         chroms: str | Iterable[str] | None = None,
         name: str = "occup",
         record_time: bool = False,
-        batch_size: int = 20000,
+        batch_size: int | None = None,
+        nworker: int = 1,
     ):
         """
         Calculate nucleosome occupancy.
@@ -200,8 +254,14 @@ class SimAnalysis:
         record_time : bool, default False
             If True, the time point is appended to the storage name
             (e.g., "occup_t_100"). `mcmc` only.
-        batch_size : int, default 20000
-            Number of molecules processed (and held in memory) per batch.
+        batch_size : int, optional
+            Number of molecules processed per batch. For `"mcmc"`, the
+            number held in memory at a time (default 20000). For `"tm"`,
+            the number per worker job (default 64); peak memory scales
+            with `2 * nworker * batch_size` molecules.
+        nworker : int, default 1
+            Number of worker processes. Values above 1 are only supported
+            for `"tm"` datasets.
 
         Raises
         ------
@@ -209,13 +269,22 @@ class SimAnalysis:
             If `time` or `record_time` is given for a `"tm"` dataset, or
             (for `"tm"`) if the dataset has no stored energy landscape,
             or (for `"mcmc"`) if `time` is None and no simulation files
-            exist for `chroms`.
+            exist for `chroms`, or `nworker` is invalid.
         """
+        _check_nworker(dataset, nworker)
+        batch_size = _resolve_batch_size(dataset, batch_size)
         chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)
         if dataset.method == "tm":
             _reject_time(time, record_time)
             _require_eseq(dataset)
-            _tm_per_bp(dataset, chroms, name, batch_size, NucPosTM.getOccup)
+            _tm_per_bp(
+                dataset,
+                chroms,
+                name,
+                batch_size,
+                NucPosTM.getOccup,
+                nworker=nworker,
+            )
             return
         self._compute_occup_mcmc(
             dataset,
@@ -279,6 +348,7 @@ class SimAnalysis:
         chroms: str | Iterable[str] | None = None,
         name: str = "mean_nnuc",
         record_time: bool = False,
+        nworker: int = 1,
     ):
         """
         Calculate the mean number of nucleosomes.
@@ -305,6 +375,9 @@ class SimAnalysis:
         record_time : bool, default False
             If True, the time point is appended to the storage name
             (e.g., "mean_nnuc_t_100"). `mcmc` only.
+        nworker : int, default 1
+            Number of worker processes. Values above 1 are only supported
+            for `"tm"` datasets.
 
         Raises
         ------
@@ -312,13 +385,16 @@ class SimAnalysis:
             If `time` or `record_time` is given for a `"tm"` dataset, or
             (for `"tm"`) if the dataset has no stored energy landscape,
             or (for `"mcmc"`) if `time` is None and no simulation files
-            exist for `chroms`.
+            exist for `chroms`, or `nworker` is invalid.
         """
+        _check_nworker(dataset, nworker)
         chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)
         if dataset.method == "tm":
             _reject_time(time, record_time)
             _require_eseq(dataset)
-            _tm_per_mol(dataset, chroms, name, NucPosTM.getMeanN)
+            _tm_per_mol(
+                dataset, chroms, name, NucPosTM.getMeanN, nworker=nworker
+            )
             return
         self._compute_mean_nnuc_mcmc(
             dataset,
@@ -356,6 +432,7 @@ class SimAnalysis:
         *,
         chroms: str | Iterable[str] | None = None,
         name: str = "var_nnuc",
+        nworker: int = 1,
     ):
         """
         Calculate the exact variance of the nucleosome count.
@@ -373,16 +450,19 @@ class SimAnalysis:
         name : str, default "var_nnuc"
             The key name used to store the resulting DataFrame in
             `dataset.analysis`.
+        nworker : int, default 1
+            Number of worker processes.
 
         Raises
         ------
         ValueError
-            If `dataset.method != "tm"`, or the dataset has no stored
-            energy landscape.
+            If `dataset.method != "tm"`, the dataset has no stored
+            energy landscape, or `nworker` is not positive.
         """
         _require_tm(dataset, "compute_var_nnuc")
+        _check_nworker(dataset, nworker)
         chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)
-        _tm_per_mol(dataset, chroms, name, NucPosTM.getVarN)
+        _tm_per_mol(dataset, chroms, name, NucPosTM.getVarN, nworker=nworker)
 
     def compute_var_occup(
         self,
@@ -390,7 +470,8 @@ class SimAnalysis:
         *,
         chroms: str | Iterable[str] | None = None,
         name: str = "var_occup",
-        batch_size: int = 20000,
+        batch_size: int | None = None,
+        nworker: int = 1,
     ):
         """
         Calculate the exact per-bp variance of nucleosome occupancy.
@@ -410,18 +491,30 @@ class SimAnalysis:
         name : str, default "var_occup"
             The key name used to store the resulting `H5Array` in
             `dataset.analysis`.
-        batch_size : int, default 20000
-            Number of molecules processed (and held in memory) per batch.
+        batch_size : int, optional
+            Number of molecules per worker job (default 64); peak memory
+            scales with `2 * nworker * batch_size` molecules.
+        nworker : int, default 1
+            Number of worker processes.
 
         Raises
         ------
         ValueError
-            If `dataset.method != "tm"`, or the dataset has no stored
-            energy landscape.
+            If `dataset.method != "tm"`, the dataset has no stored
+            energy landscape, or `nworker` is not positive.
         """
         _require_tm(dataset, "compute_var_occup")
+        _check_nworker(dataset, nworker)
+        batch_size = _resolve_batch_size(dataset, batch_size)
         chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)
-        _tm_per_bp(dataset, chroms, name, batch_size, NucPosTM.getVarOccup)
+        _tm_per_bp(
+            dataset,
+            chroms,
+            name,
+            batch_size,
+            NucPosTM.getVarOccup,
+            nworker=nworker,
+        )
 
     def compute_most_likely_config(
         self,
@@ -429,6 +522,7 @@ class SimAnalysis:
         *,
         chroms: str | Iterable[str] | None = None,
         name: str = "most_likely",
+        nworker: int = 1,
     ):
         """
         Calculate the most likely nucleosome configuration of each molecule.
@@ -457,16 +551,25 @@ class SimAnalysis:
         name : str, default "most_likely"
             Prefix of the keys used to store the results in
             `dataset.analysis`.
+        nworker : int, default 1
+            Number of worker processes.
 
         Raises
         ------
         ValueError
-            If `dataset.method != "tm"`, or the dataset has no stored
-            energy landscape.
+            If `dataset.method != "tm"`, the dataset has no stored
+            energy landscape, or `nworker` is not positive.
         """
         _require_tm(dataset, "compute_most_likely_config")
+        _check_nworker(dataset, nworker)
         chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)
-        _tm_configs(dataset, chroms, name, NucPosTM.getMostLikelyConfig)
+        _tm_configs(
+            dataset,
+            chroms,
+            name,
+            NucPosTM.getMostLikelyConfig,
+            nworker=nworker,
+        )
 
     def compute_best_match_config(
         self,
@@ -475,6 +578,7 @@ class SimAnalysis:
         chroms: str | Iterable[str] | None = None,
         name: str = "best_match",
         gamma: float = 1.0,
+        nworker: int = 1,
     ):
         """
         Calculate the configuration that best matches the occupancy profile.
@@ -502,20 +606,63 @@ class SimAnalysis:
             correctly called empty sites. A site favors being covered when
             its occupancy exceeds 1/(1 + gamma), so larger values call more
             nucleosomes. Must be positive.
+        nworker : int, default 1
+            Number of worker processes.
 
         Raises
         ------
         ValueError
             If `dataset.method != "tm"`, the dataset has no stored energy
-            landscape, or `gamma` is not positive.
+            landscape, `gamma` is not positive, or `nworker` is not
+            positive.
         """
         if not gamma > 0:
             raise ValueError(f"gamma must be positive, got {gamma}")
         _require_tm(dataset, "compute_best_match_config")
+        _check_nworker(dataset, nworker)
         chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)
         _tm_configs(
-            dataset, chroms, name, lambda tm: tm.getBestMatchConfig(gamma)
+            dataset,
+            chroms,
+            name,
+            NucPosTM.getBestMatchConfig,
+            kwargs={"gamma": gamma},
+            nworker=nworker,
         )
+
+    def _compute_tm_stats(
+        self,
+        dataset: SimDataset,
+        stats: Iterable[TMStat],
+        *,
+        chroms: str | Iterable[str] | None = None,
+        nworker: int = 1,
+    ):
+        """
+        Compute several exact quantities, solving each molecule once.
+
+        Parameters
+        ----------
+        dataset : SimDataset
+            The TM dataset containing the stored energy landscape.
+        stats : iterable of TMStat
+            The quantities to compute.
+        chroms : str or iterable of str, optional
+            The chromosome(s) to process. If None (default), all
+            chromosomes in the dataset are analyzed.
+        nworker : int, default 1
+            Number of worker processes.
+
+        Raises
+        ------
+        ValueError
+            If `dataset.method != "tm"`, the dataset has no stored
+            energy landscape, or `nworker` is not positive.
+        """
+        _require_tm(dataset, "_compute_tm_stats")
+        _check_nworker(dataset, nworker)
+        chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)
+        _tm_stats(dataset, chroms, stats, nworker=nworker)
 
     def get_config(
         self, dataset: SimDataset, chrom: str, mol: int, *, name: str

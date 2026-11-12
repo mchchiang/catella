@@ -39,6 +39,52 @@ def _active_channels(exp):
     return tuple(c for c in _ALL_CHANNELS if c in active)
 
 
+def _resolve_channels(exp, channels):
+    """
+    Channels to use as evidence: all assayed ones, or a named subset.
+
+    Parameters
+    ----------
+    exp : MethPrintExperiment
+        The experiment object.
+    channels : str, iterable of str, or None
+        Channel name(s) among "A", "GCH", "HCG" and "GCG". If None, all
+        channels assayed by `exp.mtase` are used.
+
+    Returns
+    -------
+    tuple of int
+        Subset of `_active_channels(exp)`, in `_ALL_CHANNELS` order.
+
+    Raises
+    ------
+    ValueError
+        If `channels` is empty, holds an unrecognized name, or names a
+        channel that `exp.mtase` does not assay.
+    """
+    active = _active_channels(exp)
+    if channels is None:
+        return active
+    names = [channels] if isinstance(channels, str) else list(channels)
+    if not names:
+        raise ValueError("channels must not be empty")
+    unknown = [n for n in names if n not in _CHANNEL_NAME_TO_CODE]
+    if unknown:
+        raise ValueError(
+            f"channels must be among {sorted(_CHANNEL_NAME_TO_CODE)}, "
+            f"got {unknown}"
+        )
+    codes = {_CHANNEL_NAME_TO_CODE[n] for n in names}
+    missing = [CONTEXT_NAMES[c] for c in _ALL_CHANNELS
+               if c in codes and c not in active]
+    if missing:
+        raise ValueError(
+            f"channels must be assayed by mtase {list(exp.mtase)}, "
+            f"got {missing}"
+        )
+    return tuple(c for c in _ALL_CHANNELS if c in codes)
+
+
 def _reference_contexts(seq):
     """
     Classify every reference position into a footprinting context.

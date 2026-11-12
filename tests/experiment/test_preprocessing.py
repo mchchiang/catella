@@ -10,6 +10,7 @@ from catella import utils
 from catella.experiment._calibration import _warn_call_frac_mismatch
 from catella.experiment._contexts import (
     _reference_contexts,
+    _resolve_channels,
     _strand_assay_masks,
 )
 from catella.experiment._controls import _context_prior_rate
@@ -2168,6 +2169,88 @@ class TestModelProbMtase:
         for ch in ("GCH", "HCG", "GCG"):
             assert f"theta_prot_{ch}" not in calib.columns
             assert f"theta_acc_{ch}" not in calib.columns
+
+
+class TestResolveChannels:
+    @staticmethod
+    def _exp(mtase):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(mtase=mtase)
+
+    def test_none_gives_assayed_channels(self):
+        from catella.experiment.preprocessing import GCG, GCH
+
+        assert _resolve_channels(self._exp(("GC",)), None) == (GCH, GCG)
+
+    def test_name_and_list_in_canonical_order(self):
+        from catella.experiment.preprocessing import GCG, GCH
+
+        exp = self._exp(("A", "GC"))
+        assert _resolve_channels(exp, "GCH") == (GCH,)
+        assert _resolve_channels(exp, ["GCG", "GCH", "GCH"]) == (GCH, GCG)
+
+    def test_unset_mtase_allows_any_channel(self):
+        from catella.experiment.preprocessing import HCG
+
+        assert _resolve_channels(self._exp(None), ["HCG"]) == (HCG,)
+
+    def test_empty_raises(self):
+        with pytest.raises(ValueError, match="must not be empty"):
+            _resolve_channels(self._exp(None), [])
+
+    def test_unknown_name_raises(self):
+        with pytest.raises(ValueError, match="must be among"):
+            _resolve_channels(self._exp(None), ["GpC"])
+
+    def test_channel_not_assayed_raises(self):
+        with pytest.raises(ValueError, match="assayed by mtase"):
+            _resolve_channels(self._exp(("GC",)), "HCG")
+
+
+class TestModelProbChannels:
+    @staticmethod
+    def _run(mtase=None, **kwargs):
+        exp = _make_footprint_experiment(
+            with_controls=True, planted_edges=(30,), lnuc=30, mtase=mtase
+        )
+        MethPrintAnalysis().model_prob(
+            exp=exp, lnuc=30, batch_size=7, **kwargs
+        )
+        return exp
+
+    def test_gch_only_restricts_tables_and_is_recorded(self):
+        exp = self._run(mtase=["A", "GC"], channels=["GCH"])
+        eta_row = exp.global_analysis["meth_prob_eta"].iloc[0]
+        assert list(eta_row.index) == ["eta_GCH"]
+        calib = exp.global_analysis["meth_prob_calib"]
+        frac_cols = [
+            c for c in calib.columns if c.startswith("frac_informative_")
+        ]
+        assert frac_cols == ["frac_informative_GCH"]
+        params = exp.global_analysis["meth_prob_params"].iloc[0]
+        assert params["channels"] == "GCH"
+
+    def test_str_matches_list(self):
+        a = self._run(channels="GCH").analysis["chr1"]["meth_prob"]
+        b = self._run(channels=["GCH"]).analysis["chr1"]["meth_prob"]
+        np.testing.assert_array_equal(a.to_numpy(), b.to_numpy())
+
+    def test_matches_restricting_mtase(self):
+        by_channels = self._run(channels="A").analysis["chr1"]["meth_prob"]
+        by_mtase = self._run(mtase=["A"]).analysis["chr1"]["meth_prob"]
+        np.testing.assert_array_equal(
+            by_channels.to_numpy(), by_mtase.to_numpy()
+        )
+
+    def test_default_records_all_assayed_channels(self):
+        exp = self._run(mtase=["A", "GC"])
+        params = exp.global_analysis["meth_prob_params"].iloc[0]
+        assert params["channels"] == "A,GCH,GCG"
+
+    def test_channel_not_assayed_raises(self):
+        with pytest.raises(ValueError, match="assayed by mtase"):
+            self._run(mtase=["GC"], channels="HCG")
 
 
 class TestModelProbTheta:

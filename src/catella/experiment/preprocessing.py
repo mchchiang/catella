@@ -20,7 +20,7 @@ from catella.experiment._contexts import (
     HCG,
     NONE,
     A,
-    _active_channels,
+    _resolve_channels,
 )
 from catella.experiment._dropout import _strand_of_mol
 from catella.experiment._empirical import (
@@ -421,6 +421,7 @@ class MethPrintAnalysis:
         *,
         prob_name: str = "meth_prob",
         q_thres: float | None = None,
+        channels: str | Iterable[str] | None = None,
         eta: float | dict[str, float] | None = None,
         eta_max_lag: int = 10,
         store_rho: bool = False,
@@ -467,6 +468,12 @@ class MethPrintAnalysis:
             all sources, so to rate calibration, eta estimation, and
             the output alike. None (default) uses the scores as they
             are. Must be in (0, 1].
+        channels : str or iterable of str, optional
+            Context channel(s) to use as evidence, among "A", "GCH",
+            "HCG" and "GCG"; each must be assayed by `exp.mtase`. If
+            None (default), all assayed channels are used. A selected
+            channel is still dropped if it fails the tests of
+            `min_rel_contrast`.
         eta : float, dict of str to float, or None, default None
             Per-channel multiplicative correction for inflated log-
             likelihood ratios from correlated nearby sites (e.g.
@@ -476,9 +483,9 @@ class MethPrintAnalysis:
             methylated control when available, or from the test data
             otherwise. A float pins every channel to that value; a
             dict pins only the named channels, leaving any not
-            mentioned to be auto-estimated. Only channels actually
-            assayed by `exp.mtase` are estimated and reported (all
-            four if `exp.mtase` is unset). The value(s) actually
+            mentioned to be auto-estimated. Only the channels in use
+            (see `channels`) are estimated and reported. The value(s)
+            actually
             applied are stored in
             `exp.global_analysis[f"{prob_name}_eta"]` afterward.
         eta_max_lag : int, default 10
@@ -572,10 +579,11 @@ class MethPrintAnalysis:
             `min_rel_contrast` is outside [0, 1], if `q_thres` is
             outside (0, 1], if a chromosome has no reference sequence
             (`refseq`), if an expectation-maximization fit cannot find
-            enough bins with read sites, if `eta` is a dict with an
-            unrecognized channel name, if `span` is not recognized, or
-            if `norm_by_strand` is True but molecules with unmapped
-            strands ('.') exist.
+            enough bins with read sites, if `channels` is empty, holds
+            an unrecognized name, or names a channel not assayed by
+            `exp.mtase`, if `eta` is a dict with an unrecognized channel
+            name, if `span` is not recognized, or if `norm_by_strand` is
+            True but molecules with unmapped strands ('.') exist.
         KeyError
             If `mask_name` is given but no matching mask is found for
             some source/chromosome.
@@ -603,8 +611,8 @@ class MethPrintAnalysis:
 
         Per-chromosome (and, if `norm_by_strand`, per-strand)
         calibration diagnostics -- whether controls were used,
-        fraction of informative positions per context (only channels
-        actually assayed by `exp.mtase`, or all four if unset), fraction
+        fraction of informative positions per context (only the
+        channels in use, see `channels`), fraction
         of read sites carrying a call per source and context
         (`call_frac_{source}_{context}`, pooled over strands), and,
         for an EM fit, actual EM iterations run, final
@@ -634,7 +642,7 @@ class MethPrintAnalysis:
             raise ValueError(f"q_thres must be in (0, 1], got {q_thres}")
         tmp_dir = exp.resolve_tmp_dir()
 
-        channels = _active_channels(exp)
+        channels = _resolve_channels(exp, channels)
         overrides = _resolve_eta_overrides(eta)
         need_auto = set(channels) - set(overrides)
         channel_eta = dict(overrides)
@@ -684,6 +692,7 @@ class MethPrintAnalysis:
             [
                 {
                     "q_thres": np.nan if q_thres is None else q_thres,
+                    "channels": ",".join(CONTEXT_NAMES[c] for c in channels),
                     "eta_max_lag": eta_max_lag,
                     "nu": np.nan if nu is None else nu,
                     "rho_leak": np.nan if rho_leak is None else rho_leak,

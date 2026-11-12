@@ -10,6 +10,7 @@ from catella.experiment._contexts import (
     _ALL_CHANNELS,
     CONTEXT_NAMES,
     NONE,
+    _merge_contexts,
     _reference_contexts,
     _strand_assay_masks,
 )
@@ -227,11 +228,12 @@ def _frac_informative_by_context(ctx, informative, channels=None):
     }
 
 
-def _fold_contexts(exp, chrom):
+def _fold_contexts(exp, chrom, channels=None):
     """
     Context code per position of `chrom`, folded to `nbp` if `exp.wrap`.
 
-    Wrap-mirrored positions that disagree on context are set to NONE.
+    Merged channels in `channels` are applied before folding, and
+    wrap-mirrored positions that disagree on context are set to NONE.
 
     Parameters
     ----------
@@ -239,6 +241,9 @@ def _fold_contexts(exp, chrom):
         The experiment object containing raw data and analysis maps.
     chrom : str
         Chromosome identifier.
+    channels : iterable of int, optional
+        Selected channel codes, as from `_resolve_channels`; see
+        `_merge_contexts`. None (default) merges nothing.
 
     Returns
     -------
@@ -262,7 +267,7 @@ def _fold_contexts(exp, chrom):
             f"no reference sequence for chrom '{chrom}'; "
             "model_prob needs 'fasta_file' at load_raw"
         )
-    full_ctx = _reference_contexts(raw.refseq)
+    full_ctx = _merge_contexts(_reference_contexts(raw.refseq), channels)
     if not exp.wrap:
         return full_ctx
     nbp = raw.nbp
@@ -649,7 +654,7 @@ def _chrom_calibration(
     if channels is None:
         channels = _ALL_CHANNELS
     raw = exp.raw[chrom]
-    ctx = _fold_contexts(exp, chrom)
+    ctx = _fold_contexts(exp, chrom, channels)
     assay = _strand_assay_masks(exp, chrom, ctx)
     has_controls = raw.meth_data is not None and raw.unmeth_data is not None
     if norm_by_strand:

@@ -165,6 +165,35 @@ def _reference_contexts(seq):
     return ctx
 
 
+def _merge_contexts(ctx, channels):
+    """
+    Relabel the parts of each selected merged channel as that channel.
+
+    Parameters
+    ----------
+    ctx : np.ndarray
+        int8, context code per position.
+    channels : iterable of int or None
+        Selected channel codes, as from `_resolve_channels`. None
+        merges nothing.
+
+    Returns
+    -------
+    np.ndarray
+        int8, same length as `ctx`; `ctx` itself if nothing is merged,
+        otherwise a relabeled copy.
+    """
+    if channels is None:
+        return ctx
+    merged = [c for c in channels if c in _MERGED_CHANNELS]
+    if not merged:
+        return ctx
+    out = ctx.copy()
+    for code in merged:
+        out[np.isin(ctx, _MERGED_CHANNELS[code])] = code
+    return out
+
+
 def _strand_assay_masks(exp, chrom, ctx):
     """
     Positions a molecule can read, per strand label.

@@ -1,3 +1,4 @@
+import warnings
 from types import SimpleNamespace
 
 import numpy as np
@@ -8,7 +9,17 @@ from catella.experiment._calibration import (
     _per_base_log_odds,
     _theta_frame,
 )
-from catella.experiment._contexts import GCH, NONE, A, _reference_contexts
+from catella.experiment._contexts import (
+    CG,
+    GC,
+    GCG,
+    GCH,
+    HCG,
+    NONE,
+    A,
+    _merge_contexts,
+    _reference_contexts,
+)
 
 
 def _exp(refseq, wrap, nbp=None):
@@ -100,6 +111,44 @@ class TestFoldContexts:
     def test_missing_refseq_raises(self):
         with pytest.raises(ValueError, match="no reference sequence"):
             _fold_contexts(_exp(None, False), "c")
+
+    def test_no_wrap_merges(self):
+        seq = "AACGTTGCAT"
+        out = _fold_contexts(_exp(seq, False), "c", (A, GC))
+        want = _merge_contexts(_reference_contexts(seq), (GC,))
+        np.testing.assert_array_equal(out, want)
+
+    def test_wrap_merges_before_folding(self):
+        seq = "GCCGCCGC"
+        with pytest.warns(UserWarning, match="disagrees on context"):
+            split = _fold_contexts(_exp(seq, True, nbp=4), "c")
+        assert (split == NONE).any()
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            out = _fold_contexts(_exp(seq, True, nbp=4), "c", (GC,))
+        np.testing.assert_array_equal(out, [GC, GC, HCG, GC])
+
+
+class TestMergeContexts:
+    CTX = np.array([NONE, A, GCH, HCG, GCG], dtype=np.int8)
+
+    @pytest.mark.parametrize("channels", [None, (A, GCH, GCG)])
+    def test_nothing_merged_returns_input(self, channels):
+        assert _merge_contexts(self.CTX, channels) is self.CTX
+
+    def test_gc_merges_gch_and_gcg(self):
+        out = _merge_contexts(self.CTX, (A, GC))
+        np.testing.assert_array_equal(out, [NONE, A, GC, HCG, GC])
+        assert out.dtype == np.int8
+
+    def test_cg_merges_hcg_and_gcg(self):
+        out = _merge_contexts(self.CTX, (CG,))
+        np.testing.assert_array_equal(out, [NONE, A, GCH, CG, CG])
+
+    def test_input_unchanged(self):
+        ctx = self.CTX.copy()
+        _merge_contexts(ctx, (GC,))
+        np.testing.assert_array_equal(ctx, self.CTX)
 
 
 class TestThetaFrame:

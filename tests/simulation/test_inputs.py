@@ -142,8 +142,13 @@ class TestResolveSettings:
 
 
 class TestCheckLlink:
-    def test_scalar_llink_not_checked(self):
+    def test_valid_scalar_passes(self):
         _check_llink(_make_settings(llink=20), ["a", "b"])
+
+    @pytest.mark.parametrize("llink", [25.0, 25.5, -1, True])
+    def test_invalid_scalar_raises(self, llink):
+        with pytest.raises(ValueError, match="non-negative integer"):
+            _check_llink(_make_settings(llink=llink), ["a"])
 
     def test_mapping_covering_chroms_passes(self):
         _check_llink(_make_settings(llink={"a": 10, "b": 0}), ["a", "b"])

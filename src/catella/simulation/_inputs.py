@@ -177,9 +177,10 @@ def _resolve_settings(settings):
 
 def _check_llink(settings, chroms):
     """
-    Check that a mapping `settings.llink` covers `chroms` with valid values.
+    Check that `settings.llink` is valid for `chroms`.
 
-    A scalar `settings.llink` is not checked.
+    A scalar `settings.llink` must be a non-negative integer. A mapping
+    must cover `chroms` with non-negative integer values.
 
     Parameters
     ----------
@@ -193,9 +194,15 @@ def _check_llink(settings, chroms):
     KeyError
         If the mapping lacks a chromosome of `chroms`.
     ValueError
-        If a value of the mapping is not a non-negative integer.
+        If the scalar or a value of the mapping is not a non-negative
+        integer.
     """
     if not isinstance(settings.llink, Mapping):
+        if not _is_valid_llink(settings.llink):
+            raise ValueError(
+                "llink must be a non-negative integer, "
+                f"got {settings.llink!r}"
+            )
         return
     for chrom in chroms:
         if chrom not in settings.llink:

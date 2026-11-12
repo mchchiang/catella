@@ -402,6 +402,7 @@ def _controls_calibration(
             span=span,
             call_stats=call_stats[src],
             q_thres=q_thres,
+            channels=channels,
         )
         counts[src] = c if by_strand else {None: c}
 

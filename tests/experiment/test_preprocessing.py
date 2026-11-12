@@ -2298,6 +2298,19 @@ class TestModelProbChannels:
         params = exp.global_analysis["meth_prob_params"].iloc[0]
         assert params["channels"] == "A,GC"
 
+    def test_merged_gc_call_frac_for_all_sources(self):
+        exp = self._run(mtase=["A", "GC"], channels=["GC"])
+        calib = exp.global_analysis["meth_prob_calib"]
+        frac_cols = sorted(
+            c for c in calib.columns if c.startswith("call_frac_")
+        )
+        assert frac_cols == [
+            "call_frac_meth_GC",
+            "call_frac_test_GC",
+            "call_frac_unmeth_GC",
+        ]
+        assert calib[frac_cols].notna().all().all()
+
     def test_float_eta_pins_merged_channel(self):
         exp = self._run(mtase=["A", "GC"], channels=["A", "GC"], eta=0.7)
         eta_row = exp.global_analysis["meth_prob_eta"].iloc[0]

@@ -186,6 +186,7 @@ def _streamed_call_count(
     span="full",
     call_stats=None,
     q_thres=None,
+    channels=None,
 ):
     """
     Per-position summed methylation-calling confidence and read count
@@ -216,9 +217,12 @@ def _streamed_call_count(
         Forwarded to `_iter_read_sites`.
     call_stats : dict, optional
         If given, per-channel call and read-site counts are added to
-        it in place (see `_accumulate_call_frac`), over all channels.
+        it in place (see `_accumulate_call_frac`), over `channels`.
     q_thres : float, optional
         Forwarded to `_iter_read_sites`.
+    channels : iterable of int, optional
+        Channel codes counted into `call_stats`. Defaults to all of
+        `_ALL_CHANNELS`.
 
     Returns
     -------
@@ -233,6 +237,8 @@ def _streamed_call_count(
         One `(k, n)` pair per strand ("+"/"-"). Only if `by_strand` is
         True.
     """
+    if channels is None:
+        channels = _ALL_CHANNELS
     L = len(ctx)
     keys = ["+", "-"] if by_strand else [None]
     acc = {key: [np.zeros(L), np.zeros(L)] for key in keys}
@@ -254,7 +260,7 @@ def _streamed_call_count(
                 acc[key][0] += np.nansum(q, axis=0)
                 acc[key][1] += _read_weights(b, assay, key).sum(axis=0)
             if call_stats is not None:
-                _accumulate_call_frac(call_stats, b, assay, ctx, _ALL_CHANNELS)
+                _accumulate_call_frac(call_stats, b, assay, ctx, channels)
     if not by_strand:
         return tuple(acc[None])
     return {key: tuple(acc[key]) for key in keys}

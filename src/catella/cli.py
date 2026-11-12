@@ -510,8 +510,10 @@ def compute_model_prob(
         str | None,
         typer.Option(
             callback=csv_parser(str),
-            help="Channel(s) to use as evidence: A, GCH, HCG, GCG "
-            "(comma-separated). Omit to use all assayed channels.",
+            help="Channel(s) to use as evidence: A, GCH, HCG, GCG, "
+            "or merged GC (GCH+GCG) or CG (HCG+GCG) for in vitro data "
+            "with a single C mtase (comma-separated). Omit to use all "
+            "assayed channels, unmerged.",
         ),
     ] = None,
     eta: Annotated[
@@ -519,7 +521,7 @@ def compute_model_prob(
         typer.Option(
             callback=eta_parser,
             help="Log-odds correction for correlated sites. "
-            "A number applies to every channel; a JSON object "
+            "A number applies to every selected channel; a JSON object "
             "pins only the named channels, e.g. "
             '\'{"A": 0.9, "HCG": 0.7}\'. Omit to '
             "auto-estimate every channel (default).",

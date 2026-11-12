@@ -474,23 +474,27 @@ class MethPrintAnalysis:
             are. Must be in (0, 1].
         channels : str or iterable of str, optional
             Context channel(s) to use as evidence, among "A", "GCH",
-            "HCG" and "GCG"; each must be assayed by `exp.mtase`. If
-            None (default), all assayed channels are used. A selected
-            channel is still dropped if it fails the tests of
-            `min_rel_contrast`.
+            "HCG", "GCG", "GC" and "CG"; each must be assayed by
+            `exp.mtase`. "GC" merges GCH and GCG into one channel, and
+            "CG" merges HCG and GCG, for in vitro data with a single C
+            mtase (`exp.mtase` holding "GC" or "CG" but not both); this
+            assumes GCG sites are methylated as efficiently as the
+            rest, and a merged channel cannot be combined with its
+            parts. If None (default), all assayed channels are used,
+            unmerged. A selected channel is still dropped if it fails
+            the tests of `min_rel_contrast`.
         eta : float, dict of str to float, or None, default None
             Per-channel multiplicative correction for inflated log-
             likelihood ratios from correlated nearby sites (e.g.
             palindromic CpG/GpC positions). If None (default), each
-            channel's ("A"/"GCH"/"HCG"/"GCG") eta is auto-estimated
-            from lag-k autocorrelation in its log-odds -- from the
-            methylated control when available, or from the test data
-            otherwise. A float pins every channel to that value; a
-            dict pins only the named channels, leaving any not
-            mentioned to be auto-estimated. Only the channels in use
-            (see `channels`) are estimated and reported. The value(s)
-            actually
-            applied are stored in
+            selected channel's eta is auto-estimated from lag-k
+            autocorrelation in its log-odds -- from the methylated
+            control when available, or from the test data otherwise.
+            A float pins every selected channel to that value; a dict
+            pins only the named channels, leaving any not mentioned to
+            be auto-estimated. Only the channels in use (see
+            `channels`) are estimated and reported. The value(s)
+            actually applied are stored in
             `exp.global_analysis[f"{prob_name}_eta"]` afterward.
         eta_max_lag : int, default 10
             Maximum lag (bp) summed over when auto-estimating eta.

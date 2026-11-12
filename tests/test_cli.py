@@ -633,7 +633,7 @@ class TestComputeModelProb:
         got = MethPrintExperiment.load(cli_out)
         assert got.global_analysis["meth_prob_params"]["span"][0] == "calls"
 
-    def _load_model_raw(self, tmp_path):
+    def _load_model_raw(self, tmp_path, extra=()):
         rows = _make_test_rows(nmol=5, nbp=len(_MODEL_SEQ), step=1)
         test_file = tmp_path / "test.tsv"
         _write_tsv(test_file, rows)
@@ -651,6 +651,7 @@ class TestComputeModelProb:
                 str(raw_file),
                 "--fasta-file",
                 str(fasta_file),
+                *extra,
             ],
         )
         assert load_result.exit_code == 0, load_result.output
@@ -678,6 +679,50 @@ class TestComputeModelProb:
         assert params["channels"][0] == "GCH,GCG"
         eta_row = got.global_analysis["meth_prob_eta"].iloc[0]
         assert set(eta_row.index) == {"eta_GCH", "eta_GCG"}
+
+    def test_merged_channel_is_forwarded(self, tmp_path):
+        raw_file = self._load_model_raw(tmp_path, ("--mtase", "GC"))
+        cli_out = tmp_path / "cli_exp.h5"
+        result = runner.invoke(
+            app,
+            [
+                "compute_model_prob",
+                str(raw_file),
+                "--out-file",
+                str(cli_out),
+                "--lnuc",
+                "30",
+                "--channels",
+                "GC",
+                "--eta",
+                "0.8",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        got = MethPrintExperiment.load(cli_out)
+        params = got.global_analysis["meth_prob_params"]
+        assert params["channels"][0] == "GC"
+        eta_row = got.global_analysis["meth_prob_eta"].iloc[0]
+        assert eta_row.to_dict() == {"eta_GC": 0.8}
+
+    def test_merged_channel_without_mtase_fails(self, tmp_path):
+        raw_file = self._load_model_raw(tmp_path)
+        result = runner.invoke(
+            app,
+            [
+                "compute_model_prob",
+                str(raw_file),
+                "--out-file",
+                str(tmp_path / "cli_exp.h5"),
+                "--lnuc",
+                "30",
+                "--channels",
+                "GC",
+            ],
+        )
+        assert result.exit_code != 0
+        assert isinstance(result.exception, ValueError)
+        assert "requires mtase" in str(result.exception)
 
     def test_unknown_channel_fails(self, tmp_path):
         raw_file = self._load_model_raw(tmp_path)

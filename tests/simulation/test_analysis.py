@@ -681,3 +681,116 @@ class TestComputeConfigs:
         ana = SimAnalysis()
         with pytest.raises(ValueError):
             getattr(ana, method)(dataset=dataset)
+
+
+def _make_multi_chrom_tm_dataset(tmp_path):
+    rng = np.random.default_rng(7)
+    manager = SimManager(nworker=1, verbose=False)
+    return manager.run(
+        chroms=["chr1", "chr2"],
+        nsim=0,
+        method="tm",
+        settings=_make_tm_settings(),
+        meth_prob={
+            "chr1": rng.random((5, 20)),
+            "chr2": rng.random((3, 16)),
+        },
+        out_dir=tmp_path / "tm_multi",
+        seed=1,
+    )
+
+
+def _as_array(value):
+    if isinstance(value, pd.DataFrame):
+        return value.to_numpy()
+    return value[:]
+
+
+TM_STAT_METHODS = [
+    "compute_occup",
+    "compute_mean_nnuc",
+    "compute_var_nnuc",
+    "compute_var_occup",
+]
+
+TM_CONFIG_METHODS = [
+    "compute_most_likely_config",
+    "compute_best_match_config",
+]
+
+
+class TestParallelTM:
+    @pytest.mark.parametrize("method", TM_STAT_METHODS)
+    def test_stat_matches_serial(self, tmp_path, method):
+        dataset = _make_multi_chrom_tm_dataset(tmp_path)
+        ana = SimAnalysis()
+        getattr(ana, method)(dataset=dataset, name="serial", nworker=1)
+        getattr(ana, method)(dataset=dataset, name="par", nworker=2)
+        for chrom in ["chr1", "chr2"]:
+            analysis = dataset.analysis[chrom]
+            np.testing.assert_array_equal(
+                _as_array(analysis["par"]), _as_array(analysis["serial"])
+            )
+
+    @pytest.mark.parametrize("method", TM_CONFIG_METHODS)
+    def test_config_matches_serial(self, tmp_path, method):
+        dataset = _make_multi_chrom_tm_dataset(tmp_path)
+        ana = SimAnalysis()
+        getattr(ana, method)(dataset=dataset, name="serial", nworker=1)
+        getattr(ana, method)(dataset=dataset, name="par", nworker=2)
+        for chrom in ["chr1", "chr2"]:
+            analysis = dataset.analysis[chrom]
+            for suffix in ["position_flat", "position_offset", "energy"]:
+                pd.testing.assert_frame_equal(
+                    analysis[f"par_{suffix}"], analysis[f"serial_{suffix}"]
+                )
+
+    def test_best_match_gamma_reaches_workers(self, tmp_path):
+        dataset = _make_multi_chrom_tm_dataset(tmp_path)
+        ana = SimAnalysis()
+        ana.compute_best_match_config(
+            dataset=dataset, name="serial", gamma=3.0, nworker=1
+        )
+        ana.compute_best_match_config(
+            dataset=dataset, name="par", gamma=3.0, nworker=2
+        )
+        for chrom in ["chr1", "chr2"]:
+            pd.testing.assert_frame_equal(
+                dataset.analysis[chrom]["par_energy"],
+                dataset.analysis[chrom]["serial_energy"],
+            )
+
+    @pytest.mark.parametrize("method", ["compute_occup", "compute_var_occup"])
+    def test_small_batch_size_matches_default(self, tmp_path, method):
+        dataset = _make_multi_chrom_tm_dataset(tmp_path)
+        ana = SimAnalysis()
+        getattr(ana, method)(dataset=dataset, name="default")
+        getattr(ana, method)(
+            dataset=dataset, name="small", batch_size=2, nworker=2
+        )
+        for chrom in ["chr1", "chr2"]:
+            analysis = dataset.analysis[chrom]
+            np.testing.assert_array_equal(
+                analysis["small"][:], analysis["default"][:]
+            )
+
+    @pytest.mark.parametrize("method", TM_STAT_METHODS + TM_CONFIG_METHODS)
+    def test_nonpositive_nworker_raises(self, tmp_path, method):
+        dataset = _make_tm_dataset(tmp_path)
+        ana = SimAnalysis()
+        with pytest.raises(ValueError, match="nworker must be positive"):
+            getattr(ana, method)(dataset=dataset, nworker=0)
+
+    @pytest.mark.parametrize("method", ["compute_occup", "compute_mean_nnuc"])
+    def test_parallel_mcmc_raises(self, tmp_path, method):
+        dataset = _make_dataset(tmp_path, nmol=2, nbp=20)
+        ana = SimAnalysis()
+        with pytest.raises(ValueError, match="nworker > 1 requires"):
+            getattr(ana, method)(dataset=dataset, nworker=2)
+
+    @pytest.mark.parametrize("method", ["compute_occup", "compute_mean_nnuc"])
+    def test_serial_mcmc_accepts_nworker_one(self, tmp_path, method):
+        dataset = _make_dataset(tmp_path, nmol=2, nbp=20)
+        ana = SimAnalysis()
+        getattr(ana, method)(dataset=dataset, name="x", nworker=1)
+        assert "x" in dataset.analysis["chr1"]

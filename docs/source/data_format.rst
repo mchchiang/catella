@@ -128,7 +128,10 @@ Methyltransferase (``mtase``) channels
 parsed: one or more of ``"A"`` (any-context adenine, e.g. EcoGII m6A),
 ``"CG"`` (CpG, e.g. M.SssI), or ``"GC"`` (GpC, e.g. M.CviPI). These
 correspond to the assayable-site channels A/HCG/GCH/GCG described in
-the :doc:`model` page.
+the :doc:`model` page. For in vitro data with a single C mtase
+(``"GC"`` or ``"CG"`` but not both), ``compute_model_prob`` can instead
+pool the C channels via ``channels``: ``"GC"`` merges GCH and GCG, and
+``"CG"`` merges HCG and GCG.
 
 Simulation settings file
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -265,7 +268,8 @@ Common ``analysis[chrom]`` keys produced by the processing pipeline:
      - DataFrame, one row per bp position: ``pos`` (integer, the
        column index of the probability matrix; the folded coordinate
        for wrapped fibers), ``channel`` (``A``, ``GCH``, ``HCG``,
-       ``GCG``, or ``none`` without an assayable context),
+       ``GCG``, the merged ``GC`` or ``CG`` if selected, or ``none``
+       without an assayable context),
        ``theta_prot``, ``theta_acc``, ``informative`` (or, with
        ``norm_by_strand=True``, the last three split into
        ``_pos``/``_neg`` variants) — the calibrated per-position
@@ -291,15 +295,17 @@ Common ``global_analysis`` keys:
      - DataFrame (1 row): ``lnuc``, ``nan_method``, ``fill_edge``,
        ``mask_name``.
    * - ``<prob_name>_eta``
-     - DataFrame (1 row): ``eta_A``, ``eta_GCH``, ``eta_HCG``,
-       ``eta_GCG`` — per-channel crosstalk correction factors
-       (``compute_model_prob`` only).
+     - DataFrame (1 row): ``eta_<channel>`` per selected channel
+       (e.g. ``eta_A``, ``eta_GCH``, ``eta_HCG``, ``eta_GCG``, or
+       ``eta_GC``/``eta_CG`` when merged) — per-channel crosstalk
+       correction factors (``compute_model_prob`` only).
    * - ``<prob_name>_rho`` (if ``store_rho=True``)
      - DataFrame: ``lag``, ``rho_<channel>`` per auto-estimated
        channel.
    * - ``<prob_name>_params``
      - DataFrame (1 row) recording every ``compute_model_prob`` kwarg
-       (``q_thres`` (nan when unset), ``eta_max_lag``, ``nu`` and
+       (``q_thres`` (nan when unset), ``channels`` (comma-joined
+       selected channel names), ``eta_max_lag``, ``nu`` and
        ``rho_leak`` (nan when fitted), ``min_rel_contrast``,
        ``lnuc``, ``lbin``, ``max_iters``, ``tol``, ``fill_edge``, ``norm_by_strand``,
        ``mask_name``).

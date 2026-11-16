@@ -122,6 +122,33 @@ def _channel_site_masks(refseq, channels):
     }
 
 
+def _fold_site_masks(site_masks, nbp):
+    """
+    Fold per-strand site masks onto the stored positions of a wrapped
+    fibre.
+
+    A wrapped molecule reads both halves, folded onto [0, nbp), so a
+    folded position is a site if either half has one there (as in
+    `_strand_assay_masks`).
+
+    Parameters
+    ----------
+    site_masks : dict of str to (np.ndarray, np.ndarray)
+        Masks over the full reference, as from `_channel_site_masks`.
+    nbp : int
+        Stored (halved) length.
+
+    Returns
+    -------
+    dict of str to (np.ndarray, np.ndarray)
+        Same keys, masks of length `nbp`.
+    """
+    return {
+        name: tuple(m[:nbp] | m[len(m) - nbp :][::-1] for m in pair)
+        for name, pair in site_masks.items()
+    }
+
+
 def _covered_rows(pos, row_strand, plus_mask, minus_mask, unmapped_strand):
     """
     Whether each raw row falls on a site of its molecule's strand.

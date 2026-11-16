@@ -19,6 +19,7 @@ import pandas as pd
 from catella import h5_utils, utils
 from catella._warnings import _warn
 from catella.containers import DataFrameMap, FixedKeyMap
+from catella.experiment._contexts import _resolve_channels
 from catella.experiment._dropout import (
     _apply_keep_mask,
     _dropout_fracs,
@@ -34,6 +35,7 @@ from catella.experiment._ingest import (
     _normalize_mtase,
     _read_chromsize,
 )
+from catella.experiment._qc import _check_percentiles, _chrom_qc_rows
 from catella.h5_array import H5Array
 
 # Molecule-count threshold above which MethPrintExperiment.to_dense()
@@ -1399,6 +1401,115 @@ class MethPrintExperiment:
                     result[(chrom, src, "aggregate")] = pooled
 
         return result
+
+    def qc(
+        self,
+        *,
+        channels: str | list | None = None,
+        chroms: list | None = None,
+        percentiles: float | list = (50,),
+        mask_name: str | None = None,
+        batch_size: int = 20000,
+        overwrite: bool = False,
+    ) -> pd.DataFrame:
+        """
+        Summarize data quality per chromosome and channel.
+
+        Model-free: computed from the raw data only. The table is
+        returned and stored in `global_analysis["qc"]`.
+
+        Parameters
+        ----------
+        channels : str, list of str, or None, default None
+            Channels to summarize, as in `model_prob`: among "A",
+            "GCH", "HCG", "GCG", "GC" (GCH and GCG merged) and "CG"
+            (HCG and GCG merged). None uses every assayed channel,
+            unmerged.
+        chroms : list of str, optional
+            Subset of `self.chroms`. None (default) uses all.
+        percentiles : float or list of float, default (50,)
+            Dropout percentiles to report, each in [0, 100].
+        mask_name : str, optional
+            Mask from `filter_dropout(mask_name=...)`. Masked
+            molecules are left out of every column except
+            `frac_masked_<src>`.
+        batch_size : int, default 20000
+            Molecules per batch when counting calls.
+        overwrite : bool, default False
+            Whether to replace an existing `global_analysis["qc"]`.
+
+        Returns
+        -------
+        pd.DataFrame
+            One row per (chrom, channel), plus a `channel="all"` row
+            per chrom pooling the channels if there is more than one.
+            `<src>` is one of test, meth, unmeth. Columns:
+
+            - `nsite_plus`, `nsite_minus`: reference sites of the
+              channel per strand. A single `nsite` (both strands)
+              instead if `ignore_strand`.
+            - `nmol`: kept test molecules.
+            - `frac_plus_<src>`, `frac_minus_<src>`,
+              `frac_unmapped_<src>`: strand balance of kept molecules.
+              Not included if `ignore_strand`.
+            - `frac_masked_<src>`: share of molecules removed by
+              `mask_name` (0 without a mask).
+            - `dropout_<src>_p<q>`: percentile `q` of the per-molecule
+              dropout fraction, i.e. the share of the channel's sites
+              on the molecule's strand with no call.
+            - `fpr`: methylation rate of the unmethylated control.
+            - `fnr`: one minus the methylation rate of the methylated
+              control.
+            - `accessible_frac`: (test rate - fpr) / (1 - fpr - fnr),
+              the test accessibility relative to the controls.
+
+        Notes
+        -----
+        Only test data is required. Columns of a missing control are
+        left out: `fpr` needs unmeth, `fnr` needs meth, and
+        `accessible_frac` needs both. The rate columns are not
+        included in the "all" row.
+
+        Rates pool all calls, so molecules with more calls weigh more.
+        They use the same counts as `model_prob`. `accessible_frac`
+        assumes the methylated control is fully accessible; it is not
+        clipped, so values outside [0, 1] flag a control problem, and
+        it is noisy when 1 - fpr - fnr is small.
+
+        Dropout is computed on the channel's sites, so it can differ
+        from what `filter_dropout` (per mtase) removes. Molecules of
+        unmapped ('.') strand are left out of the dropout columns,
+        since their sites are not defined; if a source has no strand
+        information at all, its dropout columns are NaN, and
+        `ignore_strand=True` at `load_raw` should be used. If
+        `ignore_strand`, dropout uses the sites of both strands.
+
+        Raises
+        ------
+        ValueError
+            If `channels` or `chroms` is invalid, `percentiles` is
+            empty or outside [0, 100], `global_analysis["qc"]`
+            exists and `overwrite` is False, or a chromosome has no
+            `refseq` or no test data.
+        KeyError
+            If `mask_name` is not found for some source.
+        """
+        if "qc" in self._global_analysis and not overwrite:
+            raise ValueError(
+                "global_analysis already has 'qc'; set overwrite=True "
+                "to replace it"
+            )
+        codes = _resolve_channels(self, channels)
+        chroms = self._resolve_chroms_subset(chroms)
+        qs = _check_percentiles(percentiles)
+        rows = []
+        for chrom in chroms:
+            rows += _chrom_qc_rows(
+                self, chrom, codes, qs, mask_name, batch_size
+            )
+        table = pd.DataFrame(rows)
+        self._global_analysis["qc"] = table
+        return table
 
     def __repr__(self):
         # Get all public attributes by filtering out private attributes

@@ -8,10 +8,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from scipy.special import logit
 
 from catella import utils
-from catella.experiment._reads import _lookup_mask
 from catella.experiment.methdata import MethPrintExperiment
 from catella.experiment.plot import MethPlot
 from catella.experiment.preprocessing import MethPrintAnalysis
@@ -497,50 +495,17 @@ def estimate_start_temp(
         If `mask_name` is given but no matching mask is found for a
         chromosome's "test" source.
     """
-    if isinstance(chroms, str):
-        resolved_chroms = (chroms,)
-    elif chroms is not None:
-        resolved_chroms = tuple(chroms)
-    else:
-        resolved_chroms = exp.chroms
-
-    rng = np.random.default_rng(seed)
-    target_per_chrom = max(1, percentile_sample_size // len(resolved_chroms))
-    chunks = []
-    for chrom in resolved_chroms:
-        arr = exp.analysis[chrom][prob_name]
-        if isinstance(arr, pd.DataFrame):
-            arr = arr.to_numpy()
-        keep = None
-        if mask_name is not None:
-            keep = np.asarray(
-                _lookup_mask(exp, chrom, "test", mask_name), dtype=bool
-            )
-        n_total = arr.shape[0]
-        if n_total == 0:
-            continue
-        sample_frac = min(1.0, target_per_chrom / n_total)
-        for start in range(0, n_total, batch_size):
-            stop = min(start + batch_size, n_total)
-            batch = arr[start:stop, :]
-            if keep is not None:
-                batch = batch[keep[start:stop]]
-            if batch.shape[0] == 0:
-                continue
-            n_take = min(
-                batch.shape[0], max(1, round(batch.shape[0] * sample_frac))
-            )
-            rows = rng.choice(batch.shape[0], size=n_take, replace=False)
-            # Clip so saturated probabilities give finite log odds
-            prob = np.clip(
-                np.asarray(batch[rows, :], dtype=np.float64),
-                np.finfo(np.float64).tiny,
-                1 - np.finfo(np.float64).epsneg,
-            )
-            chunks.append(np.abs(logit(prob)))
-
-    sample = np.concatenate([c.ravel() for c in chunks])
-    return float(np.nanpercentile(sample, percentile))
+    manager = SimManager(verbose=False)
+    return manager.estimate_start_temp(
+        exp,
+        prob_name=prob_name,
+        chroms=chroms,
+        percentile=percentile,
+        batch_size=batch_size,
+        percentile_sample_size=percentile_sample_size,
+        seed=seed,
+        mask_name=mask_name,
+    )
 
 
 def estimate_llink(

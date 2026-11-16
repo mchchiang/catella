@@ -962,3 +962,47 @@ class TestSimManagerEstimateLlink:
             SimManager().estimate_llink(
                 _llink_exp(), _llink_settings(), llinks=[]
             )
+
+
+def _prob_exp(arrays):
+    return SimpleNamespace(
+        chroms=tuple(arrays),
+        analysis={c: {"meth_prob": a} for c, a in arrays.items()},
+    )
+
+
+class TestSimManagerEstimateStartTemp:
+    def test_constant_prob_gives_its_log_odds(self):
+        exp = _prob_exp({"chr1": np.full((20, 30), 0.9)})
+        got = SimManager().estimate_start_temp(exp, seed=0)
+        assert got == pytest.approx(abs(logit(0.9)))
+
+    def test_same_seed_gives_same_value(self):
+        rng = np.random.default_rng(0)
+        exp = _prob_exp({"chr1": rng.uniform(0.01, 0.99, (500, 40))})
+        kwargs = {"seed": 7, "percentile_sample_size": 50}
+        a = SimManager().estimate_start_temp(exp, **kwargs)
+        b = SimManager().estimate_start_temp(exp, **kwargs)
+        assert a == b
+
+    def test_percentile_orders_values(self):
+        rng = np.random.default_rng(1)
+        exp = _prob_exp({"chr1": rng.uniform(0.01, 0.99, (50, 40))})
+        low = SimManager().estimate_start_temp(exp, percentile=10.0)
+        high = SimManager().estimate_start_temp(exp, percentile=90.0)
+        assert low < high
+
+    def test_chroms_selects_chromosomes(self):
+        exp = _prob_exp(
+            {
+                "chr1": np.full((10, 20), 0.9),
+                "chr2": np.full((10, 20), 0.6),
+            }
+        )
+        got = SimManager().estimate_start_temp(exp, chroms="chr2")
+        assert got == pytest.approx(abs(logit(0.6)))
+
+    def test_saturated_prob_is_finite(self):
+        exp = _prob_exp({"chr1": np.ones((5, 10))})
+        got = SimManager().estimate_start_temp(exp)
+        assert np.isfinite(got)

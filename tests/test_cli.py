@@ -288,7 +288,7 @@ class TestFilterDropout:
         assert "test_qc_mask" in reloaded.analysis["chr1"]
 
 
-class TestQc:
+class TestQC:
     def test_prints_table_writes_csv_and_saves(self, tmp_path):
         raw_file, *_ = _load_raw_a_mtase(tmp_path)
         expected = catella.qc(

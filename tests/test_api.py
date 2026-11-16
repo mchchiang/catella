@@ -256,7 +256,7 @@ class TestFilterDropout:
         assert "test_dropout_mask" in exp.analysis["chr1"]
 
 
-class TestQc:
+class TestQC:
     def _make(self):
         nbp = 10
         return _make_experiment(

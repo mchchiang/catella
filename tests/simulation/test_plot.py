@@ -208,10 +208,10 @@ class TestPositionalDatasetArg:
 
         assert plt.gcf().axes
 
-    def test_plot_nuc_pos_accepts_dataset_positionally(self, tmp_path):
+    def test_plot_traj_accepts_dataset_positionally(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=2, nbp=20)
 
-        SimPlot().plot_nuc_pos(dataset, chrom="chr1", mol=0, run=0, show=False)
+        SimPlot().plot_traj(dataset, chrom="chr1", mol=0, run=0, show=False)
 
         assert plt.gcf().axes
 
@@ -220,22 +220,35 @@ class TestPositionalDatasetArg:
     "ignore:__array__ implementation doesn't accept a copy keyword"
     ":DeprecationWarning"
 )
-class TestPlotNucPosCmapOverride:
+class TestPlotTrajCmapOverride:
     def test_cmap_override_does_not_mutate_instance(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=2, nbp=20)
 
         simplot = SimPlot()
-        simplot.plot_nuc_pos(
+        simplot.plot_traj(
             dataset, chrom="chr1", mol=0, run=0, cmap="viridis", show=False
         )
         assert simplot.cmap == "OrRd"
+
+    def test_tm_dataset_raises(self, tmp_path):
+        dataset = SimManager(nworker=1, verbose=False).run(
+            chroms="chr1",
+            nsim=2,
+            method="tm",
+            settings=_make_settings(),
+            meth_prob=np.random.default_rng(1).random((2, 20)),
+            out_dir=tmp_path / "tm",
+            seed=1,
+        )
+        with pytest.raises(ValueError, match="requires a method='mcmc'"):
+            SimPlot().plot_traj(dataset, chrom="chr1", mol=0, run=0)
 
 
 @pytest.mark.filterwarnings(
     "ignore:__array__ implementation doesn't accept a copy keyword"
     ":DeprecationWarning"
 )
-class TestPlotNucPosEseq:
+class TestPlotTrajEseq:
     def test_plot_eseq_handles_nan_from_missing_coverage(self, tmp_path):
         # A genomic position with no coverage (NaN in meth_prob) propagates
         # NaN into eseq for that molecule; the y-limit calculation must
@@ -254,7 +267,7 @@ class TestPlotNucPosEseq:
         )
         assert np.isnan(dataset.eseq["chr1"][:, 5]).all()
 
-        SimPlot().plot_nuc_pos(
+        SimPlot().plot_traj(
             dataset, chrom="chr1", mol=0, run=0, plot_eseq=True, show=False
         )
 
@@ -274,14 +287,14 @@ class TestPlotNucPosEseq:
         assert dataset.no_data["chr1"][0]
 
         with pytest.raises(ValueError, match="cannot find the simulation"):
-            SimPlot().plot_nuc_pos(
+            SimPlot().plot_traj(
                 dataset, chrom="chr1", mol=0, run=0, plot_eseq=True, show=False
             )
 
     def test_plot_eseq_ylim_matches_full_data_range(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=2, nbp=20)
 
-        SimPlot().plot_nuc_pos(
+        SimPlot().plot_traj(
             dataset, chrom="chr1", mol=0, run=0, plot_eseq=True, show=False
         )
 

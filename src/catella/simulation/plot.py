@@ -108,6 +108,8 @@ class SimPlot:
         Plot the total energy of the system for a specific simulation run
         of a molecule over time.
 
+        Requires 'energy' (or 'all') in the `out_types` of `run`.
+
         Parameters
         ----------
         dataset : SimDataset
@@ -176,7 +178,7 @@ class SimPlot:
             fig.savefig(out_file)
 
     @_apply_style
-    def plot_nuc_pos(
+    def plot_traj(
         self,
         dataset: SimDataset,
         *,
@@ -193,8 +195,13 @@ class SimPlot:
         show: bool = True,
     ):
         """
-        Plot the nucleosome position heatmap for a specific simulation run of
-        a molecule over time.
+        Plot the nucleosome positions of one MCMC run over time.
+
+        Each row is a recorded time frame of run `run` of molecule `mol`,
+        showing the bases covered by nucleosomes. Together with
+        `plot_energy`, a check of the convergence of a run. Only for
+        `dataset.method == "mcmc"`, since TM samples have no time axis;
+        use `plot_config` to show configurations across molecules.
 
         Parameters
         ----------
@@ -231,8 +238,19 @@ class SimPlot:
         Raises
         ------
         ValueError
-            If `tend` < `tstart` or if scaling factors are not powers of 10.
+            If `dataset.method != "mcmc"`, if `tend` < `tstart`, or if
+            scaling factors are not powers of 10.
+
+        Notes
+        -----
+        Requires 'position' (or 'all') in the `out_types` of `run`, and,
+        if `plot_eseq` is True, `store_eseq=True`.
         """
+        if dataset.method != "mcmc":
+            raise ValueError(
+                "plot_traj requires a method='mcmc' dataset; use "
+                "plot_config for TM samples"
+            )
         # Check the time values are valid
         if tstart is not None and tend is not None and tend < tstart:
             raise ValueError("'tend' must be greater than 'tstart'")

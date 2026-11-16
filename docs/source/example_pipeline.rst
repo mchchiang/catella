@@ -111,9 +111,12 @@ commentary. See :doc:`tutorials/tut01_meth_prob` and
                           out_dir=sim_dir,
                           nworker=20)
 
-   # Sanity checks on the simulation
-   catella.plot_energy(sim_data, chrom="601", mol=0, run=0)
-   catella.plot_nuc_pos(sim_data, chrom="601", mol=0, run=0, plot_eseq=True)
+   # Sanity checks on one MCMC run
+   from catella.simulation.plot import SimPlot
+
+   simplot = SimPlot()
+   simplot.plot_energy(sim_data, chrom="601", mol=0, run=0)
+   simplot.plot_traj(sim_data, chrom="601", mol=0, run=0, plot_eseq=True)
 
    # Analyze and save results
    catella.compute_occup(sim_data)

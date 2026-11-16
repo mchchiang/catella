@@ -309,6 +309,46 @@ class TestSummarizeDropout:
         pd.testing.assert_frame_equal(got, expected, check_dtype=False)
 
 
+class TestQc:
+    def test_prints_table_writes_csv_and_saves(self, tmp_path):
+        raw_file, *_ = _load_raw_a_mtase(tmp_path)
+        expected = catella.qc(
+            exp=MethPrintExperiment.load(raw_file), percentiles=[25, 75]
+        )
+
+        csv_out = tmp_path / "qc.csv"
+        result = runner.invoke(
+            app,
+            [
+                "qc",
+                str(raw_file),
+                "--percentiles",
+                "25,75",
+                "--csv-file",
+                str(csv_out),
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        for col in expected.columns:
+            assert col in result.output
+
+        got = pd.read_csv(csv_out)
+        pd.testing.assert_frame_equal(got, expected, check_dtype=False)
+
+        reloaded = MethPrintExperiment.load(raw_file)
+        assert "qc" in reloaded.global_analysis
+
+    def test_rerun_needs_overwrite(self, tmp_path):
+        raw_file, *_ = _load_raw_a_mtase(tmp_path)
+        assert runner.invoke(app, ["qc", str(raw_file)]).exit_code == 0
+
+        result = runner.invoke(app, ["qc", str(raw_file)])
+        assert result.exit_code != 0
+
+        result = runner.invoke(app, ["qc", str(raw_file), "--overwrite"])
+        assert result.exit_code == 0, result.output
+
+
 class TestPlotDropoutEcdf:
     def test_writes_figure_file(self, tmp_path):
         raw_file, *_ = _load_raw_a_mtase(tmp_path)

@@ -348,6 +348,91 @@ def summarize_dropout(
         df.to_csv(out_file, index=False)
 
 
+@app.command(name="qc")
+def qc(
+    source_file: Annotated[
+        Path,
+        typer.Argument(
+            help="Experiment HDF5 file",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+        ),
+    ],
+    channels: Annotated[
+        str | None,
+        typer.Option(
+            callback=csv_parser(str),
+            help="Channels as in compute_model_prob, e.g. GCH,GCG or GC",
+        ),
+    ] = None,
+    chroms: Annotated[
+        str | None,
+        typer.Option(
+            callback=csv_parser(str), help="Subset of chromosomes to check"
+        ),
+    ] = None,
+    percentiles: Annotated[
+        str,
+        typer.Option(
+            callback=csv_parser(float),
+            help="Dropout percentiles, e.g. 25,50,75",
+        ),
+    ] = "50",
+    mask_name: Annotated[
+        str | None,
+        typer.Option(help="Dropout mask from filter_dropout"),
+    ] = None,
+    batch_size: Annotated[
+        int, typer.Option(help="Molecules per batch when counting calls")
+    ] = 20000,
+    csv_file: Annotated[
+        Path | None,
+        typer.Option(
+            help="Optional path to also save the table as CSV",
+            file_okay=True,
+            dir_okay=False,
+        ),
+    ] = None,
+    out_file: Annotated[
+        Path | None,
+        typer.Option(
+            help="Output file (default: overwrite source_file)",
+            file_okay=True,
+            dir_okay=False,
+        ),
+    ] = None,
+    overwrite: Annotated[
+        bool,
+        typer.Option(
+            help="Replace an existing qc table, and allow overwriting "
+            "out_file if it is already backed by H5Array analysis data"
+        ),
+    ] = False,
+):
+    """
+    Summarize data quality per chromosome and channel (model-free).
+    """
+    exp = MethPrintExperiment.load(source_file)
+    df = catella.qc(
+        exp=exp,
+        channels=channels,
+        chroms=chroms,
+        percentiles=percentiles,
+        mask_name=mask_name,
+        batch_size=batch_size,
+        overwrite=overwrite,
+    )
+    typer.echo(df.to_string(index=False))
+    if csv_file is not None:
+        df.to_csv(csv_file, index=False)
+    if out_file is not None:
+        exp.save(out_file, overwrite=overwrite)
+    else:
+        exp.save(overwrite=True)
+
+
 @app.command(name="plot_dropout_ecdf")
 def plot_dropout_ecdf(
     source_file: Annotated[

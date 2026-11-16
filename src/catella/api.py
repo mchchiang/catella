@@ -741,6 +741,67 @@ def summarize_dropout(
     )
 
 
+def qc(
+    exp: MethPrintExperiment,
+    *,
+    channels: str | list | None = None,
+    chroms: list | None = None,
+    percentiles: float | list = (50,),
+    mask_name: str | None = None,
+    batch_size: int = 20000,
+    overwrite: bool = False,
+) -> pd.DataFrame:
+    """
+    Summarize data quality per chromosome and channel.
+
+    Thin wrapper around `MethPrintExperiment.qc`; see it for the
+    columns of the returned table.
+
+    Parameters
+    ----------
+    exp : MethPrintExperiment
+        The experiment to summarize. The table is stored in
+        `exp.global_analysis["qc"]`.
+    channels : str, list of str, or None, default None
+        Channels to summarize, as in `compute_model_prob`. None uses
+        every assayed channel, unmerged.
+    chroms : list of str, optional
+        Subset of `exp.chroms`. None (default) uses all.
+    percentiles : float or list of float, default (50,)
+        Dropout percentiles to report, each in [0, 100].
+    mask_name : str, optional
+        Mask from `filter_dropout(mask_name=...)`. Masked molecules
+        are left out of every column except `frac_masked_<src>`.
+    batch_size : int, default 20000
+        Molecules per batch when counting calls.
+    overwrite : bool, default False
+        Whether to replace an existing `exp.global_analysis["qc"]`.
+
+    Returns
+    -------
+    pd.DataFrame
+        One row per (chrom, channel), plus a `channel="all"` row per
+        chrom if there is more than one channel.
+
+    Raises
+    ------
+    ValueError
+        If `channels` or `chroms` is invalid, `percentiles` is empty
+        or outside [0, 100], the table exists and `overwrite` is
+        False, or a chromosome has no `refseq` or no test data.
+    KeyError
+        If `mask_name` is not found for some source.
+    """
+    return exp.qc(
+        channels=channels,
+        chroms=chroms,
+        percentiles=percentiles,
+        mask_name=mask_name,
+        batch_size=batch_size,
+        overwrite=overwrite,
+    )
+
+
 def plot_dropout_ecdf(
     exp: MethPrintExperiment,
     *,

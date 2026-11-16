@@ -277,6 +277,35 @@ class TestSummarizeDropout:
             catella.summarize_dropout(exp=exp, chroms=["bogus"])
 
 
+class TestQc:
+    def _make(self):
+        nbp = 10
+        return _make_experiment(
+            nmol=6, nbp=nbp, seed=3, refseq="A" * nbp, mtase=("A",)
+        )
+
+    def test_matches_direct_method_call(self):
+        got = catella.qc(exp=self._make(), percentiles=[25, 75])
+        expected = self._make().qc(percentiles=[25, 75])
+        pd.testing.assert_frame_equal(got, expected)
+
+    def test_stores_table(self):
+        exp = self._make()
+        df = catella.qc(exp=exp)
+        pd.testing.assert_frame_equal(exp.global_analysis["qc"], df)
+
+    def test_overwrite_forwarded(self):
+        exp = self._make()
+        catella.qc(exp=exp)
+        with pytest.raises(ValueError):
+            catella.qc(exp=exp)
+        catella.qc(exp=exp, overwrite=True)
+
+    def test_chroms_forwarded(self):
+        with pytest.raises(ValueError):
+            catella.qc(exp=self._make(), chroms=["bogus"])
+
+
 class TestComputeEmpiricalProb:
     def test_matches_manual_smooth_and_empirical_prob(self):
         exp = _make_experiment(nmol=6, nbp=10, seed=3)

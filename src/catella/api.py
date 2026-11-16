@@ -936,50 +936,62 @@ def run(
     return dataset
 
 
-def analyze(
+def compute_occup(
     dataset: SimDataset,
     *,
     time: int | None = None,
+    chroms: str | Iterable[str] | None = None,
     occup_name: str = "occup",
-    mean_nnuc_name: str = "mean_nnuc",
+    mean_nnuc_name: str | None = "mean_nnuc",
     compute_var: bool = False,
     var_nnuc_name: str = "var_nnuc",
     var_occup_name: str = "var_occup",
+    record_time: bool = False,
+    batch_size: int | None = None,
     nworker: int = 1,
 ):
     """
-    Perform post-simulation statistical analysis on a dataset.
+    Compute the nucleosome occupancy and mean nucleosome count.
 
-    Calculate key nucleosome metrics, such as site occupancy and average
-    nucleosome counts. For `dataset.method == "mcmc"`, these are computed
-    across the simulated trajectories at a given time point; for
-    `"tm"`, they are computed exactly via the transfer-matrix solver,
-    with no time axis, solving each molecule only once for all metrics.
-    Results are stored directly back into the provided SimDataset.
+    For `dataset.method == "mcmc"`, these are averages over the
+    simulation runs at a given time point; for `"tm"`, they are computed
+    exactly via the transfer-matrix solver, with no time axis, solving
+    each molecule only once for all quantities. Results are stored in
+    `dataset.analysis[chrom]`; molecules with no data (see
+    `SimDataset.no_data`) get nan.
 
     Parameters
     ----------
     dataset : SimDataset
-        The simulation dataset to analyze.
+        The simulation dataset.
     time : int, optional
-        A specific time point (snapshot) from the simulation to analyze.
-        If None, the final state of the simulation is typically used.
-        `method='mcmc'` only; must be None for `dataset.method == "tm"`.
+        The time point (snapshot) to use. If None, the final frame is
+        used. `method='mcmc'` only; must be None for
+        `dataset.method == "tm"`.
+    chroms : str or iterable of str, optional
+        The chromosome(s) to process. If None (default), all of
+        `dataset.chroms`.
     occup_name : str, default "occup"
-        The key/name under which to store the computed occupancy data
-        within the dataset.
-    mean_nnuc_name : str, default "mean_nnuc"
-        The key/name under which to store the computed mean number of
-        nucleosomes within the dataset.
+        The key of the per-bp occupancy (molecules by base pairs).
+    mean_nnuc_name : str or None, default "mean_nnuc"
+        The key of the mean nucleosome count of each molecule. If None,
+        it is not computed.
     compute_var : bool, default False
         If True, also compute the exact variance of the nucleosome
         count and per-bp occupancy. Requires `dataset.method == "tm"`.
     var_nnuc_name : str, default "var_nnuc"
-        The key/name under which to store the computed nucleosome count
-        variance. Only used if `compute_var` is True.
+        The key of the nucleosome count variance. Only used if
+        `compute_var` is True.
     var_occup_name : str, default "var_occup"
-        The key/name under which to store the computed per-bp occupancy
-        variance. Only used if `compute_var` is True.
+        The key of the per-bp occupancy variance. Only used if
+        `compute_var` is True.
+    record_time : bool, default False
+        If True, the time point is appended to the keys (e.g.,
+        "occup_t_100"). `method='mcmc'` only.
+    batch_size : int, optional
+        Number of molecules per batch. For "mcmc", the number held in
+        memory at a time (default 20000); for "tm", the number per
+        worker job (default 64).
     nworker : int, default 1
         Number of worker processes. Values above 1 are only supported
         for `dataset.method == "tm"`.
@@ -987,18 +999,22 @@ def analyze(
     Raises
     ------
     ValueError
-        If `time` is given for a `dataset.method == "tm"` dataset, if
-        `compute_var` is True but `dataset.method != "tm"`, or if
-        `nworker` is not positive or above 1 for a non-"tm" dataset.
+        If `time` or `record_time` is given for a `dataset.method ==
+        "tm"` dataset, if `compute_var` is True but `dataset.method !=
+        "tm"`, or if `nworker` is not positive or above 1 for a non-"tm"
+        dataset.
     """
     SimAnalysis().compute_occup(
         dataset,
         time=time,
+        chroms=chroms,
         name=occup_name,
         mean_nnuc_name=mean_nnuc_name,
         compute_var=compute_var,
         var_nnuc_name=var_nnuc_name,
         var_occup_name=var_occup_name,
+        record_time=record_time,
+        batch_size=batch_size,
         nworker=nworker,
     )
 
@@ -1037,7 +1053,7 @@ def plot_occup(
         is not saved to disk.
     occup_name : str, default "occup"
         The key or name of the occupancy data to retrieve from the dataset.
-        This should match the name used during the `analyze` step.
+        This should match the `occup_name` used by `compute_occup`.
     mols : iterable of int, optional
         Molecule indices to display, restricting the heatmap (and, if
         `plot_eseq` is True, the sequence-energy average) to this
@@ -1068,8 +1084,8 @@ def plot_occup(
 
     Notes
     -----
-    This function requires that `analyze()` (specifically `compute_occup`)
-    has been called on the dataset prior to plotting.
+    If `occup_name` is missing, the occupancy is computed first (as
+    `compute_occup` does, without the mean nucleosome count).
     """
     simplot = SimPlot()
     simplot.plot_occup(

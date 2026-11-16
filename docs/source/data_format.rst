@@ -383,7 +383,7 @@ The dataset-level file (``<dataset_name>.h5``, default
    /analysis/<chrom>/<key>   H5Array or DataFrameMap entry
    /global_analysis/<key>    H5Array or DataFrameMap entry
 
-Common ``analysis[chrom]`` keys produced by ``catella.analyze``:
+Common ``analysis[chrom]`` keys produced by ``catella.compute_occup``:
 
 .. list-table::
    :header-rows: 1

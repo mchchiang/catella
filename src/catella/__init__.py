@@ -14,9 +14,9 @@ from catella.__about__ import __version__ as __version__
 from catella.api import *
 
 __all__ = [
-    "analyze",
     "compute_empirical_prob",
     "compute_model_prob",
+    "compute_occup",
     "downsample",
     "estimate_llink",
     "estimate_start_temp",

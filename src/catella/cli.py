@@ -778,8 +778,8 @@ def run(
     )
 
 
-@app.command()
-def analyze(
+@app.command(name="compute_occup")
+def compute_occup(
     dataset_file: Annotated[
         Path,
         typer.Argument(
@@ -828,10 +828,10 @@ def analyze(
     ] = False,
 ):
     """
-    Compute post-simulation occupancy and nucleosome count statistics.
+    Compute the nucleosome occupancy and mean nucleosome count.
     """
     dataset = SimDataset.load(dataset_file)
-    catella.analyze(
+    catella.compute_occup(
         dataset=dataset,
         time=time,
         occup_name=occup_name,

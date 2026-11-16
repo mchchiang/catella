@@ -93,7 +93,7 @@ sim = catella.run(chroms=exp.chroms,
                   seed=1234)
 
 # Compute occupancy and mean nucleosome count for each molecule
-catella.analyze(sim)
+catella.compute_occup(sim)
 occup = sim.analysis["601"]["occup"]
 
 # Nucleosome positions in sample 0 of molecule 0

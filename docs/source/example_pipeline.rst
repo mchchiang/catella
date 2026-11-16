@@ -116,7 +116,7 @@ commentary. See :doc:`tutorials/tut01_meth_prob` and
    catella.plot_nuc_pos(sim_data, chrom="601", mol=0, run=0, plot_eseq=True)
 
    # Analyze and save results
-   catella.analyze(sim_data)
+   catella.compute_occup(sim_data)
    sorted_mat = catella.sort_by_linkage(dataset=sim_data, data_name="occup")
    catella.plot_occup(sim_data, chrom="601", occup_name="occup_sorted",
                       plot_eseq=True)

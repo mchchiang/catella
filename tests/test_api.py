@@ -765,7 +765,7 @@ class TestEstimateLlink:
             seed=1,
             verbose=False,
         )
-        catella.analyze(dataset)
+        catella.compute_occup(dataset)
         direct = catella.run(
             chroms="chr1",
             nsim=0,
@@ -776,7 +776,7 @@ class TestEstimateLlink:
             seed=1,
             verbose=False,
         )
-        catella.analyze(direct)
+        catella.compute_occup(direct)
         np.testing.assert_allclose(
             dataset.analysis["chr1"]["occup"][:],
             direct.analysis["chr1"]["occup"][:],
@@ -790,33 +790,33 @@ class TestRun:
         assert dataset.nsim == 0
 
 
-class TestAnalyze:
+class TestComputeOccup:
     def test_dataset_accepted_positionally(self, tmp_path):
         dataset = _make_dataset(tmp_path)
-        catella.analyze(dataset)
+        catella.compute_occup(dataset)
         assert "occup" in dataset.analysis["chr1"]
         assert "mean_nnuc" in dataset.analysis["chr1"]
 
     def test_tm_dataset_computes_occup_and_mean_nnuc(self, tmp_path):
         dataset = _make_tm_dataset(tmp_path)
-        catella.analyze(dataset)
+        catella.compute_occup(dataset)
         assert "occup" in dataset.analysis["chr1"]
         assert "mean_nnuc" in dataset.analysis["chr1"]
 
     def test_compute_var_on_tm_dataset(self, tmp_path):
         dataset = _make_tm_dataset(tmp_path)
-        catella.analyze(dataset, compute_var=True)
+        catella.compute_occup(dataset, compute_var=True)
         assert "var_nnuc" in dataset.analysis["chr1"]
         assert "var_occup" in dataset.analysis["chr1"]
 
     def test_compute_var_requires_tm_method(self, tmp_path):
         dataset = _make_dataset(tmp_path)
         with pytest.raises(ValueError):
-            catella.analyze(dataset, compute_var=True)
+            catella.compute_occup(dataset, compute_var=True)
 
     def test_tm_matches_separate_calls(self, tmp_path):
         dataset = _make_tm_dataset(tmp_path)
-        catella.analyze(dataset, compute_var=True)
+        catella.compute_occup(dataset, compute_var=True)
         ana = SimAnalysis()
         ana.compute_occup(dataset=dataset, name="ref_occup")
         ana.compute_mean_nnuc(dataset=dataset, name="ref_mean_nnuc")
@@ -834,7 +834,7 @@ class TestAnalyze:
 
     def test_tm_custom_names(self, tmp_path):
         dataset = _make_tm_dataset(tmp_path)
-        catella.analyze(
+        catella.compute_occup(
             dataset,
             compute_var=True,
             occup_name="o",
@@ -846,15 +846,15 @@ class TestAnalyze:
 
     def test_tm_without_var_skips_var(self, tmp_path):
         dataset = _make_tm_dataset(tmp_path)
-        catella.analyze(dataset)
+        catella.compute_occup(dataset)
         assert "var_nnuc" not in dataset.analysis["chr1"]
         assert "var_occup" not in dataset.analysis["chr1"]
 
     def test_tm_parallel_matches_serial(self, tmp_path):
         serial = _make_tm_dataset(tmp_path / "a")
         par = _make_tm_dataset(tmp_path / "b")
-        catella.analyze(serial, compute_var=True)
-        catella.analyze(par, compute_var=True, nworker=2)
+        catella.compute_occup(serial, compute_var=True)
+        catella.compute_occup(par, compute_var=True, nworker=2)
         for name in ["occup", "var_occup"]:
             np.testing.assert_array_equal(
                 par.analysis["chr1"][name][:],
@@ -868,14 +868,14 @@ class TestAnalyze:
     def test_tm_rejects_time(self, tmp_path):
         dataset = _make_tm_dataset(tmp_path)
         with pytest.raises(ValueError):
-            catella.analyze(dataset, time=0)
+            catella.compute_occup(dataset, time=0)
 
     def test_nonpositive_nworker_raises(self, tmp_path):
         dataset = _make_tm_dataset(tmp_path)
         with pytest.raises(ValueError, match="nworker must be positive"):
-            catella.analyze(dataset, nworker=0)
+            catella.compute_occup(dataset, nworker=0)
 
     def test_parallel_mcmc_raises(self, tmp_path):
         dataset = _make_dataset(tmp_path)
         with pytest.raises(ValueError, match="nworker > 1 requires"):
-            catella.analyze(dataset, nworker=2)
+            catella.compute_occup(dataset, nworker=2)

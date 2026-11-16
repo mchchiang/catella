@@ -1213,7 +1213,7 @@ class TestRun:
         assert SimDataset.load(out_dir / "results.h5").nan_fill == expected
 
 
-class TestAnalyze:
+class TestComputeOccup:
     def test_matches_direct_api_call(self, tmp_path):
         cli_dataset = _make_dataset(tmp_path, nmol=6, nbp=15, name="cli")
         direct_dataset = SimDataset.load(cli_dataset._dataset_file)
@@ -1221,7 +1221,7 @@ class TestAnalyze:
         result = runner.invoke(
             app,
             [
-                "analyze",
+                "compute_occup",
                 str(cli_dataset._dataset_file),
                 "--occup-name",
                 "my_occup",
@@ -1231,7 +1231,7 @@ class TestAnalyze:
         )
         assert result.exit_code == 0, result.output
 
-        catella.analyze(
+        catella.compute_occup(
             dataset=direct_dataset,
             occup_name="my_occup",
             mean_nnuc_name="my_nnuc",
@@ -1265,7 +1265,7 @@ class TestAnalyze:
         result = runner.invoke(
             app,
             [
-                "analyze",
+                "compute_occup",
                 str(dataset._dataset_file),
                 "--compute-var",
             ],

@@ -599,7 +599,7 @@ def run_catella(
         nworker=nworker,
         verbose=False,
     )
-    catella.analyze(sim)
+    catella.compute_occup(sim)
     occ = np.asarray(sim.analysis[chrom]["occup"][:], dtype=np.float32)
     count = np.asarray(sim.analysis[chrom]["mean_nnuc"][:]).ravel()
     mol_ids = np.asarray(exp.raw[chrom].test_mol_id)

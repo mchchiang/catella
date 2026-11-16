@@ -24,7 +24,16 @@ def _write_fasta(path, records):
         f.writelines(f">{chrom}\n{seq}\n" for chrom, seq in records.items())
 
 
-def _load(tmp_path, refseq, rows, *, mtase, chrom="chr1", ignore_strand=False):
+def _load(
+    tmp_path,
+    refseq,
+    rows,
+    *,
+    mtase,
+    chrom="chr1",
+    ignore_strand=False,
+    wrap=False,
+):
     chromsize = tmp_path / "sizes.tsv"
     _write_chromsize(chromsize, {chrom: len(refseq)})
     fasta = tmp_path / "ref.fa"
@@ -37,6 +46,7 @@ def _load(tmp_path, refseq, rows, *, mtase, chrom="chr1", ignore_strand=False):
         fasta_file=fasta,
         mtase=mtase,
         ignore_strand=ignore_strand,
+        wrap=wrap,
     )
 
 
@@ -625,6 +635,32 @@ class TestDropoutFractions:
         exp = self._make(tmp_path)
         with pytest.raises(ValueError):
             exp.dropout_fractions(which="meth")
+        exp.close()
+
+
+class TestWrap:
+    def _make(self, tmp_path):
+        rows = [("m0", i, "chr1", "+", 0.5, "a") for i in range(5, 10)]
+        return _load(tmp_path, "A" * 10, rows, mtase="A", wrap=True)
+
+    def test_dropout_fractions_on_folded_sites(self, tmp_path):
+        exp = self._make(tmp_path)
+        fracs = exp.dropout_fractions()
+        assert fracs[("chr1", "test", "A")] == pytest.approx([0.0])
+        exp.close()
+
+    def test_filter_dropout_keeps_fully_covered(self, tmp_path):
+        exp = self._make(tmp_path)
+        exp.filter_dropout(thres_max=0.1)
+        keep = exp.analysis["chr1"]["test_dropout_mask"]["keep"]
+        assert keep.tolist() == [1]
+        exp.close()
+
+    def test_summarize_dropout_site_counts(self, tmp_path):
+        exp = self._make(tmp_path)
+        row = exp.summarize_dropout().iloc[0]
+        assert row["n_sites_plus"] == 5
+        assert row["p50"] == pytest.approx(0.0)
         exp.close()
 
     def test_bad_unmapped_strand_raises(self, tmp_path):

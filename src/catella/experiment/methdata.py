@@ -23,6 +23,7 @@ from catella.experiment._contexts import _resolve_channels
 from catella.experiment._dropout import (
     _apply_keep_mask,
     _dropout_fracs,
+    _fold_site_masks,
     _mtase_site_masks,
     _resolve_sources,
     _site_coverage,
@@ -1055,6 +1056,27 @@ class MethPrintExperiment:
             )
         return tuple(chroms)
 
+    def _mtase_masks(self, raw, mtases):
+        """
+        Per-strand site masks of each mtase, on stored positions.
+
+        Parameters
+        ----------
+        raw : MethPrintData
+            Raw data block of one chromosome, with `refseq`.
+        mtases : sequence of str
+            Methyltransferases, each in {"A", "CG", "GC"}.
+
+        Returns
+        -------
+        dict of str to (np.ndarray, np.ndarray)
+            As `_mtase_site_masks`, folded to `raw.nbp` if `self.wrap`.
+        """
+        masks = _mtase_site_masks(raw.refseq, mtases)
+        if self._wrap:
+            masks = _fold_site_masks(masks, raw.nbp)
+        return masks
+
     def filter_dropout(
         self,
         *,
@@ -1167,7 +1189,7 @@ class MethPrintExperiment:
                 cov = _site_coverage(
                     df,
                     len(mol_id),
-                    _mtase_site_masks(raw.refseq, mtases),
+                    self._mtase_masks(raw, mtases),
                     unmapped_strand,
                     ignore_strand=self._ignore_strand,
                 )
@@ -1269,7 +1291,7 @@ class MethPrintExperiment:
                     raise ValueError(
                         f"no '{src}' data available for chrom '{chrom}'"
                     )
-                masks = _mtase_site_masks(raw.refseq, mtases)
+                masks = self._mtase_masks(raw, mtases)
                 cov = _site_coverage(
                     df,
                     len(mol_id),
@@ -1389,7 +1411,7 @@ class MethPrintExperiment:
                 cov = _site_coverage(
                     df,
                     len(mol_id),
-                    _mtase_site_masks(raw.refseq, mtases),
+                    self._mtase_masks(raw, mtases),
                     unmapped_strand,
                     ignore_strand=self._ignore_strand,
                 )

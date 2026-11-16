@@ -183,6 +183,45 @@ class TestLoadRaw:
             expected.raw["chr1"].test_mol_id
         )
 
+    def test_balance_strand_matches_api(self, tmp_path):
+        rows = [
+            (m, p, c, "-" if int(m[1:]) % 2 else "+", q, a)
+            for m, p, c, _, q, a in _make_test_rows(nmol=10, nbp=30)
+        ]
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 30})
+
+        cli_out = tmp_path / "cli_exp.h5"
+        result = runner.invoke(
+            app,
+            [
+                "load_raw",
+                str(chromsize),
+                str(test_file),
+                str(cli_out),
+                "--max-nmol",
+                "4",
+                "--balance-strand",
+                "--seed",
+                "7",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+
+        expected = catella.load_raw(
+            chromsize=chromsize,
+            test_file=test_file,
+            max_nmol=4,
+            balance_strand=True,
+            seed=7,
+        )
+        got = MethPrintExperiment.load(cli_out)
+        mol_ids = got.raw["chr1"].test_mol_id
+        assert sum(int(m[1:]) % 2 for m in mol_ids) == 2
+        assert sorted(mol_ids) == sorted(expected.raw["chr1"].test_mol_id)
+
     def test_chroms_restricts_loaded_chromosomes(self, tmp_path):
         rows = _make_test_rows(nmol=5, nbp=30)
         test_file = tmp_path / "test.tsv"

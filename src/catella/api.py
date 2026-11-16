@@ -36,6 +36,7 @@ def load_raw(
     ignore_strand: bool = False,
     colidx: Iterable | None = None,
     max_nmol: int | None = None,
+    balance_strand: bool = False,
     seed: int | None = None,
     chunk_size: int = 1000000,
     tmp_dir: str | Path | None = None,
@@ -86,6 +87,12 @@ def load_raw(
         the standard ModKit format.
     max_nmol : int, optional
         Maximum number of molecules to extract for each chromosome.
+    balance_strand : bool, default False
+        If True, keep an equal number of '+' and '-' strand molecules
+        per chromosome: at most `max_nmol`; fewer if either strand has
+        fewer than `max_nmol // 2` molecules (warns). Molecules with
+        unmapped strand ('.') are dropped. Requires `max_nmol` of at
+        least 2.
     seed : int, optional
         The seed for the random number generator selecting the molecules if
         `max_nmol` is specified.
@@ -125,6 +132,7 @@ def load_raw(
         ignore_strand=ignore_strand,
         colidx=colidx,
         max_nmol=max_nmol,
+        balance_strand=balance_strand,
         seed=seed,
         chunk_size=chunk_size,
         tmp_dir=tmp_dir,

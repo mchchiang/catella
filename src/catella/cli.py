@@ -162,6 +162,10 @@ def load_raw(
     max_nmol: Annotated[
         int | None, typer.Option(help="Max molecules per chromosome")
     ] = None,
+    balance_strand: Annotated[
+        bool,
+        typer.Option(help="Sample +/- strand molecules 50:50 (max-nmol)"),
+    ] = False,
     seed: Annotated[
         int | None, typer.Option(help="Seed for molecule sampling")
     ] = None,
@@ -199,6 +203,7 @@ def load_raw(
         ignore_strand=ignore_strand,
         colidx=colidx,
         max_nmol=max_nmol,
+        balance_strand=balance_strand,
         seed=seed,
         chunk_size=chunk_size,
         tmp_dir=tmp_dir,

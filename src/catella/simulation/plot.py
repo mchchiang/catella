@@ -4,6 +4,7 @@ import warnings
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from functools import wraps
+from numbers import Integral
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -11,9 +12,138 @@ import numpy as np
 import scipy.cluster.hierarchy as sch
 from matplotlib.colors import Normalize
 
+from catella._plotting import _warn_if_large
 from catella.mapping import CoordsTransform
 from catella.simulation.analysis import NucFiberMap, SimAnalysis
 from catella.simulation.results import SimDataset
+
+_DOWNSAMPLE_HOW = ("stride", "mean", "max")
+
+
+def _check_downsample(max_rows, how):
+    """Check `max_rows` and `downsample_how`."""
+    if how not in _DOWNSAMPLE_HOW:
+        raise ValueError(
+            f"downsample_how must be one of {_DOWNSAMPLE_HOW}, got {how!r}"
+        )
+    if max_rows is not None and max_rows < 1:
+        raise ValueError(f"max_rows must be positive, got {max_rows}")
+
+
+def _check_eseq(dataset, plot_eseq):
+    """Check that the energies to plot are stored."""
+    if plot_eseq and not dataset.has_eseq:
+        raise ValueError(
+            "plot_eseq requires stored energies; run with store_eseq=True"
+        )
+
+
+def _stride_step(nrow, max_rows):
+    """Step that keeps at most `max_rows` of `nrow` rows (1 if all fit)."""
+    if max_rows is None or nrow <= max_rows:
+        return 1
+    return -(-nrow // max_rows)
+
+
+def _shown_rows(nrow, max_rows):
+    """Number of rows drawn out of `nrow`, at most `max_rows`."""
+    return nrow if max_rows is None else min(nrow, max_rows)
+
+
+def _one_run(runs):
+    """Return the single run of `runs` (0 if None)."""
+    if runs is None:
+        return 0
+    if isinstance(runs, Integral):
+        return int(runs)
+    values = list(runs)
+    if len(values) != 1:
+        raise ValueError(
+            f"over='time' shows one run, got {len(values)} runs; use "
+            "over='runs' to compare runs"
+        )
+    return int(values[0])
+
+
+def _run_list(runs, nsim):
+    """Return `runs` as a list of ints (all of `range(nsim)` if None)."""
+    if runs is None:
+        values = list(range(nsim))
+    elif isinstance(runs, Integral):
+        values = [int(runs)]
+    else:
+        values = [int(r) for r in runs]
+    if not values:
+        raise ValueError("runs must not be empty")
+    return values
+
+
+def _footprints(configs, nbp, nucbp):
+    """
+    Stack configurations into an int8 footprint matrix.
+
+    Parameters
+    ----------
+    configs : list of np.ndarray or None
+        Nucleosome start positions per row; None for no data.
+    nbp : int
+        The number of base pairs.
+    nucbp : int
+        The nucleosome footprint size.
+
+    Returns
+    -------
+    np.ndarray
+        int8, (len(configs), nbp): 1 covered, 0 linker, -1 no data.
+    """
+    nuc_map = NucFiberMap(nbp=nbp, nucbp=nucbp)
+    out = np.full((len(configs), nbp), -1, dtype=np.int8)
+    for i, starts in enumerate(configs):
+        if starts is not None:
+            out[i] = nuc_map.project(np.asarray(starts))
+    return out
+
+
+def _merge_rows(matrix, max_rows, how):
+    """
+    Merge groups of rows of a footprint matrix into at most `max_rows`.
+
+    Parameters
+    ----------
+    matrix : np.ndarray
+        int8 footprints (1 covered, 0 linker, -1 no data).
+    max_rows : int or None
+        The maximum number of rows; `matrix` is returned as is if None
+        or if it already fits.
+    how : {"stride", "mean", "max"}
+        "stride" returns `matrix` as is (rows are picked before
+        reading). "mean" gives the covered share of each group among
+        rows with data (nan if none); "max" gives 1 if any row of the
+        group is covered (-1 if no row has data).
+
+    Returns
+    -------
+    np.ndarray
+        The merged matrix: int8 for "max", float64 for "mean".
+    """
+    nrow = matrix.shape[0]
+    if how == "stride" or max_rows is None or nrow <= max_rows:
+        return matrix
+    edges = np.linspace(0, nrow, max_rows + 1).astype(int)
+    out = np.empty(
+        (max_rows, matrix.shape[1]),
+        dtype=np.float64 if how == "mean" else np.int8,
+    )
+    for i in range(max_rows):
+        block = matrix[edges[i] : edges[i + 1]]
+        if how == "max":
+            out[i] = block.max(axis=0)
+            continue
+        count = (block >= 0).sum(axis=0)
+        covered = (block > 0).sum(axis=0)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            out[i] = np.where(count > 0, covered / count, np.nan)
+    return out
 
 
 @dataclass(slots=True, kw_only=True)
@@ -178,172 +308,200 @@ class SimPlot:
             fig.savefig(out_file)
 
     @_apply_style
-    def plot_traj(
+    def plot_samples(
         self,
         dataset: SimDataset,
         *,
         chrom: str,
         mol: int,
-        run: int,
+        over: str | None = None,
+        runs: int | Iterable[int] | None = None,
+        time: int | None = None,
         tstart: int | None = None,
         tend: int | None = None,
         tscale: int = 1000,
         xscale: int = 1000,
+        max_rows: int | None = None,
+        downsample_how: str = "stride",
         cmap: str | None = None,
         out_file: str | Path | None = None,
         plot_eseq: bool = False,
         show: bool = True,
     ):
         """
-        Plot the nucleosome positions of one MCMC run over time.
+        Plot many nucleosome configurations of one molecule.
 
-        Each row is a recorded time frame of run `run` of molecule `mol`,
-        showing the bases covered by nucleosomes. Together with
-        `plot_energy`, a check of the convergence of a run. Only for
-        `dataset.method == "mcmc"`, since TM samples have no time axis;
-        use `plot_config` to show configurations across molecules.
+        Each row is one configuration of molecule `mol`, showing the
+        bases covered by nucleosomes (1) and the linkers (0):
+
+        - `over="time"` (MCMC only): the recorded frames of one run
+          between `tstart` and `tend`; with `plot_energy`, a check of the
+          convergence of the run.
+        - `over="runs"`: one configuration per MCMC run at time `time`,
+          or one per exact TM sample; shows how variable the molecule's
+          positioning is.
+
+        Missing runs or samples, and molecules without data, are drawn
+        in `nan_color`. Use `plot_config` to compare molecules.
 
         Parameters
         ----------
         dataset : SimDataset
-            The dataset object containing raw simulation results.
+            The dataset holding the raw configurations.
         chrom : str
             Chromosome identifier.
         mol : int
-            Molecule index within the dataset.
-        run : int
-            Simulation run index.
+            Molecule index within `chrom`.
+        over : {"time", "runs"}, optional
+            What the rows run over. If None (default), "time" for MCMC
+            datasets and "runs" for TM datasets.
+        runs : int or iterable of int, optional
+            With `over="time"`, the one run to show (0 if None). With
+            `over="runs"`, the runs (MCMC) or samples (TM) to show, in
+            this order (all if None). The y-axis counts rows, not run
+            indices.
+        time : int, optional
+            MCMC time point of the configurations with `over="runs"`; the
+            final frame if None.
         tstart : int, optional
-            Starting time step. If None, defaults to the beginning of the
-            simulation.
+            First time step shown with `over="time"`; the beginning if
+            None.
         tend : int, optional
-            Ending time step. If None, defaults to the end of the simulation.
+            Last time step shown with `over="time"`; the end if None.
         tscale : int, default 1000
-            Time scaling factor (must be a power of 10) for the y-axis labels.
+            Time scaling factor (a power of 10) for the y-axis labels with
+            `over="time"`.
         xscale : int, default 1000
-            Spatial scaling factor (must be a power of 10) for the x-axis
-            labels.
+            Spatial scaling factor (a power of 10) for the x-axis labels.
+        max_rows : int, optional
+            If given, show at most this many rows, merged as
+            `downsample_how` says.
+        downsample_how : {"stride", "mean", "max"}, default "stride"
+            How to reduce the rows to `max_rows`: "stride" keeps every
+            k-th row (real configurations), "mean" shows the covered share
+            of each group of rows, and "max" whether any of them is
+            covered.
         cmap : str, optional
-            Matplotlib colormap name to use for this plot. If None,
-            `self.cmap` is used.
+            Matplotlib colormap name. If None, `self.cmap` is used.
         out_file : str or Path, optional
-            Path to save the generated figure. Directories are created if
-            they do not exist.
+            Path to save the figure. Directories are created if they do
+            not exist.
         plot_eseq : bool, default False
-            Whether to plot the underlying sequence-specific nucleosome binding
-            energy.
+            Whether to plot the sequence-specific binding energy of `mol`
+            below the heatmap.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
         Raises
         ------
         ValueError
-            If `dataset.method != "mcmc"`, if `tend` < `tstart`, or if
-            scaling factors are not powers of 10.
+            If `over` is invalid; if `over="time"` is used for a TM
+            dataset, with several `runs`, with `time`, or for a molecule
+            with no data; if `tstart` or `tend` is used with
+            `over="runs"`; if a TM dataset stores no samples; if `tend` <
+            `tstart`; if `max_rows` or `downsample_how` is invalid; if a
+            scaling factor is not a power of 10; or if `plot_eseq` is True
+            and the dataset stores no energies.
+
+        Warns
+        -----
+        UserWarning
+            If rendering the plot is estimated to need more than 1 GB of
+            memory; pass `max_rows` to reduce it.
 
         Notes
         -----
-        Requires 'position' (or 'all') in the `out_types` of `run`, and,
-        if `plot_eseq` is True, `store_eseq=True`.
+        Requires 'position' (or 'all') in the `out_types` of an MCMC
+        `run`.
         """
-        if dataset.method != "mcmc":
-            raise ValueError(
-                "plot_traj requires a method='mcmc' dataset; use "
-                "plot_config for TM samples"
-            )
-        # Check the time values are valid
-        if tstart is not None and tend is not None and tend < tstart:
-            raise ValueError("'tend' must be greater than 'tstart'")
-
-        tpow = int(self._log10(tscale, "tscale"))
         xpow = int(self._log10(xscale, "xscale"))
-
-        # Retrieve the data
-        data = dataset.raw[chrom, mol, run]
-        nuc_map = NucFiberMap(nbp=data.nbp, nucbp=data.nucbp)
-
-        # Normalize time indices and validate time values
-        nframes = len(data.time)
-        start_idx = 0 if tstart is None else data.time_index(tstart)
-        end_idx = (
-            nframes
-            if tend is None
-            else min(data.time_index(tend) + 1, nframes)
-        )
-
-        # Compute the nucleosome occupancy map
-        occup = nuc_map.stack(data.position[start_idx:end_idx])
-        tstart = data.time[start_idx]
-        tend = data.time[end_idx - 1]
-
-        # Set up the figure. The second column is a dedicated,
-        # narrow slot for the colorbar so it doesn't shrink the
-        # heatmap panel itself.
-        gridspec_kw = {"width_ratios": [20, 1]}
-        if plot_eseq:
-            nplots = 2
-            gridspec_kw["height_ratios"] = [4, 1]
-            fig, ax = plt.subplots(
-                nrows=nplots, ncols=2, gridspec_kw=gridspec_kw
+        _check_downsample(max_rows, downsample_how)
+        _check_eseq(dataset, plot_eseq)
+        if over is None:
+            over = "time" if dataset.method == "mcmc" else "runs"
+        if over not in ("time", "runs"):
+            raise ValueError(f"over must be 'time' or 'runs', got {over!r}")
+        nbp = dataset.nbp[chrom]
+        hint = "consider passing 'max_rows'"
+        if over == "time":
+            if dataset.method != "mcmc":
+                raise ValueError(
+                    "over='time' requires a method='mcmc' dataset; TM "
+                    "samples have no time axis"
+                )
+            if time is not None:
+                raise ValueError(
+                    "time is only used with over='runs'; use tstart and "
+                    "tend"
+                )
+            run = _one_run(runs)
+            if tstart is not None and tend is not None and tend < tstart:
+                raise ValueError("'tend' must be greater than 'tstart'")
+            if dataset.no_data[chrom][mol]:
+                raise ValueError(
+                    f"molecule {mol} of chrom '{chrom}' has no data"
+                )
+            tpow = int(self._log10(tscale, "tscale"))
+            data = dataset.raw[chrom, mol, run]
+            nframes = len(data.time)
+            start_idx = 0 if tstart is None else data.time_index(tstart)
+            end_idx = (
+                nframes
+                if tend is None
+                else min(data.time_index(tend) + 1, nframes)
             )
-            w, h = fig.get_size_inches()
-            fig.set_size_inches(w, h * 1.25)
-            hm_ax, cbar_ax = ax[0, 0], ax[0, 1]
-            seq_ax = ax[1, 0]
-            ax[1, 1].axis("off")
+            idx = np.arange(start_idx, end_idx)
+            if downsample_how == "stride":
+                idx = idx[:: _stride_step(len(idx), max_rows)]
+            _warn_if_large(_shown_rows(len(idx), max_rows), nbp, hint)
+            matrix = NucFiberMap(nbp=nbp, nucbp=data.nucbp).stack(
+                [data.position[i] for i in idx]
+            )
+            matrix = _merge_rows(matrix, max_rows, downsample_how)
+            extent_y = (
+                data.time[idx[0]] / tscale,
+                data.time[idx[-1]] / tscale,
+            )
+            ylabel = rf"Time $t$ [$10^{{{tpow}}}$ MCS]"
+            invert_y = True
         else:
-            nplots = 1
-            fig, ax = plt.subplots(
-                nrows=nplots, ncols=2, gridspec_kw=gridspec_kw
-            )
-            hm_ax, cbar_ax = ax[0], ax[1]
-            seq_ax = None
+            if tstart is not None or tend is not None:
+                raise ValueError(
+                    "tstart and tend are only used with over='time'"
+                )
+            if dataset.method == "tm" and dataset.nsim == 0:
+                raise ValueError("no samples stored (nsim is 0)")
+            run_ids = _run_list(runs, dataset.nsim)
+            if downsample_how == "stride":
+                run_ids = run_ids[:: _stride_step(len(run_ids), max_rows)]
+            _warn_if_large(_shown_rows(len(run_ids), max_rows), nbp, hint)
+            ana = SimAnalysis()
+            configs = [
+                ana.extract_config(
+                    dataset, chrom=chrom, run=r, time=time, mols=[mol]
+                )[0]
+                for r in run_ids
+            ]
+            matrix = _footprints(configs, nbp, dataset.settings["nucbp"])
+            matrix = _merge_rows(matrix, max_rows, downsample_how)
+            extent_y = (0, matrix.shape[0])
+            ylabel = "Run" if dataset.method == "mcmc" else "Sample"
+            invert_y = False
 
-        # Plot the nucleosome position as a heat map
-        norm = Normalize(vmin=0, vmax=1)
-        cmap_obj = plt.get_cmap(cmap if cmap is not None else self.cmap)
-        cmap_obj = cmap_obj.with_extremes(bad=self.nan_color)
-        im = hm_ax.imshow(
-            occup,
-            cmap=cmap_obj,
-            norm=norm,
-            aspect="auto",
-            origin="lower",
-            interpolation="none",
-            extent=[0, data.nbp / xscale, tstart / tscale, tend / tscale],
+        eseq = dataset.eseq[chrom][mol, :] if plot_eseq else None
+        fig, hm_ax = self._draw_footprints(
+            dataset,
+            matrix,
+            extent_y=extent_y,
+            ylabel=ylabel,
+            invert_y=invert_y,
+            xpow=xpow,
+            xscale=xscale,
+            cmap=cmap,
+            eseq=eseq,
+            eseq_label=r"$E_{\text{seq}}$ [$k_BT$]",
         )
-        xpow_str = rf"$10^{{{xpow}}}$"
-        tpow_str = rf"$10^{{{tpow}}}$"
-        hm_ax.invert_yaxis()
-        hm_ax.set_xlim(0, data.nbp / xscale)
-        if plot_eseq:
-            hm_ax.get_xaxis().set_visible(False)
-        hm_ax.set_ylabel(rf"Time $t$ [{tpow_str} MCS]")
-        cbar = fig.colorbar(im, cax=cbar_ax)
-        cbar.set_label("Occupancy", rotation=270, labelpad=15)
-
-        # Plot the sequence energy if needed
-        if plot_eseq:
-            eseq = dataset.eseq[chrom][mol, :]
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", category=RuntimeWarning)
-                emin = max(np.nanmin(eseq), -dataset.settings["emax"])
-                emax = min(np.nanmax(eseq), dataset.settings["emax"])
-            if np.isfinite(emin) and np.isfinite(emax):
-                seq_ax.set_ylim(emin, emax)
-            lnuc = dataset.settings["nucbp"]
-            trans = CoordsTransform(lnuc=lnuc)
-            eseq = trans.left_to_center_aligned(eseq)
-            eseq[: lnuc // 2] = np.nan
-            eseq[len(eseq) - lnuc // 2 :] = np.nan
-            seq_ax.plot(np.arange(0, data.nbp) / xscale, eseq)
-            seq_ax.set_ylabel(r"$E_{\text{seq}}$ [$k_BT$]")
-            seq_ax.set_xlim(0, data.nbp / xscale)
-
-        # Common x-axis label
-        btm_ax = seq_ax if plot_eseq else hm_ax
-        btm_ax.set_xlabel(rf"Position $x$ [{xpow_str} bp]")
-
+        hm_ax.set_title(f"Molecule {mol} of {chrom}", pad=12)
         fig.tight_layout()
 
         if show:
@@ -351,9 +509,86 @@ class SimPlot:
 
         if out_file is not None:
             out_file = Path(out_file)
-            out_dir = out_file.parents[0]
-            out_dir.mkdir(exist_ok=True, parents=True)
+            out_file.parents[0].mkdir(exist_ok=True, parents=True)
             fig.savefig(out_file)
+
+    def _draw_footprints(
+        self,
+        dataset,
+        matrix,
+        *,
+        extent_y,
+        ylabel,
+        invert_y,
+        xpow,
+        xscale,
+        cmap,
+        eseq,
+        eseq_label,
+    ):
+        """
+        Draw a footprint matrix (1 covered, 0 linker, -1 or nan no data),
+        with an optional energy panel below.
+
+        Returns
+        -------
+        tuple
+            The figure and the heatmap axis.
+        """
+        nbp = matrix.shape[1]
+        # The second column is a narrow slot for the colorbar
+        gridspec_kw = {"width_ratios": [20, 1]}
+        if eseq is not None:
+            gridspec_kw["height_ratios"] = [4, 1]
+            fig, ax = plt.subplots(nrows=2, ncols=2, gridspec_kw=gridspec_kw)
+            w, h = fig.get_size_inches()
+            fig.set_size_inches(w, h * 1.25)
+            hm_ax, cbar_ax, seq_ax = ax[0, 0], ax[0, 1], ax[1, 0]
+            ax[1, 1].axis("off")
+        else:
+            fig, ax = plt.subplots(nrows=1, ncols=2, gridspec_kw=gridspec_kw)
+            hm_ax, cbar_ax, seq_ax = ax[0], ax[1], None
+
+        # -1 (no data) is below vmin; nan comes from "mean" merging
+        cmap_obj = plt.get_cmap(cmap if cmap is not None else self.cmap)
+        cmap_obj = cmap_obj.with_extremes(
+            under=self.nan_color, bad=self.nan_color
+        )
+        im = hm_ax.imshow(
+            matrix,
+            cmap=cmap_obj,
+            norm=Normalize(vmin=0, vmax=1),
+            aspect="auto",
+            origin="lower",
+            interpolation="none",
+            extent=[0, nbp / xscale, *extent_y],
+        )
+        if invert_y:
+            hm_ax.invert_yaxis()
+        hm_ax.set_xlim(0, nbp / xscale)
+        hm_ax.set_ylabel(ylabel)
+        cbar = fig.colorbar(im, cax=cbar_ax)
+        cbar.set_label("Occupancy", rotation=270, labelpad=15)
+
+        if eseq is not None:
+            hm_ax.get_xaxis().set_visible(False)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=RuntimeWarning)
+                emin = max(np.nanmin(eseq), -dataset.settings["emax"])
+                emax = min(np.nanmax(eseq), dataset.settings["emax"])
+            if np.isfinite(emin) and np.isfinite(emax):
+                seq_ax.set_ylim(emin, emax)
+            lnuc = dataset.settings["nucbp"]
+            eseq = CoordsTransform(lnuc=lnuc).left_to_center_aligned(eseq)
+            eseq[: lnuc // 2] = np.nan
+            eseq[len(eseq) - lnuc // 2 :] = np.nan
+            seq_ax.plot(np.arange(0, nbp) / xscale, eseq)
+            seq_ax.set_ylabel(eseq_label)
+            seq_ax.set_xlim(0, nbp / xscale)
+
+        btm_ax = seq_ax if eseq is not None else hm_ax
+        btm_ax.set_xlabel(rf"Position $x$ [$10^{{{xpow}}}$ bp]")
+        return fig, hm_ax
 
     @_apply_style
     def plot_occup(

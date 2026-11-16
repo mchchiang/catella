@@ -116,7 +116,7 @@ commentary. See :doc:`tutorials/tut01_meth_prob` and
 
    simplot = SimPlot()
    simplot.plot_energy(sim_data, chrom="601", mol=0, run=0)
-   simplot.plot_traj(sim_data, chrom="601", mol=0, run=0, plot_eseq=True)
+   simplot.plot_samples(sim_data, chrom="601", mol=0, plot_eseq=True)
 
    # Analyze and save results
    catella.compute_occup(sim_data)

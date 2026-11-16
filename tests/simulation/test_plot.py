@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
-from catella.simulation.analysis import SimAnalysis
+from catella.simulation.analysis import NucFiberMap, SimAnalysis
 from catella.simulation.config import SimSettings
 from catella.simulation.engine import SimManager
 from catella.simulation.plot import SimPlot
@@ -208,10 +208,10 @@ class TestPositionalDatasetArg:
 
         assert plt.gcf().axes
 
-    def test_plot_traj_accepts_dataset_positionally(self, tmp_path):
+    def test_plot_samples_accepts_dataset_positionally(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=2, nbp=20)
 
-        SimPlot().plot_traj(dataset, chrom="chr1", mol=0, run=0, show=False)
+        SimPlot().plot_samples(dataset, chrom="chr1", mol=0, show=False)
 
         assert plt.gcf().axes
 
@@ -220,35 +220,22 @@ class TestPositionalDatasetArg:
     "ignore:__array__ implementation doesn't accept a copy keyword"
     ":DeprecationWarning"
 )
-class TestPlotTrajCmapOverride:
+class TestPlotSamplesCmapOverride:
     def test_cmap_override_does_not_mutate_instance(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=2, nbp=20)
 
         simplot = SimPlot()
-        simplot.plot_traj(
-            dataset, chrom="chr1", mol=0, run=0, cmap="viridis", show=False
+        simplot.plot_samples(
+            dataset, chrom="chr1", mol=0, cmap="viridis", show=False
         )
         assert simplot.cmap == "OrRd"
-
-    def test_tm_dataset_raises(self, tmp_path):
-        dataset = SimManager(nworker=1, verbose=False).run(
-            chroms="chr1",
-            nsim=2,
-            method="tm",
-            settings=_make_settings(),
-            meth_prob=np.random.default_rng(1).random((2, 20)),
-            out_dir=tmp_path / "tm",
-            seed=1,
-        )
-        with pytest.raises(ValueError, match="requires a method='mcmc'"):
-            SimPlot().plot_traj(dataset, chrom="chr1", mol=0, run=0)
 
 
 @pytest.mark.filterwarnings(
     "ignore:__array__ implementation doesn't accept a copy keyword"
     ":DeprecationWarning"
 )
-class TestPlotTrajEseq:
+class TestPlotSamplesEseq:
     def test_plot_eseq_handles_nan_from_missing_coverage(self, tmp_path):
         # A genomic position with no coverage (NaN in meth_prob) propagates
         # NaN into eseq for that molecule; the y-limit calculation must
@@ -267,11 +254,11 @@ class TestPlotTrajEseq:
         )
         assert np.isnan(dataset.eseq["chr1"][:, 5]).all()
 
-        SimPlot().plot_traj(
-            dataset, chrom="chr1", mol=0, run=0, plot_eseq=True, show=False
+        SimPlot().plot_samples(
+            dataset, chrom="chr1", mol=0, plot_eseq=True, show=False
         )
 
-    def test_no_data_molecule_has_no_run(self, tmp_path):
+    def test_no_data_molecule_raises_over_time(self, tmp_path):
         rng = np.random.default_rng(6)
         meth_prob = rng.random((2, 20))
         meth_prob[0, :] = np.nan
@@ -286,16 +273,16 @@ class TestPlotTrajEseq:
         )
         assert dataset.no_data["chr1"][0]
 
-        with pytest.raises(ValueError, match="cannot find the simulation"):
-            SimPlot().plot_traj(
-                dataset, chrom="chr1", mol=0, run=0, plot_eseq=True, show=False
+        with pytest.raises(ValueError, match="molecule 0 of chrom 'chr1'"):
+            SimPlot().plot_samples(
+                dataset, chrom="chr1", mol=0, plot_eseq=True, show=False
             )
 
     def test_plot_eseq_ylim_matches_full_data_range(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=2, nbp=20)
 
-        SimPlot().plot_traj(
-            dataset, chrom="chr1", mol=0, run=0, plot_eseq=True, show=False
+        SimPlot().plot_samples(
+            dataset, chrom="chr1", mol=0, plot_eseq=True, show=False
         )
 
         seq_ax = plt.gcf().axes[2]
@@ -303,3 +290,188 @@ class TestPlotTrajEseq:
         np.testing.assert_allclose(
             seq_ax.get_ylim(), (np.nanmin(eseq), np.nanmax(eseq))
         )
+
+
+def _mcmc_dataset(tmp_path, nmol=2, nsim=3):
+    meth_prob = np.random.default_rng(7).random((nmol, 400))
+    meth_prob[1] = np.nan
+    return SimManager(nworker=1, verbose=False).run(
+        chroms="chr1",
+        nsim=nsim,
+        settings=_make_settings(nsweep=4),
+        meth_prob=meth_prob,
+        out_dir=tmp_path / "mcmc",
+        seed=7,
+    )
+
+
+def _tm_dataset(tmp_path, nsim=4, name="tm"):
+    settings = SimSettings(
+        nucbp=3, llink=2, elink=1.0, mu=0.5, end_temp=1.0, emax=5.0
+    )
+    meth_prob = np.random.default_rng(8).random((2, 20))
+    meth_prob[1] = np.nan
+    return SimManager(nworker=1, verbose=False).run(
+        chroms="chr1",
+        nsim=nsim,
+        method="tm",
+        settings=settings,
+        meth_prob=meth_prob,
+        out_dir=tmp_path / name,
+        seed=8,
+    )
+
+
+def _image():
+    return np.ma.getdata(plt.gcf().axes[0].images[0].get_array())
+
+
+def _footprint(dataset, starts):
+    nuc_map = NucFiberMap(
+        nbp=dataset.nbp["chr1"], nucbp=dataset.settings["nucbp"]
+    )
+    return nuc_map.project(np.asarray(starts))
+
+
+@pytest.mark.filterwarnings(
+    "ignore:__array__ implementation doesn't accept a copy keyword"
+    ":DeprecationWarning"
+)
+class TestPlotSamples:
+    def test_mcmc_over_time_rows_are_frames(self, tmp_path):
+        dataset = _mcmc_dataset(tmp_path)
+        SimPlot().plot_samples(
+            dataset, chrom="chr1", mol=0, runs=2, show=False
+        )
+        data = dataset.raw["chr1", 0, 2]
+        img = _image()
+        assert img.shape == (len(data.time), 400)
+        for i, pos in enumerate(data.position):
+            np.testing.assert_array_equal(img[i], _footprint(dataset, pos))
+
+    def test_mcmc_over_runs_rows_are_runs(self, tmp_path):
+        dataset = _mcmc_dataset(tmp_path)
+        SimPlot().plot_samples(
+            dataset, chrom="chr1", mol=0, over="runs", show=False
+        )
+        img = _image()
+        assert img.shape == (3, 400)
+        ana = SimAnalysis()
+        for r in range(3):
+            starts = ana.extract_config(
+                dataset, chrom="chr1", run=r, mols=[0]
+            )[0]
+            np.testing.assert_array_equal(img[r], _footprint(dataset, starts))
+
+    def test_runs_order(self, tmp_path):
+        dataset = _mcmc_dataset(tmp_path)
+        SimPlot().plot_samples(
+            dataset, chrom="chr1", mol=0, over="runs", runs=[2, 0], show=False
+        )
+        last = dataset.raw["chr1", 0, 2].position[-1]
+        np.testing.assert_array_equal(_image()[0], _footprint(dataset, last))
+
+    def test_missing_run_is_no_data_row(self, tmp_path):
+        dataset = _mcmc_dataset(tmp_path)
+        dataset.mcmc_file("chr1", 0, 1).unlink()
+        SimPlot().plot_samples(
+            dataset, chrom="chr1", mol=0, over="runs", show=False
+        )
+        img = _image()
+        assert (img[1] == -1).all()
+        assert (img[0] >= 0).all()
+
+    def test_tm_default_rows_are_samples(self, tmp_path):
+        dataset = _tm_dataset(tmp_path)
+        SimPlot().plot_samples(dataset, chrom="chr1", mol=0, show=False)
+        img = _image()
+        assert img.shape == (4, 20)
+        for r in range(4):
+            pos = dataset.raw["chr1", 0, r].position
+            np.testing.assert_array_equal(img[r], _footprint(dataset, pos))
+
+    def test_tm_no_data_molecule_rows(self, tmp_path):
+        dataset = _tm_dataset(tmp_path)
+        SimPlot().plot_samples(dataset, chrom="chr1", mol=1, show=False)
+        assert (_image() == -1).all()
+
+    def test_max_rows_stride_keeps_every_kth_run(self, tmp_path):
+        dataset = _tm_dataset(tmp_path)
+        SimPlot().plot_samples(
+            dataset, chrom="chr1", mol=0, max_rows=2, show=False
+        )
+        img = _image()
+        assert img.shape == (2, 20)
+        pos = dataset.raw["chr1", 0, 2].position
+        np.testing.assert_array_equal(img[1], _footprint(dataset, pos))
+
+    @pytest.mark.parametrize("how", ["mean", "max"])
+    def test_max_rows_merges_runs(self, tmp_path, how):
+        dataset = _tm_dataset(tmp_path)
+        SimPlot().plot_samples(
+            dataset,
+            chrom="chr1",
+            mol=0,
+            max_rows=2,
+            downsample_how=how,
+            show=False,
+        )
+        rows = np.array(
+            [
+                _footprint(dataset, dataset.raw["chr1", 0, r].position)
+                for r in range(4)
+            ]
+        )
+        want = getattr(rows[:2], how)(axis=0)
+        np.testing.assert_allclose(_image()[0], want)
+
+    def test_size_warning(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("catella._plotting._RENDER_WARN_BYTES", 1)
+        dataset = _tm_dataset(tmp_path)
+        with pytest.warns(UserWarning, match="max_rows"):
+            SimPlot().plot_samples(dataset, chrom="chr1", mol=0, show=False)
+
+    @pytest.mark.parametrize(
+        ("kwargs", "match"),
+        [
+            ({"over": "frames"}, "over must be"),
+            ({"over": "runs", "tstart": 0}, "only used with over='time'"),
+            ({"runs": [0, 1]}, "shows one run"),
+            ({"time": 1}, "only used with over='runs'"),
+            ({"max_rows": 0}, "max_rows must be positive"),
+            ({"downsample_how": "min"}, "downsample_how must be"),
+        ],
+    )
+    def test_mcmc_argument_errors(self, tmp_path, kwargs, match):
+        dataset = _mcmc_dataset(tmp_path)
+        with pytest.raises(ValueError, match=match):
+            SimPlot().plot_samples(
+                dataset, chrom="chr1", mol=0, show=False, **kwargs
+            )
+
+    def test_tm_over_time_raises(self, tmp_path):
+        dataset = _tm_dataset(tmp_path)
+        with pytest.raises(ValueError, match="no time axis"):
+            SimPlot().plot_samples(
+                dataset, chrom="chr1", mol=0, over="time", show=False
+            )
+
+    def test_tm_without_samples_raises(self, tmp_path):
+        dataset = _tm_dataset(tmp_path, nsim=0)
+        with pytest.raises(ValueError, match="no samples stored"):
+            SimPlot().plot_samples(dataset, chrom="chr1", mol=0, show=False)
+
+    def test_plot_eseq_without_stored_energy_raises(self, tmp_path):
+        dataset = SimManager(nworker=1, verbose=False).run(
+            chroms="chr1",
+            nsim=1,
+            settings=_make_settings(),
+            meth_prob=np.random.default_rng(1).random((1, 20)),
+            out_dir=tmp_path / "no_eseq",
+            seed=1,
+            store_eseq=False,
+        )
+        with pytest.raises(ValueError, match="store_eseq=True"):
+            SimPlot().plot_samples(
+                dataset, chrom="chr1", mol=0, plot_eseq=True, show=False
+            )

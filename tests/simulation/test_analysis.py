@@ -335,13 +335,13 @@ def _make_tm_settings(**overrides):
     return SimSettings(**defaults)
 
 
-def _make_tm_dataset(tmp_path, *, nmol=3, nbp=20, seed=1, **kwargs):
+def _make_tm_dataset(tmp_path, *, nmol=3, nbp=20, seed=1, nsim=0, **kwargs):
     rng = np.random.default_rng(seed)
     meth_prob = rng.random((nmol, nbp))
     manager = SimManager(nworker=1, verbose=False)
     return manager.run(
         chroms="chr1",
-        nsim=0,
+        nsim=nsim,
         method="tm",
         settings=_make_tm_settings(),
         meth_prob=meth_prob,
@@ -394,6 +394,88 @@ def _brute_force_occup_meann(nucbp, llink, elink, mu, eseq, temp=1.0):
             occup[y] += start_prob[x]
     mean_n = sum(start_prob)
     return np.array(occup), mean_n
+
+
+def _make_mcmc_dataset(tmp_path, nmol=3, nsim=2):
+    rng = np.random.default_rng(2)
+    return SimManager(nworker=1, verbose=False).run(
+        chroms="chr1",
+        nsim=nsim,
+        settings=_make_settings(nsweep=4),
+        meth_prob=rng.random((nmol, 400)),
+        out_dir=tmp_path / "mcmc",
+        seed=2,
+    )
+
+
+class TestExtractConfigRaw:
+    def test_mcmc_defaults_to_run_zero_final_frame(self, tmp_path):
+        dataset = _make_mcmc_dataset(tmp_path)
+        got = SimAnalysis().extract_config(dataset, "chr1")
+        for mol in range(3):
+            np.testing.assert_array_equal(
+                got[mol], dataset.raw["chr1", mol, 0].position[-1]
+            )
+
+    def test_mcmc_run_and_time(self, tmp_path):
+        dataset = _make_mcmc_dataset(tmp_path)
+        data = dataset.raw["chr1", 2, 1]
+        time = int(data.time[1])
+        got = SimAnalysis().extract_config(
+            dataset, "chr1", run=1, time=time, mols=[2]
+        )
+        np.testing.assert_array_equal(got[0], data.position[1])
+
+    def test_mols_order(self, tmp_path):
+        dataset = _make_mcmc_dataset(tmp_path)
+        ana = SimAnalysis()
+        full = ana.extract_config(dataset, "chr1")
+        got = ana.extract_config(dataset, "chr1", mols=[2, 0])
+        np.testing.assert_array_equal(got[0], full[2])
+        np.testing.assert_array_equal(got[1], full[0])
+
+    def test_missing_file_is_none(self, tmp_path):
+        dataset = _make_mcmc_dataset(tmp_path)
+        dataset.mcmc_file("chr1", 1, 0).unlink()
+        got = SimAnalysis().extract_config(dataset, "chr1")
+        assert got[1] is None
+        assert got[0] is not None
+
+    def test_threads_match_serial(self, tmp_path):
+        dataset = _make_mcmc_dataset(tmp_path)
+        ana = SimAnalysis()
+        serial = ana.extract_config(dataset, "chr1")
+        threaded = ana.extract_config(dataset, "chr1", nworker=2)
+        for a, b in zip(serial, threaded, strict=True):
+            np.testing.assert_array_equal(a, b)
+
+    def test_unrecorded_time_raises(self, tmp_path):
+        dataset = _make_mcmc_dataset(tmp_path)
+        with pytest.raises(ValueError, match="time 12345 is not recorded"):
+            SimAnalysis().extract_config(dataset, "chr1", time=12345)
+
+    def test_run_out_of_range_raises(self, tmp_path):
+        dataset = _make_mcmc_dataset(tmp_path)
+        with pytest.raises(IndexError, match="run must be in"):
+            SimAnalysis().extract_config(dataset, "chr1", run=2)
+
+    def test_tm_samples(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=2, nbp=20, nsim=3)
+        got = SimAnalysis().extract_config(dataset, "chr1", run=2)
+        for mol in range(2):
+            np.testing.assert_array_equal(
+                got[mol], dataset.raw["chr1", mol, 2].position
+            )
+
+    def test_tm_without_samples_raises(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=2, nbp=20)
+        with pytest.raises(ValueError, match="no samples stored"):
+            SimAnalysis().extract_config(dataset, "chr1")
+
+    def test_tm_time_raises(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=2, nbp=20, nsim=1)
+        with pytest.raises(ValueError, match="time is not meaningful"):
+            SimAnalysis().extract_config(dataset, "chr1", time=0)
 
 
 class TestComputeOccupTM:
@@ -640,12 +722,11 @@ class TestComputeConfigs:
         ana = SimAnalysis()
         getattr(ana, method)(dataset=dataset)
         energy_df = dataset.analysis["chr1"][f"{name}_energy"]
+        configs = ana.extract_config(dataset, "chr1", name=name)
         for mol in range(3):
             tm = _direct_tm(dataset, mol, settings)
             positions, energy = call(tm)
-            np.testing.assert_array_equal(
-                ana.get_config(dataset, "chr1", mol, name=name), positions
-            )
+            np.testing.assert_array_equal(configs[mol], positions)
             assert energy_df["energy"].iloc[mol] == pytest.approx(energy)
             assert energy_df["log_prob"].iloc[mol] == pytest.approx(
                 -energy / settings.end_temp - tm.getLogZ()
@@ -670,7 +751,7 @@ class TestComputeConfigs:
         ana.compute_best_match_config(dataset=dataset, name="calls", gamma=3.0)
         tm = _direct_tm(dataset, 1, settings)
         np.testing.assert_array_equal(
-            ana.get_config(dataset, "chr1", 1, name="calls"),
+            ana.extract_config(dataset, "chr1", name="calls", mols=[1])[0],
             tm.getBestMatchConfig(3.0)[0],
         )
 
@@ -678,30 +759,32 @@ class TestComputeConfigs:
         dataset = _make_tm_dataset(tmp_path, nmol=3, nbp=20, seed=5)
         ana = SimAnalysis()
         ana.compute_best_match_config(dataset=dataset)
-        expected = [
-            ana.get_config(dataset, "chr1", mol, name="best_match")
-            for mol in range(3)
-        ]
+        expected = ana.extract_config(dataset, "chr1", name="best_match")
         dataset.save()
         loaded = SimDataset.load(dataset._dataset_file)
+        got = ana.extract_config(loaded, "chr1", name="best_match")
         for mol in range(3):
-            np.testing.assert_array_equal(
-                ana.get_config(loaded, "chr1", mol, name="best_match"),
-                expected[mol],
-            )
+            np.testing.assert_array_equal(got[mol], expected[mol])
 
-    def test_get_config_out_of_range_raises(self, tmp_path):
+    def test_extract_config_out_of_range_raises(self, tmp_path):
         dataset = _make_tm_dataset(tmp_path, nmol=2, nbp=20, seed=5)
         ana = SimAnalysis()
         ana.compute_most_likely_config(dataset=dataset)
         with pytest.raises(IndexError):
-            ana.get_config(dataset, "chr1", 2, name="most_likely")
+            ana.extract_config(dataset, "chr1", name="most_likely", mols=[2])
 
-    def test_get_config_missing_name_raises(self, tmp_path):
+    def test_extract_config_missing_name_raises(self, tmp_path):
         dataset = _make_tm_dataset(tmp_path, nmol=2, nbp=20, seed=5)
         ana = SimAnalysis()
-        with pytest.raises(KeyError):
-            ana.get_config(dataset, "chr1", 0, name="most_likely")
+        with pytest.raises(KeyError, match="most_likely"):
+            ana.extract_config(dataset, "chr1", name="most_likely")
+
+    def test_extract_config_run_with_name_raises(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=2, nbp=20, seed=5)
+        ana = SimAnalysis()
+        ana.compute_most_likely_config(dataset=dataset)
+        with pytest.raises(ValueError, match="cannot be given with name"):
+            ana.extract_config(dataset, "chr1", name="most_likely", run=0)
 
     @pytest.mark.parametrize("gamma", [0.0, -1.0])
     def test_nonpositive_gamma_raises(self, tmp_path, gamma):

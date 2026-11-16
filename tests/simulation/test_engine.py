@@ -997,7 +997,9 @@ class TestNoData:
         assert np.isnan(energy["energy"][1])
         assert np.isnan(energy["log_prob"][1])
         assert not np.isnan(energy["energy"][[0, 2]]).any()
-        assert ana.get_config(dataset, "chr1", 1, name="best_match").size == 0
+        configs = ana.extract_config(dataset, "chr1", name="best_match")
+        assert configs[1] is None
+        assert configs[0] is not None
 
     def test_partial_nan_raises_before_creating_dataset(self, tmp_path):
         meth_prob = _make_meth_prob(nmol=2, nbp=400)

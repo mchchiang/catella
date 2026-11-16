@@ -20,9 +20,52 @@ from catella.simulation._exact import (
     _tm_per_mol,
     _tm_stats,
 )
-from catella.simulation.results import SimDataset
+from catella.simulation._parallel import _threaded_map
+from catella.simulation.results import SimDataset, SimMCMCData
 
 MCMC_BATCH_SIZE = 20000
+
+
+def _stored_configs(dataset, chrom, name, mol_ids):
+    """
+    Read the configurations stored under `name` for some molecules.
+
+    Parameters
+    ----------
+    dataset : SimDataset
+        The dataset holding the configurations.
+    chrom : str
+        The chromosome of the molecules.
+    name : str
+        The prefix of the stored keys.
+    mol_ids : iterable of int
+        The molecules to read, in order.
+
+    Returns
+    -------
+    list of np.ndarray or None
+        The start positions of each molecule, or None for a molecule
+        with no data (nan energy).
+
+    Raises
+    ------
+    KeyError
+        If no configurations are stored under `name` for `chrom`.
+    """
+    analysis = dataset.analysis[chrom]
+    if f"{name}_position_flat" not in analysis:
+        raise KeyError(
+            f"no configurations stored under '{name}' for chrom '{chrom}'"
+        )
+    flat = analysis[f"{name}_position_flat"]["position"].to_numpy()
+    offset = analysis[f"{name}_position_offset"]["offset"].to_numpy()
+    energy = analysis[f"{name}_energy"]["energy"].to_numpy()
+    return [
+        None
+        if np.isnan(energy[mol])
+        else flat[int(offset[mol]) : int(offset[mol + 1])]
+        for mol in mol_ids
+    ]
 
 
 def _check_nworker(dataset, nworker):
@@ -571,8 +614,8 @@ class SimAnalysis:
 
         Positions are stored in the flat/offset layout of the raw
         simulation data, together with the energy and log posterior
-        probability of each configuration; use `get_config` to read one
-        molecule.
+        probability of each configuration; use `extract_config` to read
+        them.
 
         Parameters
         ----------
@@ -663,47 +706,118 @@ class SimAnalysis:
             nworker=nworker,
         )
 
-    def get_config(
-        self, dataset: SimDataset, chrom: str, mol: int, *, name: str
-    ) -> np.ndarray:
+    def extract_config(
+        self,
+        dataset: SimDataset,
+        chrom: str,
+        *,
+        name: str | None = None,
+        run: int | None = None,
+        time: int | None = None,
+        mols: Iterable[int] | None = None,
+        nworker: int = 1,
+    ) -> list[np.ndarray | None]:
         """
-        Get the stored configuration of one molecule.
+        Extract one nucleosome configuration per molecule.
 
-        Reads the results of `compute_most_likely_config` or
-        `compute_best_match_config`.
+        With `name`, reads the configurations stored by
+        `compute_most_likely_config` or `compute_best_match_config`.
+        Without it, reads the raw configurations: run `run` at time
+        `time` of an MCMC dataset, or exact sample `run` of a TM
+        dataset. Nothing is computed.
 
         Parameters
         ----------
         dataset : SimDataset
-            The dataset holding the analysis results.
+            The dataset holding the configurations.
         chrom : str
-            The chromosome of the molecule.
-        mol : int
-            The molecule index within `chrom`.
-        name : str
+            The chromosome of the molecules.
+        name : str, optional
             The prefix the configurations were stored under (e.g.,
-            "most_likely" or "best_match").
+            "most_likely" or "best_match"). If None (default), raw
+            configurations are read.
+        run : int, optional
+            The MCMC run or TM sample to read; 0 if None. Only used if
+            `name` is None.
+        time : int, optional
+            The MCMC time point to read; the final frame if None. Only
+            used for MCMC datasets with `name` None.
+        mols : iterable of int, optional
+            The molecules to read, in this order. If None (default), all
+            molecules of `chrom`.
+        nworker : int, default 1
+            Number of threads used to read raw MCMC files.
 
         Returns
         -------
-        np.ndarray
-            The nucleosome start positions of the molecule, in increasing
-            order.
+        list of np.ndarray or None
+            The nucleosome start positions of each molecule, in
+            increasing order, or None for a molecule with no data (see
+            `SimDataset.no_data`) or no file on disk. An empty array is
+            a configuration without nucleosomes.
 
         Raises
         ------
+        ValueError
+            If `run` or `time` is given with `name`, if `time` is given
+            for a TM dataset, if a TM dataset stores no samples
+            (`nsim` is 0) and `name` is None, or if `time` is not a
+            recorded time point of a run.
         KeyError
             If no configurations are stored under `name` for `chrom`.
         IndexError
-            If `mol` is out of range.
+            If a molecule or `run` is out of range.
         """
-        analysis = dataset.analysis[chrom]
-        flat = analysis[f"{name}_position_flat"]["position"].to_numpy()
-        offset = analysis[f"{name}_position_offset"]["offset"].to_numpy()
-        nmol = len(offset) - 1
-        if not 0 <= mol < nmol:
-            raise IndexError(f"mol must be in [0, {nmol}), got {mol}")
-        return flat[int(offset[mol]) : int(offset[mol + 1])]
+        nmol = dataset.nmol[chrom]
+        mol_ids = range(nmol) if mols is None else [int(m) for m in mols]
+        for mol in mol_ids:
+            if not 0 <= mol < nmol:
+                raise IndexError(f"mol must be in [0, {nmol}), got {mol}")
+        if name is not None:
+            if run is not None or time is not None:
+                raise ValueError("run and time cannot be given with name")
+            return _stored_configs(dataset, chrom, name, mol_ids)
+        run = 0 if run is None else int(run)
+        if dataset.method == "tm":
+            if time is not None:
+                raise ValueError(
+                    "time is not meaningful for method='tm' datasets"
+                )
+            if dataset.nsim == 0:
+                raise ValueError(
+                    "no samples stored (nsim is 0); pass the name of a "
+                    "compute_most_likely_config or compute_best_match_config "
+                    "result"
+                )
+        if not 0 <= run < dataset.nsim:
+            raise IndexError(f"run must be in [0, {dataset.nsim}), got {run}")
+        if dataset.method == "tm":
+            return [
+                None
+                if dataset.no_data[chrom][mol]
+                or not dataset.tm_file(chrom, mol).exists()
+                else np.asarray(dataset.raw[chrom, mol, run].position)
+                for mol in mol_ids
+            ]
+        if time is None:
+            time = self._final_time(dataset, [chrom])
+
+        def read(mol):
+            sim_file = dataset.mcmc_file(chrom, mol, run)
+            if not sim_file.exists():
+                return None
+            try:
+                return SimMCMCData._cached_extract(
+                    str(sim_file.resolve()), int(time), "position"
+                )
+            except KeyError:
+                raise ValueError(
+                    f"time {time} is not recorded in run {run} of molecule "
+                    f"{mol} of chrom '{chrom}'"
+                ) from None
+
+        out = dict(_threaded_map(read, mol_ids, nworker=nworker))
+        return [out[mol] for mol in mol_ids]
 
     def sort_by_linkage(
         self,

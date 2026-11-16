@@ -12,7 +12,12 @@ from scipy.special import logit
 
 from catella._warnings import _warn
 from catella.experiment._reads import _lookup_mask
-from catella.simulation._inputs import _is_valid_llink, _resolve_settings
+from catella.simulation._inputs import (
+    _check_fill_nan,
+    _is_valid_llink,
+    _prepare_rows,
+    _resolve_settings,
+)
 
 # Warn below this many molecules, as per-molecule estimates are noisy
 _MIN_NMOL = 50
@@ -44,16 +49,18 @@ def _log_z(settings, llink, energy, nbp):
     return model.getLogZ()
 
 
-def _chrom_rows(arr, keep, max_nmol, rng, batch_size):
+def _chrom_rows(arr, keep, max_nmol, rng, batch_size, nucbp, chrom, fill_nan):
     """
-    Rows of one chromosome to use: kept, not all nan, and at most
-    `max_nmol` of them, drawn at random.
+    Rows of one chromosome to use: kept, with data at the nucleosome
+    start positions, and at most `max_nmol` of them, drawn at random.
+    Partly-nan rows raise unless `fill_nan` is given.
     """
     usable = []
     for start in range(0, arr.shape[0], batch_size):
         stop = min(start + batch_size, arr.shape[0])
         block = np.asarray(arr[start:stop, :], dtype=np.float64)
-        has_data = ~np.isnan(block).all(axis=1)
+        _, no_data = _prepare_rows(block, nucbp, chrom, fill_nan)
+        has_data = ~no_data
         if keep is not None:
             has_data &= keep[start:stop]
         usable.append(start + np.flatnonzero(has_data))
@@ -85,7 +92,7 @@ def _chunk_evidence(settings, candidates, block, log_z0):
     return totals
 
 
-def _chunk_jobs(exp, settings, candidates, prob_name, selected):
+def _chunk_jobs(exp, settings, candidates, prob_name, selected, fill_nan):
     """Yield `(chrom, block, log_z0)` for each chunk of selected rows."""
     for chrom, rows in selected.items():
         arr = _chrom_array(exp, chrom, prob_name)
@@ -95,6 +102,7 @@ def _chunk_jobs(exp, settings, candidates, prob_name, selected):
         for start in range(0, len(rows), _CHUNK_NMOL):
             chunk = rows[start : start + _CHUNK_NMOL]
             block = np.asarray(arr[chunk, :], dtype=np.float64)
+            block, _ = _prepare_rows(block, settings.nucbp, chrom, fill_nan)
             yield chrom, block, log_z0
 
 
@@ -132,6 +140,7 @@ def _llink_evidence(
     batch_size=20000,
     mask_name=None,
     nworker=1,
+    fill_nan=None,
 ):
     """
     Marginal likelihood of each candidate `llink`, per chromosome.
@@ -166,6 +175,9 @@ def _llink_evidence(
     nworker : int, default 1
         Number of parallel processes to spawn. The result does not
         depend on it.
+    fill_nan : {"mean"}, float, or None, default None
+        How to treat molecules that are nan at some but not all
+        nucleosome start positions; see `SimManager.run`.
 
     Returns
     -------
@@ -178,7 +190,9 @@ def _llink_evidence(
     ValueError
         If `llinks` is empty or holds a value that is not a non-negative
         integer, if `max_nmol` is not positive, if `nworker` is not a
-        positive integer, or if a chromosome has no usable molecules.
+        positive integer, if a chromosome has no usable molecules, if
+        `fill_nan` is invalid, or if `fill_nan` is None and a molecule is
+        nan at some but not all start positions.
     TypeError
         If `settings` is neither a path nor a SimSettings object.
     KeyError
@@ -186,6 +200,7 @@ def _llink_evidence(
     """
     settings = _resolve_settings(settings)
     candidates = _resolve_llinks(llinks)
+    _check_fill_nan(fill_nan)
     if max_nmol is not None and max_nmol <= 0:
         raise ValueError(f"max_nmol must be positive, got {max_nmol}")
     if (
@@ -210,12 +225,23 @@ def _llink_evidence(
             keep = np.asarray(
                 _lookup_mask(exp, chrom, "test", mask_name), dtype=bool
             )
-        rows = _chrom_rows(arr, keep, max_nmol, rng, batch_size)
+        rows = _chrom_rows(
+            arr,
+            keep,
+            max_nmol,
+            rng,
+            batch_size,
+            settings.nucbp,
+            chrom,
+            fill_nan,
+        )
         if len(rows) == 0:
             raise ValueError(f"chromosome {chrom} has no usable molecules")
         selected[chrom] = rows
 
-    jobs = _chunk_jobs(exp, settings, candidates, prob_name, selected)
+    jobs = _chunk_jobs(
+        exp, settings, candidates, prob_name, selected, fill_nan
+    )
     totals = {chrom: np.zeros(len(candidates)) for chrom in selected}
     for chrom, part in _run_chunks(jobs, settings, candidates, nworker):
         totals[chrom] += part

@@ -1,7 +1,7 @@
 # _inputs.py
 
 from collections.abc import Iterable, Mapping, Sequence
-from numbers import Integral
+from numbers import Integral, Real
 from pathlib import Path
 
 import numpy as np
@@ -96,13 +96,40 @@ def _start_positions(block, nucbp):
     return block[..., :npos] if npos > 0 else block
 
 
-def _prepare_rows(block, nucbp, chrom):
+def _check_fill_nan(fill_nan):
     """
-    Find the molecules of `block` with no data and check the others.
+    Check a `fill_nan` value.
+
+    Parameters
+    ----------
+    fill_nan : None, "mean", or float
+        The value to check.
+
+    Raises
+    ------
+    ValueError
+        If `fill_nan` is not None, "mean", or a number in [0, 1].
+    """
+    if fill_nan is None or (isinstance(fill_nan, str) and fill_nan == "mean"):
+        return
+    if (
+        isinstance(fill_nan, bool)
+        or not isinstance(fill_nan, Real)
+        or not 0 <= fill_nan <= 1
+    ):
+        raise ValueError(
+            "fill_nan must be None, 'mean', or a number in [0, 1], got "
+            f"{fill_nan!r}"
+        )
+
+
+def _prepare_rows(block, nucbp, chrom, fill_nan=None):
+    """
+    Find the molecules of `block` with no data and fill the others.
 
     A molecule has no data if its methylation probability is nan at
     every nucleosome start position. Nan beyond the last start
-    position is allowed, since those base pairs never set a
+    position is left as is, since those base pairs never set a
     nucleosome's energy.
 
     Parameters
@@ -113,30 +140,50 @@ def _prepare_rows(block, nucbp, chrom):
         The nucleosome footprint size.
     chrom : str
         The chromosome of `block`, for error messages.
+    fill_nan : None, "mean", or float, default None
+        How to treat a molecule that is nan at some but not all start
+        positions: None raises, "mean" fills the nan with the mean of
+        the molecule's other start positions, and a number in [0, 1]
+        fills them with that probability (0.5 adds no information).
 
     Returns
     -------
     block : np.ndarray
-        `block`, unchanged.
+        `block` if nothing is filled, else a filled copy.
     no_data : np.ndarray
         bool, True for each molecule with no data.
 
     Raises
     ------
     ValueError
-        If a molecule is nan at some but not all start positions.
+        If `fill_nan` is invalid, or is None and a molecule is nan at
+        some but not all start positions.
     """
+    _check_fill_nan(fill_nan)
     nan = np.isnan(_start_positions(block, nucbp))
     no_data = nan.all(axis=1)
-    if block.shape[1] >= nucbp:
-        partial = np.flatnonzero(nan.any(axis=1) & ~no_data)
-        if partial.size:
-            raise ValueError(
-                f"meth_prob of chrom '{chrom}' has nan at nucleosome start "
-                f"positions in {partial.size} molecule(s) (first: "
-                f"{partial[0]}); fill them upstream (e.g., fill_edge or "
-                "nan_method)"
-            )
+    if block.shape[1] < nucbp:
+        return block, no_data
+    partial = np.flatnonzero(nan.any(axis=1) & ~no_data)
+    if not partial.size:
+        return block, no_data
+    if fill_nan is None:
+        raise ValueError(
+            f"meth_prob of chrom '{chrom}' has nan at nucleosome start "
+            f"positions in {partial.size} molecule(s) (first: "
+            f"{partial[0]}); pass fill_nan, or fill them upstream (e.g., "
+            "fill_edge or nan_method)"
+        )
+    block = np.array(block, dtype=np.float64)
+    starts = _start_positions(block, nucbp)
+    sub = starts[partial]
+    if isinstance(fill_nan, str):
+        value = np.nanmean(sub, axis=1, keepdims=True)
+    else:
+        value = float(fill_nan)
+    sub_nan = np.isnan(sub)
+    sub[sub_nan] = np.broadcast_to(value, sub.shape)[sub_nan]
+    starts[partial] = sub
     return block, no_data
 
 

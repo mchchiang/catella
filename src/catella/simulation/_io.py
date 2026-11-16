@@ -413,6 +413,7 @@ def _write_metadata(
     seed=None,
     seed_table=None,
     no_data=None,
+    nan_fill=None,
 ):
     """
     Write the dataset metadata to the '/metadata' group.
@@ -448,6 +449,8 @@ def _write_metadata(
     no_data : mapping of str to np.ndarray, optional
         bool, True for each molecule skipped for having no data; not
         written if None.
+    nan_fill : "mean" or float, optional
+        How partly-nan molecules were filled; not written if None.
     """
     if "metadata" in h5file:
         gmeta = h5file["metadata"]
@@ -471,6 +474,8 @@ def _write_metadata(
         gmeta.attrs["out_type"] = int(out_type)
     if seed is not None:
         gmeta.attrs["seed"] = int(seed)
+    if nan_fill is not None:
+        gmeta.attrs["nan_fill"] = nan_fill
     if seed_table is not None:
         gseeds = gmeta.create_group("seed_table")
         for chrom in chroms:
@@ -494,8 +499,8 @@ def _read_metadata(h5file):
     -------
     dict of str to Any
         'raw_dir' (Path, as stored), 'nsim', 'method', 'chroms', 'nmol',
-        'nbp', 'settings', 'eseq', 'out_type', 'seed', 'seed_table', and
-        'no_data'.
+        'nbp', 'settings', 'eseq', 'out_type', 'seed', 'seed_table',
+        'no_data', and 'nan_fill'.
         Optional fields that were not written are None; 'method' defaults
         to "mcmc".
     """
@@ -527,7 +532,18 @@ def _read_metadata(h5file):
         "seed": int(attrs["seed"]) if "seed" in attrs else None,
         "seed_table": per_chrom("seed_table"),
         "no_data": per_chrom("no_data"),
+        "nan_fill": _read_nan_fill(attrs),
     }
+
+
+def _read_nan_fill(attrs):
+    """Return the stored `nan_fill` ("mean", a float, or None)."""
+    if "nan_fill" not in attrs:
+        return None
+    value = attrs["nan_fill"]
+    if isinstance(value, bytes):
+        value = value.decode()
+    return value if isinstance(value, str) else float(value)
 
 
 def _replace_group(parent, name):

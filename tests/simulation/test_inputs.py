@@ -141,6 +141,39 @@ class TestPrepareRows:
         _prepare_rows(block, 4, "chr1")
         np.testing.assert_array_equal(block, copy)
 
+    def test_number_fills_start_positions_only(self):
+        block = np.full((2, 10), 0.2)
+        block[0, 2] = np.nan
+        block[:, 8:] = np.nan
+        out, no_data = _prepare_rows(block, 4, "chr1", fill_nan=0.5)
+        assert out[0, 2] == 0.5
+        assert np.isnan(out[:, 8:]).all()
+        assert not no_data.any()
+        assert np.isnan(block[0, 2])
+
+    def test_mean_uses_molecule_start_positions(self):
+        block = np.array([[0.2, np.nan, 0.4, 0.6, 0.9, 0.9]])
+        out, _ = _prepare_rows(block, 3, "chr1", fill_nan="mean")
+        assert out[0, 1] == pytest.approx(0.4)
+
+    def test_no_data_rows_stay_nan(self):
+        block = np.full((2, 10), 0.2)
+        block[0] = np.nan
+        block[1, 3] = np.nan
+        out, no_data = _prepare_rows(block, 4, "chr1", fill_nan=0.5)
+        assert np.isnan(out[0]).all()
+        np.testing.assert_array_equal(no_data, [True, False])
+
+    def test_unneeded_fill_returns_input(self):
+        block = np.full((2, 10), 0.2)
+        out, _ = _prepare_rows(block, 4, "chr1", fill_nan=0.5)
+        assert out is block
+
+    @pytest.mark.parametrize("fill_nan", [-0.1, 1.5, True, "median", [0.5]])
+    def test_invalid_fill_nan_raises(self, fill_nan):
+        with pytest.raises(ValueError, match="fill_nan must be"):
+            _prepare_rows(np.zeros((1, 10)), 4, "chr1", fill_nan=fill_nan)
+
 
 class TestNormalizeMols:
     @pytest.mark.parametrize("mols", [2, slice(0, 3), [0, 2]])

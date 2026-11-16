@@ -18,6 +18,7 @@ import numpy as np
 from catella import h5_utils, utils
 from catella.containers import DataclassPublicProxy, DataFrameMap, FixedKeyMap
 from catella.h5_array import H5Array
+from catella.simulation._inputs import _check_fill_nan
 from catella.simulation._io import (
     SimFileMapper,
     _read_entries,
@@ -510,6 +511,7 @@ class SimDataset:
     _seed: int
     _seed_table: Mapping[str, np.ndarray]
     _no_data: Mapping[str, np.ndarray]
+    _nan_fill: str | float | None
     _raw_dir: Path
     _dataset_file: Path
     _file_map: SimFileMapper
@@ -542,6 +544,7 @@ class SimDataset:
         seed: int | None = None,
         seed_table: Mapping[str, np.ndarray] | None = None,
         no_data: Mapping[str, np.ndarray] | None = None,
+        nan_fill: str | float | None = None,
     ):
         # Some validations
         if method not in ("mcmc", "tm"):
@@ -601,6 +604,8 @@ class SimDataset:
                 )
             arr.flags.writeable = False
             obj._no_data[chrom] = arr
+        _check_fill_nan(nan_fill)
+        obj._nan_fill = nan_fill
         obj._tmp_dir = None
         obj._finalizer = None
         return obj
@@ -622,6 +627,7 @@ class SimDataset:
         seed: int | None = None,
         seed_table: Mapping[str, np.ndarray] | None = None,
         no_data: Mapping[str, np.ndarray] | None = None,
+        nan_fill: str | float | None = None,
     ) -> Self:
         """
         Create a new simulation dataset with the specified parameters.
@@ -676,6 +682,10 @@ class SimDataset:
             True for each molecule that is not simulated because its
             methylation data is missing. If None (default), no molecule
             is skipped.
+        nan_fill : {"mean"}, float, or None, default None
+            How molecules that are nan at some nucleosome start
+            positions were filled (the `fill_nan` of `SimManager.run`),
+            reused by reruns.
 
         Returns
         -------
@@ -731,6 +741,7 @@ class SimDataset:
             seed=seed,
             seed_table=seed_table,
             no_data=no_data,
+            nan_fill=nan_fill,
         )
 
     @classmethod
@@ -851,6 +862,7 @@ class SimDataset:
                 seed=self._seed,
                 seed_table=self._seed_table,
                 no_data=self._no_data,
+                nan_fill=self._nan_fill,
             )
             gana = _replace_group(h5stream, "analysis")
             for chrom, data in self._analysis.items():
@@ -1445,6 +1457,21 @@ class SimDataset:
             persisted.
         """
         return MappingProxyType(self._no_data)
+
+    @property
+    def nan_fill(self) -> str | float | None:
+        """
+        The fill used for molecules that were nan at some nucleosome
+        start positions (the `fill_nan` passed to `run`).
+
+        Returns
+        -------
+        str, float, or None
+            "mean", a methylation probability in [0, 1], or None if no
+            filling was allowed (or the dataset predates this being
+            persisted).
+        """
+        return self._nan_fill
 
     @property
     def raw(self) -> SimDataAccessor:

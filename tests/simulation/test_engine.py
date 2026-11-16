@@ -1052,6 +1052,61 @@ class TestNoData:
             manager.rerun(dataset=dataset, meth_prob=meth_prob, only=[target])
 
 
+def _partial_nan_meth_prob(nmol=3, nbp=400):
+    meth_prob = _make_meth_prob(nmol=nmol, nbp=nbp)
+    meth_prob[0, 10] = np.nan
+    return meth_prob
+
+
+class TestFillNan:
+    def _run(self, tmp_path, meth_prob, fill_nan, name="ds"):
+        return SimManager(nworker=1, verbose=False).run(
+            chroms="chr1",
+            nsim=1,
+            settings=_make_settings(),
+            meth_prob=meth_prob,
+            out_dir=tmp_path / name,
+            seed=1,
+            fill_nan=fill_nan,
+        )
+
+    @pytest.mark.parametrize("fill_nan", [0.5, "mean"])
+    def test_partial_molecule_is_simulated(self, tmp_path, fill_nan):
+        dataset = self._run(tmp_path, _partial_nan_meth_prob(), fill_nan)
+        assert dataset.mcmc_file("chr1", 0, 0).exists()
+        assert not dataset.no_data["chr1"].any()
+
+    def test_fill_sets_energy(self, tmp_path):
+        meth_prob = _partial_nan_meth_prob()
+        dataset = self._run(tmp_path, meth_prob, 0.5)
+        assert np.isfinite(dataset.eseq["chr1"][0, 10])
+        assert np.isnan(meth_prob[0, 10])
+
+    @pytest.mark.parametrize("fill_nan", [0.5, "mean", None])
+    def test_nan_fill_survives_reload(self, tmp_path, fill_nan):
+        dataset = self._run(tmp_path, _make_meth_prob(), fill_nan)
+        assert dataset.nan_fill == fill_nan
+        loaded = SimDataset.load(dataset._dataset_file)
+        assert loaded.nan_fill == fill_nan
+
+    def test_invalid_fill_nan_raises(self, tmp_path):
+        with pytest.raises(ValueError, match="fill_nan must be"):
+            self._run(tmp_path, _make_meth_prob(), 2.0)
+
+    def test_rerun_reuses_nan_fill(self, tmp_path):
+        meth_prob = _partial_nan_meth_prob()
+        dataset = self._run(tmp_path, meth_prob, 0.5)
+        target = dataset.mcmc_file("chr1", 0, 0)
+        with h5py.File(target, "r") as f:
+            before = f["data"]["energy"][()]
+        target.unlink()
+        SimManager(nworker=1, verbose=False).rerun(
+            dataset=dataset, meth_prob=meth_prob
+        )
+        with h5py.File(target, "r") as f:
+            np.testing.assert_array_equal(f["data"]["energy"][()], before)
+
+
 def _llink_exp(linker=10, nmol=50, nbp=200):
     energy = np.full((nmol, nbp), 5.0)
     energy[:, 0 : nbp - 4 : 5 + linker] = -20.0

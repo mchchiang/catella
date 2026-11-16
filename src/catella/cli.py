@@ -738,6 +738,15 @@ def run(
         bool | None,
         typer.Option(help="Shift mu to median of sequence-specific energy"),
     ] = False,
+    fill_nan: Annotated[
+        str | None,
+        typer.Option(
+            callback=fill_nan_parser,
+            help="'mean' or a probability in [0, 1]; fills molecules "
+            "that are nan at some nucleosome start positions (error "
+            "if omitted)",
+        ),
+    ] = None,
     verbose: Annotated[
         bool | None, typer.Option(help="Print progress")
     ] = True,
@@ -764,6 +773,7 @@ def run(
         nworker=nworker,
         store_eseq=store_eseq,
         use_median_eseq_mu=use_median_eseq_mu,
+        fill_nan=fill_nan,
         verbose=verbose,
     )
 

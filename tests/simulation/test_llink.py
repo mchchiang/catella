@@ -117,6 +117,41 @@ class TestEvidence:
             want["evidence"].iloc[0]
         )
 
+    def test_trailing_nan_is_allowed(self):
+        probs = _random_probs()
+        probs[:, -19:] = np.nan
+        table = _llink_evidence(_exp({"c": probs}), _settings(), llinks=[5])
+        assert table["nmol"].iloc[0] == 8
+        assert np.isfinite(table["evidence"].iloc[0])
+
+    def test_partial_nan_raises_without_fill_nan(self):
+        probs = _random_probs()
+        probs[3, 5] = np.nan
+        with pytest.raises(ValueError, match="nan at nucleosome start"):
+            _llink_evidence(_exp({"c": probs}), _settings(), llinks=[5])
+
+    def test_fill_nan_matches_filled_input(self):
+        probs = _random_probs()
+        filled = probs.copy()
+        probs[3, 5] = np.nan
+        filled[3, 5] = 0.5
+        got = _llink_evidence(
+            _exp({"c": probs}), _settings(), llinks=[5], fill_nan=0.5
+        )
+        want = _llink_evidence(_exp({"c": filled}), _settings(), llinks=[5])
+        assert got["evidence"].iloc[0] == pytest.approx(
+            want["evidence"].iloc[0]
+        )
+
+    def test_invalid_fill_nan_raises(self):
+        with pytest.raises(ValueError, match="fill_nan must be"):
+            _llink_evidence(
+                _exp({"c": _random_probs()}),
+                _settings(),
+                llinks=[5],
+                fill_nan="median",
+            )
+
     def test_mask_excludes_molecules(self):
         probs = _random_probs()
         exp = _exp({"c": probs})

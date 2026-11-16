@@ -1172,6 +1172,46 @@ class TestRun:
         assert cli_dataset.method == "tm"
         assert cli_dataset.nsim == 0
 
+    @pytest.mark.parametrize(
+        ("value", "expected"), [("0.5", 0.5), ("mean", "mean")]
+    )
+    def test_fill_nan_is_stored(self, tmp_path, value, expected):
+        rows = _make_test_rows(nmol=3, nbp=20)
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 20})
+        exp_file = tmp_path / "exp.h5"
+        exp = catella.load_raw(chromsize=chromsize, test_file=test_file)
+        catella.compute_empirical_prob(exp=exp, out_file=exp_file, lnuc=5)
+        settings_file = tmp_path / "settings.json"
+        _write_settings_json(settings_file)
+        out_dir = tmp_path / "fill_out"
+
+        result = runner.invoke(
+            app,
+            [
+                "run",
+                "--chroms",
+                "chr1",
+                "--nsim",
+                "0",
+                "--settings",
+                str(settings_file),
+                "--exp-file",
+                str(exp_file),
+                "--out-dir",
+                str(out_dir),
+                "--method",
+                "tm",
+                "--fill-nan",
+                value,
+                "--no-verbose",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert SimDataset.load(out_dir / "results.h5").nan_fill == expected
+
 
 class TestAnalyze:
     def test_matches_direct_api_call(self, tmp_path):

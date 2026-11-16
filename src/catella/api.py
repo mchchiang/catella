@@ -529,6 +529,7 @@ def estimate_llink(
     mask_name: str | None = None,
     nworker: int = 1,
     llink_evid_name: str | None = None,
+    fill_nan: str | float | None = None,
 ) -> dict[str, int]:
     """
     Estimate `SimSettings.llink` per chromosome by maximum likelihood.
@@ -580,6 +581,10 @@ def estimate_llink(
         `exp.analysis[chrom][llink_evid_name]`, a DataFrame with columns
         `llink`, `evidence` and `nmol`, e.g. for plotting. `exp` is not
         modified if None (default).
+    fill_nan : {"mean"}, float, or None, default None
+        How to treat molecules that are nan at some but not all
+        nucleosome start positions; see `run`. Molecules with no data
+        (nan at every start position) are always left out.
 
     Returns
     -------
@@ -591,7 +596,9 @@ def estimate_llink(
     ValueError
         If `llinks` is empty or holds a value that is not a non-negative
         integer, if `max_nmol` is not positive, if `nworker` is not a
-        positive integer, or if a chromosome has no usable molecules.
+        positive integer, if a chromosome has no usable molecules, if
+        `fill_nan` is invalid, or if `fill_nan` is None and a molecule is
+        nan at some but not all start positions.
     TypeError
         If `settings` is neither a path nor a SimSettings object.
     KeyError
@@ -622,6 +629,7 @@ def estimate_llink(
         batch_size=batch_size,
         mask_name=mask_name,
         llink_evid_name=llink_evid_name,
+        fill_nan=fill_nan,
     )
 
 
@@ -835,6 +843,7 @@ def run(
     mols: IndexType | Mapping[str, IndexType] = slice(None),
     store_eseq: bool = True,
     use_median_eseq_mu: bool = False,
+    fill_nan: str | float | None = None,
     nworker: int = 1,
     verbose: bool = True,
 ) -> SimDataset:
@@ -863,8 +872,8 @@ def run(
         must be a mapping of {chrom_name: data}. Data can be NumPy arrays or
         Pandas DataFrames. Molecules that are nan at every nucleosome start
         position (e.g., molecules masked by `filter_dropout`) have no data
-        and are not simulated; see `SimDataset.no_data`. A molecule that is
-        nan at only some start positions raises `ValueError`.
+        and are not simulated; see `SimDataset.no_data`. Molecules that are
+        nan at only some start positions are handled by `fill_nan`.
     out_dir : str or Path
         Directory or file prefix where simulation results will be stored.
     method : {"mcmc", "tm"}, default "mcmc"
@@ -885,6 +894,13 @@ def run(
     use_median_eseq_mu : bool : default False
         Whether to modify the chemical potential parameter so that it is
         equal to the mean of the methlyation energy.
+    fill_nan : {"mean"}, float, or None, default None
+        How to treat a molecule that is nan at some but not all
+        nucleosome start positions. If None (default), raise
+        `ValueError`. If "mean", fill each nan with the molecule's mean
+        over its other start positions. If a number in [0, 1], fill each
+        nan with that probability (0.5 adds no information). `meth_prob`
+        is not modified, and the value is stored as `SimDataset.nan_fill`.
     nworker : int, default 1
         Number of parallel processes to spawn.
     verbose : bool, default True
@@ -895,6 +911,12 @@ def run(
     SimDataset
         A container object providing access to the generated simulation
         results.
+
+    Raises
+    ------
+    ValueError
+        If `fill_nan` is invalid, or is None and a molecule is nan at some
+        but not all nucleosome start positions.
     """
     manager = SimManager(nworker=nworker, verbose=verbose)
     dataset = manager.run(
@@ -910,6 +932,7 @@ def run(
         mols=mols,
         store_eseq=store_eseq,
         use_median_eseq_mu=use_median_eseq_mu,
+        fill_nan=fill_nan,
     )
     return dataset
 

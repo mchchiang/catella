@@ -58,9 +58,10 @@ from catella.simulation.results import SimDataset
 from catella.utils import IndexType
 
 
-def _prepare_meth_prob(meth_prob, chroms, nucbp):
+def _prepare_meth_prob(meth_prob, chroms, nucbp, fill_nan=None):
     """
-    Normalize `meth_prob` and find the molecules with no data.
+    Normalize `meth_prob`, find the molecules with no data, and fill
+    the partly-nan ones.
 
     Parameters
     ----------
@@ -70,25 +71,27 @@ def _prepare_meth_prob(meth_prob, chroms, nucbp):
         The chromosomes to select.
     nucbp : int
         The nucleosome footprint size.
+    fill_nan : None, "mean", or float, default None
+        See `SimManager.run`.
 
     Returns
     -------
     meth_prob : dict of str to np.ndarray
-        The 2D array of each chromosome.
+        The 2D array of each chromosome; a filled copy where needed.
     no_data : dict of str to np.ndarray
         bool, True for each molecule with no data.
 
     Raises
     ------
     ValueError
-        If a molecule is nan at some but not all nucleosome start
-        positions.
+        If `fill_nan` is invalid, or is None and a molecule is nan at
+        some but not all nucleosome start positions.
     """
     meth_prob = _normalize_meth_prob(meth_prob, chroms)
     no_data = {}
     for chrom in chroms:
         meth_prob[chrom], no_data[chrom] = _prepare_rows(
-            meth_prob[chrom], nucbp, chrom
+            meth_prob[chrom], nucbp, chrom, fill_nan
         )
     return meth_prob, no_data
 
@@ -115,7 +118,7 @@ def _rerun_meth_prob(dataset, meth_prob):
         If the molecules with no data differ from `dataset.no_data`.
     """
     meth_prob, no_data = _prepare_meth_prob(
-        meth_prob, dataset.chroms, dataset.settings["nucbp"]
+        meth_prob, dataset.chroms, dataset.settings["nucbp"], dataset.nan_fill
     )
     for chrom in dataset.chroms:
         if not np.array_equal(no_data[chrom], dataset.no_data[chrom]):
@@ -193,6 +196,7 @@ class SimManager:
         mols: IndexType | Mapping[str, IndexType] = slice(None),
         store_eseq: bool = True,
         use_median_eseq_mu: bool = False,
+        fill_nan: str | float | None = None,
     ) -> SimDataset:
         """
         Execute simulations in parallel across chromosomes and molecules.
@@ -252,6 +256,14 @@ class SimManager:
             Whether to modify the chemical potential parameter so that it is
             equal to the median of the sequence-specific nucleosome binding
             energy.
+        fill_nan : {"mean"}, float, or None, default None
+            How to treat a molecule of `meth_prob` that is nan at some but
+            not all nucleosome start positions. If None (default), raise
+            `ValueError`. If "mean", fill each nan with the molecule's
+            mean over its other start positions. If a number in [0, 1],
+            fill each nan with that probability (0.5 adds no information).
+            `meth_prob` itself is not modified, and the value is stored
+            as `SimDataset.nan_fill` for reruns.
 
         Returns
         -------
@@ -265,9 +277,10 @@ class SimManager:
             inconsistent.
         ValueError
             If the requested `out_types` are not recognized, if an
-            `llink` value of a mapping is not a non-negative integer, or
-            if a molecule of `meth_prob` is nan at some but not all
-            nucleosome start positions.
+            `llink` value of a mapping is not a non-negative integer, if
+            `fill_nan` is invalid, or if `fill_nan` is None and a molecule
+            of `meth_prob` is nan at some but not all nucleosome start
+            positions.
         KeyError
             If a mapping `llink` lacks a chromosome of `chroms`.
         FileExistsError
@@ -280,7 +293,7 @@ class SimManager:
         chroms = utils.normalize_chroms(chroms)
         settings = _resolve_settings(settings)
         meth_prob, no_data = _prepare_meth_prob(
-            meth_prob, chroms, settings.nucbp
+            meth_prob, chroms, settings.nucbp, fill_nan
         )
         mols = _normalize_mols(mols, chroms)
         nmol = {chrom: meth_prob[chrom].shape[0] for chrom in chroms}
@@ -320,6 +333,7 @@ class SimManager:
             seed=seed,
             seed_table=_seed_table(seed, chroms, nmol, nsim),
             no_data=no_data,
+            nan_fill=fill_nan,
         )
         dataset.save()
 
@@ -375,7 +389,8 @@ class SimManager:
             `run()`. This is never persisted in `dataset`, so it must be
             re-supplied here; given the same data, reruns reproduce the
             exact original simulation by default. Its molecules with no
-            data must match `dataset.no_data`.
+            data must match `dataset.no_data`, and partly-nan molecules
+            are filled as in the original run (`dataset.nan_fill`).
         only : iterable of (str, int, int) or (str, int), optional
             For `dataset.method == 'mcmc'`: the specific `(chrom, mol,
             run)` triplets to rerun. For `'tm'`: `(chrom, mol)` pairs --
@@ -434,6 +449,7 @@ class SimManager:
         batch_size: int = 20000,
         mask_name: str | None = None,
         llink_evid_name: str | None = None,
+        fill_nan: str | float | None = None,
     ) -> dict[str, int]:
         """
         Estimate `SimSettings.llink` per chromosome by maximum likelihood.
@@ -483,6 +499,10 @@ class SimManager:
             `exp.analysis[chrom][llink_evid_name]`, a DataFrame with
             columns `llink`, `evidence` and `nmol`, e.g. for plotting.
             `exp` is not modified if None (default).
+        fill_nan : {"mean"}, float, or None, default None
+            How to treat molecules that are nan at some but not all
+            nucleosome start positions; see `run`. Molecules with no data
+            (nan at every start position) are always left out.
 
         Returns
         -------
@@ -493,8 +513,10 @@ class SimManager:
         ------
         ValueError
             If `llinks` is empty or holds a value that is not a
-            non-negative integer, if `max_nmol` is not positive, or if a
-            chromosome has no usable molecules.
+            non-negative integer, if `max_nmol` is not positive, if a
+            chromosome has no usable molecules, if `fill_nan` is invalid,
+            or if `fill_nan` is None and a molecule is nan at some but not
+            all start positions.
         TypeError
             If `settings` is neither a path nor a SimSettings object.
         KeyError
@@ -526,6 +548,7 @@ class SimManager:
             mask_name=mask_name,
             nworker=self.nworker,
             llink_evid_name=llink_evid_name,
+            fill_nan=fill_nan,
         )
 
     def estimate_start_temp(

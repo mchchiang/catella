@@ -9,7 +9,7 @@ from catella.h5_array import H5Array
 
 def _strand_of_mol(df, nmol):
     """
-    One strand label per molecule, looked up by `mol_index`.
+    One strand per molecule, looked up by `mol_index`.
 
     Parameters
     ----------
@@ -24,11 +24,11 @@ def _strand_of_mol(df, nmol):
     np.ndarray of str
         Length `nmol`, each one of '+', '-', '.'.
     """
-    labels = np.full(nmol, ".", dtype="<U1")
+    strand = np.full(nmol, ".", dtype="<U1")
     first = df.drop_duplicates("mol_index")[["mol_index", "strand"]]
     idx = first["mol_index"].to_numpy().astype(np.int64)
-    labels[idx] = first["strand"].to_numpy()
-    return labels
+    strand[idx] = first["strand"].to_numpy()
+    return strand
 
 
 def _resolve_sources(raw, which):
@@ -55,22 +55,82 @@ def _resolve_sources(raw, which):
     ]
 
 
-def _label_coverage(
-    df, mol_id, refseq, labels, unmapped_strand, ignore_strand=False
-):
+def _mtase_site_masks(refseq, mtases):
     """
-    Per-molecule covered/total methylatable-site counts, per label.
+    Per-strand methylatable-site masks for each methyltransferase.
+
+    Parameters
+    ----------
+    refseq : str
+        Reference sequence for this chromosome.
+    mtases : sequence of str
+        Methyltransferases, each in {"A", "CG", "GC"}.
+
+    Returns
+    -------
+    dict of str to (np.ndarray, np.ndarray)
+        Maps each mtase to `(plus_mask, minus_mask)`, bool, length
+        `len(refseq)`.
+    """
+    return {
+        m: (
+            _methylatable_positions(refseq, m, "+"),
+            _methylatable_positions(refseq, m, "-"),
+        )
+        for m in mtases
+    }
+
+
+def _covered_rows(pos, row_strand, plus_mask, minus_mask, unmapped_strand):
+    """
+    Whether each raw row falls on a site of its molecule's strand.
+
+    Parameters
+    ----------
+    pos : np.ndarray
+        int64, position of each row.
+    row_strand : np.ndarray of str
+        Strand of each row's molecule, one of '+', '-', '.'.
+    plus_mask, minus_mask : np.ndarray
+        bool, sites on the '+' and '-' strand.
+    unmapped_strand : {"union", "drop", "+", "-"}
+        Sites used for unmapped ('.') rows; "drop" covers none.
+
+    Returns
+    -------
+    np.ndarray
+        bool, one per row.
+    """
+    in_plus = plus_mask[pos]
+    in_minus = minus_mask[pos]
+    covered = np.zeros(len(pos), dtype=bool)
+    is_plus = row_strand == "+"
+    is_minus = row_strand == "-"
+    is_dot = row_strand == "."
+    covered[is_plus] = in_plus[is_plus]
+    covered[is_minus] = in_minus[is_minus]
+    if unmapped_strand == "union":
+        covered[is_dot] = (in_plus | in_minus)[is_dot]
+    elif unmapped_strand == "+":
+        covered[is_dot] = in_plus[is_dot]
+    elif unmapped_strand == "-":
+        covered[is_dot] = in_minus[is_dot]
+    return covered
+
+
+def _site_coverage(df, nmol, site_masks, unmapped_strand, ignore_strand=False):
+    """
+    Per-molecule covered/total site counts, per site set.
 
     Parameters
     ----------
     df : pd.DataFrame
         Raw long-format table with `mol_index`/`pos`/`strand` columns.
-    mol_id : array-like
-        This source's molecule identifiers (only its length is used).
-    refseq : str
-        Reference sequence for this chromosome.
-    labels : sequence of str
-        `mtase` labels to evaluate, each in {"A", "CG", "GC"}.
+    nmol : int
+        Number of molecules in this source.
+    site_masks : dict of str to (np.ndarray, np.ndarray)
+        Maps a name (an mtase or a channel) to its
+        `(plus_mask, minus_mask)` site masks.
     unmapped_strand : {"union", "drop", "+", "-"}
         How to evaluate unmapped ('.') strand molecules.
     ignore_strand : bool, default False
@@ -80,13 +140,11 @@ def _label_coverage(
     Returns
     -------
     dict of str to (np.ndarray, np.ndarray)
-        Maps each label to `(covered, n_total)`, each length
-        `len(mol_id)`: `covered` counts rows measured at that label's
-        methylatable positions (on each molecule's own strand);
-        `n_total` is that label's methylatable-site count for the
+        Maps each name to `(covered, n_total)`, each length `nmol`:
+        `covered` counts rows on that set's sites (on each molecule's
+        own strand); `n_total` is that set's site count for the
         molecule's strand.
     """
-    nmol = len(mol_id)
     strand = _strand_of_mol(df, nmol)
     pos = df["pos"].to_numpy().astype(np.int64)
     mol_index = df["mol_index"].to_numpy().astype(np.int64)
@@ -95,31 +153,13 @@ def _label_coverage(
         row_strand = np.full(len(pos), ".", dtype="<U1")
     else:
         row_strand = strand[mol_index]
-    is_plus = row_strand == "+"
-    is_minus = row_strand == "-"
-    is_dot = row_strand == "."
 
     result = {}
-    for label in labels:
-        plus_mask = _methylatable_positions(refseq, label, "+")
-        minus_mask = _methylatable_positions(refseq, label, "-")
-        union_mask = plus_mask | minus_mask
-
-        in_plus = plus_mask[pos]
-        in_minus = minus_mask[pos]
-        row_covered = np.zeros(len(pos), dtype=bool)
-        row_covered[is_plus] = in_plus[is_plus]
-        row_covered[is_minus] = in_minus[is_minus]
-        if unmapped_strand == "union":
-            in_union = union_mask[pos]
-            row_covered[is_dot] = in_union[is_dot]
-        elif unmapped_strand == "+":
-            row_covered[is_dot] = in_plus[is_dot]
-        elif unmapped_strand == "-":
-            row_covered[is_dot] = in_minus[is_dot]
-        # "drop": row_covered[is_dot] stays False
-
-        covered = np.bincount(mol_index[row_covered], minlength=nmol)
+    for name, (plus_mask, minus_mask) in site_masks.items():
+        rows = _covered_rows(
+            pos, row_strand, plus_mask, minus_mask, unmapped_strand
+        )
+        covered = np.bincount(mol_index[rows], minlength=nmol)
 
         total = np.empty(nmol, dtype=np.int64)
         total[strand == "+"] = plus_mask.sum()
@@ -129,33 +169,33 @@ def _label_coverage(
         elif unmapped_strand == "-":
             total[strand == "."] = minus_mask.sum()
         else:
-            total[strand == "."] = union_mask.sum()
+            total[strand == "."] = (plus_mask | minus_mask).sum()
 
-        result[label] = (covered, total)
+        result[name] = (covered, total)
     return result
 
 
-def _dropout_fracs(cov, labels):
+def _dropout_fracs(cov, names):
     """
-    Per-label and pooled dropout fractions from coverage counts.
+    Per-site-set and pooled dropout fractions from coverage counts.
 
     Parameters
     ----------
     cov : dict of str to (np.ndarray, np.ndarray)
-        Output of `_label_coverage`.
-    labels : sequence of str
-        Labels to evaluate, in the order to stack `frac`.
+        Output of `_site_coverage`.
+    names : sequence of str
+        Site sets to evaluate, in the order to stack `frac`.
 
     Returns
     -------
-    frac : np.ndarray, shape (len(labels), n_mol)
-        Per-label dropout fraction.
+    frac : np.ndarray, shape (len(names), n_mol)
+        Dropout fraction per site set.
     pooled : np.ndarray, shape (n_mol,)
-        Dropout fraction with site counts pooled across labels (as
-        in `filter_dropout(method="aggregate")`).
+        Dropout fraction with site counts pooled across sets (as in
+        `filter_dropout(method="aggregate")`).
     """
-    covered = np.stack([cov[label][0] for label in labels])
-    n_total = np.stack([cov[label][1] for label in labels])
+    covered = np.stack([cov[name][0] for name in names])
+    n_total = np.stack([cov[name][1] for name in names])
     frac = np.where(n_total > 0, 1.0 - covered / np.maximum(n_total, 1), 0.0)
 
     covered_sum = covered.sum(axis=0)

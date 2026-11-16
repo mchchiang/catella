@@ -22,15 +22,15 @@ from catella.containers import DataFrameMap, FixedKeyMap
 from catella.experiment._dropout import (
     _apply_keep_mask,
     _dropout_fracs,
-    _label_coverage,
+    _mtase_site_masks,
     _resolve_sources,
+    _site_coverage,
 )
 from catella.experiment._ingest import (
     _ingest_into,
     _ingest_sources,
     _load_refseqs,
     _merge_staging,
-    _methylatable_positions,
     _normalize_mtase,
     _read_chromsize,
 )
@@ -1118,7 +1118,7 @@ class MethPrintExperiment:
             `unmapped_strand`/`method` is invalid, a requested source
             is missing for some chromosome, or `refseq` is missing.
         """
-        labels = self._resolve_mtase_subset(mtase)
+        mtases = self._resolve_mtase_subset(mtase)
         chroms = self._resolve_chroms_subset(chroms)
         if not (0.0 <= thres_min <= 1.0):
             raise ValueError(
@@ -1162,15 +1162,14 @@ class MethPrintExperiment:
                     raise ValueError(
                         f"no '{src}' data available for chrom '{chrom}'"
                     )
-                cov = _label_coverage(
+                cov = _site_coverage(
                     df,
-                    mol_id,
-                    raw.refseq,
-                    labels,
+                    len(mol_id),
+                    _mtase_site_masks(raw.refseq, mtases),
                     unmapped_strand,
                     ignore_strand=self._ignore_strand,
                 )
-                dropout_frac, combined_frac = _dropout_fracs(cov, labels)
+                dropout_frac, combined_frac = _dropout_fracs(cov, mtases)
 
                 if method == "separate":
                     keep = (
@@ -1240,7 +1239,7 @@ class MethPrintExperiment:
             `unmapped_strand` is invalid, a source is missing for
             some chromosome, or `refseq` is missing.
         """
-        labels = self._resolve_mtase_subset(mtase)
+        mtases = self._resolve_mtase_subset(mtase)
         chroms = self._resolve_chroms_subset(chroms)
         if unmapped_strand not in _VALID_UNMAPPED_STRAND:
             raise ValueError(
@@ -1268,55 +1267,39 @@ class MethPrintExperiment:
                     raise ValueError(
                         f"no '{src}' data available for chrom '{chrom}'"
                     )
-                cov = _label_coverage(
+                masks = _mtase_site_masks(raw.refseq, mtases)
+                cov = _site_coverage(
                     df,
-                    mol_id,
-                    raw.refseq,
-                    labels,
+                    len(mol_id),
+                    masks,
                     unmapped_strand,
                     ignore_strand=self._ignore_strand,
                 )
-                frac, pooled = _dropout_fracs(cov, labels)
+                frac, pooled = _dropout_fracs(cov, mtases)
 
-                for i, label in enumerate(labels):
-                    plus_n = int(
-                        _methylatable_positions(raw.refseq, label, "+").sum()
-                    )
-                    minus_n = int(
-                        _methylatable_positions(raw.refseq, label, "-").sum()
-                    )
+                for i, m in enumerate(mtases):
                     row = {
                         "chrom": chrom,
                         "source": src,
-                        "label": label,
-                        "n_sites_plus": plus_n,
-                        "n_sites_minus": minus_n,
+                        "label": m,
+                        "n_sites_plus": int(masks[m][0].sum()),
+                        "n_sites_minus": int(masks[m][1].sum()),
                     }
                     row.update(
                         zip(pct_cols, np.percentile(frac[i], percentiles))
                     )
                     rows.append(row)
 
-                if len(labels) > 1:
+                if len(mtases) > 1:
                     row = {
                         "chrom": chrom,
                         "source": src,
                         "label": "aggregate",
                         "n_sites_plus": sum(
-                            int(
-                                _methylatable_positions(
-                                    raw.refseq, label, "+"
-                                ).sum()
-                            )
-                            for label in labels
+                            int(masks[m][0].sum()) for m in mtases
                         ),
                         "n_sites_minus": sum(
-                            int(
-                                _methylatable_positions(
-                                    raw.refseq, label, "-"
-                                ).sum()
-                            )
-                            for label in labels
+                            int(masks[m][1].sum()) for m in mtases
                         ),
                     }
                     row.update(
@@ -1375,7 +1358,7 @@ class MethPrintExperiment:
             invalid, a requested source is missing for some
             chromosome, or `refseq` is missing.
         """
-        labels = self._resolve_mtase_subset(mtase)
+        mtases = self._resolve_mtase_subset(mtase)
         chroms = self._resolve_chroms_subset(chroms)
         if unmapped_strand not in _VALID_UNMAPPED_STRAND:
             raise ValueError(
@@ -1401,19 +1384,18 @@ class MethPrintExperiment:
                     raise ValueError(
                         f"no '{src}' data available for chrom '{chrom}'"
                     )
-                cov = _label_coverage(
+                cov = _site_coverage(
                     df,
-                    mol_id,
-                    raw.refseq,
-                    labels,
+                    len(mol_id),
+                    _mtase_site_masks(raw.refseq, mtases),
                     unmapped_strand,
                     ignore_strand=self._ignore_strand,
                 )
-                frac, pooled = _dropout_fracs(cov, labels)
+                frac, pooled = _dropout_fracs(cov, mtases)
 
-                for i, label in enumerate(labels):
-                    result[(chrom, src, label)] = frac[i]
-                if len(labels) > 1:
+                for i, m in enumerate(mtases):
+                    result[(chrom, src, m)] = frac[i]
+                if len(mtases) > 1:
                     result[(chrom, src, "aggregate")] = pooled
 
         return result

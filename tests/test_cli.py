@@ -1276,6 +1276,43 @@ class TestComputeOccup:
         assert "var_nnuc" in reloaded.analysis["chr1"]
         assert "var_occup" in reloaded.analysis["chr1"]
 
+    def test_chroms_and_nworker_on_tm_dataset(self, tmp_path):
+        rng = np.random.default_rng(4)
+        dataset = SimManager(nworker=1, verbose=False).run(
+            chroms=["chr1", "chr2"],
+            nsim=0,
+            method="tm",
+            settings=SimSettings(**_settings_dict()),
+            meth_prob={
+                "chr1": rng.random((3, 15)),
+                "chr2": rng.random((2, 15)),
+            },
+            out_dir=tmp_path / "tm_sim",
+            seed=1,
+        )
+        direct = SimDataset.load(dataset._dataset_file)
+
+        result = runner.invoke(
+            app,
+            [
+                "compute_occup",
+                str(dataset._dataset_file),
+                "--chroms",
+                "chr2",
+                "--nworker",
+                "2",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+
+        catella.compute_occup(direct, chroms="chr2")
+        reloaded = SimDataset.load(dataset._dataset_file)
+        assert "occup" not in reloaded.analysis["chr1"]
+        np.testing.assert_allclose(
+            reloaded.analysis["chr2"]["occup"].to_numpy(),
+            direct.analysis["chr2"]["occup"].to_numpy(),
+        )
+
 
 class TestDownsample:
     def test_dataset_downsample_matches_utils(self, tmp_path):

@@ -793,6 +793,12 @@ def compute_occup(
     time: Annotated[
         int | None, typer.Option(help="Simulation time point")
     ] = None,
+    chroms: Annotated[
+        str | None,
+        typer.Option(
+            callback=csv_parser(str), help="Chromosomes (all if omitted)"
+        ),
+    ] = None,
     occup_name: Annotated[
         str, typer.Option(help="Key to store occupancy")
     ] = "occup",
@@ -809,6 +815,9 @@ def compute_occup(
     var_occup_name: Annotated[
         str, typer.Option(help="Key to store occupancy variance")
     ] = "var_occup",
+    nworker: Annotated[
+        int, typer.Option(help="Number of processes (method='tm' only)")
+    ] = 1,
     out_file: Annotated[
         Path | None,
         typer.Option(
@@ -834,11 +843,13 @@ def compute_occup(
     catella.compute_occup(
         dataset=dataset,
         time=time,
+        chroms=chroms,
         occup_name=occup_name,
         mean_nnuc_name=mean_nnuc_name,
         compute_var=compute_var,
         var_nnuc_name=var_nnuc_name,
         var_occup_name=var_occup_name,
+        nworker=nworker,
     )
     if out_file is not None:
         dataset.save(out_file, overwrite=overwrite)

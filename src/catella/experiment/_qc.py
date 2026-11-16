@@ -153,16 +153,16 @@ def _channel_rates(exp, chrom, codes, sources, mask_name, batch_size):
 
 
 def _rate_cols(rates, name):
-    """`fpr`, `fnr` and `accessible_frac` of one channel, when computable."""
-    cols = {}
-    if "unmeth" in rates:
-        cols["fpr"] = rates["unmeth"][name]
-    if "meth" in rates:
-        cols["fnr"] = 1.0 - rates["meth"][name]
-    if "fpr" in cols and "fnr" in cols:
+    """`meth_frac_<src>` and `accessible_frac` of one channel."""
+    cols = {
+        f"meth_frac_{src}": rates[src][name]
+        for src in ("test", "unmeth", "meth")
+        if src in rates
+    }
+    if "meth" in rates and "unmeth" in rates:
+        unmeth = rates["unmeth"][name]
         cols["accessible_frac"] = _ratio(
-            rates["test"][name] - cols["fpr"],
-            1.0 - cols["fpr"] - cols["fnr"],
+            rates["test"][name] - unmeth, rates["meth"][name] - unmeth
         )
     return cols
 

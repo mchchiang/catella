@@ -1360,24 +1360,27 @@ class MethPrintExperiment:
             - `dropout_<src>_p<q>`: percentile `q` of the per-molecule
               dropout fraction, i.e. the share of the channel's sites
               on the molecule's strand with no call.
-            - `fpr`: methylation rate of the unmethylated control.
-            - `fnr`: one minus the methylation rate of the methylated
-              control.
-            - `accessible_frac`: (test rate - fpr) / (1 - fpr - fnr),
-              the test accessibility relative to the controls.
+            - `meth_frac_<src>`: share of the channel's calls that are
+              methylated. `meth_frac_unmeth` is the false positive
+              rate, and 1 - `meth_frac_meth` the false negative rate.
+            - `accessible_frac`: (`meth_frac_test` -
+              `meth_frac_unmeth`) / (`meth_frac_meth` -
+              `meth_frac_unmeth`), the test accessibility relative to
+              the controls.
 
         Notes
         -----
         Only test data is required. Columns of a missing control are
-        left out: `fpr` needs unmeth, `fnr` needs meth, and
-        `accessible_frac` needs both. The rate columns are not
+        left out, and `accessible_frac` needs both controls. The
+        `meth_frac_<src>` and `accessible_frac` columns are not
         included in the "all" row.
 
         Rates pool all calls, so molecules with more calls weigh more.
         They use the same counts as `model_prob`. `accessible_frac`
         assumes the methylated control is fully accessible; it is not
         clipped, so values outside [0, 1] flag a control problem, and
-        it is noisy when 1 - fpr - fnr is small.
+        it is noisy when `meth_frac_meth` - `meth_frac_unmeth` is
+        small.
 
         Dropout is computed on the channel's sites, so it can differ
         from what `filter_dropout` (per mtase) removes. Molecules of

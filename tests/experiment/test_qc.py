@@ -89,8 +89,9 @@ class TestColumns:
 
     def test_rates(self, exp):
         row = exp.qc().iloc[0]
-        assert row["fpr"] == pytest.approx(0.1)
-        assert row["fnr"] == pytest.approx(0.1)
+        assert row["meth_frac_test"] == pytest.approx(0.5)
+        assert row["meth_frac_unmeth"] == pytest.approx(0.1)
+        assert row["meth_frac_meth"] == pytest.approx(0.9)
         assert row["accessible_frac"] == pytest.approx(0.5)
 
     def test_full_coverage_has_zero_dropout(self, exp):
@@ -132,17 +133,18 @@ class TestMissingControls:
     def test_test_only_drops_control_columns(self, tmp_path):
         e = _load(tmp_path, _full(0.5, 0.5))
         df = e.qc()
-        for col in ("fpr", "fnr", "accessible_frac"):
+        assert df["meth_frac_test"].iloc[0] == pytest.approx(0.5)
+        for col in ("meth_frac_unmeth", "meth_frac_meth", "accessible_frac"):
             assert col not in df
         assert not any(c.endswith(("_meth", "_unmeth")) for c in df)
         assert not any("_meth_" in c or "_unmeth_" in c for c in df)
         e.close()
 
-    def test_unmeth_only_has_fpr(self, tmp_path):
+    def test_unmeth_only_has_unmeth_rate(self, tmp_path):
         e = _load(tmp_path, _full(0.5, 0.5), unmeth=_full(0.1, 0.1))
         df = e.qc()
-        assert df["fpr"].iloc[0] == pytest.approx(0.1)
-        assert "fnr" not in df
+        assert df["meth_frac_unmeth"].iloc[0] == pytest.approx(0.1)
+        assert "meth_frac_meth" not in df
         assert "accessible_frac" not in df
         e.close()
 
@@ -167,8 +169,9 @@ class TestChannels:
             tmp_path, test, meth=ctrl, unmeth=ctrl, seq=seq, mtase=["A", "GC"]
         )
         df = e.qc().set_index("channel")
-        assert np.isnan(df.loc["all", "fpr"])
-        assert not np.isnan(df.loc["A", "fpr"])
+        for col in ("meth_frac_test", "meth_frac_unmeth"):
+            assert np.isnan(df.loc["all", col])
+            assert not np.isnan(df.loc["A", col])
         e.close()
 
     def test_merged_gc_row(self, tmp_path):

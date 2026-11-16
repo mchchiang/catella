@@ -1,6 +1,7 @@
 # test_engine.py
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import h5py
 import numpy as np
@@ -915,3 +916,49 @@ class TestRerunTM:
         assert dataset.raw["chr1", 0, 0].energy == pytest.approx(
             old_energy
         )
+
+
+def _llink_exp(linker=10, nmol=50, nbp=200):
+    energy = np.full((nmol, nbp), 5.0)
+    energy[:, 0 : nbp - 4 : 5 + linker] = -20.0
+    prob = 1.0 / (1.0 + np.exp(-energy))
+    return SimpleNamespace(
+        chroms=("chr1",), analysis={"chr1": {"meth_prob": prob}}
+    )
+
+
+def _llink_settings():
+    return SimSettings(
+        nucbp=5, llink=99, elink=25.0, mu=0.0, end_temp=1.0, emax=100.0
+    )
+
+
+class TestSimManagerEstimateLlink:
+    def test_returns_value_per_chromosome(self):
+        best = SimManager().estimate_llink(
+            _llink_exp(), _llink_settings(), llinks=[0, 10, 30]
+        )
+        assert best == {"chr1": 10}
+
+    def test_parallel_matches_serial(self):
+        exp = _llink_exp()
+        serial = SimManager().estimate_llink(
+            exp, _llink_settings(), llinks=[0, 10, 30]
+        )
+        parallel = SimManager(nworker=2).estimate_llink(
+            exp, _llink_settings(), llinks=[0, 10, 30]
+        )
+        assert parallel == serial
+
+    def test_does_not_modify_experiment(self):
+        exp = _llink_exp()
+        SimManager().estimate_llink(
+            exp, _llink_settings(), llinks=[0, 10, 30]
+        )
+        assert set(exp.analysis["chr1"]) == {"meth_prob"}
+
+    def test_empty_llinks_raises(self):
+        with pytest.raises(ValueError, match="llinks must not be empty"):
+            SimManager().estimate_llink(
+                _llink_exp(), _llink_settings(), llinks=[]
+            )

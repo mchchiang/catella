@@ -675,7 +675,7 @@ class TestEstimateLlink:
         assert parallel == serial == {"chr1": 10}
 
     def test_invalid_nworker_raises(self):
-        with pytest.raises(ValueError, match="nworker must be a positive"):
+        with pytest.raises(ValueError, match="nworker must be"):
             catella.estimate_llink(
                 self._experiment(), self._settings(), nworker=0
             )

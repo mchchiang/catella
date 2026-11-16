@@ -17,7 +17,6 @@ from catella.experiment.plot import MethPlot
 from catella.experiment.preprocessing import MethPrintAnalysis
 from catella.h5_array import H5Array
 from catella.simulation._exact import TMStat, _reject_time
-from catella.simulation._llink import _estimate_llink
 from catella.simulation.analysis import SimAnalysis
 from catella.simulation.config import SimSettings
 from catella.simulation.engine import SimManager
@@ -631,7 +630,8 @@ def estimate_llink(
     `SimSettings.llink` acts as a soft minimum linker length rather than
     a preferred one, since the repulsion is zero for longer linkers.
     """
-    return _estimate_llink(
+    manager = SimManager(nworker=nworker, verbose=False)
+    return manager.estimate_llink(
         exp,
         settings,
         llinks=llinks,
@@ -641,7 +641,6 @@ def estimate_llink(
         seed=seed,
         batch_size=batch_size,
         mask_name=mask_name,
-        nworker=nworker,
     )
 
 

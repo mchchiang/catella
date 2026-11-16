@@ -1,11 +1,10 @@
 # _calibration.py
 
-import warnings
-
 import numpy as np
 import pandas as pd
 from scipy.special import xlogy
 
+from catella._warnings import _warn
 from catella.experiment._contexts import (
     _ALL_CHANNELS,
     CONTEXT_NAMES,
@@ -188,13 +187,12 @@ def _warn_call_frac_mismatch(chrom, info, channels):
         if lo - _CALL_FRAC_WARN_GAP <= test <= hi + _CALL_FRAC_WARN_GAP:
             continue
         bias = "protection" if test < lo else "accessibility"
-        warnings.warn(
+        _warn(
             f"channel {name} on chrom '{chrom}': the fraction of read "
             f"sites with a call is {test:.2f} in the test sample, outside "
             f"the range {lo:.2f}-{hi:.2f} of the meth/unmeth controls; "
             "missing calls are treated as unmethylated, so the test "
-            f"sample may be biased toward {bias}",
-            stacklevel=3,
+            f"sample may be biased toward {bias}"
         )
 
 
@@ -277,15 +275,14 @@ def _fold_contexts(exp, chrom, channels=None):
     agree = lower == upper
     frac_disagree = 1.0 - agree.mean()
     if frac_disagree > _WRAP_CTX_DISAGREE_WARN_FRAC:
-        warnings.warn(
+        _warn(
             f"refseq for chrom '{chrom}' disagrees on "
             f"context at {(~agree).sum()}/{nbp} "
             f"({frac_disagree:.1%}) wrap-mirrored position "
             "pairs (folded to NONE there); this may "
             "indicate the wrong chromsize length or a "
             "non-symmetric reference, rather than a small "
-            "loop/junction region",
-            stacklevel=4,
+            "loop/junction region"
         )
     return np.where(agree, lower, NONE).astype(lower.dtype)
 
@@ -308,22 +305,18 @@ def _warn_boundary_fit(chrom, stratum, em_diag):
     at_max = em_diag["tau"] >= em_diag["tau_max"] - 1e-6
     names = [CONTEXT_NAMES[c] for c, m in zip(em_diag["codes"], at_max) if m]
     if names:
-        warnings.warn(
+        _warn(
             f"{where}: tau reached its upper bound for {names}, so the "
             f"protected and accessible states are not separable and "
-            f"their sites are uninformative; {hint}",
-            UserWarning,
-            stacklevel=5,
+            f"their sites are uninformative; {hint}"
         )
     lo, hi = _PI_RANGE
     if not lo <= em_diag["frac_protected"] <= hi:
-        warnings.warn(
+        _warn(
             f"{where}: fitted protected fraction "
             f"{em_diag['frac_protected']:.3f} is degenerate, e.g., the "
             f"test sample is methylated less efficiently than the "
-            f"controls; {hint}",
-            UserWarning,
-            stacklevel=5,
+            f"controls; {hint}"
         )
 
 

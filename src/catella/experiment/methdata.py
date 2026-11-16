@@ -3,7 +3,6 @@
 import os
 import shutil
 import tempfile
-import warnings
 import weakref
 from collections import OrderedDict
 from collections.abc import Mapping
@@ -18,6 +17,7 @@ import numpy as np
 import pandas as pd
 
 from catella import h5_utils, utils
+from catella._warnings import _warn
 from catella.containers import DataFrameMap, FixedKeyMap
 from catella.experiment._dropout import (
     _apply_keep_mask,
@@ -942,12 +942,11 @@ class MethPrintExperiment:
 
         if not as_h5array:
             if len(mol_ids) > _DENSE_WARN_ROWS:
-                warnings.warn(
+                _warn(
                     f"materializing {len(mol_ids)} molecules as a "
                     f"pd.DataFrame ({len(mol_ids)}x{nbp}); this may "
                     "use significant memory; pass as_h5array=True to "
-                    "stream to disk instead",
-                    stacklevel=2,
+                    "stream to disk instead"
                 )
             piv = df.pivot(
                 index="mol_index", columns="pos", values="mod_qual"

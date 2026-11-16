@@ -11,6 +11,7 @@ import scipy.cluster.hierarchy as sch
 from scipy.spatial.distance import cdist, pdist, squareform
 
 from catella import h5_utils
+from catella._warnings import _warn
 from catella.h5_array import _DOWNSAMPLE_HOW, H5Array
 
 IndexType = int | slice | Sequence[int]
@@ -225,11 +226,10 @@ def compute_linkage(
 
     nrow = matrix.shape[0]
     if nrow > _CLUSTER_WARN_ROWS:
-        warnings.warn(
+        _warn(
             f"clustering {nrow} rows requires an {nrow}x{nrow} pairwise "
             "distance matrix; this may be slow and memory-intensive; "
-            "consider downsampling first (e.g. H5Array.downsample)",
-            stacklevel=2,
+            "consider downsampling first (e.g. H5Array.downsample)"
         )
 
     if isinstance(matrix, H5Array):

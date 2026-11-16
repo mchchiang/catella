@@ -1,6 +1,5 @@
 # plot.py
 
-import warnings
 from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path
@@ -12,6 +11,7 @@ from matplotlib.colors import Normalize
 from scipy.special import logit
 
 from catella import utils
+from catella._warnings import _warn
 
 # Row-count threshold above which plot_meth_prob() warns, since it plots
 # data at full resolution -- downsample first (utils.downsample) to
@@ -191,12 +191,11 @@ class MethPlot:
 
             nrow = data.shape[0]
             if nrow > _PLOT_WARN_ROWS:
-                warnings.warn(
+                _warn(
                     f"plotting {nrow} rows at full resolution; this may "
                     "be slow and memory-intensive; consider passing "
                     "'max_rows', or downsampling first "
-                    "(utils.downsample)",
-                    stacklevel=2,
+                    "(utils.downsample)"
                 )
 
             matrix = np.asarray(data)

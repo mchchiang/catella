@@ -1,7 +1,6 @@
 # _llink.py
 
 import multiprocessing as mp
-import warnings
 from collections import deque
 from concurrent.futures import ProcessPoolExecutor
 from numbers import Integral
@@ -11,6 +10,7 @@ import pandas as pd
 from catella_cpp import NucPosTM
 from scipy.special import logit
 
+from catella._warnings import _warn
 from catella.experiment._reads import _lookup_mask
 from catella.simulation._inputs import _is_valid_llink, _resolve_settings
 
@@ -238,9 +238,8 @@ def _estimate_llink(exp, settings, *, llink_evid_name=None, **kwargs):
     """
     settings = _resolve_settings(settings)
     if settings.end_temp != 1:
-        warnings.warn(
-            "settings.end_temp is ignored; llink evidence uses temperature 1",
-            stacklevel=3,
+        _warn(
+            "settings.end_temp is ignored; llink evidence uses temperature 1"
         )
     table = _llink_evidence(exp, settings, **kwargs)
     largest = table["llink"].max()
@@ -253,16 +252,14 @@ def _estimate_llink(exp, settings, *, llink_evid_name=None, **kwargs):
                 ["llink", "evidence", "nmol"]
             ].reset_index(drop=True)
         if pick == largest and sub["llink"].nunique() > 1:
-            warnings.warn(
+            _warn(
                 f"chromosome {chrom}: best llink {pick} is the largest "
-                "candidate; extend llinks",
-                stacklevel=3,
+                "candidate; extend llinks"
             )
         nmol = int(sub["nmol"].iloc[0])
         if nmol < _MIN_NMOL:
-            warnings.warn(
+            _warn(
                 f"chromosome {chrom}: llink estimated from {nmol} molecules; "
-                "the estimate may be unreliable",
-                stacklevel=3,
+                "the estimate may be unreliable"
             )
     return best

@@ -222,20 +222,26 @@ class SimAnalysis:
         time: int | None = None,
         chroms: str | Iterable[str] | None = None,
         name: str = "occup",
+        mean_nnuc_name: str | None = "mean_nnuc",
+        compute_var: bool = False,
+        var_nnuc_name: str = "var_nnuc",
+        var_occup_name: str = "var_occup",
         record_time: bool = False,
         batch_size: int | None = None,
         nworker: int = 1,
     ):
         """
-        Calculate nucleosome occupancy.
+        Calculate nucleosome occupancy and the mean nucleosome count.
 
         For `dataset.method == "mcmc"`, occupancy is the fraction of
         simulation runs where a base pair is covered by a nucleosome,
-        at a specific time point. For `"tm"`, occupancy is computed
-        exactly via the transfer-matrix solver, with no time axis.
-        Molecules are processed in batches and streamed to a
-        disk-backed array so that peak memory scales with `batch_size`
-        rather than the total number of molecules.
+        and the mean count is the average over runs, at a specific time
+        point. For `"tm"`, both (and optionally their variances) are
+        computed exactly via the transfer-matrix solver, with no time
+        axis, solving each molecule only once. Molecules are processed
+        in batches and streamed to a disk-backed array so that peak
+        memory scales with `batch_size` rather than the total number of
+        molecules.
 
         Parameters
         ----------
@@ -249,11 +255,23 @@ class SimAnalysis:
             The chromosome(s) to process. If None (default), all chromosomes
             in the dataset are analyzed.
         name : str, default "occup"
-            The key name used to store the resulting `H5Array` in
+            The key used to store the occupancy `H5Array` in
             `dataset.analysis`.
+        mean_nnuc_name : str or None, default "mean_nnuc"
+            The key used to store the mean nucleosome count of each
+            molecule (a DataFrame). If None, it is not computed.
+        compute_var : bool, default False
+            If True, also compute the exact variance of the nucleosome
+            count and of the per-bp occupancy. `tm` only.
+        var_nnuc_name : str, default "var_nnuc"
+            The key used to store the nucleosome count variance. Only
+            used if `compute_var` is True.
+        var_occup_name : str, default "var_occup"
+            The key used to store the per-bp occupancy variance. Only
+            used if `compute_var` is True.
         record_time : bool, default False
-            If True, the time point is appended to the storage name
-            (e.g., "occup_t_100"). `mcmc` only.
+            If True, the time point is appended to the storage names
+            (e.g., "occup_t_100", "mean_nnuc_t_100"). `mcmc` only.
         batch_size : int, optional
             Number of molecules processed per batch. For `"mcmc"`, the
             number held in memory at a time (default 20000). For `"tm"`,
@@ -266,24 +284,30 @@ class SimAnalysis:
         Raises
         ------
         ValueError
-            If `time` or `record_time` is given for a `"tm"` dataset, or
-            (for `"tm"`) if the dataset has no stored energy landscape,
-            or (for `"mcmc"`) if `time` is None and no simulation files
+            If `time` or `record_time` is given for a `"tm"` dataset, if
+            `compute_var` is True for a non-`"tm"` dataset, or (for
+            `"tm"`) if the dataset has no stored energy landscape, or
+            (for `"mcmc"`) if `time` is None and no simulation files
             exist for `chroms`, or `nworker` is invalid.
         """
         _check_nworker(dataset, nworker)
+        if compute_var:
+            _require_tm(dataset, "compute_var=True")
         batch_size = _resolve_batch_size(dataset, batch_size)
         chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)
         if dataset.method == "tm":
             _reject_time(time, record_time)
             _require_eseq(dataset)
-            _tm_per_bp(
-                dataset,
-                chroms,
-                name,
-                batch_size,
-                NucPosTM.getOccup,
-                nworker=nworker,
+            stats = [TMStat(name, "getOccup", per_bp=True)]
+            if mean_nnuc_name is not None:
+                stats.append(TMStat(mean_nnuc_name, "getMeanN"))
+            if compute_var:
+                stats += [
+                    TMStat(var_nnuc_name, "getVarN"),
+                    TMStat(var_occup_name, "getVarOccup", per_bp=True),
+                ]
+            _tm_stats(
+                dataset, chroms, stats, batch_size=batch_size, nworker=nworker
             )
             return
         self._compute_occup_mcmc(
@@ -294,6 +318,14 @@ class SimAnalysis:
             record_time=record_time,
             batch_size=batch_size,
         )
+        if mean_nnuc_name is not None:
+            self._compute_mean_nnuc_mcmc(
+                dataset,
+                time=time,
+                chroms=chroms,
+                name=mean_nnuc_name,
+                record_time=record_time,
+            )
 
     def _compute_occup_mcmc(
         self, dataset, *, time, chroms, name, record_time, batch_size
@@ -630,40 +662,6 @@ class SimAnalysis:
             kwargs={"gamma": gamma},
             nworker=nworker,
         )
-
-    def _compute_tm_stats(
-        self,
-        dataset: SimDataset,
-        stats: Iterable[TMStat],
-        *,
-        chroms: str | Iterable[str] | None = None,
-        nworker: int = 1,
-    ):
-        """
-        Compute several exact quantities, solving each molecule once.
-
-        Parameters
-        ----------
-        dataset : SimDataset
-            The TM dataset containing the stored energy landscape.
-        stats : iterable of TMStat
-            The quantities to compute.
-        chroms : str or iterable of str, optional
-            The chromosome(s) to process. If None (default), all
-            chromosomes in the dataset are analyzed.
-        nworker : int, default 1
-            Number of worker processes.
-
-        Raises
-        ------
-        ValueError
-            If `dataset.method != "tm"`, the dataset has no stored
-            energy landscape, or `nworker` is not positive.
-        """
-        _require_tm(dataset, "_compute_tm_stats")
-        _check_nworker(dataset, nworker)
-        chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)
-        _tm_stats(dataset, chroms, stats, nworker=nworker)
 
     def get_config(
         self, dataset: SimDataset, chrom: str, mol: int, *, name: str

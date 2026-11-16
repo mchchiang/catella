@@ -442,6 +442,63 @@ class TestComputeOccupTM:
             ana.compute_occup(dataset=dataset)
 
 
+class TestComputeOccupBundle:
+    def test_tm_stores_mean_nnuc_matching_compute_mean_nnuc(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=2, nbp=16, seed=4)
+        ana = SimAnalysis()
+        ana.compute_occup(dataset=dataset)
+        ana.compute_mean_nnuc(dataset=dataset, name="direct")
+        np.testing.assert_allclose(
+            dataset.analysis["chr1"]["mean_nnuc"].to_numpy(),
+            dataset.analysis["chr1"]["direct"].to_numpy(),
+        )
+
+    def test_mean_nnuc_name_none_skips(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=2, nbp=16)
+        SimAnalysis().compute_occup(dataset=dataset, mean_nnuc_name=None)
+        assert set(dataset.analysis["chr1"]) == {"occup"}
+
+    def test_tm_compute_var_matches_var_methods(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=2, nbp=16, seed=5)
+        ana = SimAnalysis()
+        ana.compute_occup(dataset=dataset, compute_var=True)
+        ana.compute_var_nnuc(dataset=dataset, name="vn")
+        ana.compute_var_occup(dataset=dataset, name="vo")
+        ana_chr = dataset.analysis["chr1"]
+        np.testing.assert_allclose(
+            ana_chr["var_nnuc"].to_numpy(), ana_chr["vn"].to_numpy()
+        )
+        np.testing.assert_allclose(
+            np.asarray(ana_chr["var_occup"]), np.asarray(ana_chr["vo"])
+        )
+
+    def test_compute_var_on_mcmc_raises_before_work(self, tmp_path):
+        dataset = _make_dataset(tmp_path)
+        with pytest.raises(ValueError, match="compute_var=True requires"):
+            SimAnalysis().compute_occup(dataset=dataset, compute_var=True)
+        assert "occup" not in dataset.analysis["chr1"]
+
+    def test_mcmc_stores_mean_nnuc(self, tmp_path):
+        dataset = _make_dataset(tmp_path)
+        ana = SimAnalysis()
+        ana.compute_occup(dataset=dataset)
+        ana.compute_mean_nnuc(dataset=dataset, name="direct")
+        np.testing.assert_allclose(
+            dataset.analysis["chr1"]["mean_nnuc"].to_numpy(),
+            dataset.analysis["chr1"]["direct"].to_numpy(),
+        )
+
+    def test_mcmc_record_time_suffixes_both(self, tmp_path):
+        dataset = _make_dataset(tmp_path)
+        time = dataset.raw["chr1", 0, 0].time[-1]
+        SimAnalysis().compute_occup(
+            dataset=dataset, time=time, record_time=True
+        )
+        assert {f"occup_t_{time}", f"mean_nnuc_t_{time}"} <= set(
+            dataset.analysis["chr1"]
+        )
+
+
 class TestComputeMeanNnucTM:
     def test_matches_brute_force(self, tmp_path):
         settings = _make_tm_settings()

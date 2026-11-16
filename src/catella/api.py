@@ -14,7 +14,6 @@ from catella.experiment.methdata import MethPrintExperiment
 from catella.experiment.plot import MethPlot
 from catella.experiment.preprocessing import MethPrintAnalysis
 from catella.h5_array import H5Array
-from catella.simulation._exact import TMStat, _reject_time
 from catella.simulation.analysis import SimAnalysis
 from catella.simulation.config import SimSettings
 from catella.simulation.engine import SimManager
@@ -992,27 +991,16 @@ def analyze(
         `compute_var` is True but `dataset.method != "tm"`, or if
         `nworker` is not positive or above 1 for a non-"tm" dataset.
     """
-    ana = SimAnalysis()
-    if dataset.method == "tm":
-        _reject_time(time, False)
-        stats = [
-            TMStat(occup_name, "getOccup", per_bp=True),
-            TMStat(mean_nnuc_name, "getMeanN"),
-        ]
-        if compute_var:
-            stats += [
-                TMStat(var_nnuc_name, "getVarN"),
-                TMStat(var_occup_name, "getVarOccup", per_bp=True),
-            ]
-        ana._compute_tm_stats(dataset, stats, nworker=nworker)
-        return
-    ana.compute_occup(
-        dataset=dataset, time=time, name=occup_name, nworker=nworker
+    SimAnalysis().compute_occup(
+        dataset,
+        time=time,
+        name=occup_name,
+        mean_nnuc_name=mean_nnuc_name,
+        compute_var=compute_var,
+        var_nnuc_name=var_nnuc_name,
+        var_occup_name=var_occup_name,
+        nworker=nworker,
     )
-    ana.compute_mean_nnuc(dataset=dataset, time=time, name=mean_nnuc_name)
-    if compute_var:
-        ana.compute_var_nnuc(dataset=dataset, name=var_nnuc_name)
-        ana.compute_var_occup(dataset=dataset, name=var_occup_name)
 
 
 def plot_occup(

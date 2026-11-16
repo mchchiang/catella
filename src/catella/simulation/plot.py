@@ -412,7 +412,11 @@ class SimPlot:
             # Compute occupancy on-the-fly if the analysis cannot be found
             ana = SimAnalysis()
             ana.compute_occup(
-                dataset=dataset, time=time, chroms=chrom, name=occup_name
+                dataset=dataset,
+                time=time,
+                chroms=chrom,
+                name=occup_name,
+                mean_nnuc_name=None,
             )
         occup = dataset.analysis[chrom][occup_name]
         if mols is not None:

@@ -31,5 +31,4 @@ __all__ = [
     "qc",
     "run",
     "sort_by_linkage",
-    "summarize_dropout",
 ]

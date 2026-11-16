@@ -79,7 +79,7 @@ def load_raw(
     ignore_strand : bool, default False
         If True, ignore each row's recorded `strand` for `mtase`
         context filtering, and in `filter_dropout`,
-        `summarize_dropout`, `dropout_fractions`. Independent of
+        `dropout_fractions` and `qc`. Independent of
         `norm_by_strand`.
     colidx : Iterable, optional
         Specific column indices to use if the input file does not follow
@@ -685,59 +685,6 @@ def filter_dropout(
         unmapped_strand=unmapped_strand,
         method=method,
         mask_name=mask_name,
-    )
-
-
-def summarize_dropout(
-    exp: MethPrintExperiment,
-    *,
-    which: str | None = None,
-    mtase: list | None = None,
-    chroms: list | None = None,
-    unmapped_strand: str = "union",
-) -> pd.DataFrame:
-    """
-    Return a per-label dropout fraction summary (QC check).
-
-    Thin wrapper around `MethPrintExperiment.summarize_dropout`.
-
-    Parameters
-    ----------
-    exp : MethPrintExperiment
-        The experiment to summarize.
-    which : {"test", "meth", "unmeth"} or None, default None
-        Source(s) to summarize. None summarizes every source present
-        for each chromosome.
-    mtase : list of str, optional
-        Subset of `exp.mtase` labels to summarize. None uses all.
-    chroms : list of str, optional
-        Subset of `exp.chroms` to summarize. None (default)
-        summarizes every chromosome.
-    unmapped_strand : {"union", "drop", "+", "-"}, default "union"
-        How to evaluate unmapped ('.') strand molecules.
-
-    Returns
-    -------
-    pd.DataFrame
-        Columns `chrom`, `source`, `label`, `n_sites_plus`,
-        `n_sites_minus`, `p0`/`p25`/`p50`/`p75`/`p100` (dropout
-        fraction percentiles) -- one row per (chrom, source, label),
-        plus a `label="aggregate"` row per (chrom, source) pooling
-        all labels, if more than one label is evaluated.
-
-    Raises
-    ------
-    ValueError
-        If `mtase` is unset, contains an unknown label, `chroms`
-        contains a chromosome not in `exp.chroms`, `unmapped_strand`
-        is invalid, a source is missing for some chromosome, or
-        `refseq` is missing.
-    """
-    return exp.summarize_dropout(
-        which=which,
-        mtase=mtase,
-        chroms=chroms,
-        unmapped_strand=unmapped_strand,
     )
 
 

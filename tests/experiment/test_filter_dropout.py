@@ -326,19 +326,6 @@ class TestIgnoreStrand:
         assert keep == [True]  # '-' mask includes idx1 -> covered
         exp.close()
 
-    def test_summarize_dropout_site_counts_unaffected(self, tmp_path):
-        exp = _load(
-            tmp_path,
-            "AT",
-            [("m0", 1, "chr1", "+", 0.5, "a")],
-            mtase="A",
-            ignore_strand=True,
-        )
-        summary = exp.summarize_dropout().set_index("label")
-        assert summary.loc["A", "n_sites_plus"] == 1
-        assert summary.loc["A", "n_sites_minus"] == 1
-        exp.close()
-
     def test_dropout_fractions_matches_filter_dropout(self, tmp_path):
         exp = _load(
             tmp_path,
@@ -504,96 +491,10 @@ class TestChromsSubset:
         assert "test_dropout_mask" not in exp.analysis["chr2"]
         exp.close()
 
-    def test_summarize_dropout_restricts_to_given_chroms(self, tmp_path):
-        exp = self._make(tmp_path)
-        summary = exp.summarize_dropout(chroms=["chr1"])
-        assert set(summary["chrom"]) == {"chr1"}
-        exp.close()
-
     def test_dropout_fractions_restricts_to_given_chroms(self, tmp_path):
         exp = self._make(tmp_path)
         fractions = exp.dropout_fractions(chroms=["chr1"])
         assert {key[0] for key in fractions} == {"chr1"}
-        exp.close()
-
-
-class TestSummarizeDropout:
-    # refseq "AAAAAAAAAACG": 10 A-sites (idx0-9), 1 CG-site (idx10=C).
-    # m0 covers 9/10 A-sites (idx0-8) and 0/1 CG-site.
-    def _make(self, tmp_path):
-        rows = [("m0", i, "chr1", "+", 0.5, "a") for i in range(9)]
-        return _load(tmp_path, "AAAAAAAAAACG", rows, mtase=["A", "CG"])
-
-    def test_no_side_effects(self, tmp_path):
-        exp = self._make(tmp_path)
-        before = dict(exp.analysis["chr1"])
-        exp.summarize_dropout()
-        assert dict(exp.analysis["chr1"]) == before
-        exp.close()
-
-    def test_columns_and_labels(self, tmp_path):
-        exp = self._make(tmp_path)
-        summary = exp.summarize_dropout()
-        assert set(summary.columns) == {
-            "chrom",
-            "source",
-            "label",
-            "n_sites_plus",
-            "n_sites_minus",
-            "p0",
-            "p25",
-            "p50",
-            "p75",
-            "p100",
-        }
-        assert set(summary["label"]) == {"A", "CG", "aggregate"}
-        exp.close()
-
-    def test_percentiles_and_site_counts(self, tmp_path):
-        exp = self._make(tmp_path)
-        summary = exp.summarize_dropout().set_index("label")
-
-        a_row = summary.loc["A"]
-        assert a_row["n_sites_plus"] == 10
-        assert a_row["n_sites_minus"] == 0
-        for col in ("p0", "p25", "p50", "p75", "p100"):
-            assert a_row[col] == pytest.approx(0.1)  # 1 - 9/10
-
-        cg_row = summary.loc["CG"]
-        assert cg_row["n_sites_plus"] == 1
-        assert cg_row["n_sites_minus"] == 1
-        for col in ("p0", "p25", "p50", "p75", "p100"):
-            assert cg_row[col] == pytest.approx(1.0)  # 0/1 covered
-
-        agg_row = summary.loc["aggregate"]
-        assert agg_row["n_sites_plus"] == 11
-        assert agg_row["n_sites_minus"] == 1
-        for col in ("p0", "p25", "p50", "p75", "p100"):
-            assert agg_row[col] == pytest.approx(1.0 - 9 / 11)
-        exp.close()
-
-    def test_mtase_subset_no_aggregate_row(self, tmp_path):
-        exp = self._make(tmp_path)
-        summary = exp.summarize_dropout(mtase=["A"])
-        assert set(summary["label"]) == {"A"}
-        exp.close()
-
-    def test_unknown_mtase_label_raises(self, tmp_path):
-        exp = self._make(tmp_path)
-        with pytest.raises(ValueError):
-            exp.summarize_dropout(mtase=["GC"])
-        exp.close()
-
-    def test_missing_source_raises(self, tmp_path):
-        exp = self._make(tmp_path)
-        with pytest.raises(ValueError):
-            exp.summarize_dropout(which="meth")
-        exp.close()
-
-    def test_bad_unmapped_strand_raises(self, tmp_path):
-        exp = self._make(tmp_path)
-        with pytest.raises(ValueError):
-            exp.summarize_dropout(unmapped_strand="bogus")
         exp.close()
 
 
@@ -654,13 +555,6 @@ class TestWrap:
         exp.filter_dropout(thres_max=0.1)
         keep = exp.analysis["chr1"]["test_dropout_mask"]["keep"]
         assert keep.tolist() == [1]
-        exp.close()
-
-    def test_summarize_dropout_site_counts(self, tmp_path):
-        exp = self._make(tmp_path)
-        row = exp.summarize_dropout().iloc[0]
-        assert row["n_sites_plus"] == 5
-        assert row["p50"] == pytest.approx(0.0)
         exp.close()
 
     def test_bad_unmapped_strand_raises(self, tmp_path):

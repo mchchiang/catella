@@ -288,27 +288,6 @@ class TestFilterDropout:
         assert "test_qc_mask" in reloaded.analysis["chr1"]
 
 
-class TestSummarizeDropout:
-    def test_prints_table_and_writes_csv(self, tmp_path):
-        raw_file, *_ = _load_raw_a_mtase(tmp_path)
-
-        expected = catella.summarize_dropout(
-            exp=MethPrintExperiment.load(raw_file)
-        )
-
-        csv_out = tmp_path / "summary.csv"
-        result = runner.invoke(
-            app,
-            ["summarize_dropout", str(raw_file), "--out-file", str(csv_out)],
-        )
-        assert result.exit_code == 0, result.output
-        for col in expected.columns:
-            assert col in result.output
-
-        got = pd.read_csv(csv_out)
-        pd.testing.assert_frame_equal(got, expected, check_dtype=False)
-
-
 class TestQc:
     def test_prints_table_writes_csv_and_saves(self, tmp_path):
         raw_file, *_ = _load_raw_a_mtase(tmp_path)

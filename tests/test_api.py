@@ -256,27 +256,6 @@ class TestFilterDropout:
         assert "test_dropout_mask" in exp.analysis["chr1"]
 
 
-class TestSummarizeDropout:
-    def test_matches_direct_method_call(self):
-        nbp = 10
-        exp = _make_experiment(
-            nmol=6, nbp=nbp, seed=3, refseq="A" * nbp, mtase=("A",)
-        )
-
-        got = catella.summarize_dropout(exp=exp)
-        expected = exp.summarize_dropout()
-
-        pd.testing.assert_frame_equal(got, expected)
-
-    def test_chroms_forwarded(self):
-        nbp = 10
-        exp = _make_experiment(
-            nmol=6, nbp=nbp, seed=3, refseq="A" * nbp, mtase=("A",)
-        )
-        with pytest.raises(ValueError):
-            catella.summarize_dropout(exp=exp, chroms=["bogus"])
-
-
 class TestQc:
     def _make(self):
         nbp = 10

@@ -423,7 +423,7 @@ class MethPrintExperiment:
         ignore_strand : bool, default False
             If True, ignore each row's recorded `strand` for `mtase`
             context filtering, and in `filter_dropout`,
-            `summarize_dropout`, `dropout_fractions`. Independent of
+            `dropout_fractions` and `qc`. Independent of
             `norm_by_strand`.
         colidx : list of int, optional
             Explicit column indices if the input file has no header
@@ -1213,125 +1213,6 @@ class MethPrintExperiment:
                 self._analysis[chrom][f"{src}_{mask_name}"] = pd.DataFrame(
                     {"keep": keep.astype(np.int8)}
                 )
-
-    def summarize_dropout(
-        self,
-        *,
-        which: str | None = None,
-        mtase: list | None = None,
-        chroms: list | None = None,
-        unmapped_strand: str = "union",
-    ) -> pd.DataFrame:
-        """
-        Return a per-label dropout fraction summary (QC check).
-
-        Same coverage computation as `filter_dropout`, reporting the
-        per-molecule dropout fraction distribution instead of
-        filtering. Nothing is stored in `analysis`. `n_sites_plus`/
-        `n_sites_minus` always report reference-level per-strand
-        counts, regardless of `unmapped_strand` or `ignore_strand`.
-
-        Parameters
-        ----------
-        which : {"test", "meth", "unmeth"} or None, default None
-            Source(s) to summarize. None summarizes every source
-            present for each chromosome.
-        mtase : list of str, optional
-            Subset of `self.mtase` labels to summarize. None uses all.
-        chroms : list of str, optional
-            Subset of `self.chroms` to summarize. None (default)
-            summarizes every chromosome.
-        unmapped_strand : {"union", "drop", "+", "-"}, default "union"
-            How to evaluate unmapped ('.') strand molecules.
-
-        Returns
-        -------
-        pd.DataFrame
-            Columns `chrom`, `source`, `label`, `n_sites_plus`,
-            `n_sites_minus`, `p0`/`p25`/`p50`/`p75`/`p100` (dropout
-            fraction percentiles) -- one row per (chrom, source,
-            label), plus a `label="aggregate"` row per (chrom,
-            source) pooling all labels (as in
-            `filter_dropout(method="aggregate")`), if more than one
-            label is evaluated.
-
-        Raises
-        ------
-        ValueError
-            If `mtase` is unset, contains an unknown label, `chroms`
-            contains a chromosome not in `self.chroms`,
-            `unmapped_strand` is invalid, a source is missing for
-            some chromosome, or `refseq` is missing.
-        """
-        mtases = self._resolve_mtase_subset(mtase)
-        chroms = self._resolve_chroms_subset(chroms)
-        if unmapped_strand not in _VALID_UNMAPPED_STRAND:
-            raise ValueError(
-                "'unmapped_strand' must be one of "
-                f"{sorted(_VALID_UNMAPPED_STRAND)}, got "
-                f"{unmapped_strand!r}"
-            )
-
-        percentiles = [0, 25, 50, 75, 100]
-        pct_cols = [f"p{p}" for p in percentiles]
-        rows = []
-        for chrom in chroms:
-            raw = self.raw[chrom]
-            if raw.refseq is None:
-                raise ValueError(
-                    f"no refseq available for chrom '{chrom}'; "
-                    "required to determine methylatable positions"
-                )
-            sources = _resolve_sources(raw, which)
-
-            for src in sources:
-                df = getattr(raw, f"{src}_data")
-                mol_id = getattr(raw, f"{src}_mol_id")
-                if df is None or mol_id is None:
-                    raise ValueError(
-                        f"no '{src}' data available for chrom '{chrom}'"
-                    )
-                masks = self._mtase_masks(raw, mtases)
-                cov = _site_coverage(
-                    df,
-                    len(mol_id),
-                    masks,
-                    unmapped_strand,
-                    ignore_strand=self._ignore_strand,
-                )
-                frac, pooled = _dropout_fracs(cov, mtases)
-
-                for i, m in enumerate(mtases):
-                    row = {
-                        "chrom": chrom,
-                        "source": src,
-                        "label": m,
-                        "n_sites_plus": int(masks[m][0].sum()),
-                        "n_sites_minus": int(masks[m][1].sum()),
-                    }
-                    row.update(
-                        zip(pct_cols, np.percentile(frac[i], percentiles))
-                    )
-                    rows.append(row)
-
-                if len(mtases) > 1:
-                    row = {
-                        "chrom": chrom,
-                        "source": src,
-                        "label": "aggregate",
-                        "n_sites_plus": sum(
-                            int(masks[m][0].sum()) for m in mtases
-                        ),
-                        "n_sites_minus": sum(
-                            int(masks[m][1].sum()) for m in mtases
-                        ),
-                    }
-                    row.update(
-                        zip(pct_cols, np.percentile(pooled, percentiles))
-                    )
-                    rows.append(row)
-
-        return pd.DataFrame(rows)
 
     def dropout_fractions(
         self,

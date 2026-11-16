@@ -292,62 +292,6 @@ def filter_dropout(
         exp.save(overwrite=True)
 
 
-@app.command(name="summarize_dropout")
-def summarize_dropout(
-    source_file: Annotated[
-        Path,
-        typer.Argument(
-            help="Experiment HDF5 file",
-            exists=True,
-            file_okay=True,
-            dir_okay=False,
-            readable=True,
-        ),
-    ],
-    which: Annotated[
-        str | None, typer.Option(help="test, meth, or unmeth")
-    ] = None,
-    mtase: Annotated[
-        str | None,
-        typer.Option(
-            callback=csv_parser(str),
-            help="Subset of mtase labels to summarize",
-        ),
-    ] = None,
-    chroms: Annotated[
-        str | None,
-        typer.Option(
-            callback=csv_parser(str), help="Subset of chromosomes to summarize"
-        ),
-    ] = None,
-    unmapped_strand: Annotated[
-        str, typer.Option(help="union, drop, +, or -")
-    ] = "union",
-    out_file: Annotated[
-        Path | None,
-        typer.Option(
-            help="Optional path to also save the summary as CSV",
-            file_okay=True,
-            dir_okay=False,
-        ),
-    ] = None,
-):
-    """
-    Print a per-label dropout fraction summary (QC check).
-    """
-    exp = MethPrintExperiment.load(source_file)
-    df = catella.summarize_dropout(
-        exp=exp,
-        which=which,
-        mtase=mtase,
-        chroms=chroms,
-        unmapped_strand=unmapped_strand,
-    )
-    typer.echo(df.to_string(index=False))
-    if out_file is not None:
-        df.to_csv(out_file, index=False)
-
-
 @app.command(name="qc")
 def qc(
     source_file: Annotated[

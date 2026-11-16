@@ -3,6 +3,12 @@
 import numpy as np
 import pandas as pd
 
+from catella.experiment._contexts import (
+    _MTASE_CHANNELS,
+    CONTEXT_NAMES,
+    _merge_contexts,
+    _reference_contexts,
+)
 from catella.experiment._ingest import _methylatable_positions
 from catella.h5_array import H5Array
 
@@ -78,6 +84,41 @@ def _mtase_site_masks(refseq, mtases):
             _methylatable_positions(refseq, m, "-"),
         )
         for m in mtases
+    }
+
+
+def _channel_site_masks(refseq, channels):
+    """
+    Per-strand site masks for each context channel.
+
+    Parameters
+    ----------
+    refseq : str
+        Reference sequence for this chromosome.
+    channels : iterable of int
+        Channel codes, as from `_resolve_channels`; merged channels
+        (GC, CG) pool the sites of their parts.
+
+    Returns
+    -------
+    dict of str to (np.ndarray, np.ndarray)
+        Maps each channel name to `(plus_mask, minus_mask)`, bool,
+        length `len(refseq)`.
+    """
+    channels = tuple(channels)
+    ctx = _merge_contexts(_reference_contexts(refseq), channels)
+    strand_sites = {
+        s: np.logical_or.reduce(
+            [_methylatable_positions(refseq, m, s) for m in _MTASE_CHANNELS]
+        )
+        for s in ("+", "-")
+    }
+    return {
+        CONTEXT_NAMES[c]: (
+            strand_sites["+"] & (ctx == c),
+            strand_sites["-"] & (ctx == c),
+        )
+        for c in channels
     }
 
 

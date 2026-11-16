@@ -1,6 +1,7 @@
 # test_cli.py
 
 import gc
+import io
 import json
 
 import matplotlib
@@ -289,13 +290,13 @@ class TestFilterDropout:
 
 
 class TestQC:
-    def test_prints_table_writes_csv_and_saves(self, tmp_path):
+    def test_prints_tsv_writes_tsv_and_saves(self, tmp_path):
         raw_file, *_ = _load_raw_a_mtase(tmp_path)
         expected = catella.qc(
             exp=MethPrintExperiment.load(raw_file), percentiles=[25, 75]
         )
 
-        csv_out = tmp_path / "qc.csv"
+        tsv_out = tmp_path / "qc.tsv"
         result = runner.invoke(
             app,
             [
@@ -303,15 +304,15 @@ class TestQC:
                 str(raw_file),
                 "--percentiles",
                 "25,75",
-                "--csv-file",
-                str(csv_out),
+                "--tsv-file",
+                str(tsv_out),
             ],
         )
         assert result.exit_code == 0, result.output
-        for col in expected.columns:
-            assert col in result.output
+        printed = pd.read_csv(io.StringIO(result.stdout), sep="\t")
+        pd.testing.assert_frame_equal(printed, expected, check_dtype=False)
 
-        got = pd.read_csv(csv_out)
+        got = pd.read_csv(tsv_out, sep="\t")
         pd.testing.assert_frame_equal(got, expected, check_dtype=False)
 
         reloaded = MethPrintExperiment.load(raw_file)

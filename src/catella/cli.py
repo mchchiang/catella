@@ -331,10 +331,10 @@ def qc(
     batch_size: Annotated[
         int, typer.Option(help="Molecules per batch when counting calls")
     ] = 20000,
-    csv_file: Annotated[
+    tsv_file: Annotated[
         Path | None,
         typer.Option(
-            help="Optional path to also save the table as CSV",
+            help="Optional path to also save the table as TSV",
             file_okay=True,
             dir_okay=False,
         ),
@@ -368,9 +368,9 @@ def qc(
         batch_size=batch_size,
         overwrite=overwrite,
     )
-    typer.echo(df.to_string(index=False))
-    if csv_file is not None:
-        df.to_csv(csv_file, index=False)
+    typer.echo(df.to_csv(sep="\t", index=False), nl=False)
+    if tsv_file is not None:
+        df.to_csv(tsv_file, sep="\t", index=False)
     if out_file is not None:
         exp.save(out_file, overwrite=overwrite)
     else:

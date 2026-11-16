@@ -24,6 +24,7 @@ __all__ = [
     "extract_config",
     "filter_dropout",
     "load_raw",
+    "plot_config",
     "plot_dropout_ecdf",
     "plot_meth_energy",
     "plot_meth_prob",

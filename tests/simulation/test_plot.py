@@ -475,3 +475,152 @@ class TestPlotSamples:
             SimPlot().plot_samples(
                 dataset, chrom="chr1", mol=0, plot_eseq=True, show=False
             )
+
+
+def _tm_calls_dataset(tmp_path, nmol=5, nsim=0):
+    settings = SimSettings(
+        nucbp=3, llink=2, elink=1.0, mu=0.5, end_temp=1.0, emax=5.0
+    )
+    meth_prob = np.random.default_rng(9).random((nmol, 20))
+    meth_prob[1] = np.nan
+    dataset = SimManager(nworker=1, verbose=False).run(
+        chroms="chr1",
+        nsim=nsim,
+        method="tm",
+        settings=settings,
+        meth_prob=meth_prob,
+        out_dir=tmp_path / "tm_calls",
+        seed=9,
+    )
+    SimAnalysis().compute_best_match_config(dataset=dataset, name="bm")
+    return dataset
+
+
+def _rows(dataset, configs):
+    return np.array(
+        [
+            np.full(dataset.nbp["chr1"], -1, dtype=np.int8)
+            if c is None
+            else _footprint(dataset, c)
+            for c in configs
+        ]
+    )
+
+
+@pytest.mark.filterwarnings(
+    "ignore:__array__ implementation doesn't accept a copy keyword"
+    ":DeprecationWarning"
+)
+class TestPlotConfig:
+    def test_stored_calls(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        SimPlot().plot_config(dataset, chrom="chr1", name="bm", show=False)
+        configs = SimAnalysis().extract_config(
+            dataset, chrom="chr1", name="bm"
+        )
+        np.testing.assert_array_equal(_image(), _rows(dataset, configs))
+        assert (_image()[1] == -1).all()
+
+    def test_mcmc_raw_run(self, tmp_path):
+        dataset = _mcmc_dataset(tmp_path)
+        SimPlot().plot_config(dataset, chrom="chr1", run=1, show=False)
+        configs = SimAnalysis().extract_config(dataset, chrom="chr1", run=1)
+        np.testing.assert_array_equal(_image(), _rows(dataset, configs))
+
+    def test_tm_sample(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path, nsim=3)
+        SimPlot().plot_config(dataset, chrom="chr1", run=2, show=False)
+        pos = dataset.raw["chr1", 0, 2].position
+        np.testing.assert_array_equal(_image()[0], _footprint(dataset, pos))
+
+    def test_mols_order(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        SimPlot().plot_config(
+            dataset, chrom="chr1", name="bm", mols=[4, 0], show=False
+        )
+        configs = SimAnalysis().extract_config(
+            dataset, chrom="chr1", name="bm", mols=[4, 0]
+        )
+        np.testing.assert_array_equal(_image(), _rows(dataset, configs))
+
+    def test_max_rows_stride_picks_molecules(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        SimPlot().plot_config(
+            dataset, chrom="chr1", name="bm", max_rows=3, show=False
+        )
+        configs = SimAnalysis().extract_config(
+            dataset, chrom="chr1", name="bm", mols=[0, 2, 4]
+        )
+        np.testing.assert_array_equal(_image(), _rows(dataset, configs))
+
+    def test_max_rows_mean_ignores_no_data(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path, nmol=4)
+        SimPlot().plot_config(
+            dataset,
+            chrom="chr1",
+            name="bm",
+            max_rows=2,
+            downsample_how="mean",
+            show=False,
+        )
+        configs = SimAnalysis().extract_config(
+            dataset, chrom="chr1", name="bm"
+        )
+        rows = _rows(dataset, configs)
+        np.testing.assert_allclose(_image()[0], rows[0])
+        np.testing.assert_allclose(_image()[1], rows[2:].mean(axis=0))
+
+    def test_max_rows_max(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path, nmol=4)
+        SimPlot().plot_config(
+            dataset,
+            chrom="chr1",
+            name="bm",
+            max_rows=2,
+            downsample_how="max",
+            show=False,
+        )
+        configs = SimAnalysis().extract_config(
+            dataset, chrom="chr1", name="bm"
+        )
+        rows = _rows(dataset, configs)
+        np.testing.assert_array_equal(_image()[1], rows[2:].max(axis=0))
+
+    def test_plot_eseq_averages_shown_molecules(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        SimPlot().plot_config(
+            dataset,
+            chrom="chr1",
+            name="bm",
+            mols=[0, 2],
+            plot_eseq=True,
+            show=False,
+        )
+        assert len(plt.gcf().axes) == 4
+
+    def test_size_warning(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("catella._plotting._RENDER_WARN_BYTES", 1)
+        dataset = _tm_calls_dataset(tmp_path)
+        with pytest.warns(UserWarning, match="'max_rows' or 'mols'"):
+            SimPlot().plot_config(
+                dataset, chrom="chr1", name="bm", show=False
+            )
+
+    def test_missing_name_raises(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        with pytest.raises(KeyError, match="nope"):
+            SimPlot().plot_config(
+                dataset, chrom="chr1", name="nope", show=False
+            )
+
+    def test_bad_downsample_how_raises(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        with pytest.raises(ValueError, match="downsample_how must be"):
+            SimPlot().plot_config(
+                dataset,
+                chrom="chr1",
+                name="bm",
+                max_rows=2,
+                downsample_how="sum",
+                show=False,
+            )

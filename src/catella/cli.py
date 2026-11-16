@@ -1137,6 +1137,81 @@ def sort_by_linkage(
         obj.save(overwrite=True)
 
 
+@app.command(name="plot_config")
+def plot_config(
+    chrom: Annotated[str, typer.Argument(help="Chromosome identifier")],
+    dataset_file: Annotated[
+        Path,
+        typer.Argument(
+            help="Simulation dataset HDF5 file",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+        ),
+    ],
+    name: Annotated[
+        str | None,
+        typer.Option(
+            help="Key prefix of stored calls (raw configurations if omitted)"
+        ),
+    ] = None,
+    mols: Annotated[
+        list[int] | None,
+        typer.Option(help="Molecule index to display (repeatable)"),
+    ] = None,
+    run: Annotated[
+        int | None, typer.Option(help="MCMC run or TM sample (default 0)")
+    ] = None,
+    time: Annotated[
+        int | None,
+        typer.Option(help="MCMC time point (default: final frame)"),
+    ] = None,
+    max_rows: Annotated[
+        int | None, typer.Option(help="Show at most this many rows")
+    ] = None,
+    downsample_how: Annotated[
+        str, typer.Option(help="'stride', 'mean' or 'max'")
+    ] = "stride",
+    xscale: Annotated[
+        int,
+        typer.Option(help="Spatial scale factor (power of 10) for the x-axis"),
+    ] = 1000,
+    cmap: Annotated[
+        str | None, typer.Option(help="Matplotlib colormap name")
+    ] = None,
+    plot_eseq: Annotated[
+        bool, typer.Option(help="Plot the mean sequence-specific energy")
+    ] = False,
+    out_file: Annotated[
+        Path | None,
+        typer.Option(
+            help="Path to save the figure", file_okay=True, dir_okay=False
+        ),
+    ] = None,
+    show: Annotated[bool, typer.Option(help="Display the figure")] = True,
+):
+    """
+    Plot one nucleosome configuration per molecule.
+    """
+    dataset = SimDataset.load(dataset_file)
+    catella.plot_config(
+        dataset,
+        chrom=chrom,
+        name=name,
+        mols=mols,
+        run=run,
+        time=time,
+        max_rows=max_rows,
+        downsample_how=downsample_how,
+        xscale=xscale,
+        cmap=cmap,
+        plot_eseq=plot_eseq,
+        out_file=out_file,
+        show=show,
+    )
+
+
 @app.command(name="plot_occup")
 def plot_occup(
     chrom: Annotated[str, typer.Argument(help="Chromosome identifier")],

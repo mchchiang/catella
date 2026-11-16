@@ -823,6 +823,22 @@ class TestComputeConfig:
             catella.compute_config(dataset)
 
 
+class TestPlotConfig:
+    def test_writes_figure_file(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path)
+        catella.compute_config(dataset)
+        out_file = tmp_path / "configs.png"
+        catella.plot_config(
+            dataset,
+            chrom="chr1",
+            name="best_match",
+            max_rows=2,
+            out_file=out_file,
+            show=False,
+        )
+        assert out_file.exists()
+
+
 class TestExtractConfig:
     def test_matches_simanalysis(self, tmp_path):
         dataset = _make_tm_dataset(tmp_path)

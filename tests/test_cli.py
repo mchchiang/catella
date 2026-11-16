@@ -1637,6 +1637,46 @@ class TestSortByLinkage:
         assert result.exit_code != 0
 
 
+class TestPlotConfig:
+    def test_writes_figure_file(self, tmp_path):
+        dataset = SimManager(nworker=1, verbose=False).run(
+            chroms="chr1",
+            nsim=0,
+            method="tm",
+            settings=SimSettings(**_settings_dict()),
+            meth_prob=np.random.default_rng(2).random((4, 15)),
+            out_dir=tmp_path / "tm_sim",
+            seed=1,
+        )
+        catella.compute_config(dataset)
+        dataset.save()
+        out_file = tmp_path / "configs.png"
+
+        result = runner.invoke(
+            app,
+            [
+                "plot_config",
+                "chr1",
+                str(dataset._dataset_file),
+                "--name",
+                "best_match",
+                "--mols",
+                "2",
+                "--mols",
+                "0",
+                "--max-rows",
+                "1",
+                "--downsample-how",
+                "mean",
+                "--out-file",
+                str(out_file),
+                "--no-show",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert out_file.exists()
+
+
 class TestPlotOccup:
     # Plot content is not asserted (matches the repo's existing plotting
     # test convention in tests/experiment/test_plot.py); this only checks

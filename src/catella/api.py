@@ -1164,6 +1164,105 @@ def extract_config(
     )
 
 
+def plot_config(
+    dataset: SimDataset,
+    *,
+    chrom: str,
+    name: str | None = None,
+    mols: Iterable[int] | None = None,
+    run: int | None = None,
+    time: int | None = None,
+    max_rows: int | None = None,
+    downsample_how: str = "stride",
+    xscale: int = 1000,
+    cmap: str | None = None,
+    out_file: str | Path | None = None,
+    plot_eseq: bool = False,
+    show: bool = True,
+):
+    """
+    Plot one nucleosome configuration per molecule.
+
+    Each row is a molecule, showing the bases covered by the nucleosomes
+    (1) and the linkers (0) of one configuration read with
+    `extract_config`: the calls stored under `name` by `compute_config`,
+    or the raw configuration of run `run` at time `time` (MCMC) or of
+    exact sample `run` (TM). Molecules without data are drawn in gray.
+    For many configurations of one molecule, see
+    `SimPlot.plot_samples`.
+
+    Parameters
+    ----------
+    dataset : SimDataset
+        The dataset holding the configurations.
+    chrom : str
+        Chromosome identifier.
+    name : str, optional
+        The `name` given to `compute_config`. If None (default), raw
+        configurations are shown.
+    mols : iterable of int, optional
+        Molecules to show, in this order (all if None). The y-axis counts
+        rows, not molecule indices.
+    run : int, optional
+        MCMC run or TM sample to show; 0 if None. Only used if `name` is
+        None.
+    time : int, optional
+        MCMC time point to show; the final frame if None. Only used for
+        MCMC datasets with `name` None.
+    max_rows : int, optional
+        If given, show at most this many rows, merged as `downsample_how`
+        says.
+    downsample_how : {"stride", "mean", "max"}, default "stride"
+        How to reduce the rows to `max_rows`: "stride" keeps every k-th
+        molecule (real configurations), "mean" shows the covered share of
+        each group of molecules, and "max" whether any of them is
+        covered.
+    xscale : int, default 1000
+        Spatial scaling factor (a power of 10) for the x-axis labels.
+    cmap : str, optional
+        Matplotlib colormap name. If None, the `SimPlot` default is used.
+    out_file : str or Path, optional
+        Path to save the figure. If None, it is not saved.
+    plot_eseq : bool, default False
+        Whether to plot the sequence-specific binding energy, averaged
+        over the shown molecules, below the heatmap.
+    show : bool, default True
+        Whether to display the figure.
+
+    Raises
+    ------
+    ValueError
+        If `max_rows` or `downsample_how` is invalid, if `xscale` is not
+        a power of 10, if `plot_eseq` is True and the dataset stores no
+        energies, or for invalid arguments of `extract_config`.
+    KeyError
+        If no calls are stored under `name` for `chrom`.
+    IndexError
+        If a molecule or `run` is out of range.
+
+    Warns
+    -----
+    UserWarning
+        If rendering the plot is estimated to need more than 1 GB of
+        memory; pass `max_rows` or `mols` to reduce it.
+    """
+    SimPlot().plot_config(
+        dataset,
+        chrom=chrom,
+        name=name,
+        mols=mols,
+        run=run,
+        time=time,
+        max_rows=max_rows,
+        downsample_how=downsample_how,
+        xscale=xscale,
+        cmap=cmap,
+        out_file=out_file,
+        plot_eseq=plot_eseq,
+        show=show,
+    )
+
+
 def plot_occup(
     dataset: SimDataset,
     *,

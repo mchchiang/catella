@@ -512,6 +512,147 @@ class SimPlot:
             out_file.parents[0].mkdir(exist_ok=True, parents=True)
             fig.savefig(out_file)
 
+    @_apply_style
+    def plot_config(
+        self,
+        dataset: SimDataset,
+        *,
+        chrom: str,
+        name: str | None = None,
+        mols: Iterable[int] | None = None,
+        run: int | None = None,
+        time: int | None = None,
+        max_rows: int | None = None,
+        downsample_how: str = "stride",
+        xscale: int = 1000,
+        cmap: str | None = None,
+        out_file: str | Path | None = None,
+        plot_eseq: bool = False,
+        show: bool = True,
+    ):
+        """
+        Plot one nucleosome configuration per molecule.
+
+        Each row is a molecule, showing the bases covered by the
+        nucleosomes (1) and the linkers (0) of one configuration read with
+        `SimAnalysis.extract_config`: the calls stored under `name` (e.g.,
+        by `compute_config`), or the raw configuration of run `run` at
+        time `time` (MCMC) or of exact sample `run` (TM). Molecules
+        without data are drawn in `nan_color`. Use `plot_samples` for
+        many configurations of one molecule.
+
+        Parameters
+        ----------
+        dataset : SimDataset
+            The dataset holding the configurations.
+        chrom : str
+            Chromosome identifier.
+        name : str, optional
+            The prefix the calls were stored under. If None (default),
+            raw configurations are shown.
+        mols : iterable of int, optional
+            Molecules to show, in this order (all if None). The y-axis
+            counts rows, not molecule indices.
+        run : int, optional
+            MCMC run or TM sample to show; 0 if None. Only used if
+            `name` is None.
+        time : int, optional
+            MCMC time point to show; the final frame if None. Only used
+            for MCMC datasets with `name` None.
+        max_rows : int, optional
+            If given, show at most this many rows, merged as
+            `downsample_how` says.
+        downsample_how : {"stride", "mean", "max"}, default "stride"
+            How to reduce the rows to `max_rows`: "stride" keeps every
+            k-th molecule (real configurations; only those are read),
+            "mean" shows the covered share of each group of molecules,
+            and "max" whether any of them is covered.
+        xscale : int, default 1000
+            Spatial scaling factor (a power of 10) for the x-axis labels.
+        cmap : str, optional
+            Matplotlib colormap name. If None, `self.cmap` is used.
+        out_file : str or Path, optional
+            Path to save the figure. Directories are created if they do
+            not exist.
+        plot_eseq : bool, default False
+            Whether to plot the sequence-specific binding energy, averaged
+            over the shown molecules, below the heatmap.
+        show : bool, default True
+            Whether to display the plot using `plt.show()`.
+
+        Raises
+        ------
+        ValueError
+            If `max_rows` or `downsample_how` is invalid, if `xscale` is
+            not a power of 10, if `plot_eseq` is True and the dataset
+            stores no energies, or for invalid arguments of
+            `SimAnalysis.extract_config`.
+        KeyError
+            If no calls are stored under `name` for `chrom`.
+        IndexError
+            If a molecule or `run` is out of range.
+
+        Warns
+        -----
+        UserWarning
+            If rendering the plot is estimated to need more than 1 GB of
+            memory; pass `max_rows` or `mols` to reduce it.
+
+        Notes
+        -----
+        The footprints are held as an int8 matrix (1 byte per molecule
+        and base pair) before downsampling.
+        """
+        xpow = int(self._log10(xscale, "xscale"))
+        _check_downsample(max_rows, downsample_how)
+        _check_eseq(dataset, plot_eseq)
+        mol_ids = (
+            list(range(dataset.nmol[chrom]))
+            if mols is None
+            else [int(m) for m in mols]
+        )
+        if downsample_how == "stride":
+            mol_ids = mol_ids[:: _stride_step(len(mol_ids), max_rows)]
+        nbp = dataset.nbp[chrom]
+        _warn_if_large(
+            _shown_rows(len(mol_ids), max_rows),
+            nbp,
+            "consider passing 'max_rows' or 'mols'",
+        )
+        configs = SimAnalysis().extract_config(
+            dataset, chrom=chrom, name=name, run=run, time=time, mols=mol_ids
+        )
+        matrix = _footprints(configs, nbp, dataset.settings["nucbp"])
+        matrix = _merge_rows(matrix, max_rows, downsample_how)
+
+        eseq = None
+        if plot_eseq:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=RuntimeWarning)
+                eseq = np.nanmean(np.asarray(dataset.eseq[chrom])[mol_ids], 0)
+        fig, hm_ax = self._draw_footprints(
+            dataset,
+            matrix,
+            extent_y=(0, matrix.shape[0]),
+            ylabel="Molecule index",
+            invert_y=False,
+            xpow=xpow,
+            xscale=xscale,
+            cmap=cmap,
+            eseq=eseq,
+            eseq_label=r"$\langle E_{\text{seq}} \rangle$ [$k_BT$]",
+        )
+        hm_ax.set_title(f"Configurations for {chrom}", pad=12)
+        fig.tight_layout()
+
+        if show:
+            plt.show()
+
+        if out_file is not None:
+            out_file = Path(out_file)
+            out_file.parents[0].mkdir(exist_ok=True, parents=True)
+            fig.savefig(out_file)
+
     def _draw_footprints(
         self,
         dataset,

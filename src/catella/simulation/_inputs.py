@@ -75,6 +75,71 @@ def _normalize_meth_prob(meth_prob, chroms):
     return out
 
 
+def _start_positions(block, nucbp):
+    """
+    Return the columns of `block` where a nucleosome can start.
+
+    Parameters
+    ----------
+    block : np.ndarray
+        2D array, molecules by base pairs.
+    nucbp : int
+        The nucleosome footprint size.
+
+    Returns
+    -------
+    np.ndarray
+        The first `nbp - nucbp + 1` columns, or all columns if the
+        molecules are shorter than a nucleosome.
+    """
+    npos = block.shape[-1] - nucbp + 1
+    return block[..., :npos] if npos > 0 else block
+
+
+def _prepare_rows(block, nucbp, chrom):
+    """
+    Find the molecules of `block` with no data and check the others.
+
+    A molecule has no data if its methylation probability is nan at
+    every nucleosome start position. Nan beyond the last start
+    position is allowed, since those base pairs never set a
+    nucleosome's energy.
+
+    Parameters
+    ----------
+    block : np.ndarray
+        2D methylation probability, molecules by base pairs.
+    nucbp : int
+        The nucleosome footprint size.
+    chrom : str
+        The chromosome of `block`, for error messages.
+
+    Returns
+    -------
+    block : np.ndarray
+        `block`, unchanged.
+    no_data : np.ndarray
+        bool, True for each molecule with no data.
+
+    Raises
+    ------
+    ValueError
+        If a molecule is nan at some but not all start positions.
+    """
+    nan = np.isnan(_start_positions(block, nucbp))
+    no_data = nan.all(axis=1)
+    if block.shape[1] >= nucbp:
+        partial = np.flatnonzero(nan.any(axis=1) & ~no_data)
+        if partial.size:
+            raise ValueError(
+                f"meth_prob of chrom '{chrom}' has nan at nucleosome start "
+                f"positions in {partial.size} molecule(s) (first: "
+                f"{partial[0]}); fill them upstream (e.g., fill_edge or "
+                "nan_method)"
+            )
+    return block, no_data
+
+
 def _normalize_mols(mols, chroms):
     """
     Return the molecule selection of each chromosome.

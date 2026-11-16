@@ -7,6 +7,7 @@ import pandas as pd
 from catella_cpp import NucPosTM
 
 from catella.h5_array import H5Array
+from catella.simulation._inputs import _start_positions
 from catella.simulation._io import _pack_jagged
 from catella.simulation._parallel import _process_map
 from catella.simulation.config import SimSettings
@@ -219,12 +220,16 @@ def _run_tm_batch(job):
 
     Returns
     -------
-    list of tuple
+    list of tuple or None
         One tuple per molecule, holding the result of each getter in the
-        order of `job.getters`.
+        order of `job.getters`, or None for a molecule with no data (nan
+        energy at every nucleosome start position), which is not solved.
     """
     results = []
     for row in job.eseq:
+        if np.isnan(_start_positions(row, job.settings.nucbp)).all():
+            results.append(None)
+            continue
         tm = _build_tm(job.settings, job.nbp, row)
         results.append(
             tuple(
@@ -282,8 +287,9 @@ def _iter_tm_batches(dataset, chroms, getters, batch_size, nworker):
     ------
     tuple
         `(chrom, start, results)`, where `results` holds one tuple of
-        getter results per molecule, starting at molecule `start`.
-        Batches arrive in completion order when `nworker > 1`.
+        getter results per molecule (None for a molecule with no data),
+        starting at molecule `start`. Batches arrive in completion order
+        when `nworker > 1`.
 
     Raises
     ------
@@ -322,7 +328,8 @@ def _tm_stats(
 
     Per-molecule quantities are stored as DataFrames and per-bp ones as
     H5Arrays. Each batch is written as soon as it arrives, so peak memory
-    scales with `2 * nworker * batch_size` molecules.
+    scales with `2 * nworker * batch_size` molecules. Molecules with no
+    data get nan.
 
     Parameters
     ----------
@@ -360,7 +367,13 @@ def _tm_stats(
     for chrom, start, results in batches:
         stop = start + len(results)
         for i, (stat, arr) in enumerate(zip(stats, out[chrom])):
-            block = np.array([r[i] for r in results], dtype=np.float64)
+            fill = np.nan
+            if stat.per_bp:
+                fill = np.full(dataset.nbp[chrom], np.nan)
+            block = np.array(
+                [fill if r is None else r[i] for r in results],
+                dtype=np.float64,
+            )
             if stat.per_bp:
                 arr.write_batch(start, stop, block)
             else:
@@ -429,6 +442,7 @@ def _tm_configs(dataset, chroms, name, get_config, *, kwargs=None, nworker=1):
     For each chromosome, writes `{name}_position_flat` and
     `{name}_position_offset` (the packed positions) and `{name}_energy`
     (the energy and log posterior probability of each configuration).
+    Molecules with no data get no positions and nan energy.
 
     Parameters
     ----------
@@ -456,7 +470,12 @@ def _tm_configs(dataset, chroms, name, get_config, *, kwargs=None, nworker=1):
         dataset, chroms, getters, TM_BATCH_SIZE, nworker
     )
     for chrom, start, results in batches:
-        for mol, ((pos, e), lz) in enumerate(results, start):
+        for mol, result in enumerate(results, start):
+            if result is None:
+                positions[chrom][mol] = np.zeros(0, dtype=np.int32)
+                energy[chrom][mol] = log_z[chrom][mol] = np.nan
+                continue
+            (pos, e), lz = result
             positions[chrom][mol] = np.asarray(pos, dtype=np.int32)
             energy[chrom][mol] = e
             log_z[chrom][mol] = lz

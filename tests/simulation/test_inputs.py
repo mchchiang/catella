@@ -11,7 +11,9 @@ from catella.simulation._inputs import (
     _normalize_meth_prob,
     _normalize_mols,
     _parse_out_types,
+    _prepare_rows,
     _resolve_settings,
+    _start_positions,
 )
 from catella.simulation.config import SimSettings
 from catella_cpp import Dump
@@ -84,6 +86,60 @@ class TestNormalizeMethProb:
         data = {"a": df}
         _normalize_meth_prob(data, ["a"])
         assert data["a"] is df
+
+
+class TestStartPositions:
+    def test_keeps_first_nbp_minus_nucbp_plus_one_columns(self):
+        block = np.arange(20.0).reshape(2, 10)
+        assert _start_positions(block, 4).shape == (2, 7)
+
+    def test_one_dimensional_row(self):
+        assert _start_positions(np.arange(10.0), 4).shape == (7,)
+
+    def test_short_molecules_keep_all_columns(self):
+        block = np.zeros((2, 3))
+        assert _start_positions(block, 4).shape == (2, 3)
+
+
+class TestPrepareRows:
+    def test_all_nan_rows_have_no_data(self):
+        block = np.full((3, 10), 0.5)
+        block[1] = np.nan
+        out, no_data = _prepare_rows(block, 4, "chr1")
+        assert out is block
+        np.testing.assert_array_equal(no_data, [False, True, False])
+
+    def test_nan_only_at_start_positions_has_no_data(self):
+        block = np.full((1, 10), 0.5)
+        block[0, :7] = np.nan
+        _, no_data = _prepare_rows(block, 4, "chr1")
+        assert no_data[0]
+
+    def test_trailing_nan_is_allowed(self):
+        block = np.full((2, 10), 0.5)
+        block[:, 7:] = np.nan
+        _, no_data = _prepare_rows(block, 4, "chr1")
+        assert not no_data.any()
+
+    def test_partial_nan_raises(self):
+        block = np.full((3, 10), 0.5)
+        block[2, 3] = np.nan
+        with pytest.raises(ValueError, match="chr1.*1 molecule.*first: 2"):
+            _prepare_rows(block, 4, "chr1")
+
+    def test_short_molecules_never_raise(self):
+        block = np.full((2, 3), 0.5)
+        block[0, 1] = np.nan
+        block[1] = np.nan
+        _, no_data = _prepare_rows(block, 4, "chr1")
+        np.testing.assert_array_equal(no_data, [False, True])
+
+    def test_input_not_modified(self):
+        block = np.full((2, 10), 0.5)
+        block[0] = np.nan
+        copy = block.copy()
+        _prepare_rows(block, 4, "chr1")
+        np.testing.assert_array_equal(block, copy)
 
 
 class TestNormalizeMols:

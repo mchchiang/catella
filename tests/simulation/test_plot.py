@@ -258,7 +258,7 @@ class TestPlotNucPosEseq:
             dataset, chrom="chr1", mol=0, run=0, plot_eseq=True, show=False
         )
 
-    def test_plot_eseq_skips_ylim_when_all_nan(self, tmp_path):
+    def test_no_data_molecule_has_no_run(self, tmp_path):
         rng = np.random.default_rng(6)
         meth_prob = rng.random((2, 20))
         meth_prob[0, :] = np.nan
@@ -271,14 +271,12 @@ class TestPlotNucPosEseq:
             out_dir=tmp_path / "dataset",
             seed=6,
         )
-        assert np.isnan(dataset.eseq["chr1"][0, :]).all()
+        assert dataset.no_data["chr1"][0]
 
-        SimPlot().plot_nuc_pos(
-            dataset, chrom="chr1", mol=0, run=0, plot_eseq=True, show=False
-        )
-
-        seq_ax = plt.gcf().axes[2]
-        assert np.isfinite(seq_ax.get_ylim()).all()
+        with pytest.raises(ValueError, match="cannot find the simulation"):
+            SimPlot().plot_nuc_pos(
+                dataset, chrom="chr1", mol=0, run=0, plot_eseq=True, show=False
+            )
 
     def test_plot_eseq_ylim_matches_full_data_range(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=2, nbp=20)

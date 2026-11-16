@@ -509,6 +509,7 @@ class SimDataset:
     _out_type: Any
     _seed: int
     _seed_table: Mapping[str, np.ndarray]
+    _no_data: Mapping[str, np.ndarray]
     _raw_dir: Path
     _dataset_file: Path
     _file_map: SimFileMapper
@@ -540,6 +541,7 @@ class SimDataset:
         out_type: Any | None = None,
         seed: int | None = None,
         seed_table: Mapping[str, np.ndarray] | None = None,
+        no_data: Mapping[str, np.ndarray] | None = None,
     ):
         # Some validations
         if method not in ("mcmc", "tm"):
@@ -585,6 +587,20 @@ class SimDataset:
         obj._out_type = out_type
         obj._seed = seed
         obj._seed_table = seed_table
+        obj._no_data = {}
+        for chrom in obj._chroms:
+            arr = (
+                np.zeros(obj._nmol[chrom], dtype=bool)
+                if no_data is None
+                else np.array(no_data[chrom], dtype=bool)
+            )
+            if arr.shape != (obj._nmol[chrom],):
+                raise ValueError(
+                    f"no_data of chromosome {chrom} must have "
+                    f"{obj._nmol[chrom]} entries, got {arr.size}"
+                )
+            arr.flags.writeable = False
+            obj._no_data[chrom] = arr
         obj._tmp_dir = None
         obj._finalizer = None
         return obj
@@ -605,6 +621,7 @@ class SimDataset:
         out_type: Any | None = None,
         seed: int | None = None,
         seed_table: Mapping[str, np.ndarray] | None = None,
+        no_data: Mapping[str, np.ndarray] | None = None,
     ) -> Self:
         """
         Create a new simulation dataset with the specified parameters.
@@ -654,6 +671,11 @@ class SimDataset:
             array per chromosome with shape `(nmol[chrom], nsim)`. Enables
             exact reproduction of any individual run later, even ones
             whose raw output file is missing or corrupted.
+        no_data : Mapping[str, np.ndarray], optional
+            One bool array per chromosome with `nmol[chrom]` entries,
+            True for each molecule that is not simulated because its
+            methylation data is missing. If None (default), no molecule
+            is skipped.
 
         Returns
         -------
@@ -708,6 +730,7 @@ class SimDataset:
             out_type=out_type,
             seed=seed,
             seed_table=seed_table,
+            no_data=no_data,
         )
 
     @classmethod
@@ -827,6 +850,7 @@ class SimDataset:
                 out_type=self._out_type,
                 seed=self._seed,
                 seed_table=self._seed_table,
+                no_data=self._no_data,
             )
             gana = _replace_group(h5stream, "analysis")
             for chrom, data in self._analysis.items():
@@ -1143,7 +1167,9 @@ class SimDataset:
 
         Scans every `(chrom, mol, run)` combination expected for this
         dataset -- not just ones with an existing raw file -- and checks
-        whether each one completed successfully.
+        whether each one completed successfully. Molecules skipped for
+        having no data (see `no_data`) are not expected and never
+        reported.
 
         Parameters
         ----------
@@ -1173,9 +1199,9 @@ class SimDataset:
 
         def all_triplets():
             for chrom in chroms:
-                for mol in range(self._nmol[chrom]):
+                for mol in np.flatnonzero(~self._no_data[chrom]):
                     for run in range(self._nsim):
-                        yield (chrom, mol, run)
+                        yield (chrom, int(mol), run)
 
         incomplete = {"missing": [], "corrupted": [], "truncated": []}
         statuses = _threaded_map(
@@ -1399,6 +1425,26 @@ class SimDataset:
         if self._seed_table is None:
             return None
         return MappingProxyType(self._seed_table)
+
+    @property
+    def no_data(self) -> Mapping[str, np.ndarray]:
+        """
+        The molecules that were not simulated for lack of data.
+
+        A molecule has no data if its methylation probability is nan at
+        every nucleosome start position, e.g. a molecule masked by
+        `filter_dropout`. Such molecules have no raw files, and their
+        analysis results are nan.
+
+        Returns
+        -------
+        types.MappingProxyType
+            A read-only mapping of chromosome names to a read-only bool
+            array with one entry per molecule, True if the molecule was
+            skipped. All False for datasets that predate this being
+            persisted.
+        """
+        return MappingProxyType(self._no_data)
 
     @property
     def raw(self) -> SimDataAccessor:

@@ -918,6 +918,140 @@ class TestRerunTM:
         )
 
 
+def _no_data_meth_prob(nmol=3, nbp=400, nucbp=147):
+    meth_prob = _make_meth_prob(nmol=nmol, nbp=nbp)
+    meth_prob[1] = np.nan
+    meth_prob[:, nbp - nucbp + 1 :] = np.nan
+    return meth_prob
+
+
+def _run_no_data(tmp_path, method="mcmc", nsim=2, name="ds"):
+    if method == "mcmc":
+        settings = _make_settings()
+        meth_prob = _no_data_meth_prob()
+    else:
+        settings = _make_tm_settings()
+        meth_prob = _no_data_meth_prob(nbp=30, nucbp=3)
+    dataset = SimManager(nworker=1, verbose=False).run(
+        chroms="chr1",
+        nsim=nsim,
+        method=method,
+        settings=settings,
+        meth_prob=meth_prob,
+        out_dir=tmp_path / name,
+        seed=1,
+    )
+    return dataset, meth_prob
+
+
+class TestNoData:
+    def test_mcmc_skips_molecule(self, tmp_path):
+        dataset, _ = _run_no_data(tmp_path)
+        np.testing.assert_array_equal(
+            dataset.no_data["chr1"], [False, True, False]
+        )
+        assert not dataset.mcmc_file("chr1", 1, 0).exists()
+        assert dataset.mcmc_file("chr1", 0, 0).exists()
+        assert {mol for _, mol, _ in dataset.iter_runs()} == {0, 2}
+
+    def test_find_incomplete_runs_ignores_molecule(self, tmp_path):
+        dataset, _ = _run_no_data(tmp_path)
+        assert dataset.find_incomplete_runs() == {
+            "missing": [],
+            "corrupted": [],
+            "truncated": [],
+        }
+
+    def test_mcmc_occupancy_is_nan(self, tmp_path, capsys):
+        dataset, _ = _run_no_data(tmp_path)
+        SimAnalysis().compute_occup(dataset=dataset)
+        occup = np.asarray(dataset.analysis["chr1"]["occup"])
+        assert np.isnan(occup[1]).all()
+        assert not np.isnan(occup[[0, 2]]).any()
+        assert "no simulation data" not in capsys.readouterr().out
+
+    def test_tm_skips_molecule(self, tmp_path):
+        dataset, _ = _run_no_data(tmp_path, method="tm")
+        assert dataset.no_data["chr1"][1]
+        assert not dataset.tm_file("chr1", 1).exists()
+        assert dataset.tm_file("chr1", 0).exists()
+        assert dataset.find_incomplete_runs()["missing"] == []
+
+    def test_tm_exact_stats_are_nan(self, tmp_path):
+        dataset, _ = _run_no_data(tmp_path, method="tm", nsim=0)
+        ana = SimAnalysis()
+        ana.compute_occup(dataset=dataset)
+        ana.compute_mean_nnuc(dataset=dataset)
+        occup = np.asarray(dataset.analysis["chr1"]["occup"])
+        mean_n = dataset.analysis["chr1"]["mean_nnuc"].to_numpy().ravel()
+        assert np.isnan(occup[1]).all()
+        assert not np.isnan(occup[[0, 2]]).any()
+        assert np.isnan(mean_n[1])
+        assert not np.isnan(mean_n[[0, 2]]).any()
+
+    def test_tm_config_is_empty_with_nan_energy(self, tmp_path):
+        dataset, _ = _run_no_data(tmp_path, method="tm", nsim=0)
+        ana = SimAnalysis()
+        ana.compute_best_match_config(dataset=dataset)
+        energy = dataset.analysis["chr1"]["best_match_energy"]
+        assert np.isnan(energy["energy"][1])
+        assert np.isnan(energy["log_prob"][1])
+        assert not np.isnan(energy["energy"][[0, 2]]).any()
+        assert ana.get_config(dataset, "chr1", 1, name="best_match").size == 0
+
+    def test_partial_nan_raises_before_creating_dataset(self, tmp_path):
+        meth_prob = _make_meth_prob(nmol=2, nbp=400)
+        meth_prob[0, 10] = np.nan
+        with pytest.raises(ValueError, match="nan at nucleosome start"):
+            SimManager(nworker=1, verbose=False).run(
+                chroms="chr1",
+                nsim=1,
+                settings=_make_settings(),
+                meth_prob=meth_prob,
+                out_dir=tmp_path / "ds",
+                seed=1,
+            )
+        assert not (tmp_path / "ds").exists()
+
+    def test_no_data_survives_reload(self, tmp_path):
+        dataset, _ = _run_no_data(tmp_path)
+        loaded = SimDataset.load(dataset._dataset_file)
+        np.testing.assert_array_equal(
+            loaded.no_data["chr1"], [False, True, False]
+        )
+
+    def test_no_data_is_read_only(self, tmp_path):
+        dataset, _ = _run_no_data(tmp_path)
+        with pytest.raises(ValueError):
+            dataset.no_data["chr1"][0] = True
+
+    def test_rerun_fixes_missing_run(self, tmp_path):
+        dataset, meth_prob = _run_no_data(tmp_path)
+        dataset.mcmc_file("chr1", 2, 0).unlink()
+        manager = SimManager(nworker=1, verbose=False)
+        manager.rerun(dataset=dataset, meth_prob=meth_prob)
+        assert dataset.mcmc_file("chr1", 2, 0).exists()
+        assert not dataset.mcmc_file("chr1", 1, 0).exists()
+
+    def test_rerun_with_different_no_data_raises(self, tmp_path):
+        dataset, meth_prob = _run_no_data(tmp_path)
+        other = meth_prob.copy()
+        other[0, : 400 - 147 + 1] = np.nan
+        manager = SimManager(nworker=1, verbose=False)
+        with pytest.raises(ValueError, match="molecules with no data differ"):
+            manager.rerun(dataset=dataset, meth_prob=other)
+
+    @pytest.mark.parametrize(
+        ("method", "target"),
+        [("mcmc", ("chr1", 1, 0)), ("tm", ("chr1", 1))],
+    )
+    def test_rerun_of_no_data_molecule_raises(self, tmp_path, method, target):
+        dataset, meth_prob = _run_no_data(tmp_path, method=method)
+        manager = SimManager(nworker=1, verbose=False)
+        with pytest.raises(ValueError, match="has no data"):
+            manager.rerun(dataset=dataset, meth_prob=meth_prob, only=[target])
+
+
 def _llink_exp(linker=10, nmol=50, nbp=200):
     energy = np.full((nmol, nbp), 5.0)
     energy[:, 0 : nbp - 4 : 5 + linker] = -20.0

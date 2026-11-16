@@ -861,7 +861,10 @@ def run(
     meth_prob : np.ndarray or Mapping[str, np.ndarray | pd.DataFrame]
         Probability of methylation. If multiple chromosomes are provided, this
         must be a mapping of {chrom_name: data}. Data can be NumPy arrays or
-        Pandas DataFrames.
+        Pandas DataFrames. Molecules that are nan at every nucleosome start
+        position (e.g., molecules masked by `filter_dropout`) have no data
+        and are not simulated; see `SimDataset.no_data`. A molecule that is
+        nan at only some start positions raises `ValueError`.
     out_dir : str or Path
         Directory or file prefix where simulation results will be stored.
     method : {"mcmc", "tm"}, default "mcmc"

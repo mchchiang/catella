@@ -412,6 +412,7 @@ def _write_metadata(
     out_type=None,
     seed=None,
     seed_table=None,
+    no_data=None,
 ):
     """
     Write the dataset metadata to the '/metadata' group.
@@ -444,6 +445,9 @@ def _write_metadata(
         The master seed; not written if None.
     seed_table : mapping of str to np.ndarray, optional
         The seed of each run; not written if None.
+    no_data : mapping of str to np.ndarray, optional
+        bool, True for each molecule skipped for having no data; not
+        written if None.
     """
     if "metadata" in h5file:
         gmeta = h5file["metadata"]
@@ -471,6 +475,10 @@ def _write_metadata(
         gseeds = gmeta.create_group("seed_table")
         for chrom in chroms:
             gseeds.create_dataset(chrom, data=seed_table[chrom])
+    if no_data is not None:
+        gno = gmeta.create_group("no_data")
+        for chrom in chroms:
+            gno.create_dataset(chrom, data=np.asarray(no_data[chrom], bool))
 
 
 def _read_metadata(h5file):
@@ -486,7 +494,8 @@ def _read_metadata(h5file):
     -------
     dict of str to Any
         'raw_dir' (Path, as stored), 'nsim', 'method', 'chroms', 'nmol',
-        'nbp', 'settings', 'eseq', 'out_type', 'seed', and 'seed_table'.
+        'nbp', 'settings', 'eseq', 'out_type', 'seed', 'seed_table', and
+        'no_data'.
         Optional fields that were not written are None; 'method' defaults
         to "mcmc".
     """
@@ -517,6 +526,7 @@ def _read_metadata(h5file):
         ),
         "seed": int(attrs["seed"]) if "seed" in attrs else None,
         "seed_table": per_chrom("seed_table"),
+        "no_data": per_chrom("no_data"),
     }
 
 

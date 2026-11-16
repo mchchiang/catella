@@ -100,6 +100,35 @@ class TestOutTypeSeedPersistence:
         assert loaded.seed_table is None
 
 
+class TestNoData:
+    def _create(self, tmp_path, **kwargs):
+        return SimDataset.create(
+            chroms=["chr1"],
+            nmol={"chr1": 3},
+            nsim=1,
+            nbp={"chr1": 50},
+            settings=_make_settings(),
+            out_dir=tmp_path / "ds",
+            **kwargs,
+        )
+
+    def test_defaults_to_all_false(self, tmp_path):
+        dataset = self._create(tmp_path)
+        np.testing.assert_array_equal(dataset.no_data["chr1"], [False] * 3)
+
+    def test_legacy_file_loads_as_all_false(self, tmp_path):
+        dataset = self._create(tmp_path, no_data={"chr1": [0, 1, 0]})
+        dataset.save()
+        with h5py.File(dataset._dataset_file, "a") as f:
+            del f["metadata"]["no_data"]
+        loaded = SimDataset.load(dataset._dataset_file)
+        np.testing.assert_array_equal(loaded.no_data["chr1"], [False] * 3)
+
+    def test_wrong_length_raises(self, tmp_path):
+        with pytest.raises(ValueError, match="must have 3 entries, got 2"):
+            self._create(tmp_path, no_data={"chr1": [False, True]})
+
+
 class TestSaveOverwriteCleanup:
     def test_tmp_file_removed_on_keyboard_interrupt(self, tmp_path):
         dataset = SimDataset.create(

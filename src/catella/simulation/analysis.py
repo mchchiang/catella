@@ -327,10 +327,11 @@ class SimAnalysis:
                 )
                 rows = batch[chrom][start:stop]
                 block = np.full((stop - start, nbp), np.nan, dtype=np.float64)
+                skipped = dataset.no_data[chrom][start:stop]
                 for i, row in enumerate(rows):
                     if row is not None:
                         block[i] = row
-                    else:
+                    elif not skipped[i]:
                         n_missing += 1
                 out.write_batch(start, stop, block)
             if n_missing:

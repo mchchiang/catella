@@ -24,6 +24,7 @@ from catella.simulation._inputs import (
     _normalize_meth_prob,
     _normalize_mols,
     _parse_out_types,
+    _prepare_rows,
     _resolve_settings,
 )
 from catella.simulation._io import (
@@ -55,6 +56,98 @@ from catella.simulation._parallel import (
 from catella.simulation.config import SimSettings
 from catella.simulation.results import SimDataset
 from catella.utils import IndexType
+
+
+def _prepare_meth_prob(meth_prob, chroms, nucbp):
+    """
+    Normalize `meth_prob` and find the molecules with no data.
+
+    Parameters
+    ----------
+    meth_prob : np.ndarray or mapping of str to np.ndarray or pd.DataFrame
+        The methylation probability, as passed to `SimManager.run`.
+    chroms : sequence of str
+        The chromosomes to select.
+    nucbp : int
+        The nucleosome footprint size.
+
+    Returns
+    -------
+    meth_prob : dict of str to np.ndarray
+        The 2D array of each chromosome.
+    no_data : dict of str to np.ndarray
+        bool, True for each molecule with no data.
+
+    Raises
+    ------
+    ValueError
+        If a molecule is nan at some but not all nucleosome start
+        positions.
+    """
+    meth_prob = _normalize_meth_prob(meth_prob, chroms)
+    no_data = {}
+    for chrom in chroms:
+        meth_prob[chrom], no_data[chrom] = _prepare_rows(
+            meth_prob[chrom], nucbp, chrom
+        )
+    return meth_prob, no_data
+
+
+def _rerun_meth_prob(dataset, meth_prob):
+    """
+    Prepare `meth_prob` for a rerun and check it matches `dataset`.
+
+    Parameters
+    ----------
+    dataset : SimDataset
+        The dataset to rerun.
+    meth_prob : np.ndarray or mapping of str to np.ndarray or pd.DataFrame
+        The methylation probability passed to the rerun.
+
+    Returns
+    -------
+    dict of str to np.ndarray
+        The 2D array of each chromosome.
+
+    Raises
+    ------
+    ValueError
+        If the molecules with no data differ from `dataset.no_data`.
+    """
+    meth_prob, no_data = _prepare_meth_prob(
+        meth_prob, dataset.chroms, dataset.settings["nucbp"]
+    )
+    for chrom in dataset.chroms:
+        if not np.array_equal(no_data[chrom], dataset.no_data[chrom]):
+            raise ValueError(
+                f"meth_prob does not match the dataset for chrom '{chrom}'; "
+                "its molecules with no data differ from dataset.no_data"
+            )
+    return meth_prob
+
+
+def _check_rerun_targets(dataset, targets):
+    """
+    Check that no rerun target is a molecule with no data.
+
+    Parameters
+    ----------
+    dataset : SimDataset
+        The dataset to rerun.
+    targets : iterable of tuple
+        `(chrom, mol, ...)` of each target.
+
+    Raises
+    ------
+    ValueError
+        If a target is a molecule skipped for having no data.
+    """
+    for chrom, mol, *_ in targets:
+        if dataset.no_data[chrom][mol]:
+            raise ValueError(
+                f"molecule {mol} of chrom '{chrom}' has no data and cannot "
+                "be rerun"
+            )
 
 
 class SimManager:
@@ -124,7 +217,11 @@ class SimManager:
         meth_prob : np.ndarray or dict
             The probability of methylation. If multiple chromosomes are
             provided, this must be a mapping of {chrom_name: data}. Data can
-            be NumPy arrays or Pandas DataFrames.
+            be NumPy arrays or Pandas DataFrames. Molecules that are nan at
+            every nucleosome start position (the first `nbp - nucbp + 1`
+            base pairs; e.g., molecules masked by `filter_dropout`) have
+            no data and are not simulated; see `SimDataset.no_data`. Nan
+            beyond the last start position is ignored.
         out_dir : str or Path
             Directory where the simulation dataset will be initialized. The
             raw simulation data will be stored with a sub-directory called
@@ -167,8 +264,10 @@ class SimManager:
             If input types for `chroms`, `meth_prob`, or `mols` are
             inconsistent.
         ValueError
-            If the requested `out_types` are not recognized, or if an
-            `llink` value of a mapping is not a non-negative integer.
+            If the requested `out_types` are not recognized, if an
+            `llink` value of a mapping is not a non-negative integer, or
+            if a molecule of `meth_prob` is nan at some but not all
+            nucleosome start positions.
         KeyError
             If a mapping `llink` lacks a chromosome of `chroms`.
         FileExistsError
@@ -179,12 +278,17 @@ class SimManager:
             raise ValueError("'method' must be 'mcmc' or 'tm'")
 
         chroms = utils.normalize_chroms(chroms)
-        meth_prob = _normalize_meth_prob(meth_prob, chroms)
+        settings = _resolve_settings(settings)
+        meth_prob, no_data = _prepare_meth_prob(
+            meth_prob, chroms, settings.nucbp
+        )
         mols = _normalize_mols(mols, chroms)
         nmol = {chrom: meth_prob[chrom].shape[0] for chrom in chroms}
         nbp = {chrom: meth_prob[chrom].shape[1] for chrom in chroms}
-        total_mol = _count_mols(mols, nmol)
-        settings = _resolve_settings(settings)
+        total_mol = _count_mols(mols, nmol) - sum(
+            int(np.count_nonzero(no_data[chrom][mols[chrom]]))
+            for chrom in chroms
+        )
         _check_llink(settings, chroms)
         if method == "mcmc":
             _check_mcmc_settings(settings)
@@ -215,10 +319,15 @@ class SimManager:
             out_type=out_type,
             seed=seed,
             seed_table=_seed_table(seed, chroms, nmol, nsim),
+            no_data=no_data,
         )
         dataset.save()
 
-        selected = _iter_selected(chroms, nmol, mols)
+        selected = (
+            (chrom, mol)
+            for chrom, mol in _iter_selected(chroms, nmol, mols)
+            if not no_data[chrom][mol]
+        )
         if method == "mcmc":
             targets = (
                 (chrom, mol, run)
@@ -265,7 +374,8 @@ class SimManager:
             The same methylation probability data originally passed to
             `run()`. This is never persisted in `dataset`, so it must be
             re-supplied here; given the same data, reruns reproduce the
-            exact original simulation by default.
+            exact original simulation by default. Its molecules with no
+            data must match `dataset.no_data`.
         only : iterable of (str, int, int) or (str, int), optional
             For `dataset.method == 'mcmc'`: the specific `(chrom, mol,
             run)` triplets to rerun. For `'tm'`: `(chrom, mol)` pairs --
@@ -295,7 +405,9 @@ class SimManager:
             If `out_type` is not given and `dataset.out_type` is None, or
             if `seed` is not given and `dataset.seed_table` is None --
             both indicate the dataset predates that being persisted. Also
-            raised if `only` contains a 3-tuple for a `'tm'` dataset.
+            raised if `only` contains a 3-tuple for a `'tm'` dataset or
+            a molecule with no data, or if the molecules with no data of
+            `meth_prob` differ from `dataset.no_data`.
         """
         if dataset.method == "tm":
             return self._rerun_tm(
@@ -543,9 +655,10 @@ class SimManager:
             )
 
         targets = _mcmc_rerun_targets(dataset, only)
+        _check_rerun_targets(dataset, targets)
         _check_seed_source(dataset, seed)
         settings = SimSettings(**dict(dataset.settings))
-        meth_prob = _normalize_meth_prob(meth_prob, dataset.chroms)
+        meth_prob = _rerun_meth_prob(dataset, meth_prob)
         jobs = _iter_mcmc_jobs(
             dataset, settings, meth_prob, targets, resolved_out_type, seed
         )
@@ -570,8 +683,9 @@ class SimManager:
         """Regenerate a TM dataset's exact samples, at molecule
         granularity (see `rerun`'s docstring for why)."""
         targets = _tm_rerun_targets(dataset, only)
+        _check_rerun_targets(dataset, targets)
         _check_seed_source(dataset, seed)
-        meth_prob = _normalize_meth_prob(meth_prob, dataset.chroms)
+        meth_prob = _rerun_meth_prob(dataset, meth_prob)
         settings = SimSettings(**dict(dataset.settings))
         if dataset.nsim > 0:
             self._dispatch(

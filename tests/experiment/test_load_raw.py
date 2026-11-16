@@ -371,13 +371,13 @@ class TestBalanceStrand:
 
     def test_same_seed_same_molecules(self, tmp_path):
         chromsize, test_file = self._setup(tmp_path, 20, 30)
-        kwargs = dict(
-            chromsize=chromsize,
-            test_file=test_file,
-            max_nmol=10,
-            balance_strand=True,
-            seed=3,
-        )
+        kwargs = {
+            "chromsize": chromsize,
+            "test_file": test_file,
+            "max_nmol": 10,
+            "balance_strand": True,
+            "seed": 3,
+        }
         exp_a = MethPrintExperiment.load_raw(**kwargs)
         exp_b = MethPrintExperiment.load_raw(**kwargs)
         assert np.array_equal(
@@ -388,13 +388,13 @@ class TestBalanceStrand:
 
     def test_wrap_keeps_balance_and_molecules(self, tmp_path):
         chromsize, test_file = self._setup(tmp_path, 20, 30)
-        kwargs = dict(
-            chromsize=chromsize,
-            test_file=test_file,
-            max_nmol=10,
-            balance_strand=True,
-            seed=4,
-        )
+        kwargs = {
+            "chromsize": chromsize,
+            "test_file": test_file,
+            "max_nmol": 10,
+            "balance_strand": True,
+            "seed": 4,
+        }
         exp_plain = MethPrintExperiment.load_raw(**kwargs)
         exp_wrap = MethPrintExperiment.load_raw(wrap=True, **kwargs)
         raw = exp_wrap.raw["chr1"]

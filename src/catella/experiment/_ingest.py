@@ -535,54 +535,6 @@ def _balanced_mols(chrom, strand_of, max_nmol, rng):
     k = min(len(pools["+"]), len(pools["-"]), half)
     if k < half:
         short = "+" if len(pools["+"]) < len(pools["-"]) else "-"
-        warnings.warn(
-            f"only {len(pools[short])} '{short}' strand molecules on "
-            f"{chrom}; kept {k} per strand",
-            UserWarning,
-            stacklevel=2,
-        )
-    return np.concatenate(
-        [rng.choice(pools[s], k, replace=False) for s in ("+", "-")]
-    )
-
-
-def _balanced_mols(chrom, strand_of, max_nmol, rng):
-    """
-    Draw an equal number of '+' and '-' strand molecules.
-
-    Each strand contributes `k = min(n_plus, n_minus, max_nmol // 2)`
-    molecules, drawn without replacement ('+' first, then '-').
-    Molecules with any other strand (e.g., '.') are dropped.
-
-    Parameters
-    ----------
-    chrom : str
-        Chromosome name, used only in the warning message.
-    strand_of : dict of str to str
-        Molecule id -> strand, in file-encounter order.
-    max_nmol : int
-        Maximum total number of molecules; at least 2.
-    rng : np.random.Generator
-        Random number generator for the draws.
-
-    Returns
-    -------
-    np.ndarray
-        Accepted molecule ids (object dtype, unsorted).
-
-    Warns
-    -----
-    UserWarning
-        If either strand has fewer than `max_nmol // 2` molecules.
-    """
-    pools = {
-        s: np.array([m for m, t in strand_of.items() if t == s], dtype=object)
-        for s in ("+", "-")
-    }
-    half = max_nmol // 2
-    k = min(len(pools["+"]), len(pools["-"]), half)
-    if k < half:
-        short = "+" if len(pools["+"]) < len(pools["-"]) else "-"
         _warn(
             f"only {len(pools[short])} '{short}' strand molecules on "
             f"{chrom}; kept {k} per strand"

@@ -232,7 +232,7 @@ def _llink_evidence(
     return pd.DataFrame(records)
 
 
-def _estimate_llink(exp, settings, **kwargs):
+def _estimate_llink(exp, settings, *, llink_evid_name=None, **kwargs):
     """
     Maximize `_llink_evidence` per chromosome; see `api.estimate_llink`.
     """
@@ -248,6 +248,10 @@ def _estimate_llink(exp, settings, **kwargs):
     for chrom, sub in table.groupby("chrom", sort=False):
         pick = int(sub.loc[sub["evidence"].idxmax(), "llink"])
         best[chrom] = pick
+        if llink_evid_name is not None:
+            exp.analysis[chrom][llink_evid_name] = sub[
+                ["llink", "evidence", "nmol"]
+            ].reset_index(drop=True)
         if pick == largest and sub["llink"].nunique() > 1:
             warnings.warn(
                 f"chromosome {chrom}: best llink {pick} is the largest "

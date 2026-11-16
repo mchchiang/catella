@@ -520,6 +520,7 @@ def estimate_llink(
     batch_size: int = 20000,
     mask_name: str | None = None,
     nworker: int = 1,
+    llink_evid_name: str | None = None,
 ) -> dict[str, int]:
     """
     Estimate `SimSettings.llink` per chromosome by maximum likelihood.
@@ -527,8 +528,9 @@ def estimate_llink(
     For each chromosome, returns the candidate that maximizes the sum
     over molecules of log Z(data, llink) - log Z(no data, llink), the
     marginal likelihood of the data, computed exactly with the transfer
-    matrix at temperature 1. `exp` is not modified, and the value only
-    takes effect once placed in the settings:
+    matrix at temperature 1. `exp` is not modified unless
+    `llink_evid_name` is given, and the value only takes effect once
+    placed in the settings:
 
     >>> best = catella.estimate_llink(exp, settings)
     >>> settings = dataclasses.replace(settings, llink=best)
@@ -565,6 +567,11 @@ def estimate_llink(
     nworker : int, default 1
         Number of parallel processes to spawn. The estimate does not
         depend on it.
+    llink_evid_name : str, optional
+        If given, stores the evidence of each candidate in
+        `exp.analysis[chrom][llink_evid_name]`, a DataFrame with columns
+        `llink`, `evidence` and `nmol`, e.g. for plotting. `exp` is not
+        modified if None (default).
 
     Returns
     -------
@@ -606,6 +613,7 @@ def estimate_llink(
         seed=seed,
         batch_size=batch_size,
         mask_name=mask_name,
+        llink_evid_name=llink_evid_name,
     )
 
 

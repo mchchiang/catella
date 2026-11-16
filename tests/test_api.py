@@ -686,6 +686,46 @@ class TestEstimateLlink:
         catella.estimate_llink(exp, self._settings(), llinks=[0, 10, 30])
         assert set(exp.analysis["chr1"]) == keys
 
+    def test_llink_evid_name_stores_table(self):
+        exp = self._experiment()
+        catella.estimate_llink(
+            exp,
+            self._settings(),
+            llinks=[30, 0, 10],
+            llink_evid_name="llink_evid",
+        )
+        table = exp.analysis["chr1"]["llink_evid"]
+        assert list(table.columns) == ["llink", "evidence", "nmol"]
+        assert table["llink"].tolist() == [0, 10, 30]
+        assert (table["nmol"] == 50).all()
+
+    def test_llink_evid_name_matches_estimate(self):
+        exp = self._experiment()
+        best = catella.estimate_llink(
+            exp,
+            self._settings(),
+            llinks=[0, 10, 30],
+            llink_evid_name="llink_evid",
+        )
+        table = exp.analysis["chr1"]["llink_evid"]
+        top = table.loc[table["evidence"].idxmax(), "llink"]
+        assert best == {"chr1": int(top)}
+
+    def test_llink_evid_name_survives_save(self, tmp_path):
+        exp = self._experiment()
+        catella.estimate_llink(
+            exp,
+            self._settings(),
+            llinks=[0, 10, 30],
+            llink_evid_name="llink_evid",
+        )
+        exp.save(tmp_path / "exp.h5")
+        loaded = MethPrintExperiment.load(tmp_path / "exp.h5")
+        pd.testing.assert_frame_equal(
+            loaded.analysis["chr1"]["llink_evid"],
+            exp.analysis["chr1"]["llink_evid"],
+        )
+
     def test_estimate_reaches_simulation_through_settings(self, tmp_path):
         exp = self._experiment()
         settings = self._settings()

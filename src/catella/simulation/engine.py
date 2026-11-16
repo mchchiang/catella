@@ -321,6 +321,7 @@ class SimManager:
         seed: int | None = None,
         batch_size: int = 20000,
         mask_name: str | None = None,
+        llink_evid_name: str | None = None,
     ) -> dict[str, int]:
         """
         Estimate `SimSettings.llink` per chromosome by maximum likelihood.
@@ -329,8 +330,9 @@ class SimManager:
         over molecules of log Z(data, llink) - log Z(no data, llink), the
         marginal likelihood of the data, computed exactly with the
         transfer matrix at temperature 1. Molecules are split across
-        `nworker` processes. `exp` is not modified, and the value only
-        takes effect once placed in the settings:
+        `nworker` processes. `exp` is not modified unless
+        `llink_evid_name` is given, and the value only takes effect once
+        placed in the settings:
 
         >>> best = manager.estimate_llink(exp, settings)
         >>> settings = dataclasses.replace(settings, llink=best)
@@ -364,6 +366,11 @@ class SimManager:
             If given, excludes molecules dropped by
             `filter_dropout(mask_name=mask_name)` on the "test" source,
             without modifying `exp`.
+        llink_evid_name : str, optional
+            If given, stores the evidence of each candidate in
+            `exp.analysis[chrom][llink_evid_name]`, a DataFrame with
+            columns `llink`, `evidence` and `nmol`, e.g. for plotting.
+            `exp` is not modified if None (default).
 
         Returns
         -------
@@ -406,6 +413,7 @@ class SimManager:
             batch_size=batch_size,
             mask_name=mask_name,
             nworker=self.nworker,
+            llink_evid_name=llink_evid_name,
         )
 
     def estimate_start_temp(

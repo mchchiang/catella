@@ -957,6 +957,19 @@ class TestSimManagerEstimateLlink:
         )
         assert set(exp.analysis["chr1"]) == {"meth_prob"}
 
+    def test_llink_evid_name_stores_table(self):
+        exp = _llink_exp()
+        best = SimManager().estimate_llink(
+            exp,
+            _llink_settings(),
+            llinks=[0, 10, 30],
+            llink_evid_name="llink_evid",
+        )
+        table = exp.analysis["chr1"]["llink_evid"]
+        assert table["llink"].tolist() == [0, 10, 30]
+        top = table.loc[table["evidence"].idxmax(), "llink"]
+        assert best == {"chr1": int(top)}
+
     def test_empty_llinks_raises(self):
         with pytest.raises(ValueError, match="llinks must not be empty"):
             SimManager().estimate_llink(

@@ -930,7 +930,9 @@ def compute_config(
         key = method if name is None else name
         rows = []
         for chrom in chroms or dataset.chroms:
-            configs = catella.extract_config(dataset, chrom, name=key)
+            configs = catella.extract_config(
+                dataset, chrom=chrom, name=key
+            )
             for mol, starts in enumerate(configs):
                 text = (
                     "NA"

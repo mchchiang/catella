@@ -997,7 +997,7 @@ class TestNoData:
         assert np.isnan(energy["energy"][1])
         assert np.isnan(energy["log_prob"][1])
         assert not np.isnan(energy["energy"][[0, 2]]).any()
-        configs = ana.extract_config(dataset, "chr1", name="best_match")
+        configs = ana.extract_config(dataset, chrom="chr1", name="best_match")
         assert configs[1] is None
         assert configs[0] is not None
 

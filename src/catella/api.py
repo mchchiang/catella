@@ -1097,8 +1097,8 @@ def compute_config(
 
 def extract_config(
     dataset: SimDataset,
-    chrom: str,
     *,
+    chrom: str,
     name: str | None = None,
     run: int | None = None,
     time: int | None = None,
@@ -1155,7 +1155,7 @@ def extract_config(
     """
     return SimAnalysis().extract_config(
         dataset,
-        chrom,
+        chrom=chrom,
         name=name,
         run=run,
         time=time,

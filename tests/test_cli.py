@@ -1349,9 +1349,9 @@ class TestComputeConfig:
         assert result.exit_code == 0, result.output
 
         catella.compute_config(direct, gamma=2.0, name="bm2")
-        want = catella.extract_config(direct, "chr1", name="bm2")
+        want = catella.extract_config(direct, chrom="chr1", name="bm2")
         reloaded = SimDataset.load(dataset._dataset_file)
-        got = catella.extract_config(reloaded, "chr1", name="bm2")
+        got = catella.extract_config(reloaded, chrom="chr1", name="bm2")
         assert got[1] is None
         for mol in (0, 2):
             np.testing.assert_array_equal(got[mol], want[mol])

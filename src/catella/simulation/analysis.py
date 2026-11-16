@@ -709,8 +709,8 @@ class SimAnalysis:
     def extract_config(
         self,
         dataset: SimDataset,
-        chrom: str,
         *,
+        chrom: str,
         name: str | None = None,
         run: int | None = None,
         time: int | None = None,

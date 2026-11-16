@@ -287,6 +287,159 @@ class TestDownsamplingAndWrap:
             )
 
 
+def _strand_counts(raw):
+    df = raw.test_data
+    first = df.groupby("mol_index")["strand"].first()
+    return first.value_counts().to_dict()
+
+
+class TestBalanceStrand:
+    def _setup(self, tmp_path, nplus, nminus, nunmapped=0, size=100):
+        rows = (
+            _make_rows("chr1", [f"p{i}" for i in range(nplus)], [10, 90])
+            + _make_rows(
+                "chr1", [f"q{i}" for i in range(nminus)], [10, 90], strand="-"
+            )
+            + _make_rows(
+                "chr1", [f"u{i}" for i in range(nunmapped)], [10], strand="."
+            )
+        )
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": size})
+        return chromsize, test_file
+
+    def test_equal_counts_when_both_strands_large(self, tmp_path):
+        chromsize, test_file = self._setup(tmp_path, 20, 30)
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize,
+            test_file=test_file,
+            max_nmol=10,
+            balance_strand=True,
+            seed=1,
+        )
+        assert _strand_counts(exp.raw["chr1"]) == {"+": 5, "-": 5}
+        exp.close()
+
+    @pytest.mark.filterwarnings("error")
+    def test_no_warning_when_both_strands_large(self, tmp_path):
+        chromsize, test_file = self._setup(tmp_path, 20, 30)
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize,
+            test_file=test_file,
+            max_nmol=10,
+            balance_strand=True,
+        )
+        exp.close()
+
+    def test_shortfall_keeps_min_per_strand_and_warns(self, tmp_path):
+        chromsize, test_file = self._setup(tmp_path, 3, 20)
+        with pytest.warns(UserWarning, match="only 3 '\\+' strand"):
+            exp = MethPrintExperiment.load_raw(
+                chromsize=chromsize,
+                test_file=test_file,
+                max_nmol=10,
+                balance_strand=True,
+            )
+        assert _strand_counts(exp.raw["chr1"]) == {"+": 3, "-": 3}
+        exp.close()
+
+    def test_odd_max_nmol_rounds_down(self, tmp_path):
+        chromsize, test_file = self._setup(tmp_path, 10, 10)
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize,
+            test_file=test_file,
+            max_nmol=7,
+            balance_strand=True,
+        )
+        assert _strand_counts(exp.raw["chr1"]) == {"+": 3, "-": 3}
+        exp.close()
+
+    def test_unmapped_strand_dropped(self, tmp_path):
+        chromsize, test_file = self._setup(tmp_path, 5, 5, nunmapped=10)
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize,
+            test_file=test_file,
+            max_nmol=10,
+            balance_strand=True,
+        )
+        raw = exp.raw["chr1"]
+        assert not any(m.startswith("u") for m in raw.test_mol_id)
+        assert _strand_counts(raw) == {"+": 5, "-": 5}
+        exp.close()
+
+    def test_same_seed_same_molecules(self, tmp_path):
+        chromsize, test_file = self._setup(tmp_path, 20, 30)
+        kwargs = dict(
+            chromsize=chromsize,
+            test_file=test_file,
+            max_nmol=10,
+            balance_strand=True,
+            seed=3,
+        )
+        exp_a = MethPrintExperiment.load_raw(**kwargs)
+        exp_b = MethPrintExperiment.load_raw(**kwargs)
+        assert np.array_equal(
+            exp_a.raw["chr1"].test_mol_id, exp_b.raw["chr1"].test_mol_id
+        )
+        exp_a.close()
+        exp_b.close()
+
+    def test_wrap_keeps_balance_and_molecules(self, tmp_path):
+        chromsize, test_file = self._setup(tmp_path, 20, 30)
+        kwargs = dict(
+            chromsize=chromsize,
+            test_file=test_file,
+            max_nmol=10,
+            balance_strand=True,
+            seed=4,
+        )
+        exp_plain = MethPrintExperiment.load_raw(**kwargs)
+        exp_wrap = MethPrintExperiment.load_raw(wrap=True, **kwargs)
+        raw = exp_wrap.raw["chr1"]
+        assert _strand_counts(raw) == {"+": 5, "-": 5}
+        assert np.array_equal(
+            exp_plain.raw["chr1"].test_mol_id, raw.test_mol_id
+        )
+        exp_plain.close()
+        exp_wrap.close()
+
+    def test_one_strand_only_gives_empty_chrom(self, tmp_path):
+        chromsize, test_file = self._setup(tmp_path, 10, 0)
+        fasta_file = tmp_path / "ref.fa"
+        _write_fasta(fasta_file, {"chr1": "A" * 100})
+        with pytest.warns(UserWarning, match="only 0 '-' strand"):
+            exp = MethPrintExperiment.load_raw(
+                chromsize=chromsize,
+                test_file=test_file,
+                fasta_file=fasta_file,
+                mtase="A",
+                max_nmol=10,
+                balance_strand=True,
+            )
+        assert len(exp.raw["chr1"].test_mol_id) == 0
+        assert len(exp.qc()) == 1
+        exp.close()
+
+    def test_requires_max_nmol(self, tmp_path):
+        chromsize, test_file = self._setup(tmp_path, 2, 2)
+        with pytest.raises(ValueError, match="requires max_nmol"):
+            MethPrintExperiment.load_raw(
+                chromsize=chromsize, test_file=test_file, balance_strand=True
+            )
+
+    def test_max_nmol_below_two_raises(self, tmp_path):
+        chromsize, test_file = self._setup(tmp_path, 2, 2)
+        with pytest.raises(ValueError, match="at least 2"):
+            MethPrintExperiment.load_raw(
+                chromsize=chromsize,
+                test_file=test_file,
+                max_nmol=1,
+                balance_strand=True,
+            )
+
+
 class TestCanonicalCallFiltering:
     def test_drops_canonical_mod_code_rows(self, tmp_path):
         rows = [

@@ -13,6 +13,7 @@ import pyarrow.csv as pyarrow_csv
 import pyfaidx
 
 from catella import h5_utils
+from catella._warnings import _warn
 
 # Column names as they appear in raw Modkit output, and their internal
 # canonical equivalents (positionally parallel).
@@ -410,6 +411,7 @@ def _scan_accepted_mols(
     block_size,
     max_nmol,
     rng,
+    balance_strand=False,
 ):
     """
     Determine, per chromosome, which molecules are kept and their
@@ -444,6 +446,9 @@ def _scan_accepted_mols(
     rng : np.random.Generator or None
         Random number generator for downsampling; required if
         `max_nmol` is not None.
+    balance_strand : bool, default False
+        If True, keep an equal number of '+' and '-' strand molecules
+        per chromosome (see `_balanced_mols`); requires `max_nmol`.
 
     Returns
     -------
@@ -453,35 +458,138 @@ def _scan_accepted_mols(
         chromosome found in the file (regardless of whether it is
         present in the chromosome-size table).
     """
+    cols = ["chrom", "mol_id"] + (["strand"] if balance_strand else [])
     mol_order = {}
     for batch_df in _iter_csv_chunks(
         data_file,
         header_names,
         name_for,
         sep,
-        ["chrom", "mol_id"],
+        cols,
         chunk_size,
         block_size,
     ):
         dedup = batch_df.drop_duplicates(["chrom", "mol_id"])
-        for chrom, mol_id in zip(
-            dedup["chrom"].to_numpy(), dedup["mol_id"].to_numpy()
+        strands = (
+            dedup["strand"].to_numpy()
+            if balance_strand
+            else [None] * len(dedup)
+        )
+        for chrom, mol_id, strand in zip(
+            dedup["chrom"].to_numpy(), dedup["mol_id"].to_numpy(), strands
         ):
             seen = mol_order.setdefault(chrom, {})
             if mol_id not in seen:
-                seen[mol_id] = None
+                seen[mol_id] = strand
 
     result = {}
     for chrom in sorted(mol_order.keys()):
-        mols = np.array(list(mol_order[chrom].keys()), dtype=object)
-        if max_nmol is not None and len(mols) > max_nmol:
-            mols = rng.choice(mols, max_nmol, replace=False)
+        if balance_strand:
+            mols = _balanced_mols(chrom, mol_order[chrom], max_nmol, rng)
+        else:
+            mols = np.array(list(mol_order[chrom].keys()), dtype=object)
+            if max_nmol is not None and len(mols) > max_nmol:
+                mols = rng.choice(mols, max_nmol, replace=False)
         sorted_mols = np.sort(mols)
         result[chrom] = {
             "mol_id": sorted_mols,
             "index": {m: i for i, m in enumerate(sorted_mols)},
         }
     return result
+
+
+def _balanced_mols(chrom, strand_of, max_nmol, rng):
+    """
+    Draw an equal number of '+' and '-' strand molecules.
+
+    Each strand contributes `k = min(n_plus, n_minus, max_nmol // 2)`
+    molecules, drawn without replacement ('+' first, then '-').
+    Molecules with any other strand (e.g., '.') are dropped.
+
+    Parameters
+    ----------
+    chrom : str
+        Chromosome name, used only in the warning message.
+    strand_of : dict of str to str
+        Molecule id -> strand, in file-encounter order.
+    max_nmol : int
+        Maximum total number of molecules; at least 2.
+    rng : np.random.Generator
+        Random number generator for the draws.
+
+    Returns
+    -------
+    np.ndarray
+        Accepted molecule ids (object dtype, unsorted).
+
+    Warns
+    -----
+    UserWarning
+        If either strand has fewer than `max_nmol // 2` molecules.
+    """
+    pools = {
+        s: np.array([m for m, t in strand_of.items() if t == s], dtype=object)
+        for s in ("+", "-")
+    }
+    half = max_nmol // 2
+    k = min(len(pools["+"]), len(pools["-"]), half)
+    if k < half:
+        short = "+" if len(pools["+"]) < len(pools["-"]) else "-"
+        warnings.warn(
+            f"only {len(pools[short])} '{short}' strand molecules on "
+            f"{chrom}; kept {k} per strand",
+            UserWarning,
+            stacklevel=2,
+        )
+    return np.concatenate(
+        [rng.choice(pools[s], k, replace=False) for s in ("+", "-")]
+    )
+
+
+def _balanced_mols(chrom, strand_of, max_nmol, rng):
+    """
+    Draw an equal number of '+' and '-' strand molecules.
+
+    Each strand contributes `k = min(n_plus, n_minus, max_nmol // 2)`
+    molecules, drawn without replacement ('+' first, then '-').
+    Molecules with any other strand (e.g., '.') are dropped.
+
+    Parameters
+    ----------
+    chrom : str
+        Chromosome name, used only in the warning message.
+    strand_of : dict of str to str
+        Molecule id -> strand, in file-encounter order.
+    max_nmol : int
+        Maximum total number of molecules; at least 2.
+    rng : np.random.Generator
+        Random number generator for the draws.
+
+    Returns
+    -------
+    np.ndarray
+        Accepted molecule ids (object dtype, unsorted).
+
+    Warns
+    -----
+    UserWarning
+        If either strand has fewer than `max_nmol // 2` molecules.
+    """
+    pools = {
+        s: np.array([m for m, t in strand_of.items() if t == s], dtype=object)
+        for s in ("+", "-")
+    }
+    half = max_nmol // 2
+    k = min(len(pools["+"]), len(pools["-"]), half)
+    if k < half:
+        short = "+" if len(pools["+"]) < len(pools["-"]) else "-"
+        _warn(
+            f"only {len(pools[short])} '{short}' strand molecules on "
+            f"{chrom}; kept {k} per strand"
+        )
+    return np.concatenate(
+        [rng.choice(pools[s], k, replace=False) for s in ("+", "-")]
+    )
 
 
 def _stream_rows_to_staging(
@@ -654,6 +762,7 @@ def _ingest_into(
     mtase,
     ignore_strand,
     max_nmol,
+    balance_strand,
     rng,
     tmp_dir,
 ):
@@ -695,6 +804,7 @@ def _ingest_into(
             block_size,
             max_nmol,
             rng,
+            balance_strand=balance_strand,
         )
         # Chromosomes not covered by the chromsize table are silently
         # dropped, matching the legacy inner merge

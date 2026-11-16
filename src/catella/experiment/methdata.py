@@ -378,6 +378,7 @@ class MethPrintExperiment:
         ignore_strand: bool = False,
         colidx: list | None = None,
         max_nmol: int | None = None,
+        balance_strand: bool = False,
         seed: int | None = None,
         chunk_size: int = 1000000,
         tmp_dir: str | Path | None = None,
@@ -432,6 +433,13 @@ class MethPrintExperiment:
             `mod_qual`, `mod_code`.
         max_nmol : int or None
             Maximum number of molecules to extract for each chromosome.
+        balance_strand : bool, default False
+            If True, keep an equal number of '+' and '-' strand
+            molecules per chromosome: at most `max_nmol`; fewer if
+            either strand has fewer than `max_nmol // 2` molecules
+            (warns). Molecules with unmapped strand ('.') are dropped.
+            Uses the recorded strand regardless of `ignore_strand`.
+            Requires `max_nmol` of at least 2.
         seed : int or None
             Random number generator seed for downsampling when
             `max_nmol` is given; independent per data file when more
@@ -467,9 +475,25 @@ class MethPrintExperiment:
             contain chromosomes not found in the test dataset, if
             `chroms` contains a chromosome not found in `chromsize`,
             if a sequence in `fasta_file` does not match its
-            chromosome's length in `chromsize`, or if `mtase`
-            contains an unknown or duplicate label.
+            chromosome's length in `chromsize`, if `mtase`
+            contains an unknown or duplicate label, or if
+            `balance_strand` is True and `max_nmol` is None or less
+            than 2.
+
+        Warns
+        -----
+        UserWarning
+            If `balance_strand` is True and a chromosome has fewer
+            than `max_nmol // 2` molecules on either strand.
         """
+        if balance_strand:
+            if max_nmol is None:
+                raise ValueError("balance_strand requires max_nmol")
+            if max_nmol < 2:
+                raise ValueError(
+                    "max_nmol must be at least 2 when balance_strand is "
+                    f"True, got {max_nmol}"
+                )
         mtase = _normalize_mtase(mtase)
         full_sizes, sizes = _read_chromsize(chromsize, wrap, chroms)
         refseq_by_chrom = _load_refseqs(fasta_file, full_sizes)
@@ -495,6 +519,7 @@ class MethPrintExperiment:
             "mtase": mtase,
             "ignore_strand": ignore_strand,
             "max_nmol": max_nmol,
+            "balance_strand": balance_strand,
             "tmp_dir": tmp_dir,
         }
 

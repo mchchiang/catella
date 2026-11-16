@@ -783,6 +783,66 @@ class TestEstimateLlink:
         )
 
 
+class TestComputeConfig:
+    def test_default_is_best_match(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path)
+        catella.compute_config(dataset)
+        ref = _make_tm_dataset(tmp_path / "ref")
+        SimAnalysis().compute_best_match_config(dataset=ref, name="ref")
+        got = catella.extract_config(dataset, "chr1", name="best_match")
+        want = catella.extract_config(ref, "chr1", name="ref")
+        for a, b in zip(got, want, strict=True):
+            np.testing.assert_array_equal(a, b)
+
+    def test_most_likely_default_name(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path)
+        catella.compute_config(dataset, method="most_likely")
+        assert "most_likely_energy" in dataset.analysis["chr1"]
+
+    def test_two_gammas_coexist(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path)
+        catella.compute_config(dataset, gamma=0.5, name="g05")
+        catella.compute_config(dataset, gamma=4.0, name="g4")
+        low = catella.extract_config(dataset, "chr1", name="g05")
+        high = catella.extract_config(dataset, "chr1", name="g4")
+        assert sum(len(c) for c in high) >= sum(len(c) for c in low)
+
+    def test_unknown_method_raises(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path)
+        with pytest.raises(ValueError, match="method must be"):
+            catella.compute_config(dataset, method="map")
+
+    def test_gamma_with_most_likely_raises(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path)
+        with pytest.raises(ValueError, match="gamma is only used"):
+            catella.compute_config(dataset, method="most_likely", gamma=2.0)
+
+    def test_mcmc_dataset_raises(self, tmp_path):
+        dataset = _make_dataset(tmp_path)
+        with pytest.raises(ValueError, match="requires a method='tm'"):
+            catella.compute_config(dataset)
+
+
+class TestExtractConfig:
+    def test_matches_simanalysis(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path)
+        catella.compute_config(dataset)
+        got = catella.extract_config(dataset, "chr1", name="best_match")
+        want = SimAnalysis().extract_config(
+            dataset, "chr1", name="best_match"
+        )
+        assert len(got) == 4
+        for a, b in zip(got, want, strict=True):
+            np.testing.assert_array_equal(a, b)
+
+    def test_mcmc_raw_run(self, tmp_path):
+        dataset = _make_dataset(tmp_path)
+        got = catella.extract_config(dataset, "chr1", run=1, mols=[3])
+        np.testing.assert_array_equal(
+            got[0], dataset.raw["chr1", 3, 1].position[-1]
+        )
+
+
 class TestRun:
     def test_method_tm_creates_tm_dataset(self, tmp_path):
         dataset = _make_tm_dataset(tmp_path)

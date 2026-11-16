@@ -14,12 +14,14 @@ from catella.__about__ import __version__ as __version__
 from catella.api import *
 
 __all__ = [
+    "compute_config",
     "compute_empirical_prob",
     "compute_model_prob",
     "compute_occup",
     "downsample",
     "estimate_llink",
     "estimate_start_temp",
+    "extract_config",
     "filter_dropout",
     "load_raw",
     "plot_dropout_ecdf",

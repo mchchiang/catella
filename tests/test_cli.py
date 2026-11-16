@@ -1314,6 +1314,72 @@ class TestComputeOccup:
         )
 
 
+class TestComputeConfig:
+    def _dataset(self, tmp_path):
+        meth_prob = np.random.default_rng(5).random((3, 15))
+        meth_prob[1] = np.nan
+        return SimManager(nworker=1, verbose=False).run(
+            chroms="chr1",
+            nsim=0,
+            method="tm",
+            settings=SimSettings(**_settings_dict()),
+            meth_prob=meth_prob,
+            out_dir=tmp_path / "tm_sim",
+            seed=1,
+        )
+
+    def test_matches_api_and_writes_tsv(self, tmp_path):
+        dataset = self._dataset(tmp_path)
+        direct = SimDataset.load(dataset._dataset_file)
+        tsv_file = tmp_path / "calls.tsv"
+
+        result = runner.invoke(
+            app,
+            [
+                "compute_config",
+                str(dataset._dataset_file),
+                "--gamma",
+                "2",
+                "--name",
+                "bm2",
+                "--tsv-file",
+                str(tsv_file),
+            ],
+        )
+        assert result.exit_code == 0, result.output
+
+        catella.compute_config(direct, gamma=2.0, name="bm2")
+        want = catella.extract_config(direct, "chr1", name="bm2")
+        reloaded = SimDataset.load(dataset._dataset_file)
+        got = catella.extract_config(reloaded, "chr1", name="bm2")
+        assert got[1] is None
+        for mol in (0, 2):
+            np.testing.assert_array_equal(got[mol], want[mol])
+
+        table = pd.read_csv(
+            tsv_file, sep="\t", keep_default_na=False, dtype=str
+        )
+        assert list(table.columns) == ["chrom", "mol", "starts"]
+        assert list(table["mol"]) == ["0", "1", "2"]
+        assert table["starts"].iloc[1] == "NA"
+        assert table["starts"].iloc[0] == ",".join(str(s) for s in want[0])
+
+    def test_most_likely_default_name(self, tmp_path):
+        dataset = self._dataset(tmp_path)
+        result = runner.invoke(
+            app,
+            [
+                "compute_config",
+                str(dataset._dataset_file),
+                "--method",
+                "most_likely",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        reloaded = SimDataset.load(dataset._dataset_file)
+        assert "most_likely_energy" in reloaded.analysis["chr1"]
+
+
 class TestDownsample:
     def test_dataset_downsample_matches_utils(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=8, nbp=10)

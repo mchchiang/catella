@@ -1019,6 +1019,151 @@ def compute_occup(
     )
 
 
+def compute_config(
+    dataset: SimDataset,
+    *,
+    method: str = "best_match",
+    gamma: float | None = None,
+    chroms: str | Iterable[str] | None = None,
+    name: str | None = None,
+    nworker: int = 1,
+) -> None:
+    """
+    Call one nucleosome configuration per molecule.
+
+    Solves each molecule exactly with the transfer matrix and stores a
+    single configuration (start positions), together with its energy and
+    log posterior probability. Read the result with `extract_config`.
+    Only available for `dataset.method == "tm"` datasets.
+
+    Parameters
+    ----------
+    dataset : SimDataset
+        A "tm" dataset with a stored energy landscape.
+    method : {"best_match", "most_likely"}, default "best_match"
+        "best_match" calls the configuration that best matches the
+        occupancy profile (maximum expected accuracy); "most_likely"
+        calls the single most probable configuration (maximum a
+        posteriori), which tends to be more densely packed.
+    gamma : float, optional
+        For "best_match" only: the weight of correctly called occupied
+        sites relative to correctly called empty sites; larger values
+        call more nucleosomes. 1.0 if None. Must be positive.
+    chroms : str or iterable of str, optional
+        The chromosome(s) to process. If None (default), all of
+        `dataset.chroms`.
+    name : str, optional
+        The prefix of the stored keys `{name}_position_flat`,
+        `{name}_position_offset` and `{name}_energy` in
+        `dataset.analysis[chrom]`; `method` if None. An existing result
+        under `name` is replaced.
+    nworker : int, default 1
+        Number of worker processes.
+
+    Raises
+    ------
+    ValueError
+        If `method` is unknown, if `gamma` is given with "most_likely" or
+        is not positive, if `dataset.method != "tm"` or it has no stored
+        energy landscape, or if `nworker` is not positive.
+
+    Notes
+    -----
+    Molecules with no data (see `SimDataset.no_data`) get no positions
+    and nan energy; `extract_config` returns None for them.
+    """
+    if method not in ("best_match", "most_likely"):
+        raise ValueError(
+            f"method must be 'best_match' or 'most_likely', got {method!r}"
+        )
+    if name is None:
+        name = method
+    ana = SimAnalysis()
+    if method == "most_likely":
+        if gamma is not None:
+            raise ValueError("gamma is only used with method='best_match'")
+        ana.compute_most_likely_config(
+            dataset, chroms=chroms, name=name, nworker=nworker
+        )
+        return
+    ana.compute_best_match_config(
+        dataset,
+        chroms=chroms,
+        name=name,
+        gamma=1.0 if gamma is None else gamma,
+        nworker=nworker,
+    )
+
+
+def extract_config(
+    dataset: SimDataset,
+    chrom: str,
+    *,
+    name: str | None = None,
+    run: int | None = None,
+    time: int | None = None,
+    mols: Iterable[int] | None = None,
+    nworker: int = 1,
+) -> list[np.ndarray | None]:
+    """
+    Extract one nucleosome configuration per molecule.
+
+    With `name`, reads the configurations stored by `compute_config`.
+    Without it, reads the raw configurations: run `run` at time `time`
+    of an MCMC dataset, or exact sample `run` of a TM dataset. Nothing
+    is computed.
+
+    Parameters
+    ----------
+    dataset : SimDataset
+        The dataset holding the configurations.
+    chrom : str
+        The chromosome of the molecules.
+    name : str, optional
+        The `name` given to `compute_config` (e.g., "best_match"). If
+        None (default), raw configurations are read.
+    run : int, optional
+        The MCMC run or TM sample to read; 0 if None. Only used if
+        `name` is None.
+    time : int, optional
+        The MCMC time point to read; the final frame if None. Only used
+        for MCMC datasets with `name` None.
+    mols : iterable of int, optional
+        The molecules to read, in this order. If None (default), all
+        molecules of `chrom`.
+    nworker : int, default 1
+        Number of threads used to read raw MCMC files.
+
+    Returns
+    -------
+    list of np.ndarray or None
+        The nucleosome start positions of each molecule, in increasing
+        order, or None for a molecule with no data (see
+        `SimDataset.no_data`) or no file on disk. An empty array is a
+        configuration without nucleosomes.
+
+    Raises
+    ------
+    ValueError
+        If `run` or `time` is given with `name`, if `time` is given for a
+        TM dataset, if a TM dataset stores no samples (`nsim` is 0) and
+        `name` is None, or if `time` is not a recorded time point.
+    KeyError
+        If no configurations are stored under `name` for `chrom`.
+    IndexError
+        If a molecule or `run` is out of range.
+    """
+    return SimAnalysis().extract_config(
+        dataset,
+        chrom,
+        name=name,
+        run=run,
+        time=time,
+        mols=mols,
+        nworker=nworker,
+    )
+
+
 def plot_occup(
     dataset: SimDataset,
     *,

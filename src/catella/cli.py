@@ -857,6 +857,96 @@ def compute_occup(
         dataset.save(overwrite=True)
 
 
+@app.command(name="compute_config")
+def compute_config(
+    dataset_file: Annotated[
+        Path,
+        typer.Argument(
+            help="Simulation dataset HDF5 file (method='tm')",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+        ),
+    ],
+    method: Annotated[
+        str, typer.Option(help="'best_match' or 'most_likely'")
+    ] = "best_match",
+    gamma: Annotated[
+        float | None,
+        typer.Option(help="best_match weight of occupied sites (default 1)"),
+    ] = None,
+    chroms: Annotated[
+        str | None,
+        typer.Option(
+            callback=csv_parser(str), help="Chromosomes (all if omitted)"
+        ),
+    ] = None,
+    name: Annotated[
+        str | None,
+        typer.Option(help="Key prefix to store the calls (default: method)"),
+    ] = None,
+    nworker: Annotated[int, typer.Option(help="Number of processes")] = 1,
+    tsv_file: Annotated[
+        Path | None,
+        typer.Option(
+            help="Write the calls as TSV: chrom, mol, starts "
+            "(comma-joined; empty if none, NA if no data)",
+            file_okay=True,
+            dir_okay=False,
+        ),
+    ] = None,
+    out_file: Annotated[
+        Path | None,
+        typer.Option(
+            help="Output file (default: overwrite dataset_file)",
+            file_okay=True,
+            dir_okay=False,
+        ),
+    ] = None,
+    overwrite: Annotated[
+        bool,
+        typer.Option(
+            help="Allow overwriting out_file if it is "
+            "already backed by H5Array analysis data. "
+            "Ignored (always allowed) when out_file is "
+            "not given"
+        ),
+    ] = False,
+):
+    """
+    Call one nucleosome configuration per molecule.
+    """
+    dataset = SimDataset.load(dataset_file)
+    catella.compute_config(
+        dataset,
+        method=method,
+        gamma=gamma,
+        chroms=chroms,
+        name=name,
+        nworker=nworker,
+    )
+    if tsv_file is not None:
+        key = method if name is None else name
+        rows = []
+        for chrom in chroms or dataset.chroms:
+            configs = catella.extract_config(dataset, chrom, name=key)
+            for mol, starts in enumerate(configs):
+                text = (
+                    "NA"
+                    if starts is None
+                    else ",".join(str(int(s)) for s in starts)
+                )
+                rows.append({"chrom": chrom, "mol": mol, "starts": text})
+        pd.DataFrame(rows, columns=["chrom", "mol", "starts"]).to_csv(
+            tsv_file, sep="\t", index=False
+        )
+    if out_file is not None:
+        dataset.save(out_file, overwrite=overwrite)
+    else:
+        dataset.save(overwrite=True)
+
+
 @app.command()
 def downsample(
     source_file: Annotated[

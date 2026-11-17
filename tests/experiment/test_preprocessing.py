@@ -762,10 +762,10 @@ class TestSortByLinkage:
         ana = MethPrintAnalysis()
 
         link_mats = ana.sort_by_linkage(exp=exp, batch_size=2)
-        sorted_arr = exp.analysis["chr1"]["test_sorted"]
-        assert isinstance(sorted_arr, H5Array)
-        assert sorted_arr.shape == (6, 10)
-        assert "chr1" in link_mats
+        dense = exp.to_dense("chr1", which="test").to_numpy()
+        _, want = utils.compute_linkage(dense)
+        np.testing.assert_allclose(link_mats["chr1"], want)
+        assert "test_linkage" in exp.analysis["chr1"]
 
     def test_exp_accepted_positionally(self):
         exp = _make_experiment(nmol=6, nbp=10)
@@ -773,14 +773,14 @@ class TestSortByLinkage:
         link_mats = ana.sort_by_linkage(exp, batch_size=2)
         assert "chr1" in link_mats
 
-    def test_default_prefers_smoothed_once_available(self):
+    def test_stores_only_the_linkage(self):
         exp = _make_experiment(nmol=5, nbp=8)
         ana = MethPrintAnalysis()
         ana.smooth(lnuc=2, exp=exp, batch_size=2, fill_edge="mean")
+        before = set(exp.analysis["chr1"])
 
         ana.sort_by_linkage(exp=exp, batch_size=2)
-        assert "test_smoothed_sorted" in exp.analysis["chr1"]
-        assert "test_sorted" not in exp.analysis["chr1"]
+        assert set(exp.analysis["chr1"]) - before == {"test_smoothed_linkage"}
 
     def test_default_handles_unfilled_smoothing_edge_nan(self):
         # smooth()'s default fill_edge=np.nan leaves trailing-edge nan;
@@ -790,7 +790,7 @@ class TestSortByLinkage:
         ana.smooth(lnuc=3, exp=exp, batch_size=2)
 
         ana.sort_by_linkage(exp=exp, batch_size=2)
-        assert "test_smoothed_sorted" in exp.analysis["chr1"]
+        assert "test_smoothed_linkage" in exp.analysis["chr1"]
 
     def test_meth_prob_data_name_works(self):
         exp = _make_experiment(nmol=5, nbp=8)
@@ -800,17 +800,20 @@ class TestSortByLinkage:
             exp=exp, lnuc=2, batch_size=2, percentile_sample_size=1000
         )
 
-        ana.sort_by_linkage(exp=exp, data_name="meth_prob", batch_size=2)
-        sorted_arr = exp.analysis["chr1"]["meth_prob_sorted"]
-        assert isinstance(sorted_arr, H5Array)
-        assert sorted_arr.shape == (5, 8)
+        link_mats = ana.sort_by_linkage(
+            exp=exp, data_name="meth_prob", batch_size=2
+        )
+        prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
+        _, want = utils.compute_linkage(prob)
+        np.testing.assert_allclose(link_mats["chr1"], want)
+        assert "meth_prob_linkage" in exp.analysis["chr1"]
 
     def test_raw_which_works_without_smoothing(self):
         exp = _make_experiment(nmol=6, nbp=10)
         ana = MethPrintAnalysis()
 
         ana.sort_by_linkage(exp=exp, raw_which="meth", batch_size=2)
-        assert "meth_sorted" in exp.analysis["chr1"]
+        assert "meth_linkage" in exp.analysis["chr1"]
 
     def test_raw_which_takes_priority_over_data_name(self):
         exp = _make_experiment(nmol=5, nbp=8)
@@ -819,7 +822,7 @@ class TestSortByLinkage:
         ana.sort_by_linkage(
             exp=exp, raw_which="test", data_name="does_not_exist", batch_size=2
         )
-        assert "test_sorted" in exp.analysis["chr1"]
+        assert "test_linkage" in exp.analysis["chr1"]
 
     def test_missing_non_default_data_name_raises_key_error(self):
         exp = _make_experiment(nmol=4, nbp=6)
@@ -827,24 +830,11 @@ class TestSortByLinkage:
         with pytest.raises(KeyError):
             ana.sort_by_linkage(exp=exp, data_name="meth_prob")
 
-    def test_custom_sorted_name(self):
+    def test_custom_link_mat_name(self):
         exp = _make_experiment(nmol=4, nbp=6)
         ana = MethPrintAnalysis()
-        ana.sort_by_linkage(exp=exp, sorted_name="custom", batch_size=2)
+        ana.sort_by_linkage(exp=exp, link_mat_name="custom", batch_size=2)
         assert "custom" in exp.analysis["chr1"]
-
-    def test_sorted_rows_are_a_permutation_of_original_rows(self):
-        exp = _make_experiment(nmol=6, nbp=8)
-        ana = MethPrintAnalysis()
-        ana.smooth(lnuc=2, exp=exp, batch_size=2, fill_edge="mean")
-        original = exp.analysis["chr1"]["test_smoothed"].to_numpy()
-
-        ana.sort_by_linkage(exp=exp, batch_size=2)
-        sorted_arr = exp.analysis["chr1"]["test_smoothed_sorted"].to_numpy()
-
-        orig_rows = sorted(map(tuple, original.tolist()))
-        got_rows = sorted(map(tuple, sorted_arr.tolist()))
-        assert orig_rows == got_rows
 
     def test_works_with_legacy_dataframe_source(self):
         exp = _make_experiment(nmol=5, nbp=6)
@@ -853,30 +843,30 @@ class TestSortByLinkage:
         smoothed = exp.analysis["chr1"]["test_smoothed"].to_numpy()
         exp.analysis["chr1"]["test_df"] = pd.DataFrame(smoothed)
 
-        ana.sort_by_linkage(exp=exp, data_name="test_df", batch_size=2)
-        sorted_df = exp.analysis["chr1"]["test_df_sorted"]
-        order, _ = utils.compute_linkage(smoothed)
-        assert isinstance(sorted_df, pd.DataFrame)
-        np.testing.assert_allclose(sorted_df.to_numpy(), smoothed[order])
+        link_mats = ana.sort_by_linkage(
+            exp=exp, data_name="test_df", batch_size=2
+        )
+        _, want = utils.compute_linkage(smoothed)
+        np.testing.assert_allclose(link_mats["chr1"], want)
 
-    def test_mask_name_excludes_dropped_molecules(self):
+    def test_mask_name_needs_fill_nan(self):
         exp = _make_experiment(nmol=6, nbp=10)
         keep = np.array([i not in (1, 3) for i in range(6)])
         exp.analysis["chr1"]["meth_drop"] = pd.DataFrame({"keep": keep})
         ana = MethPrintAnalysis()
 
-        ana.sort_by_linkage(
+        with pytest.raises(ValueError, match="2 of 6 rows have no data"):
+            ana.sort_by_linkage(
+                exp=exp, raw_which="meth", mask_name="drop", batch_size=2
+            )
+        link_mats = ana.sort_by_linkage(
             exp=exp,
             raw_which="meth",
             mask_name="drop",
             batch_size=2,
             fill_nan="mean",
         )
-        sorted_arr = exp.analysis["chr1"]["meth_sorted"].to_numpy()
-
-        nan_rows = np.isnan(sorted_arr).all(axis=1)
-        assert nan_rows.sum() == 2
-        assert (~nan_rows).sum() == 4
+        assert len(link_mats["chr1"]) == 5
 
     def test_mask_name_without_raw_which_raises(self):
         exp = _make_experiment(nmol=6, nbp=10)
@@ -931,8 +921,8 @@ class TestSortByLinkage:
 
         link_mats = ana.sort_by_linkage(exp=exp, chroms="chr1", batch_size=2)
 
-        assert "test_sorted" in exp.analysis["chr1"]
-        assert "test_sorted" not in exp.analysis["chr2"]
+        assert "test_linkage" in exp.analysis["chr1"]
+        assert "test_linkage" not in exp.analysis["chr2"]
         assert list(link_mats) == ["chr1"]
 
     def test_raw_which_closes_transient_scratch_file(self):
@@ -943,11 +933,7 @@ class TestSortByLinkage:
 
         ana.sort_by_linkage(exp=exp, raw_which="meth", batch_size=2)
 
-        # Only the persisted meth_sorted H5Array should remain; the
-        # transient to_dense() array feeding compute_linkage/
-        # reorder_rows must be closed.
-        new_files = set(tmp_dir.glob("*.h5")) - before
-        assert len(new_files) == 1
+        assert set(tmp_dir.glob("*.h5")) == before
 
     def test_default_fallback_closes_transient_scratch_file(self):
         exp = _make_experiment(nmol=6, nbp=10)
@@ -957,8 +943,7 @@ class TestSortByLinkage:
 
         ana.sort_by_linkage(exp=exp, batch_size=2)
 
-        new_files = set(tmp_dir.glob("*.h5")) - before
-        assert len(new_files) == 1
+        assert set(tmp_dir.glob("*.h5")) == before
 
 
 def _make_footprint_experiment(

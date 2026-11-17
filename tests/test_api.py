@@ -113,25 +113,24 @@ class TestSortByLinkage:
         with pytest.raises(ValueError):
             catella.sort_by_linkage(dataset=dataset, exp=exp)
 
-    def test_dataset_dispatch_sorts_and_stores_link_mat(self, tmp_path):
+    def test_dataset_dispatch_stores_link_mat(self, tmp_path):
         dataset = _make_dataset(tmp_path)
         SimAnalysis().compute_occup(dataset=dataset)
         occup = dataset.analysis["chr1"]["occup"].to_numpy()
-        order, ref_link = utils.compute_linkage(occup)
+        _, ref_link = utils.compute_linkage(occup)
 
-        catella.sort_by_linkage(dataset=dataset)
+        link_mats = catella.sort_by_linkage(dataset=dataset)
 
-        sorted_arr = dataset.analysis["chr1"]["occup_sorted"].to_numpy()
         link_mat = dataset.analysis["chr1"]["occup_linkage"].to_numpy()
-        np.testing.assert_allclose(sorted_arr, occup[order])
         np.testing.assert_allclose(link_mat, ref_link)
+        np.testing.assert_allclose(link_mats["chr1"], ref_link)
+        assert "occup_sorted" not in dataset.analysis["chr1"]
 
     def test_experiment_dispatch_with_raw_which(self):
         exp = _make_experiment()
 
         catella.sort_by_linkage(exp=exp, raw_which="test")
 
-        assert "test_sorted" in exp.analysis["chr1"]
         assert "test_linkage" in exp.analysis["chr1"]
 
     def test_experiment_dispatch_with_mask_name(self):
@@ -140,13 +139,11 @@ class TestSortByLinkage:
         keep[0] = True
         exp.analysis["chr1"]["test_drop"] = pd.DataFrame({"keep": keep})
 
-        catella.sort_by_linkage(
+        link_mats = catella.sort_by_linkage(
             exp=exp, raw_which="test", mask_name="drop", fill_nan="mean"
         )
 
-        sorted_arr = exp.analysis["chr1"]["test_sorted"].to_numpy()
-        nan_rows = np.isnan(sorted_arr).all(axis=1)
-        assert nan_rows.sum() == 5
+        assert len(link_mats["chr1"]) == 5
 
     def test_mask_name_with_dataset_raises(self, tmp_path):
         dataset = _make_dataset(tmp_path)
@@ -157,9 +154,11 @@ class TestSortByLinkage:
         dataset = _make_dataset(tmp_path)
         SimAnalysis().compute_occup(dataset=dataset)
 
-        catella.sort_by_linkage(dataset=dataset, store_link_mat=False)
+        link_mats = catella.sort_by_linkage(
+            dataset=dataset, store_link_mat=False
+        )
 
-        assert "occup_sorted" in dataset.analysis["chr1"]
+        assert "chr1" in link_mats
         assert "occup_linkage" not in dataset.analysis["chr1"]
 
     def test_fill_nan_avoids_crash_on_all_nan_row(self, tmp_path):

@@ -825,7 +825,6 @@ class SimAnalysis:
         *,
         chroms: str | Iterable[str] | None = None,
         data_name: str = "occup",
-        sorted_name: str | None = None,
         store_link_mat: bool = True,
         link_mat_name: str | None = None,
         metric: str = "euclidean",
@@ -834,25 +833,24 @@ class SimAnalysis:
         fill_nan: str | float | None = None,
     ) -> dict[str, np.ndarray]:
         """
-        Sort molecules by hierarchical-clustering similarity.
+        Cluster molecules by similarity, for sorted plots.
 
-        Reorder the rows of a previously-computed analysis array so
-        that similar molecules sit next to each other, matching the
-        leaf order of a hierarchical-clustering dendrogram.
+        Computes a hierarchical-clustering linkage of the rows of an
+        analysis array. Nothing is reordered or copied: pass the linkage
+        as `link_mat` to `plot_occup` or `plot_config`, which put their
+        rows in its leaf order, so any number of plots of the same
+        molecules share one order.
 
         Parameters
         ----------
         dataset : SimDataset
-            The dataset containing the analysis array to sort.
+            The dataset containing the analysis array to cluster.
         chroms : str or iterable of str, optional
             The chromosome(s) to process. If None (default), all
             chromosomes in the dataset are processed.
         data_name : str, default "occup"
-            The key of the analysis array to sort, looked up in
+            The key of the analysis array to cluster, looked up in
             `dataset.analysis[chrom]`.
-        sorted_name : str, optional
-            The key used to store the sorted result. If None
-            (default), `f"{data_name}_sorted"` is used.
         store_link_mat : bool, default True
             Whether to also persist the linkage matrix into
             `dataset.analysis[chrom][link_mat_name]`. If False, the
@@ -869,29 +867,32 @@ class SimAnalysis:
             Number of rows processed (and held in memory) per batch.
         fill_nan : {"mean"}, float, or None, default None
             How to handle `nan` values, forwarded to
-            `utils.compute_linkage`.
+            `utils.compute_linkage`. Molecules with no data (all nan,
+            see `SimDataset.no_data`) need it.
 
         Returns
         -------
         dict of str to np.ndarray
             A mapping from chromosome name to that chromosome's
-            linkage matrix, for optional immediate use (e.g. passing
-            straight to `SimPlot.plot_occup`'s `link_mat` argument).
-            Also persisted into `dataset.analysis[chrom][link_mat_name]`
-            if `store_link_mat` is True.
+            linkage matrix, to pass as `link_mat` to `SimPlot.plot_occup`
+            or `SimPlot.plot_config`. Also stored in
+            `dataset.analysis[chrom][link_mat_name]` if `store_link_mat`
+            is True.
 
         Raises
         ------
         KeyError
             If `data_name` is not found in `dataset.analysis[chrom]`
             for any of the selected chromosomes.
+        ValueError
+            If some molecule has no data and `fill_nan` is None.
         """
         chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)
         tmp_dir = dataset.resolve_tmp_dir()
         link_mats = {}
         for chrom in chroms:
             data = dataset.analysis[chrom][data_name]
-            order, link_mat = utils.compute_linkage(
+            _, link_mat = utils.compute_linkage(
                 data,
                 metric=metric,
                 method=method,
@@ -899,18 +900,6 @@ class SimAnalysis:
                 dir=tmp_dir,
                 fill_nan=fill_nan,
             )
-            if isinstance(data, H5Array):
-                sorted_data = data.reorder_rows(
-                    order, dir=tmp_dir, batch_size=batch_size
-                )
-            else:
-                sorted_data = data.iloc[order]
-            name = (
-                sorted_name
-                if sorted_name is not None
-                else f"{data_name}_sorted"
-            )
-            dataset.analysis[chrom][name] = sorted_data
             if store_link_mat:
                 lname = (
                     link_mat_name

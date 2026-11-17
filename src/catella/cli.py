@@ -1043,7 +1043,7 @@ def sort_by_linkage(
         ),
     ] = None,
     data_name: Annotated[
-        str | None, typer.Option(help="Analysis key to sort")
+        str | None, typer.Option(help="Analysis key to cluster")
     ] = None,
     raw_which: Annotated[
         str | None,
@@ -1057,9 +1057,6 @@ def sort_by_linkage(
             "raw_which, 'experiment' kind "
             "only"
         ),
-    ] = None,
-    sorted_name: Annotated[
-        str | None, typer.Option(help="Key to store the sorted result")
     ] = None,
     store_link_mat: Annotated[
         bool, typer.Option(help="Persist the linkage matrix")
@@ -1100,7 +1097,9 @@ def sort_by_linkage(
     ] = False,
 ):
     """
-    Sort molecules by hierarchical-clustering similarity.
+    Cluster molecules by similarity and store the linkage matrix.
+
+    Plots put their rows in its leaf order via --link-mat-name.
     """
     obj = _load_source(source_file, kind)
     if kind == SourceKind.experiment:
@@ -1110,7 +1109,6 @@ def sort_by_linkage(
             data_name=data_name,
             raw_which=raw_which,
             mask_name=mask_name,
-            sorted_name=sorted_name,
             store_link_mat=store_link_mat,
             link_mat_name=link_mat_name,
             metric=metric,
@@ -1123,7 +1121,6 @@ def sort_by_linkage(
             dataset=obj,
             chroms=chroms,
             data_name=data_name,
-            sorted_name=sorted_name,
             store_link_mat=store_link_mat,
             link_mat_name=link_mat_name,
             metric=metric,
@@ -1183,6 +1180,13 @@ def plot_config(
     plot_eseq: Annotated[
         bool, typer.Option(help="Plot the mean sequence-specific energy")
     ] = False,
+    link_mat_name: Annotated[
+        str | None,
+        typer.Option(
+            help="Key of a linkage matrix (from sort_by_linkage) to order "
+            "the rows by and draw as a dendrogram"
+        ),
+    ] = None,
     out_file: Annotated[
         Path | None,
         typer.Option(
@@ -1195,6 +1199,11 @@ def plot_config(
     Plot one nucleosome configuration per molecule.
     """
     dataset = SimDataset.load(dataset_file)
+    link_mat = (
+        dataset.analysis[chrom][link_mat_name]
+        if link_mat_name is not None
+        else None
+    )
     catella.plot_config(
         dataset,
         chrom=chrom,
@@ -1207,6 +1216,7 @@ def plot_config(
         xscale=xscale,
         cmap=cmap,
         plot_eseq=plot_eseq,
+        link_mat=link_mat,
         out_file=out_file,
         show=show,
     )

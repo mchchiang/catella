@@ -34,23 +34,23 @@ commentary. See :doc:`tutorials/tut01_meth_prob` and
                                wrap=True,
                                nworker=3)
 
-   # QC: sort and plot raw methylation scores, and dropout ECDF
+   # QC: plot raw methylation scores sorted by similarity, and dropout ECDF
    for which in ("test", "unmeth", "meth"):
-       sorted_mat = catella.sort_by_linkage(exp=exp_data, raw_which=which,
-                                            fill_nan=0.0)
-       catella.plot_meth_prob(exp_data.analysis["601"][f"{which}_sorted"],
-                              vmin=0.0, vmax=1.0)
+       link = catella.sort_by_linkage(exp=exp_data, raw_which=which,
+                                      fill_nan=0.0)
+       catella.plot_meth_prob(exp=exp_data, chrom="601", raw_which=which,
+                              link_mat=link["601"], vmin=0.0, vmax=1.0)
    catella.plot_dropout_ecdf(exp=exp_data, chrom="601")
 
    # Model-based normalized methylation probability
    exp_data = catella.compute_model_prob(exp=exp_data,
                                          prob_name="meth_prob_model")
-   sorted_mat = catella.sort_by_linkage(exp=exp_data,
-                                        data_name="meth_prob_model",
-                                        fill_nan=0.0)
-   catella.plot_meth_prob(exp_data.analysis["601"]["meth_prob_model_sorted"],
+   link = catella.sort_by_linkage(exp=exp_data, data_name="meth_prob_model",
+                                  fill_nan=0.0)
+   meth_prob = exp_data.analysis["601"]["meth_prob_model"]
+   catella.plot_meth_prob(meth_prob, link_mat=link["601"],
                           vmin=0.0, vmax=1.0)
-   catella.plot_meth_energy(exp_data.analysis["601"]["meth_prob_model_sorted"])
+   catella.plot_meth_energy(meth_prob, link_mat=link["601"])
 
    # Optional: center-align the left-aligned probability windows
    lnuc = 147
@@ -63,14 +63,15 @@ commentary. See :doc:`tutorials/tut01_meth_prob` and
    # Empirical normalized methylation probability (cross-check)
    exp_data = catella.compute_empirical_prob(exp=exp_data,
                                              prob_name="meth_prob_empirical")
-   sorted_mat = catella.sort_by_linkage(exp=exp_data, chroms="601",
-                                        data_name="meth_prob_empirical",
-                                        fill_nan=0.0)
+   link = catella.sort_by_linkage(exp=exp_data, chroms="601",
+                                  data_name="meth_prob_empirical",
+                                  fill_nan=0.0)
    catella.plot_meth_prob(
-       data=exp_data.analysis["601"]["meth_prob_empirical_sorted"],
-       vmin=0.0, vmax=1.0)
+       data=exp_data.analysis["601"]["meth_prob_empirical"],
+       link_mat=link["601"], vmin=0.0, vmax=1.0)
    catella.plot_meth_energy(
-       data=exp_data.analysis["601"]["meth_prob_empirical_sorted"])
+       data=exp_data.analysis["601"]["meth_prob_empirical"],
+       link_mat=link["601"])
 
    # Save processed experiment data
    exp_h5 = exp_dir/"analysis.h5"
@@ -120,7 +121,7 @@ commentary. See :doc:`tutorials/tut01_meth_prob` and
 
    # Analyze and save results
    catella.compute_occup(sim_data)
-   sorted_mat = catella.sort_by_linkage(dataset=sim_data, data_name="occup")
-   catella.plot_occup(sim_data, chrom="601", occup_name="occup_sorted",
+   link = catella.sort_by_linkage(dataset=sim_data, data_name="occup")
+   catella.plot_occup(sim_data, chrom="601", link_mat=link["601"],
                       plot_eseq=True)
    sim_data.save()

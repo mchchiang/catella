@@ -7,9 +7,11 @@ matplotlib.use("Agg")
 import warnings
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
+import scipy.cluster.hierarchy as sch
 from catella import utils
 from catella.experiment.methdata import MethPrintData, MethPrintExperiment
 from catella.experiment.plot import MethPlot
@@ -201,13 +203,41 @@ def test_plot_meth_prob_end_to_end_with_sort_by_linkage(tmp_path):
 
     ana = MethPrintAnalysis()
     link_mats = ana.sort_by_linkage(exp=exp, raw_which="test", batch_size=4)
-    sorted_arr = exp.analysis["chr1"]["test_sorted"]
 
     out_file = tmp_path / "sorted_methmap.png"
     MethPlot().plot_meth_prob(
-        sorted_arr, link_mat=link_mats["chr1"], out_file=out_file, show=False
+        exp=exp,
+        chrom="chr1",
+        raw_which="test",
+        link_mat=link_mats["chr1"],
+        out_file=out_file,
+        show=False,
     )
     assert out_file.exists()
+    dense = exp.to_dense("chr1", which="test").to_numpy()
+    order = sch.leaves_list(link_mats["chr1"])
+    image = plt.gcf().axes[0].images[0].get_array()
+    np.testing.assert_allclose(
+        np.ma.filled(image, np.nan), dense[order], equal_nan=True
+    )
+
+
+def test_plot_meth_prob_link_mat_orders_data_rows(methplot):
+    values = np.random.default_rng(4).random((6, 5))
+    _, link_mat = utils.compute_linkage(values)
+    methplot.plot_meth_prob(values, link_mat=link_mat, show=False)
+    image = plt.gcf().axes[0].images[0].get_array()
+    order = sch.leaves_list(link_mat)
+    np.testing.assert_allclose(np.ma.getdata(image), values[order])
+    assert plt.gcf().axes[0].get_ylabel() == "Row (leaf order)"
+
+
+def test_plot_meth_prob_link_mat_size_mismatch_raises(methplot):
+    _, link_mat = utils.compute_linkage(np.random.rand(4, 3))
+    with pytest.raises(ValueError, match="4 leaves but the data has 6"):
+        methplot.plot_meth_prob(
+            np.random.rand(6, 3), link_mat=link_mat, show=False
+        )
 
 
 def test_plot_meth_prob_with_nan_values(methplot, tmp_path):

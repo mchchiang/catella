@@ -39,7 +39,6 @@ from catella.experiment._eta import (
 from catella.experiment._reads import _check_mapped_strands, _lookup_mask
 from catella.experiment._scoring import _score_test_reads
 from catella.experiment.methdata import MethPrintExperiment
-from catella.h5_array import H5Array
 
 __all__ = [
     "CG",
@@ -764,7 +763,6 @@ class MethPrintAnalysis:
         data_name: str = "test_smoothed",
         raw_which: str | None = None,
         mask_name: str | None = None,
-        sorted_name: str | None = None,
         store_link_mat: bool = True,
         link_mat_name: str | None = None,
         metric: str = "euclidean",
@@ -773,15 +771,15 @@ class MethPrintAnalysis:
         fill_nan: str | float | None = None,
     ) -> dict[str, np.ndarray]:
         """
-        Sort molecules by hierarchical-clustering similarity.
+        Cluster molecules by similarity, for sorted plots.
 
-        Iterate through the selected chromosomes, reordering rows
-        (molecules) of a dense methylation signal so that similar
-        molecules sit next to each other, matching the leaf order of a
-        hierarchical-clustering dendrogram. By default, sorts the
-        smoothed test signal if `smooth` has been run, or the raw
-        test signal otherwise -- so this works whether or not `smooth`
-        has been called first.
+        Computes a hierarchical-clustering linkage of the molecules of a
+        dense methylation signal, per chromosome. Nothing is reordered or
+        copied: pass the linkage as `link_mat` to `plot_meth_prob` or
+        `plot_meth_energy`, which put their rows in its leaf order. By
+        default, clusters the smoothed test signal if `smooth` has been
+        run, or the raw test signal otherwise -- so this works whether or
+        not `smooth` has been called first.
 
         Parameters
         ----------
@@ -806,11 +804,7 @@ class MethPrintAnalysis:
             `exp.to_dense(chrom, which=raw_which, mask_name=mask_name)`
             so molecules flagged as dropout by a prior
             `filter_dropout(mask_name=mask_name)` call are excluded
-            (returned as all-NaN rows) before sorting.
-        sorted_name : str, optional
-            The key used to store the sorted result. If None
-            (default), `f"{data_name}_sorted"` is used, or
-            `f"{raw_which}_sorted"` if `raw_which` is given.
+            (returned as all-NaN rows, which need `fill_nan`).
         store_link_mat : bool, default True
             Whether to also persist each chromosome's linkage matrix
             into `exp.analysis[chrom][link_mat_name]`. If False, the
@@ -835,15 +829,16 @@ class MethPrintAnalysis:
         -------
         dict of str to np.ndarray
             A mapping from chromosome name to that chromosome's
-            linkage matrix, for optional immediate use (e.g. passing
-            straight to `MethPlot.plot_meth_prob`'s `link_mat` argument).
-            Also persisted into `exp.analysis[chrom][link_mat_name]` if
-            `store_link_mat` is True.
+            linkage matrix, to pass as `link_mat` to
+            `MethPlot.plot_meth_prob`. Also stored in
+            `exp.analysis[chrom][link_mat_name]` if `store_link_mat` is
+            True.
 
         Raises
         ------
         ValueError
-            If `mask_name` is given but `raw_which` is None.
+            If `mask_name` is given but `raw_which` is None, or if some
+            molecule has no data (all nan) and `fill_nan` is None.
         KeyError
             If `raw_which` is None, `data_name` is not `"test_smoothed"`
             (its default), and not found in `exp.analysis[chrom]` for
@@ -886,14 +881,9 @@ class MethPrintAnalysis:
                     )
                 data = ana[data_name]
                 base_name = data_name
-            name = (
-                sorted_name
-                if sorted_name is not None
-                else f"{base_name}_sorted"
-            )
 
             try:
-                order, link_mat = utils.compute_linkage(
+                _, link_mat = utils.compute_linkage(
                     data,
                     metric=metric,
                     method=method,
@@ -901,16 +891,9 @@ class MethPrintAnalysis:
                     dir=tmp_dir,
                     fill_nan=fill_nan,
                 )
-                if isinstance(data, H5Array):
-                    sorted_data = data.reorder_rows(
-                        order, dir=tmp_dir, batch_size=batch_size
-                    )
-                else:
-                    sorted_data = data.iloc[order]
             finally:
                 if owns_data:
                     data.close()
-            exp.analysis[chrom][name] = sorted_data
             if store_link_mat:
                 lname = (
                     link_mat_name

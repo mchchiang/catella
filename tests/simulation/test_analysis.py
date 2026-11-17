@@ -208,20 +208,19 @@ class TestSaveLoadRoundTrip:
 
 
 class TestSortByLinkage:
-    def test_output_is_h5array_and_matches_oracle(self, tmp_path):
+    def test_linkage_matches_oracle(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=6, nbp=20)
         ana = SimAnalysis()
         ana.compute_occup(dataset=dataset, batch_size=2)
         occup = dataset.analysis["chr1"]["occup"].to_numpy()
 
         link_mats = ana.sort_by_linkage(dataset=dataset, batch_size=2)
-        sorted_arr = dataset.analysis["chr1"]["occup_sorted"]
-        assert isinstance(sorted_arr, H5Array)
-        assert sorted_arr.shape == occup.shape
 
-        order, ref_link = utils.compute_linkage(occup)
-        np.testing.assert_allclose(sorted_arr.to_numpy(), occup[order])
+        _, ref_link = utils.compute_linkage(occup)
         np.testing.assert_allclose(link_mats["chr1"], ref_link)
+        np.testing.assert_allclose(
+            dataset.analysis["chr1"]["occup_linkage"].to_numpy(), ref_link
+        )
 
     def test_dataset_accepted_positionally(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=6, nbp=20)
@@ -230,31 +229,24 @@ class TestSortByLinkage:
         link_mats = ana.sort_by_linkage(dataset, batch_size=2)
         assert "chr1" in link_mats
 
-    def test_sorted_rows_are_a_permutation_of_original_rows(self, tmp_path):
+    def test_stores_only_the_linkage(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=5, nbp=12)
         ana = SimAnalysis()
         ana.compute_occup(dataset=dataset, batch_size=2)
-        occup = dataset.analysis["chr1"]["occup"].to_numpy()
+        before = set(dataset.analysis["chr1"])
 
         ana.sort_by_linkage(dataset=dataset, batch_size=2)
-        sorted_arr = dataset.analysis["chr1"]["occup_sorted"].to_numpy()
+        assert set(dataset.analysis["chr1"]) - before == {"occup_linkage"}
 
-        orig_rows = sorted(map(tuple, occup.tolist()))
-        got_rows = sorted(map(tuple, sorted_arr.tolist()))
-        assert orig_rows == got_rows
-
-    def test_default_and_custom_sorted_name(self, tmp_path):
+    def test_custom_link_mat_name(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=4, nbp=10)
         ana = SimAnalysis()
         ana.compute_occup(dataset=dataset, batch_size=2)
 
-        ana.sort_by_linkage(dataset=dataset, batch_size=2)
-        assert "occup_sorted" in dataset.analysis["chr1"]
-
         ana.sort_by_linkage(
-            dataset=dataset, sorted_name="my_sorted", batch_size=2
+            dataset=dataset, link_mat_name="my_link", batch_size=2
         )
-        assert "my_sorted" in dataset.analysis["chr1"]
+        assert "my_link" in dataset.analysis["chr1"]
 
     def test_chroms_filter_only_processes_selected_chromosome(self, tmp_path):
         rng = np.random.default_rng(2)
@@ -272,8 +264,8 @@ class TestSortByLinkage:
         ana.compute_occup(dataset=dataset, batch_size=2)
 
         ana.sort_by_linkage(dataset=dataset, chroms="chr1", batch_size=2)
-        assert "occup_sorted" in dataset.analysis["chr1"]
-        assert "occup_sorted" not in dataset.analysis["chr2"]
+        assert "occup_linkage" in dataset.analysis["chr1"]
+        assert "occup_linkage" not in dataset.analysis["chr2"]
 
     def test_missing_data_name_raises_key_error(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=3, nbp=10)
@@ -288,13 +280,11 @@ class TestSortByLinkage:
         occup = dataset.analysis["chr1"]["occup"].to_numpy()
         dataset.analysis["chr1"]["occup_df"] = pd.DataFrame(occup)
 
-        ana.sort_by_linkage(
+        link_mats = ana.sort_by_linkage(
             dataset=dataset, data_name="occup_df", batch_size=2
         )
-        sorted_df = dataset.analysis["chr1"]["occup_df_sorted"]
-        order, _ = utils.compute_linkage(occup)
-        assert isinstance(sorted_df, pd.DataFrame)
-        np.testing.assert_allclose(sorted_df.to_numpy(), occup[order])
+        _, want = utils.compute_linkage(occup)
+        np.testing.assert_allclose(link_mats["chr1"], want)
 
     def test_fill_nan_avoids_crash_on_all_nan_row(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=5, nbp=8)
@@ -304,7 +294,7 @@ class TestSortByLinkage:
         occup[0, :] = np.nan
         dataset.analysis["chr1"]["occup_nan"] = pd.DataFrame(occup)
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="1 of 5 rows have no data"):
             ana.sort_by_linkage(
                 dataset=dataset, data_name="occup_nan", batch_size=2
             )
@@ -316,10 +306,7 @@ class TestSortByLinkage:
             fill_nan="mean",
         )
         assert np.isfinite(link_mats["chr1"]).all()
-        sorted_arr = dataset.analysis["chr1"]["occup_nan_sorted"].to_numpy()
-        orig_rows = sorted(map(tuple, np.nan_to_num(occup).tolist()))
-        got_rows = sorted(map(tuple, np.nan_to_num(sorted_arr).tolist()))
-        assert orig_rows == got_rows
+        assert len(link_mats["chr1"]) == 4
 
 
 def _make_tm_settings(**overrides):

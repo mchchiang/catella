@@ -1178,6 +1178,7 @@ def plot_config(
     cmap: str | None = None,
     out_file: str | Path | None = None,
     plot_eseq: bool = False,
+    link_mat: np.ndarray | pd.DataFrame | None = None,
     show: bool = True,
 ):
     """
@@ -1226,6 +1227,11 @@ def plot_config(
     plot_eseq : bool, default False
         Whether to plot the sequence-specific binding energy, averaged
         over the shown molecules, below the heatmap.
+    link_mat : np.ndarray or pd.DataFrame, optional
+        Linkage matrix of these molecules (as returned or stored by
+        `sort_by_linkage`). If given, the molecules are put in its leaf
+        order before `max_rows` downsampling, and its dendrogram is drawn
+        alongside. Cannot be combined with `mols`.
     show : bool, default True
         Whether to display the figure.
 
@@ -1234,7 +1240,9 @@ def plot_config(
     ValueError
         If `max_rows` or `downsample_how` is invalid, if `xscale` is not
         a power of 10, if `plot_eseq` is True and the dataset stores no
-        energies, or for invalid arguments of `extract_config`.
+        energies, if `link_mat` is combined with `mols` or does not match
+        the number of molecules, or for invalid arguments of
+        `extract_config`.
     KeyError
         If no calls are stored under `name` for `chrom`.
     IndexError
@@ -1259,6 +1267,7 @@ def plot_config(
         cmap=cmap,
         out_file=out_file,
         plot_eseq=plot_eseq,
+        link_mat=link_mat,
         show=show,
     )
 
@@ -1311,11 +1320,11 @@ def plot_occup(
     plot_eseq : bool, default False
         Whether to plot the underlying sequence-specific nucleosome binding
         energy, averaged across all molecules.
-    link_mat : np.ndarray, optional
-        Linkage matrix to draw as a dendrogram alongside the heatmap (as
-        returned by `SimAnalysis.sort_by_linkage`). If given, `occup_name`
-        should point at the correspondingly-sorted array rather than the
-        unsorted data. If None (default), no dendrogram is drawn.
+    link_mat : np.ndarray or pd.DataFrame, optional
+        Linkage matrix of these molecules (as returned or stored by
+        `sort_by_linkage`). If given, the rows are put in its leaf order
+        and its dendrogram is drawn alongside. Cannot be combined with
+        `mols`. If None (default), rows are in molecule order.
     show : bool, default True
         If True, invokes the active plotting backend to display the
         figure immediately.
@@ -1417,11 +1426,11 @@ def plot_meth_prob(
     out_file : str | Path, optional
         Path where the generated plot will be saved. If None, the plot
         is not saved to disk.
-    link_mat : np.ndarray, optional
-        Linkage matrix to draw as a dendrogram alongside the heatmap
-        (as returned by `MethPrintAnalysis.sort_by_linkage`). If given,
-        `data` should already be the correspondingly-sorted array
-        rather than the original unsorted one.
+    link_mat : np.ndarray or pd.DataFrame, optional
+        Linkage matrix of these molecules (as returned or stored by
+        `sort_by_linkage`). If given, the rows are put in its leaf order
+        before `max_rows` downsampling and its dendrogram is drawn
+        alongside. Cannot be combined with `mols`.
     show : bool, default True
         Whether to display the figure using the active plotting
         backend.
@@ -1502,9 +1511,9 @@ def plot_meth_energy(
         Label drawn next to the colorbar.
     out_file : str or pathlib.Path, optional
         Path to save the generated figure.
-    link_mat : np.ndarray, optional
-        Linkage matrix to draw as a dendrogram alongside the
-        heatmap. `data` should already be sorted to match.
+    link_mat : np.ndarray or pd.DataFrame, optional
+        Linkage matrix of these molecules; the rows are put in its leaf
+        order and its dendrogram is drawn alongside.
     show : bool, default True
         Whether to display the figure using the active plotting
         backend.
@@ -1571,7 +1580,6 @@ def sort_by_linkage(
     data_name: str | None = None,
     raw_which: str | None = None,
     mask_name: str | None = None,
-    sorted_name: str | None = None,
     store_link_mat: bool = True,
     link_mat_name: str | None = None,
     metric: str = "euclidean",
@@ -1580,7 +1588,17 @@ def sort_by_linkage(
     fill_nan: str | float | None = None,
 ) -> dict[str, np.ndarray]:
     """
-    Sort molecules by hierarchical-clustering similarity.
+    Cluster molecules by similarity, for sorted plots.
+
+    Computes a hierarchical-clustering linkage per chromosome; nothing is
+    reordered or copied. Pass the linkage as `link_mat` to a plot
+    (`plot_occup`, `plot_config`, `plot_meth_prob`, `plot_meth_energy`),
+    which puts its rows in the linkage's leaf order. Several plots of
+    the same molecules can share one linkage:
+
+    >>> lm = catella.sort_by_linkage(dataset=ds, data_name="occup")
+    >>> catella.plot_occup(ds, chrom=c, link_mat=lm[c])
+    >>> catella.plot_config(ds, chrom=c, name="best_match", link_mat=lm[c])
 
     Dispatches to `SimAnalysis.sort_by_linkage` (if `dataset` is given)
     or `MethPrintAnalysis.sort_by_linkage` (if `exp` is given) -- exactly
@@ -1589,27 +1607,24 @@ def sort_by_linkage(
     Parameters
     ----------
     dataset : SimDataset, optional
-        Simulation dataset to sort. Mutually exclusive with `exp`.
+        Simulation dataset to cluster. Mutually exclusive with `exp`.
     exp : MethPrintExperiment, optional
-        Methylation experiment to sort. Mutually exclusive with
+        Methylation experiment to cluster. Mutually exclusive with
         `dataset`.
     chroms : str or iterable of str, optional
         Chromosome(s) to process. If None (default), all chromosomes
         in `dataset.chroms` (or `exp.chroms`) are processed.
     data_name : str, optional
-        Key of the analysis array to sort. If None, the underlying
+        Key of the analysis array to cluster. If None, the underlying
         method's own default is used ("occup" for `dataset`,
         "test_smoothed" for `exp`).
     raw_which : {"test", "meth", "unmeth"}, optional
-        Only used with `exp`. If given, sorts raw long-form data
+        Only used with `exp`. If given, clusters raw long-form data
         instead of an `exp.analysis` entry.
     mask_name : str, optional
         Only used with `exp` and `raw_which`. If given, molecules
         flagged as dropout by a prior `filter_dropout(mask_name=
-        mask_name)` call are excluded before sorting.
-    sorted_name : str, optional
-        Key used to store the sorted result. Defaults to
-        `f"{data_name}_sorted"` (or `f"{raw_which}_sorted"`).
+        mask_name)` call are all-nan rows (which need `fill_nan`).
     store_link_mat : bool, default True
         Whether to also persist each chromosome's linkage matrix into
         `.analysis[chrom][link_mat_name]`.
@@ -1636,13 +1651,13 @@ def sort_by_linkage(
     Raises
     ------
     ValueError
-        If neither or both of `dataset`/`exp` are given, or if
-        `mask_name` is given with `dataset`.
+        If neither or both of `dataset`/`exp` are given, if `mask_name`
+        is given with `dataset`, or if some molecule has no data (all
+        nan) and `fill_nan` is None.
     """
     if (dataset is None) == (exp is None):
         raise ValueError("exactly one of 'dataset' or 'exp' must be given")
     kwargs = {
-        "sorted_name": sorted_name,
         "store_link_mat": store_link_mat,
         "link_mat_name": link_mat_name,
         "metric": metric,

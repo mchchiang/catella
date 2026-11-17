@@ -14,7 +14,7 @@ from matplotlib.colors import Normalize
 from matplotlib.patches import Patch
 from matplotlib.ticker import MaxNLocator
 
-from catella._plotting import _warn_if_large
+from catella._plotting import _leaf_order, _warn_if_large
 from catella.mapping import CoordsTransform
 from catella.simulation.analysis import NucFiberMap, SimAnalysis
 from catella.simulation.results import SimDataset
@@ -545,6 +545,7 @@ class SimPlot:
         cmap: str | None = None,
         out_file: str | Path | None = None,
         plot_eseq: bool = False,
+        link_mat: np.ndarray | None = None,
         show: bool = True,
     ):
         """
@@ -594,6 +595,11 @@ class SimPlot:
         plot_eseq : bool, default False
             Whether to plot the sequence-specific binding energy, averaged
             over the shown molecules, below the heatmap.
+        link_mat : np.ndarray or pd.DataFrame, optional
+            Linkage matrix of these molecules (as returned or stored by
+            `sort_by_linkage`). If given, the molecules are put in its
+            leaf order before `max_rows` downsampling, and its dendrogram
+            is drawn alongside. Cannot be combined with `mols`.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
@@ -602,8 +608,9 @@ class SimPlot:
         ValueError
             If `max_rows` or `downsample_how` is invalid, if `xscale` is
             not a power of 10, if `plot_eseq` is True and the dataset
-            stores no energies, or for invalid arguments of
-            `SimAnalysis.extract_config`.
+            stores no energies, if `link_mat` is combined with `mols` or
+            does not match the number of molecules, or for invalid
+            arguments of `SimAnalysis.extract_config`.
         KeyError
             If no calls are stored under `name` for `chrom`.
         IndexError
@@ -628,6 +635,9 @@ class SimPlot:
             if mols is None
             else [int(m) for m in mols]
         )
+        if link_mat is not None:
+            link_mat, order = _leaf_order(link_mat, len(mol_ids), mols)
+            mol_ids = [int(m) for m in order]
         ntotal = len(mol_ids)
         if downsample_how == "stride":
             mol_ids = mol_ids[:: _stride_step(len(mol_ids), max_rows)]
@@ -652,13 +662,18 @@ class SimPlot:
             dataset,
             matrix,
             extent_y=None,
-            ylabel=_rows_label("molecule", ntotal, matrix.shape[0]),
+            ylabel=(
+                _rows_label("molecule", ntotal, matrix.shape[0])
+                if link_mat is None
+                else "Row (leaf order)"
+            ),
             invert_y=False,
             xpow=xpow,
             xscale=xscale,
             cmap=cmap,
             eseq=eseq,
             eseq_label=r"$\langle E_{\text{seq}} \rangle$ [$k_BT$]",
+            link_mat=link_mat,
         )
         hm_ax.set_title(f"Configurations for {chrom}", pad=12)
         fig.tight_layout()
@@ -684,15 +699,17 @@ class SimPlot:
         cmap,
         eseq,
         eseq_label,
+        link_mat=None,
     ):
         """
         Draw a footprint matrix (1 covered, 0 linker, -1 or nan no data),
-        with an optional energy panel below.
+        with an optional dendrogram on the right and energy panel below.
 
         An int8 matrix (0/1 calls) gets a legend; a float matrix (merged
         with "mean") gets a colorbar of the covered share. If `extent_y`
         is None, the y-axis counts rows: row i is centered on y = i, with
-        integer ticks.
+        integer ticks. `link_mat` (rows already in its leaf order) is
+        drawn as a dendrogram between the heatmap and the legend.
 
         Returns
         -------
@@ -701,23 +718,38 @@ class SimPlot:
         """
         nbp = matrix.shape[1]
         binary = matrix.dtype == np.int8
-        # The second column is a slot for the legend or the colorbar
-        gridspec_kw = {"width_ratios": [4, 1] if binary else [20, 1]}
+        # Columns: heatmap, [dendrogram], legend or colorbar
+        if link_mat is None:
+            width_ratios = [4, 1] if binary else [20, 1]
+        else:
+            width_ratios = [4, 0.8, 1] if binary else [5, 1, 0.25]
+        ncols = len(width_ratios)
+        gridspec_kw = {"width_ratios": width_ratios}
         nrows = 1 if eseq is None else 2
         if eseq is not None:
             gridspec_kw["height_ratios"] = [4, 1]
         fig, ax = plt.subplots(
-            nrows=nrows, ncols=2, gridspec_kw=gridspec_kw, squeeze=False
+            nrows=nrows, ncols=ncols, gridspec_kw=gridspec_kw, squeeze=False
         )
         w, h = fig.get_size_inches()
         fig.set_size_inches(
             w * (1.2 if binary else 1.0), h * (1.0 if eseq is None else 1.25)
         )
-        hm_ax, side_ax = ax[0, 0], ax[0, 1]
+        hm_ax, side_ax = ax[0, 0], ax[0, -1]
         seq_ax = None
         if eseq is not None:
             seq_ax = ax[1, 0]
-            ax[1, 1].axis("off")
+            for extra in ax[1, 1:]:
+                extra.axis("off")
+        if link_mat is not None:
+            sch.dendrogram(
+                link_mat,
+                orientation="right",
+                ax=ax[0, 1],
+                no_labels=True,
+                link_color_func=lambda x: "black",
+            )
+            ax[0, 1].axis("off")
 
         # -1 (no data) is below vmin; nan comes from "mean" merging
         cmap_obj = plt.get_cmap(cmap if cmap is not None else self.cmap)
@@ -832,13 +864,11 @@ class SimPlot:
         plot_eseq : bool, default False
             Whether to plot the underlying sequence-specific nucleosome binding
             energy, averaged across all molecules.
-        link_mat : np.ndarray, optional
-            Linkage matrix to draw as a dendrogram alongside the heatmap
-            (as returned by `SimAnalysis.sort_by_linkage`). If given,
-            `occup_name` should point at the correspondingly-sorted
-            array (e.g. `SimAnalysis.sort_by_linkage`'s output) rather
-            than the unsorted data. If None (default), no dendrogram is
-            drawn and `occup_name` is plotted as-is.
+        link_mat : np.ndarray or pd.DataFrame, optional
+            Linkage matrix of these molecules (as returned or stored by
+            `SimAnalysis.sort_by_linkage`). If given, the rows are put in
+            its leaf order and its dendrogram is drawn alongside. Cannot
+            be combined with `mols`.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
@@ -846,7 +876,8 @@ class SimPlot:
         ------
         ValueError
             If the occupancy is missing and no `time` is provided for
-            computation.
+            computation, or if `link_mat` is combined with `mols` or does
+            not match the number of molecules.
 
         Warns
         -----
@@ -870,6 +901,9 @@ class SimPlot:
         occup = dataset.analysis[chrom][occup_name]
         if mols is not None:
             mols = list(mols)
+        order = None
+        if link_mat is not None:
+            link_mat, order = _leaf_order(link_mat, occup.shape[0], mols)
         _warn_if_large(
             occup.shape[0] if mols is None else len(mols),
             occup.shape[1],
@@ -877,6 +911,8 @@ class SimPlot:
         )
         if mols is not None:
             occup = np.asarray(occup)[mols]
+        if order is not None:
+            occup = np.asarray(occup)[order]
         sort_data = link_mat is not None
 
         # Set up the figure. The rightmost column is a dedicated,
@@ -928,7 +964,7 @@ class SimPlot:
         hm_ax.set_xlim(0, nbp / xscale)
         if plot_eseq:
             hm_ax.get_xaxis().set_visible(False)
-        hm_ax.set_ylabel(r"Molecule index")
+        hm_ax.set_ylabel("Row (leaf order)" if sort_data else "Molecule index")
         cbar = fig.colorbar(im, cax=cbar_ax)
         cbar.set_label("Occupancy", rotation=270, labelpad=15)
 

@@ -1446,12 +1446,12 @@ class TestDownsample:
 
 
 class TestSortByLinkage:
-    def test_dataset_sort_matches_oracle_and_persists_link_mat(self, tmp_path):
+    def test_dataset_linkage_matches_oracle_and_is_stored(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=6, nbp=10)
         SimAnalysis().compute_occup(dataset=dataset)
         dataset.save()
         occup = dataset.analysis["chr1"]["occup"].to_numpy()
-        order, ref_link = utils.compute_linkage(occup)
+        _, ref_link = utils.compute_linkage(occup)
 
         result = runner.invoke(
             app,
@@ -1465,10 +1465,9 @@ class TestSortByLinkage:
         assert result.exit_code == 0, result.output
 
         reloaded = SimDataset.load(dataset._dataset_file)
-        sorted_arr = reloaded.analysis["chr1"]["occup_sorted"].to_numpy()
         link_mat = reloaded.analysis["chr1"]["occup_linkage"].to_numpy()
-        np.testing.assert_allclose(sorted_arr, occup[order])
         np.testing.assert_allclose(link_mat, ref_link)
+        assert "occup_sorted" not in reloaded.analysis["chr1"]
 
     def test_experiment_store_link_mat_false_skips_persistence(self, tmp_path):
         rows = _make_test_rows(nmol=6, nbp=20)
@@ -1480,8 +1479,7 @@ class TestSortByLinkage:
         exp = catella.load_raw(chromsize=chromsize, test_file=test_file)
         catella.compute_empirical_prob(exp=exp, out_file=exp_file, lnuc=5)
         exp = MethPrintExperiment.load(exp_file)
-        meth_prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
-        order, _ = utils.compute_linkage(meth_prob)
+        before = set(exp.analysis["chr1"])
         _close_all_h5arrays(exp)
 
         result = runner.invoke(
@@ -1499,9 +1497,7 @@ class TestSortByLinkage:
         assert result.exit_code == 0, result.output
 
         reloaded = MethPrintExperiment.load(exp_file)
-        sorted_arr = reloaded.analysis["chr1"]["meth_prob_sorted"]
-        np.testing.assert_allclose(sorted_arr.to_numpy(), meth_prob[order])
-        assert "meth_prob_linkage" not in reloaded.analysis["chr1"]
+        assert set(reloaded.analysis["chr1"]) == before
 
     def test_dataset_chroms_restricts_processing(self, tmp_path):
         rng = np.random.default_rng(3)
@@ -1536,8 +1532,8 @@ class TestSortByLinkage:
         assert result.exit_code == 0, result.output
 
         reloaded = SimDataset.load(dataset._dataset_file)
-        assert "occup_sorted" in reloaded.analysis["chr1"]
-        assert "occup_sorted" not in reloaded.analysis["chr2"]
+        assert "occup_linkage" in reloaded.analysis["chr1"]
+        assert "occup_linkage" not in reloaded.analysis["chr2"]
 
     def test_experiment_chroms_restricts_processing(self, tmp_path):
         rng = np.random.default_rng(2)
@@ -1571,8 +1567,8 @@ class TestSortByLinkage:
         assert result.exit_code == 0, result.output
 
         reloaded = MethPrintExperiment.load(exp_file)
-        assert "meth_prob_sorted" in reloaded.analysis["chr1"]
-        assert "meth_prob_sorted" not in reloaded.analysis["chr2"]
+        assert "meth_prob_linkage" in reloaded.analysis["chr1"]
+        assert "meth_prob_linkage" not in reloaded.analysis["chr2"]
 
     def test_fill_nan_avoids_crash_on_all_nan_row(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=6, nbp=10)
@@ -1698,8 +1694,6 @@ class TestPlotOccup:
                 "plot_occup",
                 "chr1",
                 str(dataset._dataset_file),
-                "--occup-name",
-                "occup_sorted",
                 "--link-mat-name",
                 "occup_linkage",
                 "--out-file",
@@ -1789,7 +1783,7 @@ class TestPlotMethProb:
                 str(exp_file),
                 "chr1",
                 "--key",
-                "meth_prob_sorted",
+                "meth_prob",
                 "--link-mat-name",
                 "meth_prob_linkage",
                 "--out-file",

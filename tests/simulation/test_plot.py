@@ -9,6 +9,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
+import scipy.cluster.hierarchy as sch
+from catella import utils
 from catella.simulation.analysis import NucFiberMap, SimAnalysis
 from catella.simulation.config import SimSettings
 from catella.simulation.engine import SimManager
@@ -51,6 +53,36 @@ def _make_dataset(tmp_path, *, nmol=6, nbp=40, nsim=2, seed=1):
     ":DeprecationWarning"
 )
 class TestPlotOccupMolsSlicing:
+    def test_link_mat_orders_rows(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=6, nbp=20)
+        dataset.analysis["chr1"]["occup"] = pd.DataFrame(
+            np.random.default_rng(3).random((6, 20))
+        )
+        link_mats = SimAnalysis().sort_by_linkage(dataset=dataset)
+        SimPlot().plot_occup(
+            dataset,
+            chrom="chr1",
+            link_mat=dataset.analysis["chr1"]["occup_linkage"],
+            show=False,
+        )
+        occup = dataset.analysis["chr1"]["occup"].to_numpy()
+        order = sch.leaves_list(link_mats["chr1"])
+        img = plt.gcf().axes[0].images[0].get_array()
+        np.testing.assert_allclose(np.ma.getdata(img), occup[order])
+
+    def test_link_mat_with_mols_raises(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=6, nbp=20)
+        SimAnalysis().compute_occup(dataset=dataset)
+        link_mat = utils.compute_linkage(np.random.rand(6, 3))[1]
+        with pytest.raises(ValueError, match="mols cannot be combined"):
+            SimPlot().plot_occup(
+                dataset,
+                chrom="chr1",
+                mols=[0, 1],
+                link_mat=link_mat,
+                show=False,
+            )
+
     def test_size_warning_counts_shown_molecules(self, tmp_path, monkeypatch):
         dataset = _make_dataset(tmp_path, nmol=6, nbp=20)
         SimAnalysis().compute_occup(dataset=dataset)
@@ -668,6 +700,63 @@ class TestPlotConfig:
             dataset, chrom="chr1", name="bm", max_rows=max_rows, show=False
         )
         assert plt.gcf().axes[0].get_ylabel() == label
+
+    def test_link_mat_orders_rows(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        configs = SimAnalysis().extract_config(
+            dataset, chrom="chr1", name="bm"
+        )
+        rows = _rows(dataset, configs)
+        rows_float = np.where(rows < 0, 0, rows).astype(float)
+        _, link_mat = utils.compute_linkage(rows_float)
+        SimPlot().plot_config(
+            dataset, chrom="chr1", name="bm", link_mat=link_mat, show=False
+        )
+        order = sch.leaves_list(link_mat)
+        np.testing.assert_array_equal(_image(), rows[order])
+        assert plt.gcf().axes[0].get_ylabel() == "Row (leaf order)"
+        assert len(plt.gcf().axes) == 3
+
+    def test_link_mat_then_stride(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        configs = SimAnalysis().extract_config(
+            dataset, chrom="chr1", name="bm"
+        )
+        rows = _rows(dataset, configs)
+        _, link_mat = utils.compute_linkage(
+            np.where(rows < 0, 0, rows).astype(float)
+        )
+        SimPlot().plot_config(
+            dataset,
+            chrom="chr1",
+            name="bm",
+            link_mat=pd.DataFrame(link_mat),
+            max_rows=3,
+            show=False,
+        )
+        order = sch.leaves_list(link_mat)
+        np.testing.assert_array_equal(_image(), rows[order[::2]])
+
+    def test_link_mat_with_mols_raises(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        link_mat = utils.compute_linkage(np.random.rand(5, 3))[1]
+        with pytest.raises(ValueError, match="mols cannot be combined"):
+            SimPlot().plot_config(
+                dataset,
+                chrom="chr1",
+                name="bm",
+                mols=[0, 1],
+                link_mat=link_mat,
+                show=False,
+            )
+
+    def test_link_mat_size_mismatch_raises(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        link_mat = utils.compute_linkage(np.random.rand(4, 3))[1]
+        with pytest.raises(ValueError, match="4 leaves but the data has 5"):
+            SimPlot().plot_config(
+                dataset, chrom="chr1", name="bm", link_mat=link_mat, show=False
+            )
 
     def test_missing_name_raises(self, tmp_path):
         dataset = _tm_calls_dataset(tmp_path)

@@ -11,7 +11,7 @@ from matplotlib.colors import Normalize
 from scipy.special import logit
 
 from catella import utils
-from catella._plotting import _warn_if_large
+from catella._plotting import _leaf_order, _warn_if_large
 
 
 @dataclass(slots=True, kw_only=True)
@@ -135,11 +135,12 @@ class MethPlot:
         out_file : str or pathlib.Path, optional
             Path to save the generated figure. Directories are created
             if they do not exist.
-        link_mat : np.ndarray, optional
-            Linkage matrix to draw as a dendrogram alongside the
-            heatmap (as returned by `MethPrintAnalysis.sort_by_linkage`).
-            If given, `data` should already be the correspondingly-sorted
-            array, not the original unsorted one.
+        link_mat : np.ndarray or pd.DataFrame, optional
+            Linkage matrix of these molecules (as returned or stored by
+            `MethPrintAnalysis.sort_by_linkage`). If given, the rows are
+            put in its leaf order before `max_rows` downsampling, and its
+            dendrogram is drawn alongside. Cannot be combined with
+            `mols`. With `data`, the whole array is loaded to reorder it.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
@@ -147,8 +148,9 @@ class MethPlot:
         ------
         ValueError
             If neither `data` nor all of `exp`/`chrom`/`raw_which` are
-            given, or if `data` is combined with any of `exp`/`chrom`/
-            `raw_which`/`mols`/`mask_name`.
+            given, if `data` is combined with any of `exp`/`chrom`/
+            `raw_which`/`mols`/`mask_name`, or if `link_mat` is combined
+            with `mols` or does not match the number of molecules.
 
         Warns
         -----
@@ -165,6 +167,11 @@ class MethPlot:
                     "provide either 'data', or all of 'exp', 'chrom', "
                     "and 'raw_which'"
                 )
+            if link_mat is not None:
+                mol_id = getattr(exp.raw[chrom], f"{raw_which}_mol_id")
+                nmol = 0 if mol_id is None else len(mol_id)
+                link_mat, order = _leaf_order(link_mat, nmol, mols)
+                mols = order
             data = exp.to_dense(
                 chrom, which=raw_which, mols=mols, mask_name=mask_name
             )
@@ -180,6 +187,9 @@ class MethPlot:
                 "'exp'/'chrom'/'raw_which'/'mols'/'mask_name' cannot "
                 "be combined with 'data'"
             )
+        elif link_mat is not None:
+            link_mat, order = _leaf_order(link_mat, data.shape[0])
+            data = np.asarray(data)[order]
 
         try:
             if max_rows is not None:
@@ -219,7 +229,10 @@ class MethPlot:
                 extent=[0, ncol, 0, nrow],
             )
             hm_ax.set_xlabel("Position [bp]")
-            hm_ax.set_ylabel("Molecule index")
+            sorted_rows = link_mat is not None
+            hm_ax.set_ylabel(
+                "Row (leaf order)" if sorted_rows else "Molecule index"
+            )
 
             if link_mat is not None:
                 sch.dendrogram(
@@ -301,9 +314,10 @@ class MethPlot:
             Label drawn next to the colorbar.
         out_file : str or pathlib.Path, optional
             Path to save the generated figure.
-        link_mat : np.ndarray, optional
-            Linkage matrix to draw as a dendrogram alongside the
-            heatmap. `data` should already be sorted to match.
+        link_mat : np.ndarray or pd.DataFrame, optional
+            Linkage matrix of these molecules; the rows are put in its
+            leaf order and its dendrogram is drawn alongside. See
+            `plot_meth_prob`.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
         """

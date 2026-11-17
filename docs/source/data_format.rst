@@ -280,8 +280,9 @@ Common ``analysis[chrom]`` keys produced by the processing pipeline:
    * - ``<source>_<mask_name>`` (default ``dropout_mask``)
      - DataFrame with an ``int8`` ``keep`` column (0/1), one row per
        molecule, from ``filter_dropout``.
-   * - ``<data_name>_sorted``, ``<data_name>_linkage``
-     - Outputs of ``sort_by_linkage``.
+   * - ``<data_name>_linkage``
+     - Linkage matrix from ``sort_by_linkage``; plots take it as
+       ``link_mat`` to order their rows.
 
 Common ``global_analysis`` keys:
 
@@ -399,8 +400,14 @@ Common ``analysis[chrom]`` keys produced by ``catella.compute_occup``:
    * - ``mean_nnuc`` (default name)
      - DataFrame, one row per molecule: mean number of bound
        nucleosomes across ``nsim`` runs at the analyzed time.
-   * - ``<...>_sorted``, ``<...>_linkage``
-     - Outputs of ``sort_by_linkage``.
+   * - ``<...>_linkage``
+     - Linkage matrix from ``sort_by_linkage``; plots take it as
+       ``link_mat`` to order their rows.
+   * - ``<name>_position_flat``, ``<name>_position_offset``,
+       ``<name>_energy``
+     - One configuration per molecule from ``compute_config`` (read
+       with ``extract_config``); molecules with no data have no
+       positions and ``NaN`` energy.
 
 Canonical project layout
 ~~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -1005,6 +1005,7 @@ class SimPlot:
         btm_ax.set_xlabel(rf"Position $x$ [{xpow_str} bp]")
 
         hm_ax.set_title(f"Occupancy Profile for {chrom}", pad=12)
+        fig.tight_layout()
 
         if show:
             plt.show()

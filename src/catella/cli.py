@@ -1045,6 +1045,13 @@ def sort_by_linkage(
     data_name: Annotated[
         str | None, typer.Option(help="Analysis key to cluster")
     ] = None,
+    config_name: Annotated[
+        str | None,
+        typer.Option(
+            help="Name of compute_config calls to cluster by their "
+            "footprints; 'dataset' kind only"
+        ),
+    ] = None,
     raw_which: Annotated[
         str | None,
         typer.Option(help="test, meth, or unmeth; 'experiment' kind only"),
@@ -1107,6 +1114,7 @@ def sort_by_linkage(
             exp=obj,
             chroms=chroms,
             data_name=data_name,
+            config_name=config_name,
             raw_which=raw_which,
             mask_name=mask_name,
             store_link_mat=store_link_mat,
@@ -1121,6 +1129,7 @@ def sort_by_linkage(
             dataset=obj,
             chroms=chroms,
             data_name=data_name,
+            config_name=config_name,
             store_link_mat=store_link_mat,
             link_mat_name=link_mat_name,
             metric=metric,

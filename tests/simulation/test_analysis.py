@@ -1,5 +1,6 @@
 # test_analysis.py
 
+from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
@@ -7,7 +8,7 @@ import pandas as pd
 import pytest
 from catella import utils
 from catella.h5_array import H5Array
-from catella.simulation.analysis import SimAnalysis
+from catella.simulation.analysis import NucFiberMap, SimAnalysis
 from catella.simulation.config import SimSettings
 from catella.simulation.engine import SimManager
 from catella.simulation.results import SimDataset
@@ -307,6 +308,116 @@ class TestSortByLinkage:
         )
         assert np.isfinite(link_mats["chr1"]).all()
         assert len(link_mats["chr1"]) == 4
+
+
+def _calls_dataset(tmp_path, nmol=8, nbp=30):
+    meth_prob = np.random.default_rng(6).random((nmol, nbp))
+    meth_prob[2] = np.nan
+    dataset = SimManager(nworker=1, verbose=False).run(
+        chroms="chr1",
+        nsim=0,
+        method="tm",
+        settings=_make_tm_settings(),
+        meth_prob=meth_prob,
+        out_dir=tmp_path / "calls",
+        seed=6,
+    )
+    SimAnalysis().compute_best_match_config(dataset=dataset, name="bm")
+    return dataset
+
+
+def _footprint_matrix(dataset, name):
+    nbp = dataset.nbp["chr1"]
+    nuc_map = NucFiberMap(nbp=nbp, nucbp=dataset.settings["nucbp"])
+    configs = SimAnalysis().extract_config(dataset, chrom="chr1", name=name)
+    return np.array(
+        [
+            np.full(nbp, np.nan) if c is None else nuc_map.project(c)
+            for c in configs
+        ],
+        dtype=np.float64,
+    )
+
+
+class TestSortByConfig:
+    def test_matches_linkage_of_footprints(self, tmp_path):
+        dataset = _calls_dataset(tmp_path)
+        link_mats = SimAnalysis().sort_by_linkage(
+            dataset, config_name="bm", fill_nan="mean"
+        )
+        _, want = utils.compute_linkage(
+            _footprint_matrix(dataset, "bm"), fill_nan="mean"
+        )
+        np.testing.assert_allclose(link_mats["chr1"], want)
+        np.testing.assert_allclose(
+            dataset.analysis["chr1"]["bm_linkage"].to_numpy(), want
+        )
+
+    def test_small_batches_give_same_linkage(self, tmp_path):
+        dataset = _calls_dataset(tmp_path)
+        ana = SimAnalysis()
+        full = ana.sort_by_linkage(
+            dataset, config_name="bm", fill_nan="mean", store_link_mat=False
+        )
+        batched = ana.sort_by_linkage(
+            dataset,
+            config_name="bm",
+            fill_nan="mean",
+            batch_size=3,
+            store_link_mat=False,
+        )
+        np.testing.assert_allclose(batched["chr1"], full["chr1"])
+
+    def test_no_data_molecule_needs_fill_nan(self, tmp_path):
+        dataset = _calls_dataset(tmp_path)
+        with pytest.raises(ValueError, match="1 of 8 rows have no data"):
+            SimAnalysis().sort_by_linkage(dataset, config_name="bm")
+
+    def test_data_name_and_config_name_raises(self, tmp_path):
+        dataset = _calls_dataset(tmp_path)
+        with pytest.raises(ValueError, match="cannot both be given"):
+            SimAnalysis().sort_by_linkage(
+                dataset, data_name="occup", config_name="bm"
+            )
+
+    def test_missing_config_name_raises(self, tmp_path):
+        dataset = _calls_dataset(tmp_path)
+        with pytest.raises(KeyError, match="nope"):
+            SimAnalysis().sort_by_linkage(dataset, config_name="nope")
+
+    def test_temporary_file_is_removed(self, tmp_path):
+        dataset = _calls_dataset(tmp_path)
+        tmp_dir = Path(dataset.resolve_tmp_dir())
+        before = set(tmp_dir.glob("*.h5"))
+        SimAnalysis().sort_by_linkage(
+            dataset, config_name="bm", fill_nan="mean"
+        )
+        assert set(tmp_dir.glob("*.h5")) == before
+
+    def test_plot_config_rows_follow_the_linkage(self, tmp_path):
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        import scipy.cluster.hierarchy as sch
+        from catella.simulation.plot import SimPlot
+
+        dataset = _calls_dataset(tmp_path)
+        link_mats = SimAnalysis().sort_by_linkage(
+            dataset, config_name="bm", fill_nan="mean"
+        )
+        SimPlot().plot_config(
+            dataset,
+            chrom="chr1",
+            name="bm",
+            link_mat=link_mats["chr1"],
+            show=False,
+        )
+        footprints = np.nan_to_num(_footprint_matrix(dataset, "bm"), nan=-1)
+        order = sch.leaves_list(link_mats["chr1"])
+        image = np.ma.getdata(plt.gcf().axes[0].images[0].get_array())
+        np.testing.assert_array_equal(image, footprints[order])
+        plt.close("all")
 
 
 def _make_tm_settings(**overrides):

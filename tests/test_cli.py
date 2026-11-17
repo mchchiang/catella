@@ -1570,6 +1570,34 @@ class TestSortByLinkage:
         assert "meth_prob_linkage" in reloaded.analysis["chr1"]
         assert "meth_prob_linkage" not in reloaded.analysis["chr2"]
 
+    def test_dataset_config_name(self, tmp_path):
+        dataset = SimManager(nworker=1, verbose=False).run(
+            chroms="chr1",
+            nsim=0,
+            method="tm",
+            settings=SimSettings(**_settings_dict()),
+            meth_prob=np.random.default_rng(5).random((4, 15)),
+            out_dir=tmp_path / "tm_sim",
+            seed=1,
+        )
+        catella.compute_config(dataset)
+        dataset.save()
+
+        result = runner.invoke(
+            app,
+            [
+                "sort_by_linkage",
+                str(dataset._dataset_file),
+                "--kind",
+                "dataset",
+                "--config-name",
+                "best_match",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        reloaded = SimDataset.load(dataset._dataset_file)
+        assert "best_match_linkage" in reloaded.analysis["chr1"]
+
     def test_fill_nan_avoids_crash_on_all_nan_row(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=6, nbp=10)
         SimAnalysis().compute_occup(dataset=dataset)

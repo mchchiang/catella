@@ -824,7 +824,8 @@ class SimAnalysis:
         dataset: SimDataset,
         *,
         chroms: str | Iterable[str] | None = None,
-        data_name: str = "occup",
+        data_name: str | None = None,
+        config_name: str | None = None,
         store_link_mat: bool = True,
         link_mat_name: str | None = None,
         metric: str = "euclidean",
@@ -835,22 +836,33 @@ class SimAnalysis:
         """
         Cluster molecules by similarity, for sorted plots.
 
-        Computes a hierarchical-clustering linkage of the rows of an
-        analysis array. Nothing is reordered or copied: pass the linkage
-        as `link_mat` to `plot_occup` or `plot_config`, which put their
-        rows in its leaf order, so any number of plots of the same
-        molecules share one order.
+        Computes a hierarchical-clustering linkage of the molecules, from
+        an analysis array (`data_name`, e.g. the occupancy) or from the
+        configurations stored by `compute_config` (`config_name`).
+        Nothing is reordered or copied: pass the linkage as `link_mat` to
+        `plot_occup` or `plot_config`, which put their rows in its leaf
+        order, so any number of plots of the same molecules share one
+        order.
 
         Parameters
         ----------
         dataset : SimDataset
-            The dataset containing the analysis array to cluster.
+            The dataset containing the data to cluster.
         chroms : str or iterable of str, optional
             The chromosome(s) to process. If None (default), all
             chromosomes in the dataset are processed.
-        data_name : str, default "occup"
+        data_name : str, optional
             The key of the analysis array to cluster, looked up in
-            `dataset.analysis[chrom]`.
+            `dataset.analysis[chrom]`; "occup" if neither `data_name` nor
+            `config_name` is given.
+        config_name : str, optional
+            The `name` of configurations stored by `compute_config`.
+            Molecules are clustered by their footprints (1 covered, 0
+            linker): with the default ward/euclidean, the distance of two
+            molecules is the square root of the number of base pairs where
+            their calls differ. Molecules with no data are nan rows, so
+            they need `fill_nan`. The footprints are streamed through a
+            temporary float32 file in batches of `batch_size`.
         store_link_mat : bool, default True
             Whether to also persist the linkage matrix into
             `dataset.analysis[chrom][link_mat_name]`. If False, the
@@ -858,7 +870,8 @@ class SimAnalysis:
         link_mat_name : str, optional
             The key used to store the linkage matrix if
             `store_link_mat` is True. If None (default),
-            `f"{data_name}_linkage"` is used.
+            `f"{data_name}_linkage"` or `f"{config_name}_linkage"` is
+            used.
         metric : str, default "euclidean"
             Distance metric, forwarded to `utils.compute_linkage`.
         method : str, default "ward"
@@ -882,30 +895,90 @@ class SimAnalysis:
         Raises
         ------
         KeyError
-            If `data_name` is not found in `dataset.analysis[chrom]`
-            for any of the selected chromosomes.
+            If `data_name` (or the configurations of `config_name`) is not
+            found for any of the selected chromosomes.
         ValueError
-            If some molecule has no data and `fill_nan` is None.
+            If both `data_name` and `config_name` are given, or if some
+            molecule has no data and `fill_nan` is None.
+
+        Warns
+        -----
+        UserWarning
+            If there are more molecules than `utils.compute_linkage`
+            handles comfortably (its pairwise distances need memory
+            quadratic in the number of molecules).
         """
+        if data_name is not None and config_name is not None:
+            raise ValueError("data_name and config_name cannot both be given")
+        if config_name is None and data_name is None:
+            data_name = "occup"
+        base_name = data_name if config_name is None else config_name
         chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)
         tmp_dir = dataset.resolve_tmp_dir()
         link_mats = {}
         for chrom in chroms:
-            data = dataset.analysis[chrom][data_name]
-            _, link_mat = utils.compute_linkage(
-                data,
-                metric=metric,
-                method=method,
-                batch_size=batch_size,
-                dir=tmp_dir,
-                fill_nan=fill_nan,
-            )
+            if config_name is None:
+                data = dataset.analysis[chrom][data_name]
+            else:
+                data = self._config_footprints(
+                    dataset, chrom, config_name, batch_size, tmp_dir
+                )
+            try:
+                _, link_mat = utils.compute_linkage(
+                    data,
+                    metric=metric,
+                    method=method,
+                    batch_size=batch_size,
+                    dir=tmp_dir,
+                    fill_nan=fill_nan,
+                )
+            finally:
+                if config_name is not None:
+                    data.close()
             if store_link_mat:
                 lname = (
                     link_mat_name
                     if link_mat_name is not None
-                    else f"{data_name}_linkage"
+                    else f"{base_name}_linkage"
                 )
                 dataset.analysis[chrom][lname] = pd.DataFrame(link_mat)
             link_mats[chrom] = link_mat
         return link_mats
+
+    def _config_footprints(self, dataset, chrom, name, batch_size, tmp_dir):
+        """
+        Write the stored configurations of `name` as a temporary footprint
+        array (float32: 1 covered, 0 linker, nan no data).
+
+        Parameters
+        ----------
+        dataset : SimDataset
+            The dataset holding the configurations.
+        chrom : str
+            The chromosome.
+        name : str
+            The `name` of the configurations.
+        batch_size : int
+            The number of molecules written per batch.
+        tmp_dir : str
+            The directory of the temporary file.
+
+        Returns
+        -------
+        H5Array
+            The footprints, molecules by base pairs; close it when done.
+        """
+        configs = self.extract_config(dataset, chrom=chrom, name=name)
+        nbp = dataset.nbp[chrom]
+        nuc_map = NucFiberMap(nbp=nbp, nucbp=dataset.settings["nucbp"])
+        out = H5Array.create(
+            (len(configs), nbp), dtype=np.float32, dir=tmp_dir
+        )
+        for start in range(0, len(configs), batch_size):
+            stop = min(start + batch_size, len(configs))
+            block = np.full((stop - start, nbp), np.nan, dtype=np.float32)
+            for i, starts in enumerate(configs[start:stop]):
+                if starts is not None:
+                    block[i] = nuc_map.project(np.asarray(starts))
+            out.write_batch(start, stop, block)
+        return out

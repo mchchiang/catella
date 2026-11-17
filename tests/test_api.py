@@ -145,6 +145,21 @@ class TestSortByLinkage:
 
         assert len(link_mats["chr1"]) == 5
 
+    def test_dataset_dispatch_with_config_name(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path)
+        catella.compute_config(dataset)
+        link_mats = catella.sort_by_linkage(
+            dataset=dataset, config_name="best_match"
+        )
+        assert len(link_mats["chr1"]) == 3
+        assert "best_match_linkage" in dataset.analysis["chr1"]
+
+    def test_config_name_with_exp_raises(self):
+        with pytest.raises(ValueError, match="only used with 'dataset'"):
+            catella.sort_by_linkage(
+                exp=_make_experiment(), config_name="best_match"
+            )
+
     def test_mask_name_with_dataset_raises(self, tmp_path):
         dataset = _make_dataset(tmp_path)
         with pytest.raises(ValueError):

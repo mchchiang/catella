@@ -1578,6 +1578,7 @@ def sort_by_linkage(
     exp: MethPrintExperiment | None = None,
     chroms: str | Iterable[str] | None = None,
     data_name: str | None = None,
+    config_name: str | None = None,
     raw_which: str | None = None,
     mask_name: str | None = None,
     store_link_mat: bool = True,
@@ -1618,6 +1619,12 @@ def sort_by_linkage(
         Key of the analysis array to cluster. If None, the underlying
         method's own default is used ("occup" for `dataset`,
         "test_smoothed" for `exp`).
+    config_name : str, optional
+        Only used with `dataset`. The `name` of configurations stored by
+        `compute_config`; molecules are clustered by their footprints
+        (the base pairs covered by their calls) instead of an analysis
+        array. Cannot be combined with `data_name`. Molecules with no
+        data need `fill_nan`.
     raw_which : {"test", "meth", "unmeth"}, optional
         Only used with `exp`. If given, clusters raw long-form data
         instead of an `exp.analysis` entry.
@@ -1631,7 +1638,7 @@ def sort_by_linkage(
     link_mat_name : str, optional
         Key used to store the linkage matrix if `store_link_mat` is
         True. Defaults to `f"{data_name}_linkage"` (or
-        `f"{raw_which}_linkage"`).
+        `f"{config_name}_linkage"`, `f"{raw_which}_linkage"`).
     metric : str, default "euclidean"
         Distance metric, forwarded to `utils.compute_linkage`.
     method : str, default "ward"
@@ -1652,11 +1659,14 @@ def sort_by_linkage(
     ------
     ValueError
         If neither or both of `dataset`/`exp` are given, if `mask_name`
-        is given with `dataset`, or if some molecule has no data (all
-        nan) and `fill_nan` is None.
+        is given with `dataset` or `config_name` with `exp`, if both
+        `data_name` and `config_name` are given, or if some molecule has
+        no data (all nan) and `fill_nan` is None.
     """
     if (dataset is None) == (exp is None):
         raise ValueError("exactly one of 'dataset' or 'exp' must be given")
+    if exp is not None and config_name is not None:
+        raise ValueError("'config_name' is only used with 'dataset'")
     kwargs = {
         "store_link_mat": store_link_mat,
         "link_mat_name": link_mat_name,
@@ -1672,7 +1682,9 @@ def sort_by_linkage(
     if dataset is not None:
         if mask_name is not None:
             raise ValueError("'mask_name' is only used with 'exp'")
-        return SimAnalysis().sort_by_linkage(dataset=dataset, **kwargs)
+        return SimAnalysis().sort_by_linkage(
+            dataset=dataset, config_name=config_name, **kwargs
+        )
     if raw_which is not None:
         kwargs["raw_which"] = raw_which
     if mask_name is not None:

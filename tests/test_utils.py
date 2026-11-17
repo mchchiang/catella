@@ -199,7 +199,7 @@ def test_fill_nan_handles_zero_overlap_row(as_h5array, fill_nan):
         source = H5Array.create(data.shape)
         source.write_batch(0, data.shape[0], data)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="1 of 3 rows have no data"):
         utils.compute_linkage(source, batch_size=1)
 
     order, link_mat = utils.compute_linkage(

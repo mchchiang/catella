@@ -194,6 +194,12 @@ def compute_linkage(
         The linkage matrix, as returned by
         `scipy.cluster.hierarchy.linkage`.
 
+    Raises
+    ------
+    ValueError
+        If `fill_nan` is invalid, or if `fill_nan` is None and some row is
+        nan in every column (its distances are undefined).
+
     Warns
     -----
     UserWarning
@@ -210,10 +216,11 @@ def compute_linkage(
     each distance uses only the jointly non-`nan` columns of that
     pair, scaled to the full column count. Only implemented for
     `metric="euclidean"`; other metrics raise `ValueError` if any
-    row-block being compared contains `nan`. If a pair of rows shares
-    no non-`nan` columns (e.g. one row is entirely `nan`), the masked
-    distance is undefined (`nan`), which `scipy.cluster.hierarchy.
-    linkage` rejects with `ValueError`; use `fill_nan` to avoid this.
+    row-block being compared contains `nan`. Rows that are entirely
+    `nan` (e.g. molecules with no data) are rejected up front. A pair
+    of partly-`nan` rows that shares no non-`nan` column still has an
+    undefined distance, which `scipy.cluster.hierarchy.linkage` rejects
+    with `ValueError`; use `fill_nan` to avoid both.
     """
     if (
         fill_nan is not None
@@ -225,6 +232,13 @@ def compute_linkage(
         )
 
     nrow = matrix.shape[0]
+    if fill_nan is None:
+        n_empty = _count_nan_rows(matrix, batch_size)
+        if n_empty:
+            raise ValueError(
+                f"{n_empty} of {nrow} rows have no data (all nan), so "
+                "their distances are undefined; pass fill_nan"
+            )
     if nrow > _CLUSTER_WARN_ROWS:
         _warn(
             f"clustering {nrow} rows requires an {nrow}x{nrow} pairwise "
@@ -252,6 +266,33 @@ def compute_linkage(
     link_mat = sch.linkage(dist_vec, method=method)
     order = sch.leaves_list(link_mat)
     return order, link_mat
+
+
+def _count_nan_rows(matrix, batch_size):
+    """
+    Count the rows of `matrix` that are nan in every column.
+
+    Parameters
+    ----------
+    matrix : H5Array, pd.DataFrame, or np.ndarray
+        2D data.
+    batch_size : int
+        Number of rows read per batch when `matrix` is an `H5Array`.
+
+    Returns
+    -------
+    int
+        The number of all-nan rows.
+    """
+    if not isinstance(matrix, H5Array):
+        dense = np.asarray(matrix, dtype=np.float64)
+        return int(np.isnan(dense).all(axis=1).sum())
+    count = 0
+    for start in range(0, matrix.shape[0], batch_size):
+        stop = min(start + batch_size, matrix.shape[0])
+        block = np.asarray(matrix[start:stop, :], dtype=np.float64)
+        count += int(np.isnan(block).all(axis=1).sum())
+    return count
 
 
 def _nan_euclidean(u, v):

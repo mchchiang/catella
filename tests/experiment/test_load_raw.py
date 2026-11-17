@@ -532,6 +532,60 @@ class TestChromSelection:
                 chromsize=chromsize, test_file=test_file, chroms=["chrX"]
             )
 
+    def _scoped_setup(self, tmp_path, with_chr0):
+        rows = _make_rows(
+            "chr1", [f"p{i}" for i in range(20)], [10, 90]
+        ) + _make_rows(
+            "chr1", [f"q{i}" for i in range(20)], [10, 90], strand="-"
+        )
+        if with_chr0:
+            rows = (
+                _make_rows("chr0", [f"r{i}" for i in range(20)], [10, 90])
+                + rows
+            )
+        test_file = tmp_path / f"test_{with_chr0}.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr0": 100, "chr1": 100})
+        return chromsize, test_file
+
+    @pytest.mark.filterwarnings("error")
+    def test_balance_strand_ignores_excluded_chroms(self, tmp_path):
+        chromsize, test_file = self._scoped_setup(tmp_path, True)
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize,
+            test_file=test_file,
+            chroms=["chr1"],
+            max_nmol=10,
+            balance_strand=True,
+        )
+        assert set(exp.chroms) == {"chr1"}
+        exp.close()
+
+    @pytest.mark.parametrize("balance_strand", [False, True])
+    def test_excluded_chroms_do_not_affect_sampling(
+        self, tmp_path, balance_strand
+    ):
+        kwargs = {
+            "chroms": ["chr1"],
+            "max_nmol": 10,
+            "balance_strand": balance_strand,
+            "seed": 5,
+        }
+        chromsize, file_a = self._scoped_setup(tmp_path, False)
+        _, file_b = self._scoped_setup(tmp_path, True)
+        exp_a = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=file_a, **kwargs
+        )
+        exp_b = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=file_b, **kwargs
+        )
+        assert np.array_equal(
+            exp_a.raw["chr1"].test_mol_id, exp_b.raw["chr1"].test_mol_id
+        )
+        exp_a.close()
+        exp_b.close()
+
 
 class TestRefseq:
     def test_refseq_loaded_into_raw_data(self, tmp_path):

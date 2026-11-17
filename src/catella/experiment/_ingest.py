@@ -412,6 +412,7 @@ def _scan_accepted_mols(
     max_nmol,
     rng,
     balance_strand=False,
+    chroms=None,
 ):
     """
     Determine, per chromosome, which molecules are kept and their
@@ -449,14 +450,17 @@ def _scan_accepted_mols(
     balance_strand : bool, default False
         If True, keep an equal number of '+' and '-' strand molecules
         per chromosome (see `_balanced_mols`); requires `max_nmol`.
+    chroms : collection of str or None, default None
+        Chromosomes to keep. Rows on other chromosomes are skipped
+        before sampling, so they neither warn nor consume `rng` draws.
+        If None, keep every chromosome found in the file.
 
     Returns
     -------
     dict of str to dict
         `{chrom: {"mol_id": np.ndarray (sorted, accepted mol_ids),
         "index": dict mapping mol_id -> mol_index}}`, covering every
-        chromosome found in the file (regardless of whether it is
-        present in the chromosome-size table).
+        chromosome found in the file that is in `chroms`.
     """
     cols = ["chrom", "mol_id"] + (["strand"] if balance_strand else [])
     mol_order = {}
@@ -469,6 +473,8 @@ def _scan_accepted_mols(
         chunk_size,
         block_size,
     ):
+        if chroms is not None:
+            batch_df = batch_df[batch_df["chrom"].isin(chroms)]
         dedup = batch_df.drop_duplicates(["chrom", "mol_id"])
         strands = (
             dedup["strand"].to_numpy()
@@ -757,10 +763,8 @@ def _ingest_into(
             max_nmol,
             rng,
             balance_strand=balance_strand,
+            chroms=set(sizes),
         )
-        # Chromosomes not covered by the chromsize table are silently
-        # dropped, matching the legacy inner merge
-        mol_maps = {c: m for c, m in mol_maps.items() if c in sizes}
 
         dt = h5py.string_dtype(encoding="utf-8")
         appenders = {}

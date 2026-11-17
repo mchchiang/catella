@@ -11,6 +11,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy.cluster.hierarchy as sch
 from matplotlib.colors import Normalize
+from matplotlib.patches import Patch
+from matplotlib.ticker import MaxNLocator
 
 from catella._plotting import _warn_if_large
 from catella.mapping import CoordsTransform
@@ -48,6 +50,19 @@ def _stride_step(nrow, max_rows):
 def _shown_rows(nrow, max_rows):
     """Number of rows drawn out of `nrow`, at most `max_rows`."""
     return nrow if max_rows is None else min(nrow, max_rows)
+
+
+def _rows_label(unit, ntotal, nshown):
+    """
+    Y-axis label of a heatmap whose rows count `unit`s.
+
+    Rows are the `unit`s themselves ("Molecule"), or, after
+    downsampling, rows drawn from `ntotal` of them ("Row (100
+    molecules)").
+    """
+    if nshown == ntotal:
+        return unit.capitalize()
+    return f"Row ({ntotal} {unit}s)"
 
 
 def _one_run(runs):
@@ -472,6 +487,7 @@ class SimPlot:
             if dataset.method == "tm" and dataset.nsim == 0:
                 raise ValueError("no samples stored (nsim is 0)")
             run_ids = _run_list(runs, dataset.nsim)
+            ntotal = len(run_ids)
             if downsample_how == "stride":
                 run_ids = run_ids[:: _stride_step(len(run_ids), max_rows)]
             _warn_if_large(_shown_rows(len(run_ids), max_rows), nbp, hint)
@@ -484,8 +500,9 @@ class SimPlot:
             ]
             matrix = _footprints(configs, nbp, dataset.settings["nucbp"])
             matrix = _merge_rows(matrix, max_rows, downsample_how)
-            extent_y = (0, matrix.shape[0])
-            ylabel = "Run" if dataset.method == "mcmc" else "Sample"
+            extent_y = None
+            unit = "run" if dataset.method == "mcmc" else "sample"
+            ylabel = _rows_label(unit, ntotal, matrix.shape[0])
             invert_y = False
 
         eseq = dataset.eseq[chrom][mol, :] if plot_eseq else None
@@ -611,6 +628,7 @@ class SimPlot:
             if mols is None
             else [int(m) for m in mols]
         )
+        ntotal = len(mol_ids)
         if downsample_how == "stride":
             mol_ids = mol_ids[:: _stride_step(len(mol_ids), max_rows)]
         nbp = dataset.nbp[chrom]
@@ -633,8 +651,8 @@ class SimPlot:
         fig, hm_ax = self._draw_footprints(
             dataset,
             matrix,
-            extent_y=(0, matrix.shape[0]),
-            ylabel="Molecule index",
+            extent_y=None,
+            ylabel=_rows_label("molecule", ntotal, matrix.shape[0]),
             invert_y=False,
             xpow=xpow,
             xscale=xscale,
@@ -671,30 +689,44 @@ class SimPlot:
         Draw a footprint matrix (1 covered, 0 linker, -1 or nan no data),
         with an optional energy panel below.
 
+        An int8 matrix (0/1 calls) gets a legend; a float matrix (merged
+        with "mean") gets a colorbar of the covered share. If `extent_y`
+        is None, the y-axis counts rows: row i is centered on y = i, with
+        integer ticks.
+
         Returns
         -------
         tuple
             The figure and the heatmap axis.
         """
         nbp = matrix.shape[1]
-        # The second column is a narrow slot for the colorbar
-        gridspec_kw = {"width_ratios": [20, 1]}
+        binary = matrix.dtype == np.int8
+        # The second column is a slot for the legend or the colorbar
+        gridspec_kw = {"width_ratios": [4, 1] if binary else [20, 1]}
+        nrows = 1 if eseq is None else 2
         if eseq is not None:
             gridspec_kw["height_ratios"] = [4, 1]
-            fig, ax = plt.subplots(nrows=2, ncols=2, gridspec_kw=gridspec_kw)
-            w, h = fig.get_size_inches()
-            fig.set_size_inches(w, h * 1.25)
-            hm_ax, cbar_ax, seq_ax = ax[0, 0], ax[0, 1], ax[1, 0]
+        fig, ax = plt.subplots(
+            nrows=nrows, ncols=2, gridspec_kw=gridspec_kw, squeeze=False
+        )
+        w, h = fig.get_size_inches()
+        fig.set_size_inches(
+            w * (1.2 if binary else 1.0), h * (1.0 if eseq is None else 1.25)
+        )
+        hm_ax, side_ax = ax[0, 0], ax[0, 1]
+        seq_ax = None
+        if eseq is not None:
+            seq_ax = ax[1, 0]
             ax[1, 1].axis("off")
-        else:
-            fig, ax = plt.subplots(nrows=1, ncols=2, gridspec_kw=gridspec_kw)
-            hm_ax, cbar_ax, seq_ax = ax[0], ax[1], None
 
         # -1 (no data) is below vmin; nan comes from "mean" merging
         cmap_obj = plt.get_cmap(cmap if cmap is not None else self.cmap)
         cmap_obj = cmap_obj.with_extremes(
             under=self.nan_color, bad=self.nan_color
         )
+        rows_axis = extent_y is None
+        if rows_axis:
+            extent_y = (-0.5, matrix.shape[0] - 0.5)
         im = hm_ax.imshow(
             matrix,
             cmap=cmap_obj,
@@ -704,12 +736,29 @@ class SimPlot:
             interpolation="none",
             extent=[0, nbp / xscale, *extent_y],
         )
+        if rows_axis:
+            hm_ax.yaxis.set_major_locator(MaxNLocator(integer=True))
         if invert_y:
             hm_ax.invert_yaxis()
         hm_ax.set_xlim(0, nbp / xscale)
         hm_ax.set_ylabel(ylabel)
-        cbar = fig.colorbar(im, cax=cbar_ax)
-        cbar.set_label("Occupancy", rotation=270, labelpad=15)
+        if binary:
+            style = {"edgecolor": "black", "linewidth": 0.5}
+            handles = [
+                Patch(facecolor=cmap_obj(1.0), label="Nucleosome", **style),
+                Patch(facecolor=cmap_obj(0.0), label="Linker", **style),
+            ]
+            if (matrix < 0).any():
+                handles.append(
+                    Patch(facecolor=self.nan_color, label="No data", **style)
+                )
+            side_ax.axis("off")
+            side_ax.legend(
+                handles=handles, loc="center left", frameon=False
+            )
+        else:
+            cbar = fig.colorbar(im, cax=side_ax)
+            cbar.set_label("Covered share", rotation=270, labelpad=15)
 
         if eseq is not None:
             hm_ax.get_xaxis().set_visible(False)

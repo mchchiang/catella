@@ -606,6 +606,53 @@ class TestPlotConfig:
                 dataset, chrom="chr1", name="bm", show=False
             )
 
+    def test_binary_plot_has_legend(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        SimPlot().plot_config(dataset, chrom="chr1", name="bm", show=False)
+        legend = plt.gcf().axes[1].get_legend()
+        labels = [t.get_text() for t in legend.get_texts()]
+        assert labels == ["Nucleosome", "Linker", "No data"]
+
+    def test_no_data_entry_only_if_present(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        SimPlot().plot_config(
+            dataset, chrom="chr1", name="bm", mols=[0, 2], show=False
+        )
+        legend = plt.gcf().axes[1].get_legend()
+        assert "No data" not in [t.get_text() for t in legend.get_texts()]
+
+    def test_mean_plot_has_colorbar(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path, nmol=4)
+        SimPlot().plot_config(
+            dataset,
+            chrom="chr1",
+            name="bm",
+            max_rows=2,
+            downsample_how="mean",
+            show=False,
+        )
+        cbar_ax = plt.gcf().axes[1]
+        assert cbar_ax.get_legend() is None
+        assert cbar_ax.get_ylabel() == "Covered share"
+
+    def test_rows_are_centered_with_integer_ticks(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        SimPlot().plot_config(dataset, chrom="chr1", name="bm", show=False)
+        hm_ax = plt.gcf().axes[0]
+        assert hm_ax.get_ylim() == (-0.5, 4.5)
+        ticks = [t for t in hm_ax.get_yticks() if -0.5 <= t <= 4.5]
+        assert all(float(t).is_integer() for t in ticks)
+
+    @pytest.mark.parametrize(
+        ("max_rows", "label"), [(None, "Molecule"), (3, "Row (5 molecules)")]
+    )
+    def test_ylabel(self, tmp_path, max_rows, label):
+        dataset = _tm_calls_dataset(tmp_path)
+        SimPlot().plot_config(
+            dataset, chrom="chr1", name="bm", max_rows=max_rows, show=False
+        )
+        assert plt.gcf().axes[0].get_ylabel() == label
+
     def test_missing_name_raises(self, tmp_path):
         dataset = _tm_calls_dataset(tmp_path)
         with pytest.raises(KeyError, match="nope"):

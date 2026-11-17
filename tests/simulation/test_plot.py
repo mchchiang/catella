@@ -1,5 +1,7 @@
 # test_plot.py
 
+import warnings
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -49,6 +51,20 @@ def _make_dataset(tmp_path, *, nmol=6, nbp=40, nsim=2, seed=1):
     ":DeprecationWarning"
 )
 class TestPlotOccupMolsSlicing:
+    def test_size_warning_counts_shown_molecules(self, tmp_path, monkeypatch):
+        dataset = _make_dataset(tmp_path, nmol=6, nbp=20)
+        SimAnalysis().compute_occup(dataset=dataset)
+        monkeypatch.setattr(
+            "catella._plotting._RENDER_WARN_BYTES", 3 * 20 * 80
+        )
+        with pytest.warns(UserWarning, match="6 rows x 20 bp"):
+            SimPlot().plot_occup(dataset, chrom="chr1", show=False)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            SimPlot().plot_occup(
+                dataset, chrom="chr1", mols=[0, 1, 2], show=False
+            )
+
     def test_mols_none_shows_all_molecules(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=6, nbp=20)
         ana = SimAnalysis()

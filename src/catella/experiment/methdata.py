@@ -39,10 +39,13 @@ from catella.experiment._ingest import (
 from catella.experiment._qc import _check_percentiles, _chrom_qc_rows
 from catella.h5_array import H5Array
 
-# Molecule-count threshold above which MethPrintExperiment.to_dense()
-# warns when materializing a pd.DataFrame (as opposed to streaming to
-# an H5Array).
-_DENSE_WARN_ROWS = 5000
+# Estimated peak memory of to_dense(as_h5array=False) per molecule and
+# base pair: the pivot needs ~9x the 8-byte result (measured on 1000 and
+# 4000 molecules of 5.6 kb)
+_DENSE_BYTES_PER_CELL = 72
+
+# to_dense(as_h5array=False) warns above this estimated peak memory
+_DENSE_WARN_BYTES = 10**9
 
 
 @utils.add_frozen_properties
@@ -929,8 +932,10 @@ class MethPrintExperiment:
         Warns
         -----
         UserWarning
-            If `as_h5array` is False and more than `_DENSE_WARN_ROWS`
-            molecules would be materialized in memory.
+            If `as_h5array` is False and building the DataFrame is
+            estimated to need more than 1 GB of memory (about 72 bytes
+            per molecule and base pair, as the pivot needs ~9x the
+            result).
 
         Notes
         -----
@@ -969,12 +974,13 @@ class MethPrintExperiment:
             df = df[df["mol_index"].isin(mol_ids)]
 
         if not as_h5array:
-            if len(mol_ids) > _DENSE_WARN_ROWS:
+            nbytes = len(mol_ids) * nbp * _DENSE_BYTES_PER_CELL
+            if nbytes > _DENSE_WARN_BYTES:
                 _warn(
                     f"materializing {len(mol_ids)} molecules as a "
-                    f"pd.DataFrame ({len(mol_ids)}x{nbp}); this may "
-                    "use significant memory; pass as_h5array=True to "
-                    "stream to disk instead"
+                    f"pd.DataFrame ({len(mol_ids)}x{nbp}) needs about "
+                    f"{nbytes / 1e9:.1f} GB of memory; pass "
+                    "as_h5array=True to stream to disk instead"
                 )
             piv = df.pivot(
                 index="mol_index", columns="pos", values="mod_qual"

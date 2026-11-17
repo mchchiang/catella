@@ -847,6 +847,12 @@ class SimPlot:
         ValueError
             If the occupancy is missing and no `time` is provided for
             computation.
+
+        Warns
+        -----
+        UserWarning
+            If rendering the plot is estimated to need more than 1 GB of
+            memory; pass `mols` to plot a subset.
         """
         xpow = int(self._log10(xscale, "xscale"))
 
@@ -863,7 +869,14 @@ class SimPlot:
             )
         occup = dataset.analysis[chrom][occup_name]
         if mols is not None:
-            occup = np.asarray(occup)[list(mols)]
+            mols = list(mols)
+        _warn_if_large(
+            occup.shape[0] if mols is None else len(mols),
+            occup.shape[1],
+            "consider passing 'mols' to plot a subset",
+        )
+        if mols is not None:
+            occup = np.asarray(occup)[mols]
         sort_data = link_mat is not None
 
         # Set up the figure. The rightmost column is a dedicated,

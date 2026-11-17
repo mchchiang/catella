@@ -358,15 +358,15 @@ class TestToDense:
     def test_warns_when_dataframe_exceeds_threshold(self, monkeypatch):
         import catella.experiment.methdata as methdata_mod
 
-        monkeypatch.setattr(methdata_mod, "_DENSE_WARN_ROWS", 2)
+        monkeypatch.setattr(methdata_mod, "_DENSE_WARN_BYTES", 1)
         exp = self._experiment()
-        with pytest.warns(UserWarning):
+        with pytest.warns(UserWarning, match="GB of memory"):
             exp.to_dense("chr1", as_h5array=False)
 
     def test_no_warning_below_threshold(self, monkeypatch):
         import catella.experiment.methdata as methdata_mod
 
-        monkeypatch.setattr(methdata_mod, "_DENSE_WARN_ROWS", 100)
+        monkeypatch.setattr(methdata_mod, "_DENSE_WARN_BYTES", 10**9)
         exp = self._experiment()
         with warnings.catch_warnings():
             warnings.simplefilter("error")
@@ -375,7 +375,7 @@ class TestToDense:
     def test_no_warning_for_h5array_regardless_of_size(self, monkeypatch):
         import catella.experiment.methdata as methdata_mod
 
-        monkeypatch.setattr(methdata_mod, "_DENSE_WARN_ROWS", 1)
+        monkeypatch.setattr(methdata_mod, "_DENSE_WARN_BYTES", 1)
         exp = self._experiment()
         with warnings.catch_warnings():
             warnings.simplefilter("error")

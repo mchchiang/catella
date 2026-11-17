@@ -120,9 +120,7 @@ def test_plot_meth_prob_mask_name_forwarded(tmp_path):
 
 
 def test_plot_meth_prob_max_rows_downsamples(methplot, monkeypatch):
-    import catella.experiment.plot as plot_module
-
-    monkeypatch.setattr(plot_module, "_PLOT_WARN_ROWS", 5)
+    monkeypatch.setattr("catella._plotting._RENDER_WARN_BYTES", 1000)
     values = np.random.default_rng(2).random((20, 3))
 
     with warnings.catch_warnings(record=True) as caught:
@@ -235,20 +233,16 @@ def test_plot_meth_prob_cmap_override_does_not_mutate_instance(
     assert methplot.cmap == "OrRd"
 
 
-def test_plot_meth_prob_warns_above_plot_warn_rows(methplot, monkeypatch):
-    import catella.experiment.plot as plot_module
-
-    monkeypatch.setattr(plot_module, "_PLOT_WARN_ROWS", 5)
+def test_plot_meth_prob_warns_above_render_limit(methplot, monkeypatch):
+    monkeypatch.setattr("catella._plotting._RENDER_WARN_BYTES", 1000)
     values = np.random.default_rng(6).random((8, 3))
 
-    with pytest.warns(UserWarning):
+    with pytest.warns(UserWarning, match="8 rows x 3 bp"):
         methplot.plot_meth_prob(values, show=False)
 
 
-def test_plot_meth_prob_no_warning_below_plot_warn_rows(methplot, monkeypatch):
-    import catella.experiment.plot as plot_module
-
-    monkeypatch.setattr(plot_module, "_PLOT_WARN_ROWS", 100)
+def test_plot_meth_prob_no_warning_below_render_limit(methplot, monkeypatch):
+    monkeypatch.setattr("catella._plotting._RENDER_WARN_BYTES", 10**4)
     values = np.random.default_rng(7).random((8, 3))
 
     with warnings.catch_warnings(record=True) as caught:

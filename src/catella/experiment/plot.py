@@ -11,12 +11,7 @@ from matplotlib.colors import Normalize
 from scipy.special import logit
 
 from catella import utils
-from catella._warnings import _warn
-
-# Row-count threshold above which plot_meth_prob() warns, since it plots
-# data at full resolution -- downsample first (utils.downsample) to
-# avoid materializing/plotting more than this many rows.
-_PLOT_WARN_ROWS = 5000
+from catella._plotting import _warn_if_large
 
 
 @dataclass(slots=True, kw_only=True)
@@ -120,8 +115,8 @@ class MethPlot:
         max_rows : int, optional
             If given, `data` is downsampled to at most this many rows
             (via `utils.downsample`) before plotting. Applied after
-            `data`/`raw_which` resolution and before the
-            `_PLOT_WARN_ROWS` check.
+            `data`/`raw_which` resolution and before the size check
+            (see Warns).
         downsample_how : {"mean", "sum", "min", "max", "stride"},
             default "mean"
             How to collapse rows when `max_rows` is given. See
@@ -158,9 +153,10 @@ class MethPlot:
         Warns
         -----
         UserWarning
-            If `data` has more than `_PLOT_WARN_ROWS` rows, since it is
-            plotted at full resolution. Pass `max_rows`, or downsample
-            first (`utils.downsample`), to avoid it.
+            If rendering `data` at full resolution is estimated to need
+            more than 1 GB of memory (about 80 bytes per row and base
+            pair). Pass `max_rows`, or downsample first
+            (`utils.downsample`), to avoid it.
         """
         raw_data = None
         if data is None:
@@ -189,14 +185,12 @@ class MethPlot:
             if max_rows is not None:
                 data = utils.downsample(data, max_rows, how=downsample_how)
 
-            nrow = data.shape[0]
-            if nrow > _PLOT_WARN_ROWS:
-                _warn(
-                    f"plotting {nrow} rows at full resolution; this may "
-                    "be slow and memory-intensive; consider passing "
-                    "'max_rows', or downsampling first "
-                    "(utils.downsample)"
-                )
+            _warn_if_large(
+                data.shape[0],
+                data.shape[1],
+                "consider passing 'max_rows', or downsampling first "
+                "(utils.downsample)",
+            )
 
             matrix = np.asarray(data)
             nrow, ncol = matrix.shape

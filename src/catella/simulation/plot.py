@@ -533,7 +533,7 @@ class SimPlot:
             eseq_label=r"$E_{\text{seq}}$ [$k_BT$]",
         )
         self._footprint_side(fig, [panel], im, [matrix], cmap)
-        panel["hm_ax"].set_title(f"Molecule {mol} of {chrom}", pad=12)
+        panel["hm_ax"].set_title(chrom, pad=12)
         _finish(fig, show, out_file)
 
     @_apply_style

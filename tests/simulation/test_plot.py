@@ -273,10 +273,7 @@ class TestPlotOccupMultiChrom:
             (6, 20),
             (4, 30),
         ]
-        assert [ax.get_title() for ax in hm_axes] == [
-            "Occupancy Profile for chr1",
-            "Occupancy Profile for chr2",
-        ]
+        assert [ax.get_title() for ax in hm_axes] == ["chr1", "chr2"]
 
     def test_one_shared_colorbar(self, tmp_path):
         dataset = _make_two_chrom_dataset(tmp_path)
@@ -993,7 +990,7 @@ class TestPlotConfigMultiChrom:
                 np.ma.getdata(ax.images[0].get_array()),
                 _config_rows(dataset, chrom),
             )
-            assert ax.get_title() == f"Configurations for {chrom}"
+            assert ax.get_title() == chrom
 
     def test_binary_panels_share_one_legend(self, tmp_path):
         dataset = _tm_two_chrom_dataset(tmp_path)

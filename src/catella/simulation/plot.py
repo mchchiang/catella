@@ -709,7 +709,7 @@ class SimPlot:
                 eseq_label=r"$\langle E_{\text{seq}} \rangle$ [$k_BT$]",
                 link_mat=d["link_mat"],
             )
-            panel["hm_ax"].set_title(f"Configurations for {chrom}", pad=12)
+            panel["hm_ax"].set_title(chrom, pad=12)
         self._footprint_side(fig, panels, im, matrices, cmap)
         if sharex:
             _share_xlim(panels, max(dataset.nbp[c] for c in chroms) / xscale)
@@ -1162,5 +1162,5 @@ class SimPlot:
         btm_ax = seq_ax if plot_eseq else hm_ax
         btm_ax.set_xlabel(rf"Position $x$ [{xpow_str} bp]")
 
-        hm_ax.set_title(f"Occupancy Profile for {chrom}", pad=12)
+        hm_ax.set_title(chrom, pad=12)
         return im

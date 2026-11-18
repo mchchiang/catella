@@ -1796,6 +1796,28 @@ class TestPlotConfig:
         assert result.exit_code == 0, result.output
         assert out_file.exists()
 
+    def test_plot_mean_and_eseq(self, tmp_path):
+        dataset_file = self._two_chrom_file(tmp_path)
+        out_file = tmp_path / "configs_mean.png"
+
+        result = runner.invoke(
+            app,
+            [
+                "plot_config",
+                "chr1,chr2",
+                str(dataset_file),
+                "--name",
+                "best_match",
+                "--plot-mean",
+                "--plot-eseq",
+                "--out-file",
+                str(out_file),
+                "--no-show",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert out_file.exists()
+
     def test_mols_with_several_chroms_fails(self, tmp_path):
         dataset_file = self._two_chrom_file(tmp_path)
 

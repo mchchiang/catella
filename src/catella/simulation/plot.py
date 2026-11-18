@@ -553,6 +553,7 @@ class SimPlot:
         xscale: int = 1000,
         cmap: str | None = None,
         out_file: str | Path | None = None,
+        plot_mean: bool = False,
         plot_eseq: bool = False,
         link_mat: np.ndarray | dict | None = None,
         sharex: bool = False,
@@ -605,9 +606,16 @@ class SimPlot:
         out_file : str or Path, optional
             Path to save the figure. Directories are created if they do
             not exist.
+        plot_mean : bool, default False
+            Whether to plot, below the heatmap, the share of the shown
+            molecules with a nucleosome at each base (on a 0 to 1
+            scale), i.e., the mean of their configurations. Molecules
+            without data are ignored. Computed before `max_rows`
+            merging, so each shown molecule counts once.
         plot_eseq : bool, default False
             Whether to plot the sequence-specific binding energy, averaged
-            over the shown molecules, below the heatmap.
+            over the shown molecules, below the heatmap (and below the
+            mean, if both are plotted).
         link_mat : np.ndarray, pd.DataFrame, or dict, optional
             Linkage matrix of these molecules (as returned or stored by
             `sort_by_linkage`). If given, the molecules are put in its
@@ -685,6 +693,7 @@ class SimPlot:
                 time=time,
                 max_rows=max_rows,
                 downsample_how=downsample_how,
+                plot_mean=plot_mean,
                 plot_eseq=plot_eseq,
                 link_mat=link_mat[chrom],
             )
@@ -695,7 +704,11 @@ class SimPlot:
             len(chroms),
             binary=all(m.dtype == np.int8 for m in matrices),
             dendrogram=any(d["link_mat"] is not None for d in data),
-            extra_rows=("eseq",) if plot_eseq else (),
+            extra_rows=[
+                name
+                for name, on in (("mean", plot_mean), ("eseq", plot_eseq))
+                if on
+            ],
         )
         for chrom, d, panel in zip(chroms, data, panels):
             im = self._draw_footprints(
@@ -711,6 +724,7 @@ class SimPlot:
                 eseq=d["eseq"],
                 eseq_label=r"$\langle E_{\text{seq}} \rangle$ [$k_BT$]",
                 link_mat=d["link_mat"],
+                mean=d["mean"],
             )
             panel["hm_ax"].set_title(chrom, pad=12)
         self._footprint_side(fig, panels, im, matrices, cmap)
@@ -730,6 +744,7 @@ class SimPlot:
         time,
         max_rows,
         downsample_how,
+        plot_mean,
         plot_eseq,
         link_mat,
     ):
@@ -739,9 +754,11 @@ class SimPlot:
         Returns
         -------
         dict
-            "matrix" (footprints, merged to `max_rows`), "eseq" (mean
-            energy of the shown molecules, or None), "ylabel", and
-            "link_mat" (as a float array, or None).
+            "matrix" (footprints, merged to `max_rows`), "mean" (share
+            of the shown molecules with a nucleosome at each base,
+            before merging and ignoring molecules without data, or
+            None), "eseq" (mean energy of the shown molecules, or None),
+            "ylabel", and "link_mat" (as a float array, or None).
         """
         mol_ids = (
             list(range(dataset.nmol[chrom]))
@@ -759,6 +776,12 @@ class SimPlot:
             dataset, chrom=chrom, name=name, run=run, time=time, mols=mol_ids
         )
         matrix = _footprints(configs, nbp, dataset.settings["nucbp"])
+        mean = None
+        if plot_mean:
+            calls = np.where(matrix < 0, np.nan, matrix.astype(float))
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=RuntimeWarning)
+                mean = np.nanmean(calls, axis=0)
         matrix = _merge_rows(matrix, max_rows, downsample_how)
 
         eseq = None
@@ -773,6 +796,7 @@ class SimPlot:
         )
         return {
             "matrix": matrix,
+            "mean": mean,
             "eseq": eseq,
             "ylabel": ylabel,
             "link_mat": link_mat,
@@ -812,12 +836,13 @@ class SimPlot:
         eseq,
         eseq_label,
         link_mat=None,
+        mean=None,
     ):
         """
         Draw a footprint matrix (1 covered, 0 linker, -1 or nan no data)
         into the axes of `panel` (from `_footprint_grid`), with an
-        optional dendrogram on the right and energy row below. The
-        legend or colorbar is drawn by `_footprint_side`.
+        optional dendrogram on the right and mean and energy rows below.
+        The legend or colorbar is drawn by `_footprint_side`.
 
         If `extent_y` is None, the y-axis counts rows: row i is centered
         on y = i, with integer ticks. `link_mat` (rows already in its
@@ -862,6 +887,12 @@ class SimPlot:
         hm_ax.set_xlim(0, nbp / xscale)
         hm_ax.set_ylabel(ylabel)
 
+        if mean is not None:
+            hm_ax.get_xaxis().set_visible(False)
+            _draw_mean(panel["mean_ax"], mean, xscale=xscale)
+            if eseq is not None:
+                panel["mean_ax"].get_xaxis().set_visible(False)
+
         if eseq is not None:
             hm_ax.get_xaxis().set_visible(False)
             with warnings.catch_warnings():
@@ -878,7 +909,7 @@ class SimPlot:
             seq_ax.set_ylabel(eseq_label)
             seq_ax.set_xlim(0, nbp / xscale)
 
-        btm_ax = seq_ax if eseq is not None else hm_ax
+        btm_ax = _row_axes(panel)[-1]
         btm_ax.set_xlabel(rf"Position $x$ [$10^{{{xpow}}}$ bp]")
         return im
 

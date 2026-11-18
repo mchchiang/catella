@@ -1187,6 +1187,7 @@ def plot_config(
     xscale: int = 1000,
     cmap: str | None = None,
     out_file: str | Path | None = None,
+    plot_mean: bool = False,
     plot_eseq: bool = False,
     link_mat: np.ndarray | pd.DataFrame | dict | None = None,
     sharex: bool = False,
@@ -1238,9 +1239,16 @@ def plot_config(
         Matplotlib colormap name. If None, the `SimPlot` default is used.
     out_file : str or Path, optional
         Path to save the figure. If None, it is not saved.
+    plot_mean : bool, default False
+        Whether to plot, below the heatmap, the share of the shown
+        molecules with a nucleosome at each base (on a 0 to 1 scale),
+        i.e., the mean of their configurations. Molecules without data
+        are ignored. Computed before `max_rows` merging, so each shown
+        molecule counts once.
     plot_eseq : bool, default False
         Whether to plot the sequence-specific binding energy, averaged
-        over the shown molecules, below the heatmap.
+        over the shown molecules, below the heatmap (and below the mean,
+        if both are plotted).
     link_mat : np.ndarray, pd.DataFrame, or dict, optional
         Linkage matrix of these molecules (as returned or stored by
         `sort_by_linkage`). If given, the molecules are put in its leaf
@@ -1287,6 +1295,7 @@ def plot_config(
         xscale=xscale,
         cmap=cmap,
         out_file=out_file,
+        plot_mean=plot_mean,
         plot_eseq=plot_eseq,
         link_mat=link_mat,
         sharex=sharex,

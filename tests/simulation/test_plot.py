@@ -1098,6 +1098,101 @@ class TestPlotConfig:
             )
 
 
+def _expected_mean(rows):
+    return np.nanmean(np.where(rows < 0, np.nan, rows.astype(float)), axis=0)
+
+
+@pytest.mark.filterwarnings(
+    "ignore:__array__ implementation doesn't accept a copy keyword"
+    ":DeprecationWarning"
+)
+class TestPlotConfigMean:
+    def _rows(self, dataset):
+        configs = SimAnalysis().extract_config(
+            dataset, chrom="chr1", name="bm"
+        )
+        return _rows(dataset, configs)
+
+    def test_mean_over_molecules_with_data(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        SimPlot().plot_config(
+            dataset, chroms="chr1", name="bm", plot_mean=True, show=False
+        )
+        rows = self._rows(dataset)
+        assert (rows[1] == -1).all()
+        np.testing.assert_allclose(
+            _mean_line(plt.gcf()), _expected_mean(rows)
+        )
+        assert _mean_axes(plt.gcf())[0].get_ylabel() == "Mean"
+
+    def test_stride_uses_shown_molecules(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        SimPlot().plot_config(
+            dataset,
+            chroms="chr1",
+            name="bm",
+            max_rows=3,
+            plot_mean=True,
+            show=False,
+        )
+        rows = self._rows(dataset)
+        np.testing.assert_allclose(
+            _mean_line(plt.gcf()), _expected_mean(rows[[0, 2, 4]])
+        )
+
+    def test_mean_merging_uses_all_molecules(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        SimPlot().plot_config(
+            dataset,
+            chroms="chr1",
+            name="bm",
+            max_rows=2,
+            downsample_how="mean",
+            plot_mean=True,
+            show=False,
+        )
+        np.testing.assert_allclose(
+            _mean_line(plt.gcf()), _expected_mean(self._rows(dataset))
+        )
+
+    def test_mean_above_eseq(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        SimPlot().plot_config(
+            dataset,
+            chroms="chr1",
+            name="bm",
+            plot_mean=True,
+            plot_eseq=True,
+            show=False,
+        )
+        fig = plt.gcf()
+        hm_ax = _heatmap_axes(fig)[0]
+        mean_ax = _mean_axes(fig)[0]
+        seq_ax = next(
+            ax for ax in fig.axes if ax.lines and ax is not mean_ax
+        )
+        hm, mean, seq = _boxes([hm_ax, mean_ax, seq_ax])
+        assert hm.y0 > mean.y1 and mean.y0 > seq.y1
+        assert not hm_ax.get_xaxis().get_visible()
+        assert not mean_ax.get_xaxis().get_visible()
+        assert seq_ax.get_xlabel().startswith("Position")
+
+    def test_several_chroms(self, tmp_path):
+        dataset = _tm_two_chrom_dataset(tmp_path)
+        SimPlot().plot_config(
+            dataset,
+            chroms=["chr1", "chr2"],
+            name="bm",
+            xscale=1,
+            plot_mean=True,
+            sharex=True,
+            show=False,
+        )
+        mean_axes = _mean_axes(plt.gcf())
+        assert [ax.get_xlim() for ax in mean_axes] == [(0, 30), (0, 30)]
+        assert [ax.get_ylabel() for ax in mean_axes] == ["Mean", ""]
+
+
 def _tm_two_chrom_dataset(tmp_path):
     settings = SimSettings(
         nucbp=3, llink=2, elink=1.0, mu=0.5, end_temp=1.0, emax=5.0

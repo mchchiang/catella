@@ -1205,6 +1205,10 @@ def plot_config(
     cmap: Annotated[
         str | None, typer.Option(help="Matplotlib colormap name")
     ] = None,
+    plot_mean: Annotated[
+        bool,
+        typer.Option(help="Plot the share of molecules with a nucleosome"),
+    ] = False,
     plot_eseq: Annotated[
         bool, typer.Option(help="Plot the mean sequence-specific energy")
     ] = False,
@@ -1250,6 +1254,7 @@ def plot_config(
         downsample_how=downsample_how,
         xscale=xscale,
         cmap=cmap,
+        plot_mean=plot_mean,
         plot_eseq=plot_eseq,
         link_mat=link_mat,
         out_file=out_file,

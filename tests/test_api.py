@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 from catella import utils
 from catella.experiment.methdata import MethPrintData, MethPrintExperiment
+from catella.experiment.plot import MethPlot
 from catella.experiment.preprocessing import MethPrintAnalysis
 from catella.simulation.analysis import SimAnalysis
 from catella.simulation.config import SimSettings
@@ -881,6 +882,81 @@ class TestPlotConfig:
             show=False,
         )
         assert out_file.exists()
+
+
+class TestPlotMeth:
+    def _data(self):
+        return np.random.default_rng(0).uniform(0.05, 0.95, (6, 10))
+
+    def _record(self, monkeypatch):
+        calls = {}
+
+        def fake(name):
+            def method(self, *args, **kwargs):
+                calls[name] = (args, kwargs)
+
+            return method
+
+        monkeypatch.setattr(MethPlot, "plot_meth_prob", fake("prob"))
+        monkeypatch.setattr(MethPlot, "plot_meth_energy", fake("energy"))
+        return calls
+
+    @pytest.mark.parametrize("value", ["prob", "energy"])
+    def test_writes_figure_file(self, tmp_path, value):
+        out_file = tmp_path / f"{value}.png"
+        catella.plot_meth(
+            self._data(), value=value, out_file=out_file, show=False
+        )
+        assert out_file.exists()
+
+    def test_raw_writes_figure_file(self, tmp_path):
+        exp = _make_experiment(nmol=6, nbp=10, seed=3)
+        out_file = tmp_path / "raw.png"
+        catella.plot_meth(
+            exp=exp, chrom="chr1", raw_which="test", out_file=out_file,
+            show=False,
+        )
+        assert out_file.exists()
+
+    def test_prob_dispatches_to_plot_meth_prob(self, monkeypatch):
+        calls = self._record(monkeypatch)
+        catella.plot_meth(self._data(), show=False)
+        assert list(calls) == ["prob"]
+        assert "cbar_label" not in calls["prob"][1]
+
+    def test_energy_dispatches_to_plot_meth_energy(self, monkeypatch):
+        calls = self._record(monkeypatch)
+        catella.plot_meth(self._data(), value="energy", emax=3.0, show=False)
+        assert list(calls) == ["energy"]
+        assert calls["energy"][1]["emax"] == 3.0
+        assert "cbar_label" not in calls["energy"][1]
+
+    def test_cbar_label_forwarded(self, monkeypatch):
+        calls = self._record(monkeypatch)
+        catella.plot_meth(
+            self._data(), value="energy", cbar_label="E", show=False
+        )
+        assert calls["energy"][1]["cbar_label"] == "E"
+
+    def test_invalid_value_raises(self):
+        with pytest.raises(ValueError, match="value must be"):
+            catella.plot_meth(self._data(), value="logit", show=False)
+
+    def test_emax_with_prob_raises(self):
+        with pytest.raises(ValueError, match="emax"):
+            catella.plot_meth(self._data(), emax=3.0, show=False)
+
+    def test_energy_with_raw_which_raises(self):
+        exp = _make_experiment(nmol=6, nbp=10, seed=3)
+        with pytest.raises(ValueError, match="requires data"):
+            catella.plot_meth(
+                exp=exp, chrom="chr1", raw_which="test", value="energy",
+                show=False,
+            )
+
+    def test_energy_without_data_raises(self):
+        with pytest.raises(ValueError, match="requires data"):
+            catella.plot_meth(value="energy", show=False)
 
 
 class TestExtractConfig:

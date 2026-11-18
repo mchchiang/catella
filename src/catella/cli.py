@@ -1320,8 +1320,8 @@ def plot_occup(
     )
 
 
-@app.command(name="plot_meth_prob")
-def plot_meth_prob(
+@app.command(name="plot_meth")
+def plot_meth(
     exp_file: Annotated[
         Path,
         typer.Argument(
@@ -1339,6 +1339,13 @@ def plot_meth_prob(
             help="Analysis key to plot. Mutually exclusive with --raw-which"
         ),
     ] = None,
+    value: Annotated[
+        str,
+        typer.Option(
+            help="'prob' to plot values as given, or 'energy' to plot "
+            "logit(values) centered at zero (needs --key)"
+        ),
+    ] = "prob",
     raw_which: Annotated[
         str | None,
         typer.Option(
@@ -1356,6 +1363,13 @@ def plot_meth_prob(
             "to_dense)"
         ),
     ] = None,
+    emax: Annotated[
+        float | None,
+        typer.Option(
+            help="With --value energy: clamp energy to [-emax, emax] and "
+            "use it as the default color scale range"
+        ),
+    ] = None,
     max_rows: Annotated[
         int | None,
         typer.Option(
@@ -1366,7 +1380,11 @@ def plot_meth_prob(
         str, typer.Option(help="How to collapse rows when --max-rows is given")
     ] = "mean",
     vmin: Annotated[
-        float | None, typer.Option(help="Lower color scale bound")
+        float | None,
+        typer.Option(
+            help="Lower color scale bound; with --value energy, combined "
+            "with --vmax into a symmetric range centered at zero"
+        ),
     ] = None,
     vmax: Annotated[
         float | None, typer.Option(help="Upper color scale bound")
@@ -1375,8 +1393,9 @@ def plot_meth_prob(
         str | None, typer.Option(help="Matplotlib colormap name")
     ] = None,
     cbar_label: Annotated[
-        str, typer.Option(help="Colorbar label")
-    ] = "Methylation prob.",
+        str | None,
+        typer.Option(help="Colorbar label; default depends on --value"),
+    ] = None,
     out_file: Annotated[
         Path | None,
         typer.Option(
@@ -1394,10 +1413,12 @@ def plot_meth_prob(
     show: Annotated[bool, typer.Option(help="Display the figure")] = True,
 ):
     """
-    Plot a methylation heatmap.
+    Plot a methylation heatmap, as probability or energy.
     """
     if (key is None) == (raw_which is None):
         raise typer.BadParameter("specify exactly one of --key or --raw-which")
+    if value == "energy" and raw_which is not None:
+        raise typer.BadParameter("--value energy requires --key")
     exp = MethPrintExperiment.load(exp_file)
     data = exp.analysis[chrom][key] if key is not None else None
     link_mat = (
@@ -1405,100 +1426,13 @@ def plot_meth_prob(
         if link_mat_name is not None
         else None
     )
-    catella.plot_meth_prob(
+    catella.plot_meth(
         data=data,
+        value=value,
         exp=exp if raw_which is not None else None,
         chrom=chrom if raw_which is not None else None,
         raw_which=raw_which,
         mask_name=mask_name if raw_which is not None else None,
-        max_rows=max_rows,
-        downsample_how=downsample_how,
-        vmin=vmin,
-        vmax=vmax,
-        cmap=cmap,
-        cbar_label=cbar_label,
-        out_file=out_file,
-        link_mat=link_mat,
-        show=show,
-    )
-
-
-@app.command(name="plot_meth_energy")
-def plot_meth_energy(
-    exp_file: Annotated[
-        Path,
-        typer.Argument(
-            help="Experiment HDF5 file",
-            exists=True,
-            file_okay=True,
-            dir_okay=False,
-            readable=True,
-        ),
-    ],
-    chrom: Annotated[str, typer.Argument(help="Chromosome identifier")],
-    key: Annotated[
-        str, typer.Option(help="Analysis key to plot")
-    ] = "meth_prob",
-    emax: Annotated[
-        float | None,
-        typer.Option(
-            help="Clamp energy to "
-            "[-emax, emax] and use it as "
-            "the default color scale "
-            "range"
-        ),
-    ] = None,
-    max_rows: Annotated[
-        int | None,
-        typer.Option(
-            help="Downsample to at most this many rows before plotting"
-        ),
-    ] = None,
-    downsample_how: Annotated[
-        str, typer.Option(help="How to collapse rows when --max-rows is given")
-    ] = "mean",
-    vmin: Annotated[
-        float | None,
-        typer.Option(
-            help="Combined with --vmax into "
-            "a symmetric half-range centered "
-            "at zero"
-        ),
-    ] = None,
-    vmax: Annotated[float | None, typer.Option(help="See --vmin")] = None,
-    cmap: Annotated[
-        str | None, typer.Option(help="Matplotlib colormap name")
-    ] = None,
-    cbar_label: Annotated[
-        str, typer.Option(help="Colorbar label")
-    ] = "Energy [$k_BT$]",
-    out_file: Annotated[
-        Path | None,
-        typer.Option(
-            help="Path to save the figure", file_okay=True, dir_okay=False
-        ),
-    ] = None,
-    link_mat_name: Annotated[
-        str | None,
-        typer.Option(
-            help="Key of a linkage matrix (e.g. "
-            "from sort_by_linkage) to draw as a "
-            "dendrogram"
-        ),
-    ] = None,
-    show: Annotated[bool, typer.Option(help="Display the figure")] = True,
-):
-    """
-    Plot a methylation heatmap on an energy scale.
-    """
-    exp = MethPrintExperiment.load(exp_file)
-    link_mat = (
-        exp.analysis[chrom][link_mat_name].to_numpy()
-        if link_mat_name is not None
-        else None
-    )
-    catella.plot_meth_energy(
-        data=exp.analysis[chrom][key],
         emax=emax,
         max_rows=max_rows,
         downsample_how=downsample_how,

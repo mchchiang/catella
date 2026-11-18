@@ -1366,26 +1366,29 @@ def plot_occup(
     )
 
 
-def plot_meth_prob(
+def plot_meth(
     data: H5Array | pd.DataFrame | np.ndarray | None = None,
     *,
+    value: str = "prob",
     exp: MethPrintExperiment | None = None,
     chrom: str | None = None,
     raw_which: str | None = None,
     mols: int | Sequence[int] | None = None,
     mask_name: str | None = None,
+    emax: float | None = None,
     max_rows: int | None = None,
     downsample_how: str = "mean",
     vmin: float | None = None,
     vmax: float | None = None,
     cmap: str | None = None,
-    cbar_label: str = "Methylation prob.",
+    cbar_label: str | None = None,
     out_file: str | Path | None = None,
     link_mat: np.ndarray | None = None,
     show: bool = True,
 ):
     """
-    Plot a methylation heatmap.
+    Plot a methylation heatmap of given or raw data, as probability or
+    energy.
 
     Plots `data` at full resolution -- for large data, pass `max_rows`
     to downsample first, or downsample it yourself (`utils.downsample`,
@@ -1400,6 +1403,12 @@ def plot_meth_prob(
         `exp.analysis[chrom]["test_smoothed"]`, or the result of
         `MethPrintExperiment.to_dense()`. Required unless `exp`,
         `chrom`, and `raw_which` are given instead.
+    value : {"prob", "energy"}, default "prob"
+        "prob" plots the values as given; "energy" plots `logit(data)`,
+        the same quantity `catella.simulation.engine` treats as physical
+        energy, on a color scale centered at zero. "energy" requires
+        `data` in [0, 1] and cannot be combined with `exp`/`chrom`/
+        `raw_which`/`mols`/`mask_name`.
     exp : MethPrintExperiment, optional
         Experiment to pull raw data from. Must be given together with
         `chrom` and `raw_which`, and not combined with `data`.
@@ -1415,6 +1424,12 @@ def plot_meth_prob(
     mask_name : str, optional
         Dropout mask name to apply, when using `exp`/`chrom`/
         `raw_which`. See `MethPrintExperiment.to_dense`.
+    emax : float, optional
+        For "energy" only: clamp energy to [-emax, emax] (matching
+        `SimSettings.emax`'s clamping in `NucPosMCMC.setEnergy`) and
+        use it as the default `vmin`/`vmax`. If None, energy is
+        unclamped and the default range is inferred from the finite
+        values.
     max_rows : int, optional
         If given, `data` is downsampled to at most this many rows (via
         `utils.downsample`) before plotting.
@@ -1424,15 +1439,18 @@ def plot_meth_prob(
         `utils.downsample`.
     vmin : float, optional
         Lower bound for the color scale. If None, inferred from
-        `data`.
+        `data`. For "energy", combined with `vmax` into a symmetric
+        half-range so the color scale stays centered at zero.
     vmax : float, optional
         Upper bound for the color scale. If None, inferred from
-        `data`.
+        `data`. See `vmin` for "energy".
     cmap : str, optional
         Matplotlib colormap name to use for this plot. If None, the
-        `MethPlot` default is used.
-    cbar_label : str, default "Methylation prob."
-        Label drawn next to the colorbar.
+        `MethPlot` default is used for "prob" and "RdBu_r" for
+        "energy".
+    cbar_label : str, optional
+        Label drawn next to the colorbar. If None, "Methylation prob."
+        for "prob" and "Energy [$k_BT$]" for "energy".
     out_file : str | Path, optional
         Path where the generated plot will be saved. If None, the plot
         is not saved to disk.
@@ -1448,100 +1466,48 @@ def plot_meth_prob(
     Raises
     ------
     ValueError
-        If neither `data` nor all of `exp`/`chrom`/`raw_which` are
-        given, or if `data` is combined with any of `exp`/`chrom`/
-        `raw_which`/`mols`/`mask_name`.
+        If `value` is not "prob" or "energy"; if neither `data` nor all
+        of `exp`/`chrom`/`raw_which` are given; if `data` is combined
+        with any of `exp`/`chrom`/`raw_which`/`mols`/`mask_name`; if
+        "energy" is used without `data`; or if `emax` is given with
+        "prob".
     """
-    methplot = MethPlot()
-    methplot.plot_meth_prob(
-        data,
-        exp=exp,
-        chrom=chrom,
-        raw_which=raw_which,
-        mols=mols,
-        mask_name=mask_name,
+    if value not in ("prob", "energy"):
+        raise ValueError(f'value must be "prob" or "energy", got {value!r}')
+    kwargs = dict(
         max_rows=max_rows,
         downsample_how=downsample_how,
         vmin=vmin,
         vmax=vmax,
         cmap=cmap,
-        cbar_label=cbar_label,
         out_file=out_file,
         link_mat=link_mat,
         show=show,
     )
-
-
-def plot_meth_energy(
-    data: H5Array | pd.DataFrame | np.ndarray,
-    *,
-    emax: float | None = None,
-    max_rows: int | None = None,
-    downsample_how: str = "mean",
-    vmin: float | None = None,
-    vmax: float | None = None,
-    cmap: str | None = None,
-    cbar_label: str = r"Energy [$k_BT$]",
-    out_file: str | Path | None = None,
-    link_mat: np.ndarray | None = None,
-    show: bool = True,
-):
-    """
-    Plot a methylation heatmap on an energy scale.
-
-    Thin wrapper around `plot_meth_prob` showing `logit(data)`
-    instead of the raw probability, the same quantity
-    `catella.simulation.engine` treats as physical energy.
-
-    Parameters
-    ----------
-    data : H5Array, pd.DataFrame, or np.ndarray
-        Dense probability matrix in [0, 1], e.g.
-        `exp.analysis[chrom]["meth_prob"]`.
-    emax : float, optional
-        If given, clamp energy to [-emax, emax] (matching
-        `SimSettings.emax`'s clamping in `NucPosMCMC.setEnergy`)
-        and use it as the default `vmin`/`vmax`. If None, energy is
-        unclamped and the default color-scale range is inferred
-        from the finite values in `data`.
-    max_rows : int, optional
-        If given, downsample to at most this many rows (via
-        `utils.downsample`) before plotting.
-    downsample_how : {"mean", "sum", "min", "max", "stride"},
-        default "mean"
-        How to collapse rows when `max_rows` is given.
-    vmin : float, optional
-        Combined with `vmax` into a symmetric half-range so the
-        colormap stays centered at zero.
-    vmax : float, optional
-        See `vmin`.
-    cmap : str, optional
-        Matplotlib colormap name. Defaults to "RdBu_r".
-    cbar_label : str, default "Energy [$k_BT$]"
-        Label drawn next to the colorbar.
-    out_file : str or pathlib.Path, optional
-        Path to save the generated figure.
-    link_mat : np.ndarray or pd.DataFrame, optional
-        Linkage matrix of these molecules; the rows are put in its leaf
-        order and its dendrogram is drawn alongside.
-    show : bool, default True
-        Whether to display the figure using the active plotting
-        backend.
-    """
+    if cbar_label is not None:
+        kwargs["cbar_label"] = cbar_label
     methplot = MethPlot()
-    methplot.plot_meth_energy(
-        data,
-        emax=emax,
-        max_rows=max_rows,
-        downsample_how=downsample_how,
-        vmin=vmin,
-        vmax=vmax,
-        cmap=cmap,
-        cbar_label=cbar_label,
-        out_file=out_file,
-        link_mat=link_mat,
-        show=show,
-    )
+    if value == "prob":
+        if emax is not None:
+            raise ValueError('emax is only valid with value="energy"')
+        methplot.plot_meth_prob(
+            data,
+            exp=exp,
+            chrom=chrom,
+            raw_which=raw_which,
+            mols=mols,
+            mask_name=mask_name,
+            **kwargs,
+        )
+        return
+    if data is None or any(
+        v is not None for v in (exp, chrom, raw_which, mols, mask_name)
+    ):
+        raise ValueError(
+            'value="energy" requires data; exp, chrom, raw_which, mols '
+            "and mask_name are not supported"
+        )
+    methplot.plot_meth_energy(data, emax=emax, **kwargs)
 
 
 def downsample(
@@ -1555,7 +1521,7 @@ def downsample(
     Collapse rows of a dense array to at most `max_rows`.
 
     Public wrapper around `utils.downsample`, for reducing plot data
-    ahead of `plot_occup`/`plot_meth_prob`.
+    ahead of `plot_occup`/`plot_meth`.
 
     Parameters
     ----------
@@ -1603,7 +1569,7 @@ def sort_by_linkage(
 
     Computes a hierarchical-clustering linkage per chromosome; nothing is
     reordered or copied. Pass the linkage as `link_mat` to a plot
-    (`plot_occup`, `plot_config`, `plot_meth_prob`, `plot_meth_energy`),
+    (`plot_occup`, `plot_config`, `plot_meth`),
     which puts its rows in the linkage's leaf order. Several plots of
     the same molecules can share one linkage:
 

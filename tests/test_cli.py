@@ -1846,7 +1846,7 @@ class TestPlotOccup:
         assert out_file.exists()
 
 
-class TestPlotMethProb:
+class TestPlotMeth:
     def test_with_link_mat_name(self, tmp_path):
         rows = _make_test_rows(nmol=6, nbp=20)
         test_file = tmp_path / "test.tsv"
@@ -1864,7 +1864,7 @@ class TestPlotMethProb:
         result = runner.invoke(
             app,
             [
-                "plot_meth_prob",
+                "plot_meth",
                 str(exp_file),
                 "chr1",
                 "--key",
@@ -1893,7 +1893,7 @@ class TestPlotMethProb:
         result = runner.invoke(
             app,
             [
-                "plot_meth_prob",
+                "plot_meth",
                 str(exp_file),
                 "chr1",
                 "--key",
@@ -1922,7 +1922,7 @@ class TestPlotMethProb:
         result = runner.invoke(
             app,
             [
-                "plot_meth_prob",
+                "plot_meth",
                 str(exp_file),
                 "chr1",
                 "--key",
@@ -1951,7 +1951,7 @@ class TestPlotMethProb:
         result = runner.invoke(
             app,
             [
-                "plot_meth_prob",
+                "plot_meth",
                 str(exp_file),
                 "chr1",
                 "--raw-which",
@@ -1975,14 +1975,14 @@ class TestPlotMethProb:
         exp.save(exp_file)
 
         result = runner.invoke(
-            app, ["plot_meth_prob", str(exp_file), "chr1", "--no-show"]
+            app, ["plot_meth", str(exp_file), "chr1", "--no-show"]
         )
         assert result.exit_code != 0
 
         result = runner.invoke(
             app,
             [
-                "plot_meth_prob",
+                "plot_meth",
                 str(exp_file),
                 "chr1",
                 "--key",
@@ -2014,9 +2014,11 @@ class TestPlotMethEnergy:
         result = runner.invoke(
             app,
             [
-                "plot_meth_energy",
+                "plot_meth",
                 str(exp_file),
                 "chr1",
+                "--value",
+                "energy",
                 "--key",
                 "meth_prob",
                 "--out-file",
@@ -2034,9 +2036,11 @@ class TestPlotMethEnergy:
         result = runner.invoke(
             app,
             [
-                "plot_meth_energy",
+                "plot_meth",
                 str(exp_file),
                 "chr1",
+                "--value",
+                "energy",
                 "--key",
                 "meth_prob",
                 "--emax",
@@ -2056,9 +2060,11 @@ class TestPlotMethEnergy:
         result = runner.invoke(
             app,
             [
-                "plot_meth_energy",
+                "plot_meth",
                 str(exp_file),
                 "chr1",
+                "--value",
+                "energy",
                 "--key",
                 "meth_prob",
                 "--cmap",
@@ -2072,3 +2078,21 @@ class TestPlotMethEnergy:
         )
         assert result.exit_code == 0, result.output
         assert out_file.exists()
+
+    def test_energy_with_raw_which_fails(self, tmp_path):
+        exp_file = self._make_exp_file(tmp_path)
+
+        result = runner.invoke(
+            app,
+            [
+                "plot_meth",
+                str(exp_file),
+                "chr1",
+                "--value",
+                "energy",
+                "--raw-which",
+                "test",
+                "--no-show",
+            ],
+        )
+        assert result.exit_code != 0

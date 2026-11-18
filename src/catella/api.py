@@ -824,7 +824,7 @@ def plot_dropout_ecdf(
     )
     methplot = MethPlot()
     methplot.plot_dropout_ecdf(
-        fractions, chrom, source=source, out_file=out_file, show=show
+        fractions, chrom, which=source, out_file=out_file, show=show
     )
 
 

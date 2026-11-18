@@ -356,7 +356,7 @@ class MethPlot:
         dropout_fractions,
         chrom,
         *,
-        source: str | None = None,
+        which: str | None = None,
         out_file: str | Path | None = None,
         show: bool = True,
     ):
@@ -373,7 +373,7 @@ class MethPlot:
             Output of `MethPrintExperiment.dropout_fractions`.
         chrom : str
             Chromosome to plot.
-        source : {"test", "meth", "unmeth"}, optional
+        which : {"test", "meth", "unmeth"}, optional
             Restrict the plot to this source. None plots every
             source present for `chrom`.
         out_file : str or pathlib.Path, optional
@@ -385,17 +385,17 @@ class MethPlot:
         Raises
         ------
         ValueError
-            If `chrom` (or `source`, when given) has no matching
+            If `chrom` (or `which`, when given) has no matching
             entries in `dropout_fractions`.
         """
         keys = [
             key
             for key in dropout_fractions
-            if key[0] == chrom and (source is None or key[1] == source)
+            if key[0] == chrom and (which is None or key[1] == which)
         ]
         if not keys:
             raise ValueError(
-                f"no entries for chrom={chrom!r}, source={source!r} "
+                f"no entries for chrom={chrom!r}, which={which!r} "
                 "in dropout_fractions"
             )
 

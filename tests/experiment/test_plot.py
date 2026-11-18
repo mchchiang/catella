@@ -467,13 +467,13 @@ class TestPlotDropoutEcdf:
         assert out_file.exists()
         exp.close()
 
-    def test_source_filter_narrows_lines(self, tmp_path):
+    def test_which_filter_narrows_lines(self, tmp_path):
         exp = _dropout_fractions_exp(tmp_path)
         fracs = exp.dropout_fractions()
 
-        out_file = tmp_path / "dropout_ecdf_source.png"
+        out_file = tmp_path / "dropout_ecdf_which.png"
         MethPlot().plot_dropout_ecdf(
-            fracs, "chr1", source="test", out_file=out_file, show=False
+            fracs, "chr1", which="test", out_file=out_file, show=False
         )
         assert out_file.exists()
         exp.close()
@@ -486,13 +486,13 @@ class TestPlotDropoutEcdf:
             MethPlot().plot_dropout_ecdf(fracs, "bogus", show=False)
         exp.close()
 
-    def test_unknown_source_raises(self, tmp_path):
+    def test_unknown_which_raises(self, tmp_path):
         exp = _dropout_fractions_exp(tmp_path)
         fracs = exp.dropout_fractions()
 
         with pytest.raises(ValueError):
             MethPlot().plot_dropout_ecdf(
-                fracs, "chr1", source="meth", show=False
+                fracs, "chr1", which="meth", show=False
             )
         exp.close()
 

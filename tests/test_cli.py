@@ -2170,6 +2170,8 @@ class TestPlotMeth:
                 "chr1,chr2",
                 "--raw-which",
                 "test",
+                "--xscale",
+                "1",
                 "--out-file",
                 str(out_file),
                 "--no-show",

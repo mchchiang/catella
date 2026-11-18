@@ -1446,6 +1446,10 @@ def plot_meth(
             "dendrogram"
         ),
     ] = None,
+    xscale: Annotated[
+        int,
+        typer.Option(help="Spatial scale factor (power of 10) for the x-axis"),
+    ] = 1000,
     sharex: Annotated[
         bool,
         typer.Option(help="Put all panels on the widest chromosome's scale"),
@@ -1482,6 +1486,7 @@ def plot_meth(
         cbar_label=cbar_label,
         out_file=out_file,
         link_mat=link_mat,
+        xscale=xscale,
         sharex=sharex,
         show=show,
     )

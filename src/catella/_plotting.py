@@ -20,6 +20,34 @@ _RENDER_WARN_BYTES = 10**9
 _MAX_PANELS = 10
 
 
+def _power_of_10(x, name=None):
+    """
+    Return the base-10 logarithm of `x`, checked to be a power of 10.
+
+    Parameters
+    ----------
+    x : float
+        The value to check.
+    name : str, optional
+        The variable name to include in the error message.
+
+    Returns
+    -------
+    float
+        The log10 of `x`.
+
+    Raises
+    ------
+    ValueError
+        If `x` is not a non-negative power of 10.
+    """
+    log10x = np.log10(x)
+    if log10x < 0.0 or not np.isclose(np.mod(log10x, 1), 0, atol=1e-9):
+        xstr = name if name is not None else "x"
+        raise ValueError(f"'{xstr}' must be a non-negative power of 10")
+    return log10x
+
+
 def _chrom_list(chroms):
     """
     Return `chroms` (a str or an iterable of str) as a list.

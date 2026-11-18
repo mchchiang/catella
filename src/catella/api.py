@@ -1417,6 +1417,7 @@ def plot_meth(
     cbar_label: str | None = None,
     out_file: str | Path | None = None,
     link_mat: np.ndarray | dict | None = None,
+    xscale: int = 1000,
     sharex: bool = False,
     show: bool = True,
 ):
@@ -1500,6 +1501,8 @@ def plot_meth(
         alongside. Cannot be combined with `mols`. With several chroms, a
         dict keyed by chrom, e.g. the result of `sort_by_linkage` (chroms
         not in it are not sorted; extra keys are ignored).
+    xscale : int, default 1000
+        Spatial scaling factor (a power of 10) for the x-axis labels.
     sharex : bool, default False
         If True, all panels span the widest chromosome, so they share
         one bp scale. If False, each panel spans its own.
@@ -1510,7 +1513,8 @@ def plot_meth(
     Raises
     ------
     ValueError
-        If `value` is not "prob" or "energy"; if neither `data` nor
+        If `value` is not "prob" or "energy"; if `xscale` is not a power
+        of 10; if neither `data` nor
         `exp` and `chroms` with exactly one of `raw_which`/`data_name`
         are given; if `data` is combined with any of `exp`/`chroms`/
         `raw_which`/`data_name`/`mols`/`mask_name`; if `mols` or
@@ -1538,6 +1542,7 @@ def plot_meth(
         "cmap": cmap,
         "out_file": out_file,
         "link_mat": link_mat,
+        "xscale": xscale,
         "sharex": sharex,
         "show": show,
     }

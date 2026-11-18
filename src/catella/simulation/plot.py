@@ -21,6 +21,7 @@ from catella._plotting import (
     _leaf_order,
     _panel_grid,
     _per_chrom,
+    _power_of_10,
     _share_xlim,
     _warn_if_large,
 )
@@ -238,11 +239,7 @@ class SimPlot:
         ValueError
             If x is not a non-negative power of 10.
         """
-        log10x = np.log10(x)
-        if log10x < 0.0 or not np.isclose(np.mod(log10x, 1), 0, atol=1e-9):
-            xstr = name if name is not None else "x"
-            raise ValueError(f"'{xstr}' must be a non-negative power of 10")
-        return log10x
+        return _power_of_10(x, name)
 
     @_apply_style
     def plot_energy(

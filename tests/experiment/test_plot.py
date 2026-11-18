@@ -578,6 +578,78 @@ class TestPlotDropoutEcdf:
         plt.close("all")
         exp.close()
 
+    def test_split_by_channel_one_panel_per_channel(self, tmp_path):
+        exp = _two_chrom_exp(tmp_path)
+        fracs = exp.dropout_fractions()
+
+        MethPlot().plot_dropout_ecdf(
+            fracs, ["chr1", "chr2"], split_by="channel", show=False
+        )
+        visible = [ax for ax in plt.gcf().axes if ax.get_visible()]
+        assert [ax.get_title() for ax in visible] == ["A", "CG", "all"]
+        assert visible[0].get_legend_handles_labels()[1] == ["chr1", "chr2"]
+        assert plt.gcf()._suptitle.get_text() == "test"
+        plt.close("all")
+        exp.close()
+
+    def test_split_by_grid_hides_unused_panels(self, tmp_path):
+        fracs = {
+            (f"chr{i}", "test", "A"): np.array([0.1, 0.2])
+            for i in range(5)
+        }
+        MethPlot().plot_dropout_ecdf(
+            fracs, [k[0] for k in fracs], split_by="chrom", show=False
+        )
+        axes = plt.gcf().axes
+        assert len([ax for ax in axes if ax.get_visible()]) == 5
+        assert len([ax for ax in axes if not ax.get_visible()]) == 3
+        plt.close("all")
+
+    def test_more_than_10_lines_warns(self):
+        fracs = {
+            (f"chr{i}", "test", "A"): np.array([0.1, 0.2])
+            for i in range(11)
+        }
+        with pytest.warns(UserWarning, match="colors repeat"):
+            MethPlot().plot_dropout_ecdf(
+                fracs, [k[0] for k in fracs], show=False
+            )
+        plt.close("all")
+
+    def test_10_lines_does_not_warn(self):
+        fracs = {
+            (f"chr{i}", "test", "A"): np.array([0.1, 0.2])
+            for i in range(10)
+        }
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            MethPlot().plot_dropout_ecdf(
+                fracs, [k[0] for k in fracs], show=False
+            )
+        plt.close("all")
+
+    def test_split_by_chrom_many_chroms_does_not_warn(self):
+        fracs = {
+            (f"chr{i}", "test", "A"): np.array([0.1, 0.2])
+            for i in range(11)
+        }
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            MethPlot().plot_dropout_ecdf(
+                fracs, [k[0] for k in fracs], split_by="chrom", show=False
+            )
+        plt.close("all")
+
+    def test_invalid_split_by_raises(self, tmp_path):
+        exp = _two_chrom_exp(tmp_path)
+        fracs = exp.dropout_fractions()
+
+        with pytest.raises(ValueError):
+            MethPlot().plot_dropout_ecdf(
+                fracs, "chr1", split_by="bogus", show=False
+            )
+        exp.close()
+
     def test_curve_is_monotonic_and_bounded(self, tmp_path):
         exp = _dropout_fractions_exp(tmp_path)
         fracs = exp.dropout_fractions()

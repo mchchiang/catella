@@ -445,7 +445,7 @@ class TestPlotDropoutEcdf:
         assert result.exit_code == 0, result.output
         assert out_file.exists()
 
-    def test_multi_chroms_and_no_pooled(self, tmp_path):
+    def test_multi_chroms_no_pooled_and_split_by(self, tmp_path):
         rows = [("m0", i, "chr1", "+", 0.5, "a") for i in range(4)] + [
             ("m1", i, "chr2", "+", 0.5, "a") for i in range(2)
         ]
@@ -479,6 +479,8 @@ class TestPlotDropoutEcdf:
                 str(raw_file),
                 "chr1,chr2",
                 "--no-pooled",
+                "--split-by",
+                "channel",
                 "--out-file",
                 str(out_file),
                 "--no-show",

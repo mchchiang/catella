@@ -418,6 +418,10 @@ def plot_dropout_ecdf(
     pooled: Annotated[
         bool, typer.Option(help="Plot the pooled 'all' channel")
     ] = True,
+    split_by: Annotated[
+        str | None,
+        typer.Option(help="Split into panels by chrom, source, or channel"),
+    ] = None,
     out_file: Annotated[
         Path | None,
         typer.Option(
@@ -437,6 +441,7 @@ def plot_dropout_ecdf(
         channels=channels,
         unmapped_strand=unmapped_strand,
         pooled=pooled,
+        split_by=split_by,
         out_file=out_file,
         show=show,
     )

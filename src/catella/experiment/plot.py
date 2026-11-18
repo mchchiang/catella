@@ -12,6 +12,10 @@ from scipy.special import logit
 
 from catella import utils
 from catella._plotting import _leaf_order, _warn_if_large
+from catella._warnings import _warn
+
+# Position of each plot_dropout_ecdf split_by field in a dropout key.
+_ECDF_FIELDS = {"chrom": 0, "source": 1, "channel": 2}
 
 
 @dataclass(slots=True, kw_only=True)
@@ -358,6 +362,7 @@ class MethPlot:
         *,
         which: str | None = None,
         pooled: bool = True,
+        split_by: str | None = None,
         out_file: str | Path | None = None,
         show: bool = True,
     ):
@@ -368,7 +373,8 @@ class MethPlot:
         threshold `t` the plotted value is
         `100 * mean(dropout_frac <= t)` over that group's molecules.
         The legend shows only the key fields that differ between
-        lines; fields shared by all lines go in the title.
+        lines (other than `split_by`); fields shared by all lines go in
+        the title.
 
         Parameters
         ----------
@@ -381,6 +387,9 @@ class MethPlot:
             source present.
         pooled : bool, default True
             Whether to plot the pooled `channel="all"` groups.
+        split_by : {"chrom", "source", "channel"} or None, default None
+            Key field to split into panels, one per value, on shared
+            axes (at most 4 per row). None draws a single panel.
         out_file : str or pathlib.Path, optional
             Path to save the generated figure. Directories are
             created if they do not exist.
@@ -390,12 +399,18 @@ class MethPlot:
         Raises
         ------
         ValueError
-            If `chroms` is empty, or some chromosome in `chroms` has
-            no matching entries in `dropout_fractions`.
+            If `chroms` is empty, `split_by` is invalid, or some
+            chromosome in `chroms` has no matching entries in
+            `dropout_fractions`.
         """
         chroms = [chroms] if isinstance(chroms, str) else list(chroms)
         if not chroms:
             raise ValueError("chroms must not be empty")
+        if split_by is not None and split_by not in _ECDF_FIELDS:
+            raise ValueError(
+                f"split_by must be one of {list(_ECDF_FIELDS)} or None, "
+                f"got {split_by!r}"
+            )
         keys = sorted(
             (
                 key
@@ -404,7 +419,7 @@ class MethPlot:
                 and (which is None or key[1] == which)
                 and (pooled or key[2] != "all")
             ),
-            key=lambda k: (chroms.index(k[0]), k[1], k[2]),
+            key=lambda k: chroms.index(k[0]),
         )
         missing = [c for c in chroms if not any(k[0] == c for k in keys)]
         if missing:
@@ -412,23 +427,78 @@ class MethPlot:
                 f"no entries for chroms {missing} with which={which!r} "
                 f"and pooled={pooled} in dropout_fractions"
             )
+        f = None if split_by is None else _ECDF_FIELDS[split_by]
         varying = [i for i in range(3) if len({k[i] for k in keys}) > 1]
-        shared = [i for i in range(3) if i not in varying]
+        legend_idx = [i for i in varying if i != f]
+        title = "/".join(
+            keys[0][i] for i in range(3) if i not in varying and i != f
+        )
+        if f is None:
+            panels = [(title, keys)]
+        else:
+            values = list(dict.fromkeys(k[f] for k in keys))
+            panels = [(v, [k for k in keys if k[f] == v]) for v in values]
 
-        fig, ax = plt.subplots()
-        for key in keys:
-            frac = np.sort(dropout_fractions[key])
-            n = len(frac)
-            ecdf_pct = 100 * np.arange(1, n + 1) / n
-            label = "/".join(key[i] for i in varying)
-            ax.step(frac, ecdf_pct, where="post", label=label)
+        ncols = min(len(panels), 4)
+        nrows = -(-len(panels) // ncols)
+        width, height = plt.rcParams["figure.figsize"]
+        scale = 1.0 if f is None else 0.6
+        # Room for suptitle and shared x label, so one row is not squashed.
+        extra = 0.0 if f is None else 1.2
+        fig, axes = plt.subplots(
+            nrows,
+            ncols,
+            sharex=True,
+            sharey=True,
+            squeeze=False,
+            figsize=(
+                width * scale * ncols,
+                height * scale * nrows + extra,
+            ),
+        )
+        labels = list(
+            dict.fromkeys("/".join(k[i] for i in legend_idx) for k in keys)
+        )
+        if len(labels) > 10:
+            _warn(
+                f"plotting {len(labels)} lines per panel; colors repeat "
+                "after 10, so use split_by or fewer chroms to keep lines "
+                "distinguishable"
+            )
+        for ax, (panel_title, panel_keys) in zip(axes.flat, panels):
+            for key in panel_keys:
+                frac = np.sort(dropout_fractions[key])
+                n = len(frac)
+                ecdf_pct = 100 * np.arange(1, n + 1) / n
+                label = "/".join(key[i] for i in legend_idx)
+                color = f"C{labels.index(label) % 10}"
+                ax.step(
+                    frac, ecdf_pct, where="post", label=label, color=color
+                )
+            ax.set_title(panel_title)
+        for idx in range(len(panels), nrows * ncols):
+            axes.flat[idx].set_visible(False)
+            axes.flat[idx - ncols].tick_params(labelbottom=True)
 
-        ax.set_title("/".join(keys[0][i] for i in shared))
-        ax.set_xlabel("Dropout rate")
-        ax.set_ylabel("ECDF [%]")
-        if varying:
-            ax.legend(
-                loc="center left", bbox_to_anchor=(1, 0.5), frameon=False
+        if f is None:
+            axes[0, 0].set_xlabel("Dropout rate")
+            axes[0, 0].set_ylabel("ECDF [%]")
+        else:
+            fig.supxlabel("Dropout rate")
+            fig.supylabel("ECDF [%]")
+            if title:
+                fig.suptitle(title)
+        if legend_idx:
+            handles = {}
+            for ax in axes.flat[: len(panels)]:
+                for h, lab in zip(*ax.get_legend_handles_labels()):
+                    handles.setdefault(lab, h)
+            axes[0, -1].legend(
+                [handles[lab] for lab in labels],
+                labels,
+                loc="center left",
+                bbox_to_anchor=(1, 0.5),
+                frameon=False,
             )
         fig.tight_layout()
 

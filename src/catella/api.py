@@ -773,6 +773,7 @@ def plot_dropout_ecdf(
     channels: str | list | None = None,
     unmapped_strand: str = "union",
     pooled: bool = True,
+    split_by: str | None = None,
     out_file: str | Path | None = None,
     show: bool = True,
 ):
@@ -799,6 +800,9 @@ def plot_dropout_ecdf(
         How to evaluate unmapped ('.') strand molecules.
     pooled : bool, default True
         Whether to plot the pooled `channel="all"` groups.
+    split_by : {"chrom", "source", "channel"} or None, default None
+        Key field to split into panels, one per value. None draws a
+        single panel.
     out_file : str or pathlib.Path, optional
         Path to save the generated figure. Directories are created if
         they do not exist.
@@ -812,7 +816,8 @@ def plot_dropout_ecdf(
         `unmapped_strand` is invalid, a source is missing for some
         chromosome, or `refseq` is missing (from
         `exp.dropout_fractions`); or if `chroms` holds an unknown
-        chromosome or one with no matching entries in the result.
+        chromosome or one with no matching entries in the result, or
+        `split_by` is invalid.
     """
     chroms = [chroms] if isinstance(chroms, str) else list(chroms)
     fractions = exp.dropout_fractions(
@@ -827,6 +832,7 @@ def plot_dropout_ecdf(
         chroms,
         which=which,
         pooled=pooled,
+        split_by=split_by,
         out_file=out_file,
         show=show,
     )

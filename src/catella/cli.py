@@ -407,9 +407,6 @@ def plot_dropout_ecdf(
     unmapped_strand: Annotated[
         str, typer.Option(help="union, drop, +, or -")
     ] = "union",
-    source: Annotated[
-        str | None, typer.Option(help="Restrict the plot to this source")
-    ] = None,
     out_file: Annotated[
         Path | None,
         typer.Option(
@@ -428,7 +425,6 @@ def plot_dropout_ecdf(
         which=which,
         mtase=mtase,
         unmapped_strand=unmapped_strand,
-        source=source,
         out_file=out_file,
         show=show,
     )

@@ -771,7 +771,6 @@ def plot_dropout_ecdf(
     which: str | None = None,
     mtase: list | None = None,
     unmapped_strand: str = "union",
-    source: str | None = None,
     out_file: str | Path | None = None,
     show: bool = True,
 ):
@@ -790,16 +789,13 @@ def plot_dropout_ecdf(
     chrom : str
         Chromosome to plot.
     which : {"test", "meth", "unmeth"} or None, default None
-        Source(s) to evaluate. None evaluates every source present
-        for each chromosome.
+        Source to evaluate and plot. None uses every source present
+        for `chrom`.
     mtase : list of str, optional
         Subset of `exp.mtase` labels to evaluate. None uses all of
         them.
     unmapped_strand : {"union", "drop", "+", "-"}, default "union"
         How to evaluate unmapped ('.') strand molecules.
-    source : {"test", "meth", "unmeth"}, optional
-        Restrict the plot to this source. None plots every source
-        present for `chrom`.
     out_file : str or pathlib.Path, optional
         Path to save the generated figure. Directories are created if
         they do not exist.
@@ -812,9 +808,8 @@ def plot_dropout_ecdf(
         If `mtase` is unset, contains an unknown label,
         `unmapped_strand` is invalid, a source is missing for some
         chromosome, or `refseq` is missing (from
-        `exp.dropout_fractions`); or if `chrom` (or `source`, when
-        given) has no matching entries in the result (from
-        `MethPlot.plot_dropout_ecdf`).
+        `exp.dropout_fractions`); or if `chrom` has no matching
+        entries in the result (from `MethPlot.plot_dropout_ecdf`).
     """
     fractions = exp.dropout_fractions(
         which=which,
@@ -824,7 +819,7 @@ def plot_dropout_ecdf(
     )
     methplot = MethPlot()
     methplot.plot_dropout_ecdf(
-        fractions, chrom, which=source, out_file=out_file, show=show
+        fractions, chrom, which=which, out_file=out_file, show=show
     )
 
 

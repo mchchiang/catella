@@ -270,6 +270,28 @@ class TestFilterDropout:
         assert "test_dropout_mask" in exp.analysis["chr1"]
 
 
+class TestPlotDropoutEcdf:
+    def _make(self):
+        nbp = 10
+        return _make_experiment(
+            nmol=6, nbp=nbp, seed=3, refseq="A" * nbp, mtase=("A",)
+        )
+
+    def test_which_writes_figure(self, tmp_path):
+        out_file = tmp_path / "ecdf.png"
+        catella.plot_dropout_ecdf(
+            self._make(), chrom="chr1", which="test", out_file=out_file,
+            show=False,
+        )
+        assert out_file.exists()
+
+    def test_missing_which_source_raises(self):
+        with pytest.raises(ValueError):
+            catella.plot_dropout_ecdf(
+                self._make(), chrom="chr1", which="meth", show=False
+            )
+
+
 class TestQC:
     def _make(self):
         nbp = 10

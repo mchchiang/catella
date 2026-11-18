@@ -775,8 +775,8 @@ class MethPrintAnalysis:
 
         Computes a hierarchical-clustering linkage of the molecules of a
         dense methylation signal, per chromosome. Nothing is reordered or
-        copied: pass the linkage as `link_mat` to `plot_meth_prob` or
-        `plot_meth_energy`, which put their rows in its leaf order. By
+        copied: pass the linkage as `link_mat` to `plot_meth`, which
+        puts its rows in its leaf order. By
         default, clusters the smoothed test signal if `smooth` has been
         run, or the raw test signal otherwise -- so this works whether or
         not `smooth` has been called first.

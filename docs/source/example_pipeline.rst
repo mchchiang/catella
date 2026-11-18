@@ -38,8 +38,8 @@ commentary. See :doc:`tutorials/tut01_meth_prob` and
    for which in ("test", "unmeth", "meth"):
        link = catella.sort_by_linkage(exp=exp_data, raw_which=which,
                                       fill_nan=0.0)
-       catella.plot_meth_prob(exp=exp_data, chrom="601", raw_which=which,
-                              link_mat=link["601"], vmin=0.0, vmax=1.0)
+       catella.plot_meth(exp=exp_data, chrom="601", raw_which=which,
+                         link_mat=link["601"], vmin=0.0, vmax=1.0)
    catella.plot_dropout_ecdf(exp=exp_data, chroms="601")
 
    # Model-based normalized methylation probability
@@ -48,9 +48,8 @@ commentary. See :doc:`tutorials/tut01_meth_prob` and
    link = catella.sort_by_linkage(exp=exp_data, data_name="meth_prob_model",
                                   fill_nan=0.0)
    meth_prob = exp_data.analysis["601"]["meth_prob_model"]
-   catella.plot_meth_prob(meth_prob, link_mat=link["601"],
-                          vmin=0.0, vmax=1.0)
-   catella.plot_meth_energy(meth_prob, link_mat=link["601"])
+   catella.plot_meth(meth_prob, link_mat=link["601"], vmin=0.0, vmax=1.0)
+   catella.plot_meth(meth_prob, value="energy", link_mat=link["601"])
 
    # Optional: center-align the left-aligned probability windows
    lnuc = 147
@@ -66,12 +65,12 @@ commentary. See :doc:`tutorials/tut01_meth_prob` and
    link = catella.sort_by_linkage(exp=exp_data, chroms="601",
                                   data_name="meth_prob_empirical",
                                   fill_nan=0.0)
-   catella.plot_meth_prob(
+   catella.plot_meth(
        data=exp_data.analysis["601"]["meth_prob_empirical"],
        link_mat=link["601"], vmin=0.0, vmax=1.0)
-   catella.plot_meth_energy(
+   catella.plot_meth(
        data=exp_data.analysis["601"]["meth_prob_empirical"],
-       link_mat=link["601"])
+       value="energy", link_mat=link["601"])
 
    # Save processed experiment data
    exp_h5 = exp_dir/"analysis.h5"

@@ -11,7 +11,12 @@ from matplotlib.colors import Normalize
 from scipy.special import logit
 
 from catella import utils
-from catella._plotting import _leaf_order, _warn_if_large
+from catella._plotting import (
+    _finish,
+    _leaf_order,
+    _panel_grid,
+    _warn_if_large,
+)
 from catella._warnings import _warn
 
 # Position of each plot_dropout_ecdf split_by field in a dropout key.
@@ -206,66 +211,71 @@ class MethPlot:
                 "(utils.downsample)",
             )
 
-            matrix = np.asarray(data)
-            nrow, ncol = matrix.shape
-            norm = Normalize(vmin=vmin, vmax=vmax)
-            cmap_obj = plt.get_cmap(cmap if cmap is not None else self.cmap)
-            cmap_obj = cmap_obj.with_extremes(bad=self.nan_color)
-
-            if link_mat is not None:
-                fig, ax = plt.subplots(
-                    ncols=3, gridspec_kw={"width_ratios": [5, 1, 0.25]}
-                )
-                hm_ax, dend_ax, cbar_ax = ax
-            else:
-                fig, ax = plt.subplots(
-                    ncols=2, gridspec_kw={"width_ratios": [20, 1]}
-                )
-                hm_ax, cbar_ax = ax
-
-            im = hm_ax.imshow(
-                matrix,
-                cmap=cmap_obj,
-                norm=norm,
-                aspect="auto",
-                origin="lower",
-                interpolation="none",
-                extent=[0, ncol, 0, nrow],
-            )
-            hm_ax.set_xlabel("Position [bp]")
             sorted_rows = link_mat is not None
-            hm_ax.set_ylabel(
-                "Row (leaf order)" if sorted_rows else "Molecule index"
+            fig, (panel,) = _panel_grid(
+                1,
+                [5, 1, 0.25] if sorted_rows else [20, 1],
+                dendrogram=sorted_rows,
+                eseq=False,
             )
-
-            if link_mat is not None:
-                sch.dendrogram(
-                    link_mat,
-                    orientation="right",
-                    ax=dend_ax,
-                    no_labels=True,
-                    link_color_func=lambda x: "black",
-                )
-                dend_ax.axis("off")
-
-            # cbar_ax is always the rightmost column, so the colorbar
-            # appears to the right of the dendrogram when one is shown.
-            cbar = fig.colorbar(im, cax=cbar_ax)
-            cbar.set_label(cbar_label, rotation=270, labelpad=15)
-
-            fig.tight_layout()
-
-            if show:
-                plt.show()
-
-            if out_file is not None:
-                out_file = Path(out_file)
-                out_dir = out_file.parents[0]
-                out_dir.mkdir(exist_ok=True, parents=True)
-                fig.savefig(out_file)
+            self._draw_meth(
+                panel,
+                np.asarray(data),
+                vmin=vmin,
+                vmax=vmax,
+                cmap=cmap,
+                cbar_label=cbar_label,
+                link_mat=link_mat,
+            )
+            _finish(fig, show, out_file)
         finally:
             if raw_data is not None:
                 raw_data.close()
+
+    def _draw_meth(
+        self, panel, matrix, *, vmin, vmax, cmap, cbar_label, link_mat
+    ):
+        """
+        Draw a methylation heatmap into the axes of `panel` (from
+        `_panel_grid`), with a dendrogram if `link_mat` is given (rows
+        already in its leaf order) and a colorbar in the last column.
+        """
+        hm_ax, cbar_ax = panel["hm_ax"], panel["side_ax"]
+        nrow, ncol = matrix.shape
+        norm = Normalize(vmin=vmin, vmax=vmax)
+        cmap_obj = plt.get_cmap(cmap if cmap is not None else self.cmap)
+        cmap_obj = cmap_obj.with_extremes(bad=self.nan_color)
+
+        im = hm_ax.imshow(
+            matrix,
+            cmap=cmap_obj,
+            norm=norm,
+            aspect="auto",
+            origin="lower",
+            interpolation="none",
+            extent=[0, ncol, 0, nrow],
+        )
+        hm_ax.set_xlabel("Position [bp]")
+        sorted_rows = link_mat is not None
+        hm_ax.set_ylabel(
+            "Row (leaf order)" if sorted_rows else "Molecule index"
+        )
+
+        if sorted_rows:
+            dend_ax = panel["dend_ax"]
+            sch.dendrogram(
+                link_mat,
+                orientation="right",
+                ax=dend_ax,
+                no_labels=True,
+                link_color_func=lambda x: "black",
+            )
+            dend_ax.axis("off")
+
+        # cbar_ax is always the rightmost column, so the colorbar
+        # appears to the right of the dendrogram when one is shown.
+        cbar = hm_ax.figure.colorbar(im, cax=cbar_ax)
+        cbar.set_label(cbar_label, rotation=270, labelpad=15)
 
     @_apply_style
     def plot_meth_energy(

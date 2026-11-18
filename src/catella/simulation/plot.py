@@ -14,7 +14,12 @@ from matplotlib.colors import Normalize
 from matplotlib.patches import Patch
 from matplotlib.ticker import MaxNLocator
 
-from catella._plotting import _leaf_order, _warn_if_large
+from catella._plotting import (
+    _finish,
+    _leaf_order,
+    _panel_grid,
+    _warn_if_large,
+)
 from catella.mapping import CoordsTransform
 from catella.simulation.analysis import NucFiberMap, SimAnalysis
 from catella.simulation.results import SimDataset
@@ -506,7 +511,14 @@ class SimPlot:
             invert_y = False
 
         eseq = dataset.eseq[chrom][mol, :] if plot_eseq else None
-        fig, hm_ax = self._draw_footprints(
+        fig, (panel,) = self._footprint_grid(
+            1,
+            binary=matrix.dtype == np.int8,
+            dendrogram=False,
+            eseq=plot_eseq,
+        )
+        self._draw_footprints(
+            panel,
             dataset,
             matrix,
             extent_y=extent_y,
@@ -518,16 +530,8 @@ class SimPlot:
             eseq=eseq,
             eseq_label=r"$E_{\text{seq}}$ [$k_BT$]",
         )
-        hm_ax.set_title(f"Molecule {mol} of {chrom}", pad=12)
-        fig.tight_layout()
-
-        if show:
-            plt.show()
-
-        if out_file is not None:
-            out_file = Path(out_file)
-            out_file.parents[0].mkdir(exist_ok=True, parents=True)
-            fig.savefig(out_file)
+        panel["hm_ax"].set_title(f"Molecule {mol} of {chrom}", pad=12)
+        _finish(fig, show, out_file)
 
     @_apply_style
     def plot_config(
@@ -630,6 +634,65 @@ class SimPlot:
         xpow = int(self._log10(xscale, "xscale"))
         _check_downsample(max_rows, downsample_how)
         _check_eseq(dataset, plot_eseq)
+        data = self._config_panel(
+            dataset,
+            chrom,
+            name=name,
+            mols=mols,
+            run=run,
+            time=time,
+            max_rows=max_rows,
+            downsample_how=downsample_how,
+            plot_eseq=plot_eseq,
+            link_mat=link_mat,
+        )
+        fig, (panel,) = self._footprint_grid(
+            1,
+            binary=data["matrix"].dtype == np.int8,
+            dendrogram=data["link_mat"] is not None,
+            eseq=plot_eseq,
+        )
+        self._draw_footprints(
+            panel,
+            dataset,
+            data["matrix"],
+            extent_y=None,
+            ylabel=data["ylabel"],
+            invert_y=False,
+            xpow=xpow,
+            xscale=xscale,
+            cmap=cmap,
+            eseq=data["eseq"],
+            eseq_label=r"$\langle E_{\text{seq}} \rangle$ [$k_BT$]",
+            link_mat=data["link_mat"],
+        )
+        panel["hm_ax"].set_title(f"Configurations for {chrom}", pad=12)
+        _finish(fig, show, out_file)
+
+    def _config_panel(
+        self,
+        dataset,
+        chrom,
+        *,
+        name,
+        mols,
+        run,
+        time,
+        max_rows,
+        downsample_how,
+        plot_eseq,
+        link_mat,
+    ):
+        """
+        Read the footprints of one chromosome for `plot_config`.
+
+        Returns
+        -------
+        dict
+            "matrix" (footprints, merged to `max_rows`), "eseq" (mean
+            energy of the shown molecules, or None), "ylabel", and
+            "link_mat" (as a float array, or None).
+        """
         mol_ids = (
             list(range(dataset.nmol[chrom]))
             if mols is None
@@ -658,36 +721,40 @@ class SimPlot:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", category=RuntimeWarning)
                 eseq = np.nanmean(np.asarray(dataset.eseq[chrom])[mol_ids], 0)
-        fig, hm_ax = self._draw_footprints(
-            dataset,
-            matrix,
-            extent_y=None,
-            ylabel=(
-                _rows_label("molecule", ntotal, matrix.shape[0])
-                if link_mat is None
-                else "Row (leaf order)"
-            ),
-            invert_y=False,
-            xpow=xpow,
-            xscale=xscale,
-            cmap=cmap,
-            eseq=eseq,
-            eseq_label=r"$\langle E_{\text{seq}} \rangle$ [$k_BT$]",
-            link_mat=link_mat,
+        ylabel = (
+            _rows_label("molecule", ntotal, matrix.shape[0])
+            if link_mat is None
+            else "Row (leaf order)"
         )
-        hm_ax.set_title(f"Configurations for {chrom}", pad=12)
-        fig.tight_layout()
+        return {
+            "matrix": matrix,
+            "eseq": eseq,
+            "ylabel": ylabel,
+            "link_mat": link_mat,
+        }
 
-        if show:
-            plt.show()
+    def _footprint_grid(self, nchrom, *, binary, dendrogram, eseq):
+        """
+        Create the figure for footprint panels (see `_panel_grid`).
 
-        if out_file is not None:
-            out_file = Path(out_file)
-            out_file.parents[0].mkdir(exist_ok=True, parents=True)
-            fig.savefig(out_file)
+        Columns: heatmap, [dendrogram], legend (`binary`) or colorbar.
+        """
+        if not dendrogram:
+            width_ratios = [4, 1] if binary else [20, 1]
+        else:
+            width_ratios = [4, 0.8, 1] if binary else [5, 1, 0.25]
+        return _panel_grid(
+            nchrom,
+            width_ratios,
+            dendrogram=dendrogram,
+            eseq=eseq,
+            scale_w=1.2 if binary else 1.0,
+            scale_h=1.25 if eseq else 1.0,
+        )
 
     def _draw_footprints(
         self,
+        panel,
         dataset,
         matrix,
         *,
@@ -702,54 +769,30 @@ class SimPlot:
         link_mat=None,
     ):
         """
-        Draw a footprint matrix (1 covered, 0 linker, -1 or nan no data),
-        with an optional dendrogram on the right and energy panel below.
+        Draw a footprint matrix (1 covered, 0 linker, -1 or nan no data)
+        into the axes of `panel` (from `_footprint_grid`), with an
+        optional dendrogram on the right and energy row below.
 
         An int8 matrix (0/1 calls) gets a legend; a float matrix (merged
         with "mean") gets a colorbar of the covered share. If `extent_y`
         is None, the y-axis counts rows: row i is centered on y = i, with
         integer ticks. `link_mat` (rows already in its leaf order) is
         drawn as a dendrogram between the heatmap and the legend.
-
-        Returns
-        -------
-        tuple
-            The figure and the heatmap axis.
         """
         nbp = matrix.shape[1]
         binary = matrix.dtype == np.int8
-        # Columns: heatmap, [dendrogram], legend or colorbar
-        if link_mat is None:
-            width_ratios = [4, 1] if binary else [20, 1]
-        else:
-            width_ratios = [4, 0.8, 1] if binary else [5, 1, 0.25]
-        ncols = len(width_ratios)
-        gridspec_kw = {"width_ratios": width_ratios}
-        nrows = 1 if eseq is None else 2
-        if eseq is not None:
-            gridspec_kw["height_ratios"] = [4, 1]
-        fig, ax = plt.subplots(
-            nrows=nrows, ncols=ncols, gridspec_kw=gridspec_kw, squeeze=False
-        )
-        w, h = fig.get_size_inches()
-        fig.set_size_inches(
-            w * (1.2 if binary else 1.0), h * (1.0 if eseq is None else 1.25)
-        )
-        hm_ax, side_ax = ax[0, 0], ax[0, -1]
-        seq_ax = None
-        if eseq is not None:
-            seq_ax = ax[1, 0]
-            for extra in ax[1, 1:]:
-                extra.axis("off")
+        hm_ax, side_ax = panel["hm_ax"], panel["side_ax"]
+        seq_ax = panel["seq_ax"]
+        fig = hm_ax.figure
         if link_mat is not None:
             sch.dendrogram(
                 link_mat,
                 orientation="right",
-                ax=ax[0, 1],
+                ax=panel["dend_ax"],
                 no_labels=True,
                 link_color_func=lambda x: "black",
             )
-            ax[0, 1].axis("off")
+            panel["dend_ax"].axis("off")
 
         # -1 (no data) is below vmin; nan comes from "mean" merging
         cmap_obj = plt.get_cmap(cmap if cmap is not None else self.cmap)
@@ -810,7 +853,6 @@ class SimPlot:
 
         btm_ax = seq_ax if eseq is not None else hm_ax
         btm_ax.set_xlabel(rf"Position $x$ [$10^{{{xpow}}}$ bp]")
-        return fig, hm_ax
 
     @_apply_style
     def plot_occup(
@@ -886,6 +928,55 @@ class SimPlot:
             memory; pass `mols` to plot a subset.
         """
         xpow = int(self._log10(xscale, "xscale"))
+        sort_data = link_mat is not None
+        # The rightmost column is a dedicated, narrow slot for the
+        # colorbar, so it appears to the right of the dendrogram (when
+        # shown) instead of shrinking hm_ax.
+        fig, (panel,) = _panel_grid(
+            1,
+            [5, 1, 0.25] if sort_data else [20, 1],
+            dendrogram=sort_data,
+            eseq=plot_eseq,
+            scale_w=1.25 if plot_eseq else 1.0,
+            scale_h=1.25 if plot_eseq else 1.0,
+        )
+        self._draw_occup(
+            panel,
+            dataset,
+            chrom,
+            time=time,
+            occup_name=occup_name,
+            mols=mols,
+            xscale=xscale,
+            xpow=xpow,
+            cmap=cmap,
+            plot_eseq=plot_eseq,
+            link_mat=link_mat,
+        )
+        _finish(fig, show, out_file)
+
+    def _draw_occup(
+        self,
+        panel,
+        dataset,
+        chrom,
+        *,
+        time,
+        occup_name,
+        mols,
+        xscale,
+        xpow,
+        cmap,
+        plot_eseq,
+        link_mat,
+    ):
+        """
+        Draw the occupancy of one chromosome into the axes of `panel`
+        (from `_panel_grid`), computing it first if missing.
+        """
+        hm_ax, cbar_ax = panel["hm_ax"], panel["side_ax"]
+        dend_ax, seq_ax = panel["dend_ax"], panel["seq_ax"]
+        fig = hm_ax.figure
 
         # Retrieve the occupancy data
         if occup_name not in dataset.analysis[chrom]:
@@ -914,37 +1005,6 @@ class SimPlot:
         if order is not None:
             occup = np.asarray(occup)[order]
         sort_data = link_mat is not None
-
-        # Set up the figure. The rightmost column is a dedicated,
-        # narrow slot for the colorbar, so it appears to the right of
-        # the dendrogram (when shown) instead of shrinking hm_ax.
-        ncols = 3 if sort_data else 2
-        width_ratios = [5, 1, 0.25] if sort_data else [20, 1]
-        gridspec_kw = {"width_ratios": width_ratios}
-        if plot_eseq:
-            nrows = 2
-            gridspec_kw["height_ratios"] = [4, 1]
-            fig, ax = plt.subplots(
-                nrows=nrows, ncols=ncols, gridspec_kw=gridspec_kw
-            )
-            w, h = fig.get_size_inches()
-            fig.set_size_inches(w * 1.25, h * 1.25)
-            hm_ax = ax[0, 0]
-            dend_ax = ax[0, 1] if sort_data else None
-            cbar_ax = ax[0, 2] if sort_data else ax[0, 1]
-            seq_ax = ax[1, 0]
-            ax[1, 1].axis("off")
-            if sort_data:
-                ax[1, 2].axis("off")
-        else:
-            nrows = 1
-            fig, ax = plt.subplots(
-                nrows=nrows, ncols=ncols, gridspec_kw=gridspec_kw
-            )
-            hm_ax = ax[0]
-            dend_ax = ax[1] if sort_data else None
-            cbar_ax = ax[2] if sort_data else ax[1]
-            seq_ax = None
 
         # Plot the nucleosome position as a heat map
         nbp = dataset.nbp[chrom]
@@ -1005,13 +1065,3 @@ class SimPlot:
         btm_ax.set_xlabel(rf"Position $x$ [{xpow_str} bp]")
 
         hm_ax.set_title(f"Occupancy Profile for {chrom}", pad=12)
-        fig.tight_layout()
-
-        if show:
-            plt.show()
-
-        if out_file is not None:
-            out_file = Path(out_file)
-            out_dir = out_file.parents[0]
-            out_dir.mkdir(exist_ok=True, parents=True)
-            fig.savefig(out_file)

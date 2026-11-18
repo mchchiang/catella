@@ -408,7 +408,7 @@ class TestSortByConfig:
         )
         SimPlot().plot_config(
             dataset,
-            chrom="chr1",
+            chroms="chr1",
             name="bm",
             link_mat=link_mats["chr1"],
             show=False,

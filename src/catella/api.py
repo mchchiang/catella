@@ -1527,20 +1527,20 @@ def plot_meth(
     """
     if value not in ("prob", "energy"):
         raise ValueError(f'value must be "prob" or "energy", got {value!r}')
-    kwargs = dict(
-        exp=exp,
-        chroms=chroms,
-        data_name=data_name,
-        max_rows=max_rows,
-        downsample_how=downsample_how,
-        vmin=vmin,
-        vmax=vmax,
-        cmap=cmap,
-        out_file=out_file,
-        link_mat=link_mat,
-        sharex=sharex,
-        show=show,
-    )
+    kwargs = {
+        "exp": exp,
+        "chroms": chroms,
+        "data_name": data_name,
+        "max_rows": max_rows,
+        "downsample_how": downsample_how,
+        "vmin": vmin,
+        "vmax": vmax,
+        "cmap": cmap,
+        "out_file": out_file,
+        "link_mat": link_mat,
+        "sharex": sharex,
+        "show": show,
+    }
     if cbar_label is not None:
         kwargs["cbar_label"] = cbar_label
     methplot = MethPlot()

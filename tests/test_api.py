@@ -918,6 +918,22 @@ class TestPlotOccup:
         )
         assert out_file.exists()
 
+    @pytest.mark.filterwarnings(
+        "ignore:__array__ implementation doesn't accept a copy keyword"
+        ":DeprecationWarning"
+    )
+    def test_plot_mean(self, tmp_path):
+        dataset = _make_dataset(tmp_path)
+        catella.compute_occup(dataset)
+        catella.plot_occup(dataset, chroms="chr1", plot_mean=True, show=False)
+        occup = dataset.analysis["chr1"]["occup"].to_numpy()
+        mean_ax = next(
+            ax for ax in plt.gcf().axes if ax.get_ylabel() == "Mean"
+        )
+        np.testing.assert_allclose(
+            mean_ax.lines[0].get_ydata(), occup.mean(axis=0)
+        )
+
 
 class TestPlotMeth:
     def _data(self):

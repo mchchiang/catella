@@ -164,7 +164,13 @@ def _leaf_order(link_mat, nrow, mols=None):
 
 
 def _panel_grid(
-    nchrom, width_ratios, *, dendrogram, eseq, scale_w=1.0, scale_h=1.0
+    nchrom,
+    width_ratios,
+    *,
+    dendrogram,
+    extra_rows=(),
+    scale_w=1.0,
+    scale_h=1.0,
 ):
     """
     Create a figure with one heatmap panel per chromosome.
@@ -185,8 +191,9 @@ def _panel_grid(
         optional dendrogram) followed by that of the colorbar or legend.
     dendrogram : bool
         Whether the second column of a panel holds a dendrogram.
-    eseq : bool
-        Whether each panel has an energy row below its heatmap.
+    extra_rows : sequence of {"mean", "eseq"}, default ()
+        Rows below each heatmap, top to bottom: "mean" for the mean
+        across molecules, "eseq" for the sequence energy.
     scale_w, scale_h : float, default 1.0
         Factors applied to the default figure width and height, per
         panel column and per panel row.
@@ -198,15 +205,16 @@ def _panel_grid(
     panels : list of dict
         Per panel, the axes "hm_ax", "dend_ax" (None without a
         dendrogram), "side_ax" (the top-right cell of the last column,
-        the same for all panels), "seq_ax" (None without an energy
-        row), and its grid column "col".
+        the same for all panels), "mean_ax" and "seq_ax" (None without
+        that row), and its grid column "col".
     """
     if nchrom > _MAX_PANELS:
         _warn(
             f"plotting {nchrom} chromosomes in one figure; consider fewer "
             "chroms, or one figure per chrom with out_file"
         )
-    nsub = 2 if eseq else 1
+    extra_rows = list(extra_rows)
+    nsub = 1 + len(extra_rows)
     ncols = min(nchrom, _PANELS_PER_ROW)
     nrows = -(-nchrom // ncols)
     panel_ratios = list(width_ratios[:-1])
@@ -217,7 +225,9 @@ def _panel_grid(
         ncols=width * ncols + 1,
         gridspec_kw={
             "width_ratios": panel_ratios * ncols + [width_ratios[-1]],
-            "height_ratios": [4, 1] * nrows if eseq else None,
+            "height_ratios": (
+                ([4] + [1] * len(extra_rows)) * nrows if extra_rows else None
+            ),
         },
         squeeze=False,
         figsize=(w * scale_w * ncols, h * scale_h * nrows),
@@ -229,42 +239,63 @@ def _panel_grid(
     panels = []
     for i in range(nrows * ncols):
         r, c = divmod(i, ncols)
-        cells = ax[r * nsub, c * width : (c + 1) * width]
-        seq_cells = (
-            ax[r * nsub + 1, c * width : (c + 1) * width] if eseq else []
-        )
+        cols = slice(c * width, (c + 1) * width)
+        cells = ax[r * nsub, cols]
+        extra = {
+            name: ax[r * nsub + 1 + k, cols]
+            for k, name in enumerate(extra_rows)
+        }
         if i >= nchrom:
-            for cell in [*cells, *seq_cells]:
+            for cell in [*cells, *(x for row in extra.values() for x in row)]:
                 cell.set_visible(False)
             continue
         panel = {
             "hm_ax": cells[0],
             "dend_ax": cells[1] if dendrogram else None,
             "side_ax": side_ax,
-            "seq_ax": seq_cells[0] if eseq else None,
+            "mean_ax": extra["mean"][0] if "mean" in extra else None,
+            "seq_ax": extra["eseq"][0] if "eseq" in extra else None,
             "col": c,
         }
-        for extra in seq_cells[1:]:
-            extra.axis("off")
+        for row in extra.values():
+            for cell in row[1:]:
+                cell.axis("off")
         panels.append(panel)
     return fig, panels
+
+
+def _row_axes(panel):
+    """The heatmap, mean and energy axes of `panel` that exist."""
+    keys = ("hm_ax", "mean_ax", "seq_ax")
+    return [panel[k] for k in keys if panel[k] is not None]
 
 
 def _left_ylabels(panels):
     """Keep the y-axis labels of the leftmost panels of each row only."""
     for panel in panels:
         if panel["col"] > 0:
-            for ax in (panel["hm_ax"], panel["seq_ax"]):
-                if ax is not None:
-                    ax.set_ylabel("")
+            for ax in _row_axes(panel):
+                ax.set_ylabel("")
 
 
 def _share_xlim(panels, xmax):
-    """Set the x-limits of every heatmap and energy axis to (0, xmax)."""
+    """Set the x-limits of every heatmap, mean and energy axis to
+    (0, xmax)."""
     for panel in panels:
-        for ax in (panel["hm_ax"], panel["seq_ax"]):
-            if ax is not None:
-                ax.set_xlim(0, xmax)
+        for ax in _row_axes(panel):
+            ax.set_xlim(0, xmax)
+
+
+def _draw_mean(ax, mean, *, xscale):
+    """
+    Plot the mean across molecules (one value per bp) into `ax`, on a
+    fixed (0, 1) y-range.
+    """
+    nbp = len(mean)
+    ax.plot(np.arange(nbp) / xscale, mean)
+    ax.set_ylim(0, 1)
+    ax.set_xlim(0, nbp / xscale)
+    ax.set_ylabel("Mean")
 
 
 def _colorbar(fig, panels, mappable, label):

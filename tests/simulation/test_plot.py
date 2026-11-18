@@ -445,6 +445,112 @@ class TestPlotOccupMultiChrom:
             )
 
 
+def _mean_axes(fig):
+    return [ax for ax in fig.axes if ax.lines and ax.get_ylim() == (0, 1)]
+
+
+def _mean_line(fig):
+    return _mean_axes(fig)[0].lines[0].get_ydata()
+
+
+@pytest.mark.filterwarnings(
+    "ignore:__array__ implementation doesn't accept a copy keyword"
+    ":DeprecationWarning"
+)
+class TestPlotOccupMean:
+    def test_mean_over_all_molecules(self, tmp_path):
+        dataset = _make_two_chrom_dataset(tmp_path)
+        SimPlot().plot_occup(
+            dataset, chroms="chr1", xscale=1, plot_mean=True, show=False
+        )
+        occup = dataset.analysis["chr1"]["occup"].to_numpy()
+        np.testing.assert_allclose(_mean_line(plt.gcf()), occup.mean(0))
+        mean_ax = _mean_axes(plt.gcf())[0]
+        assert mean_ax.get_ylabel() == "Mean"
+        assert mean_ax.get_xlim() == (0, 20)
+
+    def test_mean_over_mols_subset(self, tmp_path):
+        dataset = _make_two_chrom_dataset(tmp_path)
+        SimPlot().plot_occup(
+            dataset, chroms="chr1", mols=[0, 2], plot_mean=True, show=False
+        )
+        occup = dataset.analysis["chr1"]["occup"].to_numpy()
+        np.testing.assert_allclose(
+            _mean_line(plt.gcf()), occup[[0, 2]].mean(0)
+        )
+
+    def test_mean_unchanged_by_link_mat(self, tmp_path):
+        dataset = _make_two_chrom_dataset(tmp_path)
+        links = SimAnalysis().sort_by_linkage(dataset=dataset)
+        SimPlot().plot_occup(
+            dataset, chroms="chr1", link_mat=links, plot_mean=True, show=False
+        )
+        occup = dataset.analysis["chr1"]["occup"].to_numpy()
+        np.testing.assert_allclose(_mean_line(plt.gcf()), occup.mean(0))
+
+    def test_nan_column_stays_nan(self, tmp_path):
+        dataset = _make_two_chrom_dataset(tmp_path)
+        occup = dataset.analysis["chr1"]["occup"].to_numpy().copy()
+        occup[:, 3] = np.nan
+        occup[0, 5] = np.nan
+        dataset.analysis["chr1"]["occup"] = pd.DataFrame(occup)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", category=RuntimeWarning)
+            SimPlot().plot_occup(
+                dataset, chroms="chr1", plot_mean=True, show=False
+            )
+        mean = _mean_line(plt.gcf())
+        assert np.isnan(mean[3])
+        assert mean[5] == pytest.approx(np.nanmean(occup[:, 5]))
+
+    def test_mean_above_eseq(self, tmp_path):
+        dataset = _make_two_chrom_dataset(tmp_path)
+        SimPlot().plot_occup(
+            dataset,
+            chroms="chr1",
+            plot_mean=True,
+            plot_eseq=True,
+            show=False,
+        )
+        fig = plt.gcf()
+        hm_ax = _heatmap_axes(fig)[0]
+        mean_ax = _mean_axes(fig)[0]
+        seq_ax = next(
+            ax for ax in fig.axes if ax.lines and ax is not mean_ax
+        )
+        hm, mean, seq = _boxes([hm_ax, mean_ax, seq_ax])
+        assert hm.y0 > mean.y1 and mean.y0 > seq.y1
+        assert not hm_ax.get_xaxis().get_visible()
+        assert not mean_ax.get_xaxis().get_visible()
+        assert seq_ax.get_xlabel().startswith("Position")
+
+    def test_mean_is_bottom_row_without_eseq(self, tmp_path):
+        dataset = _make_two_chrom_dataset(tmp_path)
+        SimPlot().plot_occup(
+            dataset, chroms="chr1", plot_mean=True, show=False
+        )
+        fig = plt.gcf()
+        assert not _heatmap_axes(fig)[0].get_xaxis().get_visible()
+        assert _mean_axes(fig)[0].get_xlabel().startswith("Position")
+
+    def test_several_chroms(self, tmp_path):
+        dataset = _make_two_chrom_dataset(tmp_path)
+        SimPlot().plot_occup(
+            dataset,
+            chroms=["chr1", "chr2"],
+            xscale=1,
+            plot_mean=True,
+            sharex=True,
+            show=False,
+        )
+        mean_axes = _mean_axes(plt.gcf())
+        assert [ax.get_xlim() for ax in mean_axes] == [(0, 30), (0, 30)]
+        assert [ax.get_ylabel() for ax in mean_axes] == ["Mean", ""]
+        left, right = _boxes(mean_axes)
+        assert left.y0 == pytest.approx(right.y0)
+        assert left.y1 == pytest.approx(right.y1)
+
+
 @pytest.mark.filterwarnings(
     "ignore:__array__ implementation doesn't accept a copy keyword"
     ":DeprecationWarning"

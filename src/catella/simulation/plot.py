@@ -17,12 +17,14 @@ from matplotlib.ticker import MaxNLocator
 from catella._plotting import (
     _chrom_list,
     _colorbar,
+    _draw_mean,
     _finish,
     _leaf_order,
     _left_ylabels,
     _panel_grid,
     _per_chrom,
     _power_of_10,
+    _row_axes,
     _share_xlim,
     _warn_if_large,
 )
@@ -517,7 +519,7 @@ class SimPlot:
             1,
             binary=matrix.dtype == np.int8,
             dendrogram=False,
-            eseq=plot_eseq,
+            extra_rows=("eseq",) if plot_eseq else (),
         )
         im = self._draw_footprints(
             panel,
@@ -693,7 +695,7 @@ class SimPlot:
             len(chroms),
             binary=all(m.dtype == np.int8 for m in matrices),
             dendrogram=any(d["link_mat"] is not None for d in data),
-            eseq=plot_eseq,
+            extra_rows=("eseq",) if plot_eseq else (),
         )
         for chrom, d, panel in zip(chroms, data, panels):
             im = self._draw_footprints(
@@ -776,7 +778,7 @@ class SimPlot:
             "link_mat": link_mat,
         }
 
-    def _footprint_grid(self, nchrom, *, binary, dendrogram, eseq):
+    def _footprint_grid(self, nchrom, *, binary, dendrogram, extra_rows):
         """
         Create the figure for footprint panels (see `_panel_grid`).
 
@@ -790,9 +792,9 @@ class SimPlot:
             nchrom,
             width_ratios,
             dendrogram=dendrogram,
-            eseq=eseq,
+            extra_rows=extra_rows,
             scale_w=1.2 if binary else 1.0,
-            scale_h=1.25 if eseq else 1.0,
+            scale_h=1 + 0.25 * len(extra_rows),
         )
 
     def _draw_footprints(
@@ -930,6 +932,7 @@ class SimPlot:
         xscale: int = 1000,
         cmap: str | None = None,
         out_file: str | Path | None = None,
+        plot_mean: bool = False,
         plot_eseq: bool = False,
         link_mat: np.ndarray | dict | None = None,
         sharex: bool = False,
@@ -971,9 +974,14 @@ class SimPlot:
         out_file : str or Path, optional
             Path to save the generated figure. Directories are created if
             they do not exist.
+        plot_mean : bool, default False
+            Whether to plot the mean occupancy across the shown
+            molecules (one value per bp, on a 0 to 1 scale) below the
+            heatmap.
         plot_eseq : bool, default False
             Whether to plot the underlying sequence-specific nucleosome binding
-            energy, averaged across all molecules.
+            energy, averaged across all molecules, below the heatmap (and
+            below the mean, if both are plotted).
         link_mat : np.ndarray, pd.DataFrame, or dict, optional
             Linkage matrix of these molecules (as returned or stored by
             `SimAnalysis.sort_by_linkage`). If given, the rows are put in
@@ -1020,6 +1028,11 @@ class SimPlot:
             "consider passing 'mols' to plot a subset",
         )
         sort_data = any(link_mat[c] is not None for c in chroms)
+        extra_rows = [
+            name
+            for name, on in (("mean", plot_mean), ("eseq", plot_eseq))
+            if on
+        ]
         # The rightmost column is a dedicated, narrow slot for the
         # colorbar, so it appears to the right of the dendrogram (when
         # shown) instead of shrinking hm_ax.
@@ -1027,9 +1040,9 @@ class SimPlot:
             len(chroms),
             [5, 1, 0.25] if sort_data else [20, 1],
             dendrogram=sort_data,
-            eseq=plot_eseq,
-            scale_w=1.25 if plot_eseq else 1.0,
-            scale_h=1.25 if plot_eseq else 1.0,
+            extra_rows=extra_rows,
+            scale_w=1.25 if extra_rows else 1.0,
+            scale_h=1 + 0.25 * len(extra_rows),
         )
         for chrom, panel in zip(chroms, panels):
             im = self._draw_occup(
@@ -1068,7 +1081,8 @@ class SimPlot:
     ):
         """
         Draw the occupancy of one chromosome into the axes of `panel`
-        (from `_panel_grid`), computing it first if missing.
+        (from `_panel_grid`), computing it first if missing, with the
+        mean across the shown molecules in "mean_ax" if present.
 
         Returns
         -------
@@ -1077,6 +1091,7 @@ class SimPlot:
         """
         hm_ax = panel["hm_ax"]
         dend_ax, seq_ax = panel["dend_ax"], panel["seq_ax"]
+        mean_ax = panel["mean_ax"]
 
         # Retrieve the occupancy data
         if occup_name not in dataset.analysis[chrom]:
@@ -1117,8 +1132,15 @@ class SimPlot:
         )
         xpow_str = rf"$10^{{{xpow}}}$"
         hm_ax.set_xlim(0, nbp / xscale)
-        if plot_eseq:
+        if plot_eseq or mean_ax is not None:
             hm_ax.get_xaxis().set_visible(False)
+        if mean_ax is not None:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=RuntimeWarning)
+                mean = np.nanmean(np.asarray(occup, dtype=float), axis=0)
+            _draw_mean(mean_ax, mean, xscale=xscale)
+            if plot_eseq:
+                mean_ax.get_xaxis().set_visible(False)
         hm_ax.set_ylabel("Row (leaf order)" if sort_data else "Molecule index")
 
         # Plot dendrogram on the right panel
@@ -1155,7 +1177,7 @@ class SimPlot:
             seq_ax.set_xlim(0, nbp / xscale)
 
         # Common x-axis label
-        btm_ax = seq_ax if plot_eseq else hm_ax
+        btm_ax = _row_axes(panel)[-1]
         btm_ax.set_xlabel(rf"Position $x$ [{xpow_str} bp]")
 
         hm_ax.set_title(chrom, pad=12)

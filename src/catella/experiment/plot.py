@@ -360,7 +360,6 @@ class MethPlot:
             len(sources),
             [5, 1, 0.25] if sorted_rows else [20, 1],
             dendrogram=sorted_rows,
-            eseq=False,
         )
         for source, matrix, panel in zip(sources, matrices, panels):
             im = self._draw_meth(

@@ -1303,6 +1303,9 @@ def plot_occup(
     cmap: Annotated[
         str | None, typer.Option(help="Matplotlib colormap name")
     ] = None,
+    plot_mean: Annotated[
+        bool, typer.Option(help="Plot the mean occupancy across molecules")
+    ] = False,
     plot_eseq: Annotated[
         bool, typer.Option(help="Plot the sequence-specific binding energy")
     ] = False,
@@ -1343,6 +1346,7 @@ def plot_occup(
         mols=mols,
         xscale=xscale,
         cmap=cmap,
+        plot_mean=plot_mean,
         plot_eseq=plot_eseq,
         link_mat=link_mat,
         sharex=sharex,

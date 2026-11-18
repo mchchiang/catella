@@ -1304,6 +1304,7 @@ def plot_occup(
     mols: Iterable[int] | dict | None = None,
     xscale: int = 1000,
     cmap: str | None = None,
+    plot_mean: bool = False,
     plot_eseq: bool = False,
     link_mat: np.ndarray | dict | None = None,
     sharex: bool = False,
@@ -1344,9 +1345,13 @@ def plot_occup(
     cmap : str, optional
         Matplotlib colormap name to use for this plot. If None, the
         `SimPlot` default is used.
+    plot_mean : bool, default False
+        Whether to plot the mean occupancy across the shown molecules
+        (one value per bp, on a 0 to 1 scale) below the heatmap.
     plot_eseq : bool, default False
         Whether to plot the underlying sequence-specific nucleosome binding
-        energy, averaged across all molecules.
+        energy, averaged across all molecules, below the heatmap (and
+        below the mean, if both are plotted).
     link_mat : np.ndarray, pd.DataFrame, or dict, optional
         Linkage matrix of these molecules (as returned or stored by
         `sort_by_linkage`). If given, the rows are put in its leaf order
@@ -1391,6 +1396,7 @@ def plot_occup(
         xscale=xscale,
         cmap=cmap,
         out_file=out_file,
+        plot_mean=plot_mean,
         plot_eseq=plot_eseq,
         link_mat=link_mat,
         sharex=sharex,

@@ -1901,6 +1901,32 @@ class TestPlotOccup:
         assert result.exit_code == 0, result.output
         assert out_file.exists()
 
+    @pytest.mark.filterwarnings(
+        "ignore:__array__ implementation doesn't accept a copy keyword"
+        ":DeprecationWarning"
+    )
+    def test_plot_mean_and_eseq(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=4, nbp=10)
+        out_file = tmp_path / "occup_mean.png"
+
+        result = runner.invoke(
+            app,
+            [
+                "plot_occup",
+                "chr1",
+                str(dataset._dataset_file),
+                "--time",
+                "0",
+                "--plot-mean",
+                "--plot-eseq",
+                "--out-file",
+                str(out_file),
+                "--no-show",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert out_file.exists()
+
     def _two_chrom_file(self, tmp_path):
         rng = np.random.default_rng(2)
         dataset = SimManager(nworker=1, verbose=False).run(

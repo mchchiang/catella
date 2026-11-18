@@ -395,7 +395,13 @@ def plot_dropout_ecdf(
             readable=True,
         ),
     ],
-    chrom: Annotated[str, typer.Argument(help="Chromosome identifier")],
+    chroms: Annotated[
+        str,
+        typer.Argument(
+            callback=csv_parser(str),
+            help="Chromosome(s) to plot (comma-separated)",
+        ),
+    ],
     which: Annotated[
         str | None, typer.Option(help="test, meth, or unmeth")
     ] = None,
@@ -409,6 +415,9 @@ def plot_dropout_ecdf(
     unmapped_strand: Annotated[
         str, typer.Option(help="union, drop, +, or -")
     ] = "union",
+    pooled: Annotated[
+        bool, typer.Option(help="Plot the pooled 'all' channel")
+    ] = True,
     out_file: Annotated[
         Path | None,
         typer.Option(
@@ -423,10 +432,11 @@ def plot_dropout_ecdf(
     exp = MethPrintExperiment.load(source_file)
     catella.plot_dropout_ecdf(
         exp=exp,
-        chrom=chrom,
+        chroms=chroms,
         which=which,
         channels=channels,
         unmapped_strand=unmapped_strand,
+        pooled=pooled,
         out_file=out_file,
         show=show,
     )

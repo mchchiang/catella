@@ -768,17 +768,18 @@ def qc(
 def plot_dropout_ecdf(
     exp: MethPrintExperiment,
     *,
-    chrom: str,
+    chroms: str | list,
     which: str | None = None,
     channels: str | list | None = None,
     unmapped_strand: str = "union",
+    pooled: bool = True,
     out_file: str | Path | None = None,
     show: bool = True,
 ):
     """
     Plot the empirical CDF of dropout rate per group.
 
-    Computes `exp.dropout_fractions(...)`, restricted to `chrom`, and
+    Computes `exp.dropout_fractions(...)`, restricted to `chroms`, and
     plots the result via `MethPlot.plot_dropout_ecdf`. For each
     matching group, at threshold `t` the plotted value is
     `100 * mean(dropout_frac <= t)` over that group's molecules.
@@ -787,15 +788,17 @@ def plot_dropout_ecdf(
     ----------
     exp : MethPrintExperiment
         The experiment to evaluate.
-    chrom : str
-        Chromosome to plot.
+    chroms : str or list of str
+        Chromosome(s) to plot.
     which : {"test", "meth", "unmeth"} or None, default None
         Source to evaluate and plot. None uses every source present
-        for `chrom`.
+        for each chromosome.
     channels : str, list of str, or None, default None
         Channels to evaluate, as in `filter_dropout`.
     unmapped_strand : {"union", "drop", "+", "-"}, default "union"
         How to evaluate unmapped ('.') strand molecules.
+    pooled : bool, default True
+        Whether to plot the pooled `channel="all"` groups.
     out_file : str or pathlib.Path, optional
         Path to save the generated figure. Directories are created if
         they do not exist.
@@ -808,18 +811,24 @@ def plot_dropout_ecdf(
         If `mtase` is unset, `channels` is invalid,
         `unmapped_strand` is invalid, a source is missing for some
         chromosome, or `refseq` is missing (from
-        `exp.dropout_fractions`); or if `chrom` has no matching
-        entries in the result (from `MethPlot.plot_dropout_ecdf`).
+        `exp.dropout_fractions`); or if `chroms` holds an unknown
+        chromosome or one with no matching entries in the result.
     """
+    chroms = [chroms] if isinstance(chroms, str) else list(chroms)
     fractions = exp.dropout_fractions(
         which=which,
         channels=channels,
-        chroms=[chrom],
+        chroms=chroms,
         unmapped_strand=unmapped_strand,
     )
     methplot = MethPlot()
     methplot.plot_dropout_ecdf(
-        fractions, chrom, which=which, out_file=out_file, show=show
+        fractions,
+        chroms,
+        which=which,
+        pooled=pooled,
+        out_file=out_file,
+        show=show,
     )
 
 

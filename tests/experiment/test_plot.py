@@ -455,6 +455,29 @@ def _dropout_fractions_exp(tmp_path):
     )
 
 
+def _two_chrom_exp(tmp_path):
+    refseq = "AAAAAAAAAACG"
+    chromsize = tmp_path / "sizes.tsv"
+    _write_chromsize(chromsize, {"chr1": len(refseq), "chr2": len(refseq)})
+    fasta = tmp_path / "ref.fa"
+    _write_fasta(fasta, {"chr1": refseq, "chr2": refseq})
+    test_file = tmp_path / "test.tsv"
+    rows = [("m0", i, "chr1", "+", 0.5, "a") for i in range(9)] + [
+        ("m1", i, "chr2", "+", 0.5, "a") for i in range(5)
+    ]
+    _write_tsv(test_file, rows)
+    return MethPrintExperiment.load_raw(
+        chromsize=chromsize,
+        test_file=test_file,
+        fasta_file=fasta,
+        mtase=["A", "CG"],
+    )
+
+
+def _legend_labels():
+    return plt.gcf().axes[0].get_legend_handles_labels()[1]
+
+
 class TestPlotDropoutEcdf:
     def test_end_to_end_smoke(self, tmp_path):
         exp = _dropout_fractions_exp(tmp_path)
@@ -494,6 +517,65 @@ class TestPlotDropoutEcdf:
             MethPlot().plot_dropout_ecdf(
                 fracs, "chr1", which="meth", show=False
             )
+        exp.close()
+
+    def test_multi_chrom_legend_shows_varying_fields(self, tmp_path):
+        exp = _two_chrom_exp(tmp_path)
+        fracs = exp.dropout_fractions(channels=["A"])
+
+        MethPlot().plot_dropout_ecdf(fracs, ["chr1", "chr2"], show=False)
+        assert _legend_labels() == ["chr1", "chr2"]
+        assert plt.gcf().axes[0].get_title() == "test/A"
+        plt.close("all")
+        exp.close()
+
+    def test_single_chrom_legend_unchanged_fields(self, tmp_path):
+        exp = _two_chrom_exp(tmp_path)
+        fracs = exp.dropout_fractions(chroms=["chr1"])
+
+        MethPlot().plot_dropout_ecdf(fracs, "chr1", show=False)
+        assert _legend_labels() == ["A", "CG", "all"]
+        assert plt.gcf().axes[0].get_title() == "chr1/test"
+        plt.close("all")
+        exp.close()
+
+    def test_unknown_chrom_in_list_raises(self, tmp_path):
+        exp = _two_chrom_exp(tmp_path)
+        fracs = exp.dropout_fractions()
+
+        with pytest.raises(ValueError):
+            MethPlot().plot_dropout_ecdf(
+                fracs, ["chr1", "bogus"], show=False
+            )
+        exp.close()
+
+    def test_empty_chroms_raises(self, tmp_path):
+        exp = _two_chrom_exp(tmp_path)
+        fracs = exp.dropout_fractions()
+
+        with pytest.raises(ValueError):
+            MethPlot().plot_dropout_ecdf(fracs, [], show=False)
+        exp.close()
+
+    def test_pooled_false_omits_all(self, tmp_path):
+        exp = _two_chrom_exp(tmp_path)
+        fracs = exp.dropout_fractions(chroms=["chr1"])
+
+        MethPlot().plot_dropout_ecdf(fracs, "chr1", pooled=False, show=False)
+        assert _legend_labels() == ["A", "CG"]
+        plt.close("all")
+        exp.close()
+
+    def test_pooled_false_single_channel_still_plots(self, tmp_path):
+        exp = _two_chrom_exp(tmp_path)
+        fracs = exp.dropout_fractions(chroms=["chr1"], channels=["A"])
+
+        out_file = tmp_path / "single.png"
+        MethPlot().plot_dropout_ecdf(
+            fracs, "chr1", pooled=False, out_file=out_file, show=False
+        )
+        assert out_file.exists()
+        plt.close("all")
         exp.close()
 
     def test_curve_is_monotonic_and_bounded(self, tmp_path):

@@ -354,28 +354,33 @@ class MethPlot:
     def plot_dropout_ecdf(
         self,
         dropout_fractions,
-        chrom,
+        chroms,
         *,
         which: str | None = None,
+        pooled: bool = True,
         out_file: str | Path | None = None,
         show: bool = True,
     ):
         """
         Plot the empirical CDF of dropout rate per group.
 
-        For each matching group, at threshold `t` the plotted value
-        is `100 * mean(dropout_frac <= t)` over that group's
-        molecules.
+        For each matching `(chrom, source, channel)` group, at
+        threshold `t` the plotted value is
+        `100 * mean(dropout_frac <= t)` over that group's molecules.
+        The legend shows only the key fields that differ between
+        lines; fields shared by all lines go in the title.
 
         Parameters
         ----------
         dropout_fractions : dict of (str, str, str) to np.ndarray
             Output of `MethPrintExperiment.dropout_fractions`.
-        chrom : str
-            Chromosome to plot.
+        chroms : str or list of str
+            Chromosome(s) to plot.
         which : {"test", "meth", "unmeth"}, optional
             Restrict the plot to this source. None plots every
-            source present for `chrom`.
+            source present.
+        pooled : bool, default True
+            Whether to plot the pooled `channel="all"` groups.
         out_file : str or pathlib.Path, optional
             Path to save the generated figure. Directories are
             created if they do not exist.
@@ -385,30 +390,46 @@ class MethPlot:
         Raises
         ------
         ValueError
-            If `chrom` (or `which`, when given) has no matching
-            entries in `dropout_fractions`.
+            If `chroms` is empty, or some chromosome in `chroms` has
+            no matching entries in `dropout_fractions`.
         """
-        keys = [
-            key
-            for key in dropout_fractions
-            if key[0] == chrom and (which is None or key[1] == which)
-        ]
-        if not keys:
+        chroms = [chroms] if isinstance(chroms, str) else list(chroms)
+        if not chroms:
+            raise ValueError("chroms must not be empty")
+        keys = sorted(
+            (
+                key
+                for key in dropout_fractions
+                if key[0] in chroms
+                and (which is None or key[1] == which)
+                and (pooled or key[2] != "all")
+            ),
+            key=lambda k: (chroms.index(k[0]), k[1], k[2]),
+        )
+        missing = [c for c in chroms if not any(k[0] == c for k in keys)]
+        if missing:
             raise ValueError(
-                f"no entries for chrom={chrom!r}, which={which!r} "
-                "in dropout_fractions"
+                f"no entries for chroms {missing} with which={which!r} "
+                f"and pooled={pooled} in dropout_fractions"
             )
+        varying = [i for i in range(3) if len({k[i] for k in keys}) > 1]
+        shared = [i for i in range(3) if i not in varying]
 
         fig, ax = plt.subplots()
-        for src, label in sorted((k[1], k[2]) for k in keys):
-            frac = np.sort(dropout_fractions[(chrom, src, label)])
+        for key in keys:
+            frac = np.sort(dropout_fractions[key])
             n = len(frac)
             ecdf_pct = 100 * np.arange(1, n + 1) / n
-            ax.step(frac, ecdf_pct, where="post", label=f"{src}/{label}")
+            label = "/".join(key[i] for i in varying)
+            ax.step(frac, ecdf_pct, where="post", label=label)
 
+        ax.set_title("/".join(keys[0][i] for i in shared))
         ax.set_xlabel("Dropout rate")
         ax.set_ylabel("ECDF [%]")
-        ax.legend(loc="center left", bbox_to_anchor=(1, 0.5), frameon=False)
+        if varying:
+            ax.legend(
+                loc="center left", bbox_to_anchor=(1, 0.5), frameon=False
+            )
         fig.tight_layout()
 
         if show:

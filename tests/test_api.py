@@ -288,7 +288,7 @@ class TestPlotDropoutEcdf:
     def test_which_writes_figure(self, tmp_path):
         out_file = tmp_path / "ecdf.png"
         catella.plot_dropout_ecdf(
-            self._make(), chrom="chr1", which="test", out_file=out_file,
+            self._make(), chroms="chr1", which="test", out_file=out_file,
             show=False,
         )
         assert out_file.exists()
@@ -296,7 +296,7 @@ class TestPlotDropoutEcdf:
     def test_missing_which_source_raises(self):
         with pytest.raises(ValueError):
             catella.plot_dropout_ecdf(
-                self._make(), chrom="chr1", which="meth", show=False
+                self._make(), chroms="chr1", which="meth", show=False
             )
 
 

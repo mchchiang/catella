@@ -445,6 +445,48 @@ class TestPlotDropoutEcdf:
         assert result.exit_code == 0, result.output
         assert out_file.exists()
 
+    def test_multi_chroms_and_no_pooled(self, tmp_path):
+        rows = [("m0", i, "chr1", "+", 0.5, "a") for i in range(4)] + [
+            ("m1", i, "chr2", "+", 0.5, "a") for i in range(2)
+        ]
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 4, "chr2": 4})
+        fasta_file = tmp_path / "ref.fa"
+        _write_fasta(fasta_file, {"chr1": "AACG", "chr2": "AACG"})
+        raw_file = tmp_path / "raw_exp.h5"
+        load_result = runner.invoke(
+            app,
+            [
+                "load_raw",
+                str(chromsize),
+                str(test_file),
+                str(raw_file),
+                "--fasta-file",
+                str(fasta_file),
+                "--mtase",
+                "A,CG",
+            ],
+        )
+        assert load_result.exit_code == 0, load_result.output
+
+        out_file = tmp_path / "dropout.png"
+        result = runner.invoke(
+            app,
+            [
+                "plot_dropout_ecdf",
+                str(raw_file),
+                "chr1,chr2",
+                "--no-pooled",
+                "--out-file",
+                str(out_file),
+                "--no-show",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert out_file.exists()
+
 
 class TestComputeEmpiricalProb:
     def test_matches_direct_api_call(self, tmp_path):

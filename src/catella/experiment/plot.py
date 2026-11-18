@@ -115,8 +115,8 @@ class MethPlot:
         downsample first, or downsample it yourself (`utils.downsample`,
         works uniformly for `H5Array`, `pd.DataFrame`, or `np.ndarray`)
         and pass the reduced result. Several chromosomes get one panel
-        each, stacked vertically in one figure, aligned and sharing one
-        colorbar on a common color scale.
+        each, laid out side by side (at most 4 per row) in one figure,
+        aligned and sharing one colorbar on a common color scale.
 
         Parameters
         ----------
@@ -129,8 +129,8 @@ class MethPlot:
             Experiment to read from, together with `chroms` and exactly
             one of `raw_which`/`data_name`. Not combined with `data`.
         chroms : str or iterable of str, optional
-            Chromosome(s) to plot from `exp`, one panel each, top to
-            bottom.
+            Chromosome(s) to plot from `exp`, one panel each, in
+            reading order.
         raw_which : {"test", "unmeth", "meth"}, optional
             Which raw table to plot per chromosome. Calls
             `exp.to_dense(chrom, which=raw_which, mols=mols,

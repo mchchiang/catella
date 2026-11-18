@@ -1203,15 +1203,15 @@ def plot_config(
     exact sample `run` (TM). Molecules without data are drawn in gray.
     For many configurations of one molecule, see
     `SimPlot.plot_samples`. Each chromosome gets its own panel; several
-    panels are stacked vertically in one figure, aligned and sharing one
-    legend or colorbar.
+    panels are laid out side by side (at most 4 per row) in one figure,
+    aligned and sharing one legend or colorbar.
 
     Parameters
     ----------
     dataset : SimDataset
         The dataset holding the configurations.
     chroms : str or iterable of str
-        Chromosome(s) to plot, one panel each, top to bottom.
+        Chromosome(s) to plot, one panel each, in reading order.
     name : str, optional
         The `name` given to `compute_config`. If None (default), raw
         configurations are shown.
@@ -1325,15 +1325,15 @@ def plot_occup(
     Generate a plot showing the probability of nucleosome occupancy across
     the genomic coordinates based on previously computed analysis within
     the SimDataset. Each chromosome gets its own panel; several panels
-    are stacked vertically in one figure, aligned and sharing one
-    colorbar.
+    are laid out side by side (at most 4 per row) in one figure, aligned
+    and sharing one colorbar.
 
     Parameters
     ----------
     dataset : SimDataset
         The simulation dataset containing the computed occupancy data.
     chroms : str or iterable of str
-        The chromosome(s) to plot, one panel each, top to bottom.
+        The chromosome(s) to plot, one panel each, in reading order.
     time : int, optional
         The time step of interest if occupancy needs to be computed.
     out_file : str | Path, optional
@@ -1444,8 +1444,8 @@ def plot_meth(
     downsample first, or downsample it yourself (`utils.downsample`,
     works uniformly for `H5Array`, `pd.DataFrame`, or `np.ndarray`) and
     pass the reduced result. Several chromosomes get one panel each,
-    stacked vertically in one figure, aligned and sharing one colorbar
-    on a common color scale.
+    laid out side by side (at most 4 per row) in one figure, aligned and
+    sharing one colorbar on a common color scale.
 
     Parameters
     ----------
@@ -1464,7 +1464,8 @@ def plot_meth(
         Experiment to read from, together with `chroms` and exactly one
         of `raw_which`/`data_name`. Not combined with `data`.
     chroms : str or iterable of str, optional
-        Chromosome(s) to plot from `exp`, one panel each, top to bottom.
+        Chromosome(s) to plot from `exp`, one panel each, in reading
+        order.
     raw_which : {"test", "unmeth", "meth"}, optional
         Which raw table to plot per chromosome. Calls
         `exp.to_dense(chrom, which=raw_which, mols=mols,

@@ -569,15 +569,16 @@ class SimPlot:
         time `time` (MCMC) or of exact sample `run` (TM). Molecules
         without data are drawn in `nan_color`. Use `plot_samples` for
         many configurations of one molecule. Each chromosome gets its
-        own panel; several panels are stacked vertically in one figure,
-        aligned and sharing one legend or colorbar.
+        own panel; several panels are laid out side by side (at most 4
+        per row) in one figure, aligned and sharing one legend or
+        colorbar.
 
         Parameters
         ----------
         dataset : SimDataset
             The dataset holding the configurations.
         chroms : str or iterable of str
-            Chromosome(s) to plot, one panel each, top to bottom.
+            Chromosome(s) to plot, one panel each, in reading order.
         name : str, optional
             The prefix the calls were stored under. If None (default),
             raw configurations are shown.
@@ -973,8 +974,9 @@ class SimPlot:
         Plot the nucleosome occupancy across all molecules of one or
         more chromosomes.
 
-        Each chromosome gets its own panel; several panels are stacked
-        vertically in one figure, aligned and sharing one colorbar. If
+        Each chromosome gets its own panel; several panels are laid out
+        side by side (at most 4 per row) in one figure, aligned and
+        sharing one colorbar. If
         the occupancy data is not found in the dataset analysis, it
         will be computed on-the-fly using `SimAnalysis`.
 
@@ -983,7 +985,7 @@ class SimPlot:
         dataset : SimDataset
             The dataset object containing analysis results or raw data.
         chroms : str or iterable of str
-            Chromosome(s) to plot, one panel each, top to bottom.
+            Chromosome(s) to plot, one panel each, in reading order.
         time : int, optional
             The time step of interest if occupancy needs to be computed.
         occup_name : str, default "occup"

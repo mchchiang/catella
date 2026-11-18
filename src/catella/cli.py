@@ -1158,7 +1158,13 @@ def sort_by_linkage(
 
 @app.command(name="plot_config")
 def plot_config(
-    chrom: Annotated[str, typer.Argument(help="Chromosome identifier")],
+    chroms: Annotated[
+        str,
+        typer.Argument(
+            callback=csv_parser(str),
+            help="Chromosome(s) to plot (comma-separated)",
+        ),
+    ],
     dataset_file: Annotated[
         Path,
         typer.Argument(
@@ -1215,20 +1221,27 @@ def plot_config(
             help="Path to save the figure", file_okay=True, dir_okay=False
         ),
     ] = None,
+    sharex: Annotated[
+        bool,
+        typer.Option(help="Put all panels on the longest chromosome's scale"),
+    ] = False,
     show: Annotated[bool, typer.Option(help="Display the figure")] = True,
 ):
     """
-    Plot one nucleosome configuration per molecule.
+    Plot one nucleosome configuration per molecule, for one or more
+    chromosomes.
     """
+    if mols and len(chroms) > 1:
+        raise typer.BadParameter("--mols requires a single chromosome")
     dataset = SimDataset.load(dataset_file)
     link_mat = (
-        dataset.analysis[chrom][link_mat_name]
+        {c: dataset.analysis[c][link_mat_name] for c in chroms}
         if link_mat_name is not None
         else None
     )
     catella.plot_config(
         dataset,
-        chrom=chrom,
+        chroms=chroms,
         name=name,
         mols=mols,
         run=run,
@@ -1240,6 +1253,7 @@ def plot_config(
         plot_eseq=plot_eseq,
         link_mat=link_mat,
         out_file=out_file,
+        sharex=sharex,
         show=show,
     )
 

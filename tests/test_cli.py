@@ -1757,6 +1757,62 @@ class TestPlotConfig:
         assert result.exit_code == 0, result.output
         assert out_file.exists()
 
+    def _two_chrom_file(self, tmp_path):
+        rng = np.random.default_rng(2)
+        dataset = SimManager(nworker=1, verbose=False).run(
+            chroms=["chr1", "chr2"],
+            nsim=0,
+            method="tm",
+            settings=SimSettings(**_settings_dict()),
+            meth_prob={
+                "chr1": rng.random((4, 15)),
+                "chr2": rng.random((3, 20)),
+            },
+            out_dir=tmp_path / "tm_sim",
+            seed=1,
+        )
+        catella.compute_config(dataset)
+        dataset.save()
+        return dataset._dataset_file
+
+    def test_several_chroms(self, tmp_path):
+        dataset_file = self._two_chrom_file(tmp_path)
+        out_file = tmp_path / "configs_two.png"
+
+        result = runner.invoke(
+            app,
+            [
+                "plot_config",
+                "chr1,chr2",
+                str(dataset_file),
+                "--name",
+                "best_match",
+                "--sharex",
+                "--out-file",
+                str(out_file),
+                "--no-show",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert out_file.exists()
+
+    def test_mols_with_several_chroms_fails(self, tmp_path):
+        dataset_file = self._two_chrom_file(tmp_path)
+
+        result = runner.invoke(
+            app,
+            [
+                "plot_config",
+                "chr1,chr2",
+                str(dataset_file),
+                "--mols",
+                "0",
+                "--no-show",
+            ],
+        )
+        assert result.exit_code != 0
+        assert "single chromosome" in result.output
+
 
 class TestPlotOccup:
     # Plot content is not asserted (matches the repo's existing plotting

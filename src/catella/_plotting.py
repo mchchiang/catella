@@ -209,6 +209,14 @@ def _panel_grid(
     return fig, panels
 
 
+def _share_xlim(panels, xmax):
+    """Set the x-limits of every heatmap and energy axis to (0, xmax)."""
+    for panel in panels:
+        for ax in (panel["hm_ax"], panel["seq_ax"]):
+            if ax is not None:
+                ax.set_xlim(0, xmax)
+
+
 def _colorbar(fig, panels, mappable, label):
     """
     Draw the colorbar of `mappable` in the last column of a single

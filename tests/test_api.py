@@ -875,7 +875,7 @@ class TestPlotConfig:
         out_file = tmp_path / "configs.png"
         catella.plot_config(
             dataset,
-            chrom="chr1",
+            chroms="chr1",
             name="best_match",
             max_rows=2,
             out_file=out_file,

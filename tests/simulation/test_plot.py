@@ -718,7 +718,7 @@ def _rows(dataset, configs):
 class TestPlotConfig:
     def test_stored_calls(self, tmp_path):
         dataset = _tm_calls_dataset(tmp_path)
-        SimPlot().plot_config(dataset, chrom="chr1", name="bm", show=False)
+        SimPlot().plot_config(dataset, chroms="chr1", name="bm", show=False)
         configs = SimAnalysis().extract_config(
             dataset, chrom="chr1", name="bm"
         )
@@ -727,20 +727,20 @@ class TestPlotConfig:
 
     def test_mcmc_raw_run(self, tmp_path):
         dataset = _mcmc_dataset(tmp_path)
-        SimPlot().plot_config(dataset, chrom="chr1", run=1, show=False)
+        SimPlot().plot_config(dataset, chroms="chr1", run=1, show=False)
         configs = SimAnalysis().extract_config(dataset, chrom="chr1", run=1)
         np.testing.assert_array_equal(_image(), _rows(dataset, configs))
 
     def test_tm_sample(self, tmp_path):
         dataset = _tm_calls_dataset(tmp_path, nsim=3)
-        SimPlot().plot_config(dataset, chrom="chr1", run=2, show=False)
+        SimPlot().plot_config(dataset, chroms="chr1", run=2, show=False)
         pos = dataset.raw["chr1", 0, 2].position
         np.testing.assert_array_equal(_image()[0], _footprint(dataset, pos))
 
     def test_mols_order(self, tmp_path):
         dataset = _tm_calls_dataset(tmp_path)
         SimPlot().plot_config(
-            dataset, chrom="chr1", name="bm", mols=[4, 0], show=False
+            dataset, chroms="chr1", name="bm", mols=[4, 0], show=False
         )
         configs = SimAnalysis().extract_config(
             dataset, chrom="chr1", name="bm", mols=[4, 0]
@@ -750,7 +750,7 @@ class TestPlotConfig:
     def test_max_rows_stride_picks_molecules(self, tmp_path):
         dataset = _tm_calls_dataset(tmp_path)
         SimPlot().plot_config(
-            dataset, chrom="chr1", name="bm", max_rows=3, show=False
+            dataset, chroms="chr1", name="bm", max_rows=3, show=False
         )
         configs = SimAnalysis().extract_config(
             dataset, chrom="chr1", name="bm", mols=[0, 2, 4]
@@ -761,7 +761,7 @@ class TestPlotConfig:
         dataset = _tm_calls_dataset(tmp_path, nmol=4)
         SimPlot().plot_config(
             dataset,
-            chrom="chr1",
+            chroms="chr1",
             name="bm",
             max_rows=2,
             downsample_how="mean",
@@ -778,7 +778,7 @@ class TestPlotConfig:
         dataset = _tm_calls_dataset(tmp_path, nmol=4)
         SimPlot().plot_config(
             dataset,
-            chrom="chr1",
+            chroms="chr1",
             name="bm",
             max_rows=2,
             downsample_how="max",
@@ -794,7 +794,7 @@ class TestPlotConfig:
         dataset = _tm_calls_dataset(tmp_path)
         SimPlot().plot_config(
             dataset,
-            chrom="chr1",
+            chroms="chr1",
             name="bm",
             mols=[0, 2],
             plot_eseq=True,
@@ -807,12 +807,12 @@ class TestPlotConfig:
         dataset = _tm_calls_dataset(tmp_path)
         with pytest.warns(UserWarning, match="'max_rows' or 'mols'"):
             SimPlot().plot_config(
-                dataset, chrom="chr1", name="bm", show=False
+                dataset, chroms="chr1", name="bm", show=False
             )
 
     def test_binary_plot_has_legend(self, tmp_path):
         dataset = _tm_calls_dataset(tmp_path)
-        SimPlot().plot_config(dataset, chrom="chr1", name="bm", show=False)
+        SimPlot().plot_config(dataset, chroms="chr1", name="bm", show=False)
         legend = plt.gcf().axes[1].get_legend()
         labels = [t.get_text() for t in legend.get_texts()]
         assert labels == ["Nucleosome", "Linker", "No data"]
@@ -820,7 +820,7 @@ class TestPlotConfig:
     def test_no_data_entry_only_if_present(self, tmp_path):
         dataset = _tm_calls_dataset(tmp_path)
         SimPlot().plot_config(
-            dataset, chrom="chr1", name="bm", mols=[0, 2], show=False
+            dataset, chroms="chr1", name="bm", mols=[0, 2], show=False
         )
         legend = plt.gcf().axes[1].get_legend()
         assert "No data" not in [t.get_text() for t in legend.get_texts()]
@@ -829,7 +829,7 @@ class TestPlotConfig:
         dataset = _tm_calls_dataset(tmp_path, nmol=4)
         SimPlot().plot_config(
             dataset,
-            chrom="chr1",
+            chroms="chr1",
             name="bm",
             max_rows=2,
             downsample_how="mean",
@@ -841,7 +841,7 @@ class TestPlotConfig:
 
     def test_rows_are_centered_with_integer_ticks(self, tmp_path):
         dataset = _tm_calls_dataset(tmp_path)
-        SimPlot().plot_config(dataset, chrom="chr1", name="bm", show=False)
+        SimPlot().plot_config(dataset, chroms="chr1", name="bm", show=False)
         hm_ax = plt.gcf().axes[0]
         assert hm_ax.get_ylim() == (-0.5, 4.5)
         ticks = [t for t in hm_ax.get_yticks() if -0.5 <= t <= 4.5]
@@ -853,7 +853,7 @@ class TestPlotConfig:
     def test_ylabel(self, tmp_path, max_rows, label):
         dataset = _tm_calls_dataset(tmp_path)
         SimPlot().plot_config(
-            dataset, chrom="chr1", name="bm", max_rows=max_rows, show=False
+            dataset, chroms="chr1", name="bm", max_rows=max_rows, show=False
         )
         assert plt.gcf().axes[0].get_ylabel() == label
 
@@ -866,7 +866,7 @@ class TestPlotConfig:
         rows_float = np.where(rows < 0, 0, rows).astype(float)
         _, link_mat = utils.compute_linkage(rows_float)
         SimPlot().plot_config(
-            dataset, chrom="chr1", name="bm", link_mat=link_mat, show=False
+            dataset, chroms="chr1", name="bm", link_mat=link_mat, show=False
         )
         order = sch.leaves_list(link_mat)
         np.testing.assert_array_equal(_image(), rows[order])
@@ -884,7 +884,7 @@ class TestPlotConfig:
         )
         SimPlot().plot_config(
             dataset,
-            chrom="chr1",
+            chroms="chr1",
             name="bm",
             link_mat=pd.DataFrame(link_mat),
             max_rows=3,
@@ -899,7 +899,7 @@ class TestPlotConfig:
         with pytest.raises(ValueError, match="mols cannot be combined"):
             SimPlot().plot_config(
                 dataset,
-                chrom="chr1",
+                chroms="chr1",
                 name="bm",
                 mols=[0, 1],
                 link_mat=link_mat,
@@ -911,14 +911,18 @@ class TestPlotConfig:
         link_mat = utils.compute_linkage(np.random.rand(4, 3))[1]
         with pytest.raises(ValueError, match="4 leaves but the data has 5"):
             SimPlot().plot_config(
-                dataset, chrom="chr1", name="bm", link_mat=link_mat, show=False
+                dataset,
+                chroms="chr1",
+                name="bm",
+                link_mat=link_mat,
+                show=False,
             )
 
     def test_missing_name_raises(self, tmp_path):
         dataset = _tm_calls_dataset(tmp_path)
         with pytest.raises(KeyError, match="nope"):
             SimPlot().plot_config(
-                dataset, chrom="chr1", name="nope", show=False
+                dataset, chroms="chr1", name="nope", show=False
             )
 
     def test_bad_downsample_how_raises(self, tmp_path):
@@ -926,9 +930,163 @@ class TestPlotConfig:
         with pytest.raises(ValueError, match="downsample_how must be"):
             SimPlot().plot_config(
                 dataset,
-                chrom="chr1",
+                chroms="chr1",
                 name="bm",
                 max_rows=2,
                 downsample_how="sum",
                 show=False,
+            )
+
+
+def _tm_two_chrom_dataset(tmp_path):
+    settings = SimSettings(
+        nucbp=3, llink=2, elink=1.0, mu=0.5, end_temp=1.0, emax=5.0
+    )
+    rng = np.random.default_rng(9)
+    chr1 = rng.random((5, 20))
+    chr1[1] = np.nan
+    dataset = SimManager(nworker=1, verbose=False).run(
+        chroms=["chr1", "chr2"],
+        nsim=0,
+        method="tm",
+        settings=settings,
+        meth_prob={"chr1": chr1, "chr2": rng.random((4, 30))},
+        out_dir=tmp_path / "tm_two",
+        seed=9,
+    )
+    SimAnalysis().compute_best_match_config(dataset=dataset, name="bm")
+    return dataset
+
+
+def _legend_labels(fig):
+    return [t.get_text() for leg in fig.legends for t in leg.get_texts()]
+
+
+def _config_rows(dataset, chrom, mols=None):
+    configs = SimAnalysis().extract_config(
+        dataset, chrom=chrom, name="bm", mols=mols
+    )
+    nuc_map = NucFiberMap(nbp=dataset.nbp[chrom], nucbp=3)
+    return np.array(
+        [
+            np.full(dataset.nbp[chrom], -1, dtype=np.int8)
+            if c is None
+            else nuc_map.project(np.asarray(c))
+            for c in configs
+        ]
+    )
+
+
+@pytest.mark.filterwarnings(
+    "ignore:__array__ implementation doesn't accept a copy keyword"
+    ":DeprecationWarning"
+)
+class TestPlotConfigMultiChrom:
+    def test_one_panel_per_chrom(self, tmp_path):
+        dataset = _tm_two_chrom_dataset(tmp_path)
+        SimPlot().plot_config(
+            dataset, chroms=["chr1", "chr2"], name="bm", show=False
+        )
+        hm_axes = _heatmap_axes(plt.gcf())
+        for chrom, ax in zip(["chr1", "chr2"], hm_axes):
+            np.testing.assert_array_equal(
+                np.ma.getdata(ax.images[0].get_array()),
+                _config_rows(dataset, chrom),
+            )
+            assert ax.get_title() == f"Configurations for {chrom}"
+
+    def test_binary_panels_share_one_legend(self, tmp_path):
+        dataset = _tm_two_chrom_dataset(tmp_path)
+        SimPlot().plot_config(
+            dataset, chroms=["chr1", "chr2"], name="bm", show=False
+        )
+        fig = plt.gcf()
+        assert _legend_labels(fig) == ["Nucleosome", "Linker", "No data"]
+        assert len(fig.axes) == 2
+
+    def test_merged_panel_gives_shared_colorbar(self, tmp_path):
+        dataset = _tm_two_chrom_dataset(tmp_path)
+        SimPlot().plot_config(
+            dataset,
+            chroms=["chr1", "chr2"],
+            name="bm",
+            max_rows=4,
+            downsample_how="mean",
+            show=False,
+        )
+        fig = plt.gcf()
+        dtypes = [
+            ax.images[0].get_array().dtype for ax in _heatmap_axes(fig)
+        ]
+        assert dtypes == [np.float64, np.int8]
+        labels = [ax.get_ylabel() for ax in fig.axes]
+        assert labels.count("Covered share") == 1
+        assert _legend_labels(fig) == ["No data"]
+
+    def test_heatmaps_are_aligned(self, tmp_path):
+        dataset = _tm_two_chrom_dataset(tmp_path)
+        SimPlot().plot_config(
+            dataset, chroms=["chr1", "chr2"], name="bm", show=False
+        )
+        fig = plt.gcf()
+        fig.canvas.draw()
+        boxes = [ax.get_position() for ax in _heatmap_axes(fig)]
+        assert boxes[0].x0 == pytest.approx(boxes[1].x0)
+        assert boxes[0].x1 == pytest.approx(boxes[1].x1)
+
+    def test_sharex_uses_longest_chrom(self, tmp_path):
+        dataset = _tm_two_chrom_dataset(tmp_path)
+        SimPlot().plot_config(
+            dataset,
+            chroms=["chr1", "chr2"],
+            name="bm",
+            xscale=1,
+            sharex=True,
+            show=False,
+        )
+        xlims = [ax.get_xlim() for ax in _heatmap_axes(plt.gcf())]
+        assert xlims == [(0, 30), (0, 30)]
+
+    def test_link_mat_dict_sorts_each_chrom(self, tmp_path):
+        dataset = _tm_two_chrom_dataset(tmp_path)
+        rng = np.random.default_rng(1)
+        links = {
+            "chr1": utils.compute_linkage(rng.random((5, 3)))[1],
+            "chr2": utils.compute_linkage(rng.random((4, 3)))[1],
+        }
+        SimPlot().plot_config(
+            dataset,
+            chroms=["chr1", "chr2"],
+            name="bm",
+            link_mat=links,
+            show=False,
+        )
+        for chrom, ax in zip(["chr1", "chr2"], _heatmap_axes(plt.gcf())):
+            order = sch.leaves_list(links[chrom])
+            np.testing.assert_array_equal(
+                np.ma.getdata(ax.images[0].get_array()),
+                _config_rows(dataset, chrom)[order],
+            )
+
+    @pytest.mark.parametrize("name", ["link_mat", "mols"])
+    def test_non_dict_with_several_chroms_raises(self, tmp_path, name):
+        dataset = _tm_two_chrom_dataset(tmp_path)
+        value = np.zeros((3, 4)) if name == "link_mat" else [0, 1]
+        with pytest.raises(ValueError, match=f"{name} must be a dict"):
+            SimPlot().plot_config(
+                dataset,
+                chroms=["chr1", "chr2"],
+                name="bm",
+                show=False,
+                **{name: value},
+            )
+
+    def test_size_warning_counts_all_panels(self, tmp_path, monkeypatch):
+        dataset = _tm_two_chrom_dataset(tmp_path)
+        monkeypatch.setattr(
+            "catella._plotting._RENDER_WARN_BYTES", 8 * 30 * 80
+        )
+        with pytest.warns(UserWarning, match="9 rows x 30 bp"):
+            SimPlot().plot_config(
+                dataset, chroms=["chr1", "chr2"], name="bm", show=False
             )

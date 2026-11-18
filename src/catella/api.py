@@ -1177,9 +1177,9 @@ def extract_config(
 def plot_config(
     dataset: SimDataset,
     *,
-    chrom: str,
+    chroms: str | Iterable[str],
     name: str | None = None,
-    mols: Iterable[int] | None = None,
+    mols: Iterable[int] | dict | None = None,
     run: int | None = None,
     time: int | None = None,
     max_rows: int | None = None,
@@ -1188,7 +1188,8 @@ def plot_config(
     cmap: str | None = None,
     out_file: str | Path | None = None,
     plot_eseq: bool = False,
-    link_mat: np.ndarray | pd.DataFrame | None = None,
+    link_mat: np.ndarray | pd.DataFrame | dict | None = None,
+    sharex: bool = False,
     show: bool = True,
 ):
     """
@@ -1200,20 +1201,23 @@ def plot_config(
     or the raw configuration of run `run` at time `time` (MCMC) or of
     exact sample `run` (TM). Molecules without data are drawn in gray.
     For many configurations of one molecule, see
-    `SimPlot.plot_samples`.
+    `SimPlot.plot_samples`. Each chromosome gets its own panel; several
+    panels are stacked vertically in one figure, aligned and sharing one
+    legend or colorbar.
 
     Parameters
     ----------
     dataset : SimDataset
         The dataset holding the configurations.
-    chrom : str
-        Chromosome identifier.
+    chroms : str or iterable of str
+        Chromosome(s) to plot, one panel each, top to bottom.
     name : str, optional
         The `name` given to `compute_config`. If None (default), raw
         configurations are shown.
-    mols : iterable of int, optional
+    mols : iterable of int or dict, optional
         Molecules to show, in this order (all if None). The y-axis counts
-        rows, not molecule indices.
+        rows, not molecule indices. With several chroms, a dict keyed by
+        chrom (chroms not in it show all molecules).
     run : int, optional
         MCMC run or TM sample to show; 0 if None. Only used if `name` is
         None.
@@ -1237,24 +1241,30 @@ def plot_config(
     plot_eseq : bool, default False
         Whether to plot the sequence-specific binding energy, averaged
         over the shown molecules, below the heatmap.
-    link_mat : np.ndarray or pd.DataFrame, optional
+    link_mat : np.ndarray, pd.DataFrame, or dict, optional
         Linkage matrix of these molecules (as returned or stored by
         `sort_by_linkage`). If given, the molecules are put in its leaf
         order before `max_rows` downsampling, and its dendrogram is drawn
-        alongside. Cannot be combined with `mols`.
+        alongside. Cannot be combined with `mols`. With several chroms, a
+        dict keyed by chrom, e.g. the result of `sort_by_linkage` (chroms
+        not in it are not sorted; extra keys are ignored).
+    sharex : bool, default False
+        If True, all panels span the length of the longest chrom, so they
+        share one bp scale. If False, each panel spans its own chrom.
     show : bool, default True
         Whether to display the figure.
 
     Raises
     ------
     ValueError
-        If `max_rows` or `downsample_how` is invalid, if `xscale` is not
-        a power of 10, if `plot_eseq` is True and the dataset stores no
-        energies, if `link_mat` is combined with `mols` or does not match
-        the number of molecules, or for invalid arguments of
-        `extract_config`.
+        If `chroms` is empty, if `max_rows` or `downsample_how` is
+        invalid, if `xscale` is not a power of 10, if `plot_eseq` is True
+        and the dataset stores no energies, if `mols` or `link_mat` is
+        not a dict with several chroms, if `link_mat` is combined with
+        `mols` or does not match the number of molecules, or for invalid
+        arguments of `extract_config`.
     KeyError
-        If no calls are stored under `name` for `chrom`.
+        If no calls are stored under `name` for a chrom.
     IndexError
         If a molecule or `run` is out of range.
 
@@ -1262,11 +1272,12 @@ def plot_config(
     -----
     UserWarning
         If rendering the plot is estimated to need more than 1 GB of
-        memory; pass `max_rows` or `mols` to reduce it.
+        memory (pass `max_rows` or `mols` to reduce it), or if more than
+        10 chroms are plotted in one figure.
     """
     SimPlot().plot_config(
         dataset,
-        chrom=chrom,
+        chroms=chroms,
         name=name,
         mols=mols,
         run=run,
@@ -1278,6 +1289,7 @@ def plot_config(
         out_file=out_file,
         plot_eseq=plot_eseq,
         link_mat=link_mat,
+        sharex=sharex,
         show=show,
     )
 
@@ -1595,7 +1607,7 @@ def sort_by_linkage(
 
     >>> lm = catella.sort_by_linkage(dataset=ds, data_name="occup")
     >>> catella.plot_occup(ds, chroms=c, link_mat=lm[c])
-    >>> catella.plot_config(ds, chrom=c, name="best_match", link_mat=lm[c])
+    >>> catella.plot_config(ds, chroms=c, name="best_match", link_mat=lm)
 
     Dispatches to `SimAnalysis.sort_by_linkage` (if `dataset` is given)
     or `MethPrintAnalysis.sort_by_linkage` (if `exp` is given) -- exactly

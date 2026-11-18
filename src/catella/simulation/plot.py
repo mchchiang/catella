@@ -21,6 +21,7 @@ from catella._plotting import (
     _leaf_order,
     _panel_grid,
     _per_chrom,
+    _share_xlim,
     _warn_if_large,
 )
 from catella.mapping import CoordsTransform
@@ -520,7 +521,7 @@ class SimPlot:
             dendrogram=False,
             eseq=plot_eseq,
         )
-        self._draw_footprints(
+        im = self._draw_footprints(
             panel,
             dataset,
             matrix,
@@ -533,6 +534,7 @@ class SimPlot:
             eseq=eseq,
             eseq_label=r"$E_{\text{seq}}$ [$k_BT$]",
         )
+        self._footprint_side(fig, [panel], im, [matrix], cmap)
         panel["hm_ax"].set_title(f"Molecule {mol} of {chrom}", pad=12)
         _finish(fig, show, out_file)
 
@@ -541,9 +543,9 @@ class SimPlot:
         self,
         dataset: SimDataset,
         *,
-        chrom: str,
+        chroms: str | Iterable[str],
         name: str | None = None,
-        mols: Iterable[int] | None = None,
+        mols: Iterable[int] | dict | None = None,
         run: int | None = None,
         time: int | None = None,
         max_rows: int | None = None,
@@ -552,7 +554,8 @@ class SimPlot:
         cmap: str | None = None,
         out_file: str | Path | None = None,
         plot_eseq: bool = False,
-        link_mat: np.ndarray | None = None,
+        link_mat: np.ndarray | dict | None = None,
+        sharex: bool = False,
         show: bool = True,
     ):
         """
@@ -564,20 +567,23 @@ class SimPlot:
         by `compute_config`), or the raw configuration of run `run` at
         time `time` (MCMC) or of exact sample `run` (TM). Molecules
         without data are drawn in `nan_color`. Use `plot_samples` for
-        many configurations of one molecule.
+        many configurations of one molecule. Each chromosome gets its
+        own panel; several panels are stacked vertically in one figure,
+        aligned and sharing one legend or colorbar.
 
         Parameters
         ----------
         dataset : SimDataset
             The dataset holding the configurations.
-        chrom : str
-            Chromosome identifier.
+        chroms : str or iterable of str
+            Chromosome(s) to plot, one panel each, top to bottom.
         name : str, optional
             The prefix the calls were stored under. If None (default),
             raw configurations are shown.
-        mols : iterable of int, optional
+        mols : iterable of int or dict, optional
             Molecules to show, in this order (all if None). The y-axis
-            counts rows, not molecule indices.
+            counts rows, not molecule indices. With several chroms, a
+            dict keyed by chrom (chroms not in it show all molecules).
         run : int, optional
             MCMC run or TM sample to show; 0 if None. Only used if
             `name` is None.
@@ -602,24 +608,33 @@ class SimPlot:
         plot_eseq : bool, default False
             Whether to plot the sequence-specific binding energy, averaged
             over the shown molecules, below the heatmap.
-        link_mat : np.ndarray or pd.DataFrame, optional
+        link_mat : np.ndarray, pd.DataFrame, or dict, optional
             Linkage matrix of these molecules (as returned or stored by
             `sort_by_linkage`). If given, the molecules are put in its
             leaf order before `max_rows` downsampling, and its dendrogram
-            is drawn alongside. Cannot be combined with `mols`.
+            is drawn alongside. Cannot be combined with `mols`. With
+            several chroms, a dict keyed by chrom, e.g. the result of
+            `sort_by_linkage` (chroms not in it are not sorted; extra
+            keys are ignored).
+        sharex : bool, default False
+            If True, all panels span the length of the longest chrom,
+            so they share one bp scale. If False, each panel spans its
+            own chrom.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
         Raises
         ------
         ValueError
-            If `max_rows` or `downsample_how` is invalid, if `xscale` is
-            not a power of 10, if `plot_eseq` is True and the dataset
-            stores no energies, if `link_mat` is combined with `mols` or
-            does not match the number of molecules, or for invalid
-            arguments of `SimAnalysis.extract_config`.
+            If `chroms` is empty, if `max_rows` or `downsample_how` is
+            invalid, if `xscale` is not a power of 10, if `plot_eseq` is
+            True and the dataset stores no energies, if `mols` or
+            `link_mat` is not a dict with several chroms, if `link_mat`
+            is combined with `mols` or does not match the number of
+            molecules, or for invalid arguments of
+            `SimAnalysis.extract_config`.
         KeyError
-            If no calls are stored under `name` for `chrom`.
+            If no calls are stored under `name` for a chrom.
         IndexError
             If a molecule or `run` is out of range.
 
@@ -627,49 +642,80 @@ class SimPlot:
         -----
         UserWarning
             If rendering the plot is estimated to need more than 1 GB of
-            memory; pass `max_rows` or `mols` to reduce it.
+            memory (pass `max_rows` or `mols` to reduce it), or if more
+            than 10 chroms are plotted in one figure.
 
         Notes
         -----
         The footprints are held as an int8 matrix (1 byte per molecule
-        and base pair) before downsampling.
+        and base pair) before downsampling. With several chroms, a
+        colorbar of the covered share is shown if any panel is merged
+        with "mean"; 0/1 panels then use its ends.
         """
+        chroms = _chrom_list(chroms)
+        mols = {
+            c: None if m is None else [int(i) for i in m]
+            for c, m in _per_chrom(mols, chroms, "mols").items()
+        }
+        link_mat = _per_chrom(link_mat, chroms, "link_mat")
         xpow = int(self._log10(xscale, "xscale"))
         _check_downsample(max_rows, downsample_how)
         _check_eseq(dataset, plot_eseq)
-        data = self._config_panel(
-            dataset,
-            chrom,
-            name=name,
-            mols=mols,
-            run=run,
-            time=time,
-            max_rows=max_rows,
-            downsample_how=downsample_how,
-            plot_eseq=plot_eseq,
-            link_mat=link_mat,
+
+        def shown_rows(chrom):
+            nrow = dataset.nmol[chrom] if mols[chrom] is None else len(
+                mols[chrom]
+            )
+            if downsample_how == "stride":
+                nrow = len(range(0, nrow, _stride_step(nrow, max_rows)))
+            return _shown_rows(nrow, max_rows)
+
+        _warn_if_large(
+            sum(shown_rows(c) for c in chroms),
+            max(dataset.nbp[c] for c in chroms),
+            "consider passing 'max_rows' or 'mols'",
         )
-        fig, (panel,) = self._footprint_grid(
-            1,
-            binary=data["matrix"].dtype == np.int8,
-            dendrogram=data["link_mat"] is not None,
+        data = [
+            self._config_panel(
+                dataset,
+                chrom,
+                name=name,
+                mols=mols[chrom],
+                run=run,
+                time=time,
+                max_rows=max_rows,
+                downsample_how=downsample_how,
+                plot_eseq=plot_eseq,
+                link_mat=link_mat[chrom],
+            )
+            for chrom in chroms
+        ]
+        matrices = [d["matrix"] for d in data]
+        fig, panels = self._footprint_grid(
+            len(chroms),
+            binary=all(m.dtype == np.int8 for m in matrices),
+            dendrogram=any(d["link_mat"] is not None for d in data),
             eseq=plot_eseq,
         )
-        self._draw_footprints(
-            panel,
-            dataset,
-            data["matrix"],
-            extent_y=None,
-            ylabel=data["ylabel"],
-            invert_y=False,
-            xpow=xpow,
-            xscale=xscale,
-            cmap=cmap,
-            eseq=data["eseq"],
-            eseq_label=r"$\langle E_{\text{seq}} \rangle$ [$k_BT$]",
-            link_mat=data["link_mat"],
-        )
-        panel["hm_ax"].set_title(f"Configurations for {chrom}", pad=12)
+        for chrom, d, panel in zip(chroms, data, panels):
+            im = self._draw_footprints(
+                panel,
+                dataset,
+                d["matrix"],
+                extent_y=None,
+                ylabel=d["ylabel"],
+                invert_y=False,
+                xpow=xpow,
+                xscale=xscale,
+                cmap=cmap,
+                eseq=d["eseq"],
+                eseq_label=r"$\langle E_{\text{seq}} \rangle$ [$k_BT$]",
+                link_mat=d["link_mat"],
+            )
+            panel["hm_ax"].set_title(f"Configurations for {chrom}", pad=12)
+        self._footprint_side(fig, panels, im, matrices, cmap)
+        if sharex:
+            _share_xlim(panels, max(dataset.nbp[c] for c in chroms) / xscale)
         _finish(fig, show, out_file)
 
     def _config_panel(
@@ -708,11 +754,6 @@ class SimPlot:
         if downsample_how == "stride":
             mol_ids = mol_ids[:: _stride_step(len(mol_ids), max_rows)]
         nbp = dataset.nbp[chrom]
-        _warn_if_large(
-            _shown_rows(len(mol_ids), max_rows),
-            nbp,
-            "consider passing 'max_rows' or 'mols'",
-        )
         configs = SimAnalysis().extract_config(
             dataset, chrom=chrom, name=name, run=run, time=time, mols=mol_ids
         )
@@ -774,19 +815,21 @@ class SimPlot:
         """
         Draw a footprint matrix (1 covered, 0 linker, -1 or nan no data)
         into the axes of `panel` (from `_footprint_grid`), with an
-        optional dendrogram on the right and energy row below.
+        optional dendrogram on the right and energy row below. The
+        legend or colorbar is drawn by `_footprint_side`.
 
-        An int8 matrix (0/1 calls) gets a legend; a float matrix (merged
-        with "mean") gets a colorbar of the covered share. If `extent_y`
-        is None, the y-axis counts rows: row i is centered on y = i, with
-        integer ticks. `link_mat` (rows already in its leaf order) is
-        drawn as a dendrogram between the heatmap and the legend.
+        If `extent_y` is None, the y-axis counts rows: row i is centered
+        on y = i, with integer ticks. `link_mat` (rows already in its
+        leaf order) is drawn as a dendrogram next to the heatmap.
+
+        Returns
+        -------
+        matplotlib.image.AxesImage
+            The heatmap.
         """
         nbp = matrix.shape[1]
-        binary = matrix.dtype == np.int8
-        hm_ax, side_ax = panel["hm_ax"], panel["side_ax"]
+        hm_ax = panel["hm_ax"]
         seq_ax = panel["seq_ax"]
-        fig = hm_ax.figure
         if link_mat is not None:
             sch.dendrogram(
                 link_mat,
@@ -795,13 +838,10 @@ class SimPlot:
                 no_labels=True,
                 link_color_func=lambda x: "black",
             )
+        if panel["dend_ax"] is not None:
             panel["dend_ax"].axis("off")
 
-        # -1 (no data) is below vmin; nan comes from "mean" merging
-        cmap_obj = plt.get_cmap(cmap if cmap is not None else self.cmap)
-        cmap_obj = cmap_obj.with_extremes(
-            under=self.nan_color, bad=self.nan_color
-        )
+        cmap_obj = self._footprint_cmap(cmap)
         rows_axis = extent_y is None
         if rows_axis:
             extent_y = (-0.5, matrix.shape[0] - 0.5)
@@ -820,23 +860,6 @@ class SimPlot:
             hm_ax.invert_yaxis()
         hm_ax.set_xlim(0, nbp / xscale)
         hm_ax.set_ylabel(ylabel)
-        if binary:
-            style = {"edgecolor": "black", "linewidth": 0.5}
-            handles = [
-                Patch(facecolor=cmap_obj(1.0), label="Nucleosome", **style),
-                Patch(facecolor=cmap_obj(0.0), label="Linker", **style),
-            ]
-            if (matrix < 0).any():
-                handles.append(
-                    Patch(facecolor=self.nan_color, label="No data", **style)
-                )
-            side_ax.axis("off")
-            side_ax.legend(
-                handles=handles, loc="center left", frameon=False
-            )
-        else:
-            cbar = fig.colorbar(im, cax=side_ax)
-            cbar.set_label("Covered share", rotation=270, labelpad=15)
 
         if eseq is not None:
             hm_ax.get_xaxis().set_visible(False)
@@ -856,6 +879,52 @@ class SimPlot:
 
         btm_ax = seq_ax if eseq is not None else hm_ax
         btm_ax.set_xlabel(rf"Position $x$ [$10^{{{xpow}}}$ bp]")
+        return im
+
+    def _footprint_cmap(self, cmap):
+        """Colormap of footprints: -1 (no data) and nan in `nan_color`."""
+        cmap_obj = plt.get_cmap(cmap if cmap is not None else self.cmap)
+        return cmap_obj.with_extremes(under=self.nan_color, bad=self.nan_color)
+
+    def _footprint_side(self, fig, panels, im, matrices, cmap):
+        """
+        Draw the legend or colorbar of footprint panels.
+
+        If all `matrices` are int8 (0/1 calls), a legend of nucleosome,
+        linker, and (if any) no-data colors; otherwise a colorbar of the
+        covered share, which also covers 0/1 matrices (plus a no-data
+        entry if any data is missing with several panels). It goes in
+        the last column of a single panel, or is shared by several.
+        """
+        cmap_obj = self._footprint_cmap(cmap)
+        side_ax = panels[0]["side_ax"]
+        style = {"edgecolor": "black", "linewidth": 0.5}
+        no_data = Patch(facecolor=self.nan_color, label="No data", **style)
+        missing = any(
+            (m < 0).any() or np.isnan(m).any() for m in matrices
+        )
+        if all(m.dtype == np.int8 for m in matrices):
+            handles = [
+                Patch(facecolor=cmap_obj(1.0), label="Nucleosome", **style),
+                Patch(facecolor=cmap_obj(0.0), label="Linker", **style),
+            ]
+            if missing:
+                handles.append(no_data)
+            if side_ax is not None:
+                side_ax.axis("off")
+                side_ax.legend(
+                    handles=handles, loc="center left", frameon=False
+                )
+            else:
+                fig.legend(
+                    handles=handles, loc="outside right center", frameon=False
+                )
+            return
+        _colorbar(fig, panels, im, "Covered share")
+        if side_ax is None and missing:
+            fig.legend(
+                handles=[no_data], loc="outside right lower", frameon=False
+            )
 
     @_apply_style
     def plot_occup(
@@ -986,11 +1055,7 @@ class SimPlot:
             )
         _colorbar(fig, panels, im, "Occupancy")
         if sharex:
-            xmax = max(dataset.nbp[c] for c in chroms) / xscale
-            for panel in panels:
-                for ax in (panel["hm_ax"], panel["seq_ax"]):
-                    if ax is not None:
-                        ax.set_xlim(0, xmax)
+            _share_xlim(panels, max(dataset.nbp[c] for c in chroms) / xscale)
         _finish(fig, show, out_file)
 
     def _draw_occup(

@@ -252,8 +252,29 @@ def _make_two_chrom_dataset(tmp_path, seed=5):
     return dataset
 
 
+def _make_chrom_dataset(tmp_path, nchrom, seed=6):
+    rng = np.random.default_rng(seed)
+    chroms = [f"chr{i + 1}" for i in range(nchrom)]
+    dataset = SimManager(nworker=1, verbose=False).run(
+        chroms=chroms,
+        nsim=2,
+        settings=_make_settings(),
+        meth_prob={c: rng.random((4, 20)) for c in chroms},
+        out_dir=tmp_path / "dataset_n",
+        seed=seed,
+    )
+    for chrom in chroms:
+        dataset.analysis[chrom]["occup"] = pd.DataFrame(rng.random((4, 20)))
+    return dataset
+
+
 def _heatmap_axes(fig):
     return [ax for ax in fig.axes if ax.images]
+
+
+def _boxes(axes):
+    axes[0].figure.canvas.draw()
+    return [ax.get_position() for ax in axes]
 
 
 @pytest.mark.filterwarnings(
@@ -280,7 +301,7 @@ class TestPlotOccupMultiChrom:
         SimPlot().plot_occup(dataset, chroms=["chr1", "chr2"], show=False)
         assert len(plt.gcf().axes) == 3
 
-    def test_heatmaps_are_aligned(self, tmp_path):
+    def test_panels_side_by_side(self, tmp_path):
         dataset = _make_two_chrom_dataset(tmp_path)
         SimPlot().plot_occup(
             dataset,
@@ -288,11 +309,47 @@ class TestPlotOccupMultiChrom:
             mols={"chr2": [0, 1, 2, 3]},
             show=False,
         )
+        boxes = _boxes(_heatmap_axes(plt.gcf()))
+        assert boxes[0].y0 == pytest.approx(boxes[1].y0)
+        assert boxes[0].y1 == pytest.approx(boxes[1].y1)
+        assert boxes[0].x1 < boxes[1].x0
+
+    def test_four_per_row_then_wrap(self, tmp_path):
+        dataset = _make_chrom_dataset(tmp_path, 5)
+        SimPlot().plot_occup(dataset, chroms=dataset.chroms, show=False)
         fig = plt.gcf()
-        fig.canvas.draw()
-        boxes = [ax.get_position() for ax in _heatmap_axes(fig)]
-        assert boxes[0].x0 == pytest.approx(boxes[1].x0)
-        assert boxes[0].x1 == pytest.approx(boxes[1].x1)
+        hm_axes = _heatmap_axes(fig)
+        boxes = _boxes(hm_axes)
+        assert len(hm_axes) == 5
+        assert all(b.y0 == pytest.approx(boxes[0].y0) for b in boxes[:4])
+        assert boxes[4].y1 < boxes[0].y0
+        assert boxes[4].x0 == pytest.approx(boxes[0].x0)
+        assert boxes[4].x1 == pytest.approx(boxes[0].x1)
+        assert sum(not ax.get_visible() for ax in fig.axes) == 3
+
+    def test_colorbar_next_to_top_right_heatmap(self, tmp_path):
+        dataset = _make_chrom_dataset(tmp_path, 5)
+        SimPlot().plot_occup(dataset, chroms=dataset.chroms, show=False)
+        fig = plt.gcf()
+        hm_axes = _heatmap_axes(fig)
+        cbar_ax = next(ax for ax in fig.axes if ax.get_ylabel() == "Occupancy")
+        cbar, top_right = _boxes([cbar_ax, hm_axes[3]])
+        assert cbar.y0 == pytest.approx(top_right.y0)
+        assert cbar.y1 == pytest.approx(top_right.y1)
+        assert cbar.x0 > top_right.x1
+
+    def test_ylabel_on_leftmost_panels_only(self, tmp_path):
+        dataset = _make_chrom_dataset(tmp_path, 5)
+        SimPlot().plot_occup(
+            dataset, chroms=dataset.chroms, plot_eseq=True, show=False
+        )
+        fig = plt.gcf()
+        labels = [ax.get_ylabel() for ax in _heatmap_axes(fig)]
+        assert labels == ["Molecule index", "", "", "", "Molecule index"]
+        seq_labels = [ax.get_ylabel() for ax in fig.axes if ax.lines]
+        assert [bool(s) for s in seq_labels] == [
+            True, False, False, False, True
+        ]
 
     def test_xlim_per_chrom_by_default(self, tmp_path):
         dataset = _make_two_chrom_dataset(tmp_path)
@@ -998,8 +1055,10 @@ class TestPlotConfigMultiChrom:
             dataset, chroms=["chr1", "chr2"], name="bm", show=False
         )
         fig = plt.gcf()
-        assert _legend_labels(fig) == ["Nucleosome", "Linker", "No data"]
-        assert len(fig.axes) == 2
+        legends = [ax.get_legend() for ax in fig.axes if ax.get_legend()]
+        assert len(legends) == 1
+        labels = [t.get_text() for t in legends[0].get_texts()]
+        assert labels == ["Nucleosome", "Linker", "No data"]
 
     def test_merged_panel_gives_shared_colorbar(self, tmp_path):
         dataset = _tm_two_chrom_dataset(tmp_path)
@@ -1020,16 +1079,17 @@ class TestPlotConfigMultiChrom:
         assert labels.count("Covered share") == 1
         assert _legend_labels(fig) == ["No data"]
 
-    def test_heatmaps_are_aligned(self, tmp_path):
+    def test_panels_side_by_side(self, tmp_path):
         dataset = _tm_two_chrom_dataset(tmp_path)
         SimPlot().plot_config(
             dataset, chroms=["chr1", "chr2"], name="bm", show=False
         )
-        fig = plt.gcf()
-        fig.canvas.draw()
-        boxes = [ax.get_position() for ax in _heatmap_axes(fig)]
-        assert boxes[0].x0 == pytest.approx(boxes[1].x0)
-        assert boxes[0].x1 == pytest.approx(boxes[1].x1)
+        boxes = _boxes(_heatmap_axes(plt.gcf()))
+        assert boxes[0].y0 == pytest.approx(boxes[1].y0)
+        assert boxes[0].y1 == pytest.approx(boxes[1].y1)
+        assert boxes[0].x1 < boxes[1].x0
+        labels = [ax.get_ylabel() for ax in _heatmap_axes(plt.gcf())]
+        assert labels == ["Molecule", ""]
 
     def test_sharex_uses_longest_chrom(self, tmp_path):
         dataset = _tm_two_chrom_dataset(tmp_path)

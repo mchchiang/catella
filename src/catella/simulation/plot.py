@@ -19,6 +19,7 @@ from catella._plotting import (
     _colorbar,
     _finish,
     _leaf_order,
+    _left_ylabels,
     _panel_grid,
     _per_chrom,
     _power_of_10,
@@ -711,6 +712,7 @@ class SimPlot:
             )
             panel["hm_ax"].set_title(chrom, pad=12)
         self._footprint_side(fig, panels, im, matrices, cmap)
+        _left_ylabels(panels)
         if sharex:
             _share_xlim(panels, max(dataset.nbp[c] for c in chroms) / xscale)
         _finish(fig, show, out_file)
@@ -890,8 +892,8 @@ class SimPlot:
         If all `matrices` are int8 (0/1 calls), a legend of nucleosome,
         linker, and (if any) no-data colors; otherwise a colorbar of the
         covered share, which also covers 0/1 matrices (plus a no-data
-        entry if any data is missing with several panels). It goes in
-        the last column of a single panel, or is shared by several.
+        entry if any data is missing with several panels). It goes next
+        to the top-right heatmap, shared by all panels.
         """
         cmap_obj = self._footprint_cmap(cmap)
         side_ax = panels[0]["side_ax"]
@@ -907,18 +909,11 @@ class SimPlot:
             ]
             if missing:
                 handles.append(no_data)
-            if side_ax is not None:
-                side_ax.axis("off")
-                side_ax.legend(
-                    handles=handles, loc="center left", frameon=False
-                )
-            else:
-                fig.legend(
-                    handles=handles, loc="outside right center", frameon=False
-                )
+            side_ax.axis("off")
+            side_ax.legend(handles=handles, loc="center left", frameon=False)
             return
         _colorbar(fig, panels, im, "Covered share")
-        if side_ax is None and missing:
+        if len(panels) > 1 and missing:
             fig.legend(
                 handles=[no_data], loc="outside right lower", frameon=False
             )
@@ -1051,6 +1046,7 @@ class SimPlot:
                 link_mat=link_mat[chrom],
             )
         _colorbar(fig, panels, im, "Occupancy")
+        _left_ylabels(panels)
         if sharex:
             _share_xlim(panels, max(dataset.nbp[c] for c in chroms) / xscale)
         _finish(fig, show, out_file)

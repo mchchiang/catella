@@ -16,8 +16,11 @@ _RENDER_BYTES_PER_CELL = 80
 # Warn when rendering a heatmap is estimated to need more than this
 _RENDER_WARN_BYTES = 10**9
 
-# Warn when stacking more chromosome panels than this in one figure
+# Warn when plotting more chromosome panels than this in one figure
 _MAX_PANELS = 10
+
+# Chromosome panels per row (as in MethPlot.plot_dropout_ecdf)
+_PANELS_PER_ROW = 4
 
 
 def _power_of_10(x, name=None):
@@ -166,25 +169,27 @@ def _panel_grid(
     """
     Create a figure with one heatmap panel per chromosome.
 
-    Columns: heatmap, optional dendrogram, and a last column for the
-    colorbar or legend. With several chromosomes, the panels are
-    stacked vertically in one grid with aligned columns, and the last
-    column is left out: one colorbar (`_colorbar`) or legend is then
-    shared by all panels, placed by the layout engine to the right.
+    Panels are laid out left to right, at most 4 per row (as in
+    `MethPlot.plot_dropout_ecdf`), in one grid so that panels in a row
+    share their height and panels in a column their edges. Each panel
+    has a heatmap column and an optional dendrogram column; the last
+    grid column holds the colorbar or legend, next to the top-right
+    heatmap only. Empty slots of the last row are hidden.
 
     Parameters
     ----------
     nchrom : int
         The number of panels.
     width_ratios : list of float
-        The relative widths of the columns.
+        The relative widths of the columns of one panel (heatmap,
+        optional dendrogram) followed by that of the colorbar or legend.
     dendrogram : bool
-        Whether the second column holds a dendrogram.
+        Whether the second column of a panel holds a dendrogram.
     eseq : bool
         Whether each panel has an energy row below its heatmap.
     scale_w, scale_h : float, default 1.0
-        Factors applied to the default figure width and to the height
-        of each panel.
+        Factors applied to the default figure width and height, per
+        panel column and per panel row.
 
     Returns
     -------
@@ -192,8 +197,9 @@ def _panel_grid(
         The figure; it uses constrained layout if `nchrom` > 1.
     panels : list of dict
         Per panel, the axes "hm_ax", "dend_ax" (None without a
-        dendrogram), "side_ax" (last column; None if `nchrom` > 1),
-        and "seq_ax" (None without an energy row).
+        dendrogram), "side_ax" (the top-right cell of the last column,
+        the same for all panels), "seq_ax" (None without an energy
+        row), and its grid column "col".
     """
     if nchrom > _MAX_PANELS:
         _warn(
@@ -201,40 +207,56 @@ def _panel_grid(
             "chroms, or one figure per chrom with out_file"
         )
     nsub = 2 if eseq else 1
-    height_ratios = [4, 1] if eseq else None
+    ncols = min(nchrom, _PANELS_PER_ROW)
+    nrows = -(-nchrom // ncols)
+    panel_ratios = list(width_ratios[:-1])
+    width = len(panel_ratios)
     w, h = plt.rcParams["figure.figsize"]
-    figsize = (w * scale_w, h * scale_h * nchrom)
-    # A shared colorbar or legend is attached to all axes instead of
-    # spanning a grid column, which would equalize all row gaps.
-    shared = nchrom > 1
-    cols = width_ratios[:-1] if shared else width_ratios
     fig, ax = plt.subplots(
-        nrows=nchrom * nsub,
-        ncols=len(cols),
+        nrows=nrows * nsub,
+        ncols=width * ncols + 1,
         gridspec_kw={
-            "width_ratios": cols,
-            "height_ratios": None if not eseq else height_ratios * nchrom,
+            "width_ratios": panel_ratios * ncols + [width_ratios[-1]],
+            "height_ratios": [4, 1] * nrows if eseq else None,
         },
         squeeze=False,
-        figsize=figsize,
-        layout="constrained" if shared else None,
+        figsize=(w * scale_w * ncols, h * scale_h * nrows),
+        layout="constrained" if nchrom > 1 else None,
     )
+    side_ax = ax[0, -1]
+    for cell in ax[1:, -1]:
+        cell.axis("off")
     panels = []
-    for i in range(nchrom):
-        row = ax[i * nsub]
+    for i in range(nrows * ncols):
+        r, c = divmod(i, ncols)
+        cells = ax[r * nsub, c * width : (c + 1) * width]
+        seq_cells = (
+            ax[r * nsub + 1, c * width : (c + 1) * width] if eseq else []
+        )
+        if i >= nchrom:
+            for cell in [*cells, *seq_cells]:
+                cell.set_visible(False)
+            continue
         panel = {
-            "hm_ax": row[0],
-            "dend_ax": row[1] if dendrogram else None,
-            "side_ax": None if shared else row[-1],
-            "seq_ax": None,
+            "hm_ax": cells[0],
+            "dend_ax": cells[1] if dendrogram else None,
+            "side_ax": side_ax,
+            "seq_ax": seq_cells[0] if eseq else None,
+            "col": c,
         }
-        if eseq:
-            seq_row = ax[i * nsub + 1]
-            panel["seq_ax"] = seq_row[0]
-            for extra in seq_row[1:]:
-                extra.axis("off")
+        for extra in seq_cells[1:]:
+            extra.axis("off")
         panels.append(panel)
     return fig, panels
+
+
+def _left_ylabels(panels):
+    """Keep the y-axis labels of the leftmost panels of each row only."""
+    for panel in panels:
+        if panel["col"] > 0:
+            for ax in (panel["hm_ax"], panel["seq_ax"]):
+                if ax is not None:
+                    ax.set_ylabel("")
 
 
 def _share_xlim(panels, xmax):
@@ -247,21 +269,15 @@ def _share_xlim(panels, xmax):
 
 def _colorbar(fig, panels, mappable, label):
     """
-    Draw the colorbar of `mappable` in the last column of a single
-    panel, or as one colorbar shared by several panels.
+    Draw the colorbar of `mappable`, shared by all panels, next to the
+    top-right heatmap.
 
     Returns
     -------
     matplotlib.colorbar.Colorbar
         The colorbar.
     """
-    side_ax = panels[0]["side_ax"]
-    if side_ax is not None:
-        cbar = fig.colorbar(mappable, cax=side_ax)
-    else:
-        cbar = fig.colorbar(
-            mappable, ax=fig.axes, fraction=0.05, aspect=20 * len(panels)
-        )
+    cbar = fig.colorbar(mappable, cax=panels[0]["side_ax"])
     cbar.set_label(label, rotation=270, labelpad=15)
     return cbar
 

@@ -17,6 +17,7 @@ from catella._plotting import (
     _colorbar,
     _finish,
     _leaf_order,
+    _left_ylabels,
     _panel_grid,
     _per_chrom,
     _power_of_10,
@@ -375,6 +376,7 @@ class MethPlot:
             if source["title"] is not None:
                 panel["hm_ax"].set_title(source["title"], pad=12)
         _colorbar(fig, panels, im, cbar_label)
+        _left_ylabels(panels)
         if sharex:
             _share_xlim(panels, max(m.shape[1] for m in matrices) / xscale)
         _finish(fig, show, out_file)

@@ -38,8 +38,8 @@ commentary. See :doc:`tutorials/tut01_meth_prob` and
    for which in ("test", "unmeth", "meth"):
        link = catella.sort_by_linkage(exp=exp_data, raw_which=which,
                                       fill_nan=0.0)
-       catella.plot_meth(exp=exp_data, chrom="601", raw_which=which,
-                         link_mat=link["601"], vmin=0.0, vmax=1.0)
+       catella.plot_meth(exp=exp_data, chroms="601", raw_which=which,
+                         link_mat=link, vmin=0.0, vmax=1.0)
    catella.plot_dropout_ecdf(exp=exp_data, chroms="601")
 
    # Model-based normalized methylation probability

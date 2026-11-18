@@ -1362,7 +1362,13 @@ def plot_meth(
             readable=True,
         ),
     ],
-    chrom: Annotated[str, typer.Argument(help="Chromosome identifier")],
+    chroms: Annotated[
+        str,
+        typer.Argument(
+            callback=csv_parser(str),
+            help="Chromosome(s) to plot (comma-separated)",
+        ),
+    ],
     key: Annotated[
         str | None,
         typer.Option(
@@ -1440,28 +1446,32 @@ def plot_meth(
             "dendrogram"
         ),
     ] = None,
+    sharex: Annotated[
+        bool,
+        typer.Option(help="Put all panels on the widest chromosome's scale"),
+    ] = False,
     show: Annotated[bool, typer.Option(help="Display the figure")] = True,
 ):
     """
-    Plot a methylation heatmap, as probability or energy.
+    Plot a methylation heatmap, as probability or energy, for one or
+    more chromosomes.
     """
     if (key is None) == (raw_which is None):
         raise typer.BadParameter("specify exactly one of --key or --raw-which")
     if value == "energy" and raw_which is not None:
         raise typer.BadParameter("--value energy requires --key")
     exp = MethPrintExperiment.load(exp_file)
-    data = exp.analysis[chrom][key] if key is not None else None
     link_mat = (
-        exp.analysis[chrom][link_mat_name].to_numpy()
+        {c: exp.analysis[c][link_mat_name].to_numpy() for c in chroms}
         if link_mat_name is not None
         else None
     )
     catella.plot_meth(
-        data=data,
         value=value,
-        exp=exp if raw_which is not None else None,
-        chrom=chrom if raw_which is not None else None,
+        exp=exp,
+        chroms=chroms,
         raw_which=raw_which,
+        data_name=key,
         mask_name=mask_name if raw_which is not None else None,
         emax=emax,
         max_rows=max_rows,
@@ -1472,6 +1482,7 @@ def plot_meth(
         cbar_label=cbar_label,
         out_file=out_file,
         link_mat=link_mat,
+        sharex=sharex,
         show=show,
     )
 

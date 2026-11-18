@@ -2111,6 +2111,73 @@ class TestPlotMeth:
         )
         assert result.exit_code != 0
 
+    def _two_chrom_exp_file(self, tmp_path):
+        rng = np.random.default_rng(7)
+        rows = _make_test_rows(nmol=6, nbp=20) + [
+            (f"n{m}", pos, "chr2", "+", round(float(rng.random()), 3), "a")
+            for m in range(4)
+            for pos in range(0, 30, 5)
+        ]
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 20, "chr2": 30})
+        exp_file = tmp_path / "exp.h5"
+        exp = catella.load_raw(chromsize=chromsize, test_file=test_file)
+        catella.compute_empirical_prob(exp=exp, out_file=exp_file, lnuc=5)
+        exp = MethPrintExperiment.load(exp_file)
+        MethPrintAnalysis().sort_by_linkage(
+            exp=exp, data_name="meth_prob", fill_nan=0.0
+        )
+        exp.save(overwrite=True)
+        return exp_file
+
+    @pytest.mark.parametrize("value", ["prob", "energy"])
+    def test_several_chroms_with_key(self, tmp_path, value):
+        exp_file = self._two_chrom_exp_file(tmp_path)
+        out_file = tmp_path / f"methmap_two_{value}.png"
+
+        result = runner.invoke(
+            app,
+            [
+                "plot_meth",
+                str(exp_file),
+                "chr1,chr2",
+                "--key",
+                "meth_prob",
+                "--value",
+                value,
+                "--link-mat-name",
+                "meth_prob_linkage",
+                "--sharex",
+                "--out-file",
+                str(out_file),
+                "--no-show",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert out_file.exists()
+
+    def test_several_chroms_with_raw_which(self, tmp_path):
+        exp_file = self._two_chrom_exp_file(tmp_path)
+        out_file = tmp_path / "methmap_two_raw.png"
+
+        result = runner.invoke(
+            app,
+            [
+                "plot_meth",
+                str(exp_file),
+                "chr1,chr2",
+                "--raw-which",
+                "test",
+                "--out-file",
+                str(out_file),
+                "--no-show",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert out_file.exists()
+
 
 class TestPlotMethEnergy:
     def _make_exp_file(self, tmp_path):

@@ -83,7 +83,7 @@ def test_plot_meth_prob_with_raw_which(tmp_path):
     exp = _raw_test_exp()
     out_file = tmp_path / "methmap_raw_which.png"
     MethPlot().plot_meth_prob(
-        exp=exp, chrom="chr1", raw_which="test", out_file=out_file, show=False
+        exp=exp, chroms="chr1", raw_which="test", out_file=out_file, show=False
     )
     assert out_file.exists()
 
@@ -98,7 +98,7 @@ def test_plot_meth_prob_raises_when_data_and_exp_combined(methplot):
     values = np.random.default_rng(1).random((5, 4))
     with pytest.raises(ValueError):
         methplot.plot_meth_prob(
-            values, exp=exp, chrom="chr1", raw_which="test", show=False
+            values, exp=exp, chroms="chr1", raw_which="test", show=False
         )
 
 
@@ -112,7 +112,7 @@ def test_plot_meth_prob_mask_name_forwarded(tmp_path):
     out_file = tmp_path / "methmap_mask_name.png"
     MethPlot().plot_meth_prob(
         exp=exp,
-        chrom="chr1",
+        chroms="chr1",
         raw_which="test",
         mask_name="qc",
         out_file=out_file,
@@ -145,7 +145,7 @@ def test_plot_meth_prob_raw_which_closes_scratch_file(tmp_path, monkeypatch):
 
     out_file = tmp_path / "methmap_scratch.png"
     MethPlot().plot_meth_prob(
-        exp=exp, chrom="chr1", raw_which="test", out_file=out_file, show=False
+        exp=exp, chroms="chr1", raw_which="test", out_file=out_file, show=False
     )
     assert out_file.exists()
     assert len(paths) == 1
@@ -207,7 +207,7 @@ def test_plot_meth_prob_end_to_end_with_sort_by_linkage(tmp_path):
     out_file = tmp_path / "sorted_methmap.png"
     MethPlot().plot_meth_prob(
         exp=exp,
-        chrom="chr1",
+        chroms="chr1",
         raw_which="test",
         link_mat=link_mats["chr1"],
         out_file=out_file,
@@ -296,123 +296,76 @@ def test_plot_meth_energy_smoke_across_input_types(methplot, tmp_path, kind):
     assert out_file.exists()
 
 
-def test_plot_meth_energy_transforms_to_logit(methplot, monkeypatch):
+def _drawn(methplot, values, **kwargs):
+    methplot.plot_meth_energy(values, show=False, **kwargs)
+    fig = plt.gcf()
+    image = fig.axes[0].images[0]
+    return {
+        "data": np.ma.getdata(image.get_array()),
+        "vmin": image.norm.vmin,
+        "vmax": image.norm.vmax,
+        "cmap": image.cmap.name,
+        "cbar_label": fig.axes[-1].get_ylabel(),
+    }
+
+
+def test_plot_meth_energy_transforms_to_logit(methplot):
     values = np.random.default_rng(11).random((4, 3))
-    captured = {}
-
-    def spy_plot_meth_prob(self, data, **kwargs):
-        captured["data"] = np.asarray(data)
-
-    monkeypatch.setattr(MethPlot, "plot_meth_prob", spy_plot_meth_prob)
-    methplot.plot_meth_energy(values, show=False)
-    np.testing.assert_allclose(captured["data"], logit(values))
+    drawn = _drawn(methplot, values)
+    np.testing.assert_allclose(drawn["data"], logit(values))
 
 
-def test_plot_meth_energy_default_vmin_vmax_symmetric(methplot, monkeypatch):
+def test_plot_meth_energy_default_vmin_vmax_symmetric(methplot):
     values = np.random.default_rng(12).random((4, 3))
-    captured = {}
-
-    def spy_plot_meth_prob(self, data, **kwargs):
-        captured.update(kwargs)
-
-    monkeypatch.setattr(MethPlot, "plot_meth_prob", spy_plot_meth_prob)
-    methplot.plot_meth_energy(values, show=False)
-    assert captured["vmin"] == -captured["vmax"]
-    assert captured["vmax"] == np.nanmax(np.abs(logit(values)))
+    drawn = _drawn(methplot, values)
+    assert drawn["vmin"] == -drawn["vmax"]
+    assert drawn["vmax"] == pytest.approx(np.nanmax(np.abs(logit(values))))
 
 
-def test_plot_meth_energy_explicit_vmin_vmax_passthrough(
-    methplot, monkeypatch
-):
+def test_plot_meth_energy_explicit_vmin_vmax_passthrough(methplot):
     values = np.random.default_rng(13).random((4, 3))
-    captured = {}
-
-    def spy_plot_meth_prob(self, data, **kwargs):
-        captured.update(kwargs)
-
-    monkeypatch.setattr(MethPlot, "plot_meth_prob", spy_plot_meth_prob)
-    methplot.plot_meth_energy(values, vmin=-5, vmax=5, show=False)
-    assert (captured["vmin"], captured["vmax"]) == (-5, 5)
+    drawn = _drawn(methplot, values, vmin=-5, vmax=5)
+    assert (drawn["vmin"], drawn["vmax"]) == (-5, 5)
 
 
-def test_plot_meth_energy_asymmetric_vmin_vmax_centered_at_zero(
-    methplot, monkeypatch
-):
+def test_plot_meth_energy_asymmetric_vmin_vmax_centered_at_zero(methplot):
     values = np.random.default_rng(17).random((4, 3))
-    captured = {}
+    drawn = _drawn(methplot, values, vmin=-3, vmax=10)
+    assert (drawn["vmin"], drawn["vmax"]) == (-10, 10)
 
-    def spy_plot_meth_prob(self, data, **kwargs):
-        captured.update(kwargs)
-
-    monkeypatch.setattr(MethPlot, "plot_meth_prob", spy_plot_meth_prob)
-    methplot.plot_meth_energy(values, vmin=-3, vmax=10, show=False)
-    assert captured["vmin"] == -captured["vmax"]
-    assert (captured["vmin"], captured["vmax"]) == (-10, 10)
-
-    methplot.plot_meth_energy(values, vmax=7, show=False)
-    assert (captured["vmin"], captured["vmax"]) == (-7, 7)
+    drawn = _drawn(methplot, values, vmax=7)
+    assert (drawn["vmin"], drawn["vmax"]) == (-7, 7)
 
 
-def test_plot_meth_energy_emax_clamps_and_sets_default_range(
-    methplot, monkeypatch
-):
+def test_plot_meth_energy_emax_clamps_and_sets_default_range(methplot):
     values = np.random.default_rng(14).random((4, 3))
-    captured = {}
-
-    def spy_plot_meth_prob(self, data, **kwargs):
-        captured["data"] = np.asarray(data)
-        captured.update(kwargs)
-
-    monkeypatch.setattr(MethPlot, "plot_meth_prob", spy_plot_meth_prob)
-    methplot.plot_meth_energy(values, emax=1.0, show=False)
-    assert (captured["vmin"], captured["vmax"]) == (-1.0, 1.0)
-    assert np.all(captured["data"] >= -1.0) and np.all(captured["data"] <= 1.0)
+    drawn = _drawn(methplot, values, emax=1.0)
+    assert (drawn["vmin"], drawn["vmax"]) == (-1.0, 1.0)
+    assert np.all(drawn["data"] >= -1.0) and np.all(drawn["data"] <= 1.0)
 
 
-def test_plot_meth_energy_extreme_probabilities_do_not_break_range(
-    methplot, monkeypatch
-):
+def test_plot_meth_energy_extreme_probabilities_do_not_break_range(methplot):
     values = np.array([[0.0, 0.5], [1.0, 0.5]])
-    captured = {}
-
-    def spy_plot_meth_prob(self, data, **kwargs):
-        captured.update(kwargs)
-
-    monkeypatch.setattr(MethPlot, "plot_meth_prob", spy_plot_meth_prob)
-    methplot.plot_meth_energy(values, show=False)
-    assert np.isfinite(captured["vmin"]) and np.isfinite(captured["vmax"])
+    drawn = _drawn(methplot, values)
+    assert np.isfinite(drawn["vmin"]) and np.isfinite(drawn["vmax"])
 
 
-def test_plot_meth_energy_nan_passthrough(methplot, monkeypatch):
+def test_plot_meth_energy_nan_passthrough(methplot):
     values = np.random.default_rng(15).random((4, 3))
     values[0, 0] = np.nan
-    captured = {}
-
-    def spy_plot_meth_prob(self, data, **kwargs):
-        captured["data"] = np.asarray(data)
-
-    monkeypatch.setattr(MethPlot, "plot_meth_prob", spy_plot_meth_prob)
-    methplot.plot_meth_energy(values, show=False)
-    assert np.isnan(captured["data"][0, 0])
+    drawn = _drawn(methplot, values)
+    assert np.isnan(drawn["data"][0, 0])
 
 
-def test_plot_meth_energy_default_cmap_and_label(methplot, monkeypatch):
+def test_plot_meth_energy_default_cmap_and_label(methplot):
     values = np.random.default_rng(16).random((4, 3))
-    captured = {}
+    drawn = _drawn(methplot, values)
+    assert drawn["cmap"] == "RdBu_r"
+    assert drawn["cbar_label"] == r"Energy [$k_BT$]"
 
-    def spy_plot_meth_prob(self, data, **kwargs):
-        captured.update(kwargs)
-
-    monkeypatch.setattr(MethPlot, "plot_meth_prob", spy_plot_meth_prob)
-    methplot.plot_meth_energy(values, show=False)
-    assert captured["cmap"] == "RdBu_r"
-    assert captured["cbar_label"] == r"Energy [$k_BT$]"
-
-    methplot.plot_meth_energy(
-        values, cmap="viridis", cbar_label="custom", show=False
-    )
-    assert captured["cmap"] == "viridis"
-    assert captured["cbar_label"] == "custom"
+    drawn = _drawn(methplot, values, cmap="viridis", cbar_label="custom")
+    assert drawn["cmap"] == "viridis"
+    assert drawn["cbar_label"] == "custom"
 
 
 def _write_tsv(path, rows):

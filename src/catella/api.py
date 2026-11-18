@@ -1403,9 +1403,10 @@ def plot_meth(
     *,
     value: str = "prob",
     exp: MethPrintExperiment | None = None,
-    chrom: str | None = None,
+    chroms: str | Iterable[str] | None = None,
     raw_which: str | None = None,
-    mols: int | Sequence[int] | None = None,
+    data_name: str | None = None,
+    mols: int | Sequence[int] | dict | None = None,
     mask_name: str | None = None,
     emax: float | None = None,
     max_rows: int | None = None,
@@ -1415,47 +1416,53 @@ def plot_meth(
     cmap: str | None = None,
     cbar_label: str | None = None,
     out_file: str | Path | None = None,
-    link_mat: np.ndarray | None = None,
+    link_mat: np.ndarray | dict | None = None,
+    sharex: bool = False,
     show: bool = True,
 ):
     """
-    Plot a methylation heatmap of given or raw data, as probability or
-    energy.
+    Plot a methylation heatmap, as probability or energy, of one matrix
+    or of one or more chromosomes of an experiment.
 
-    Plots `data` at full resolution -- for large data, pass `max_rows`
-    to downsample first, or downsample it yourself (`utils.downsample`,
+    Plots at full resolution -- for large data, pass `max_rows` to
+    downsample first, or downsample it yourself (`utils.downsample`,
     works uniformly for `H5Array`, `pd.DataFrame`, or `np.ndarray`) and
-    pass the reduced result.
+    pass the reduced result. Several chromosomes get one panel each,
+    stacked vertically in one figure, aligned and sharing one colorbar
+    on a common color scale.
 
     Parameters
     ----------
     data : H5Array, pd.DataFrame, or np.ndarray, optional
-        Dense signal matrix to plot (rows=molecules, columns=bp
-        position), e.g. `exp.analysis[chrom]["meth_prob"]`,
-        `exp.analysis[chrom]["test_smoothed"]`, or the result of
-        `MethPrintExperiment.to_dense()`. Required unless `exp`,
-        `chrom`, and `raw_which` are given instead.
+        One dense signal matrix to plot (rows=molecules, columns=bp
+        position), e.g. `exp.analysis[chrom]["meth_prob"]` or an array
+        not stored in an experiment. Required unless `exp` and `chroms`
+        are given instead.
     value : {"prob", "energy"}, default "prob"
         "prob" plots the values as given; "energy" plots `logit(data)`,
         the same quantity `catella.simulation.engine` treats as physical
         energy, on a color scale centered at zero. "energy" requires
-        `data` in [0, 1] and cannot be combined with `exp`/`chrom`/
-        `raw_which`/`mols`/`mask_name`.
+        probabilities in [0, 1] (`data` or `data_name`) and cannot be
+        combined with `raw_which`/`mols`/`mask_name`.
     exp : MethPrintExperiment, optional
-        Experiment to pull raw data from. Must be given together with
-        `chrom` and `raw_which`, and not combined with `data`.
-    chrom : str, optional
-        Chromosome to plot, when using `exp`/`raw_which`.
+        Experiment to read from, together with `chroms` and exactly one
+        of `raw_which`/`data_name`. Not combined with `data`.
+    chroms : str or iterable of str, optional
+        Chromosome(s) to plot from `exp`, one panel each, top to bottom.
     raw_which : {"test", "unmeth", "meth"}, optional
-        Which raw table to plot, when using `exp`/`chrom`. Calls
+        Which raw table to plot per chromosome. Calls
         `exp.to_dense(chrom, which=raw_which, mols=mols,
         mask_name=mask_name)` internally.
-    mols : int or sequence of int, optional
-        Molecule index/indices to include, when using `exp`/`chrom`/
-        `raw_which`. See `MethPrintExperiment.to_dense`.
+    data_name : str, optional
+        Key of a dense array to plot per chromosome, read from
+        `exp.analysis[chrom][data_name]` (e.g., "meth_prob").
+    mols : int, sequence of int, or dict, optional
+        Molecule index/indices to include; only with `raw_which`. See
+        `MethPrintExperiment.to_dense`. With several chroms, a dict keyed
+        by chrom (chroms not in it show all molecules).
     mask_name : str, optional
-        Dropout mask name to apply, when using `exp`/`chrom`/
-        `raw_which`. See `MethPrintExperiment.to_dense`.
+        Dropout mask name to apply; only with `raw_which`. See
+        `MethPrintExperiment.to_dense`.
     emax : float, optional
         For "energy" only: clamp energy to [-emax, emax] (matching
         `SimSettings.emax`'s clamping in `NucPosMCMC.setEnergy`) and
@@ -1463,19 +1470,19 @@ def plot_meth(
         unclamped and the default range is inferred from the finite
         values.
     max_rows : int, optional
-        If given, `data` is downsampled to at most this many rows (via
-        `utils.downsample`) before plotting.
+        If given, each panel is downsampled to at most this many rows
+        (via `utils.downsample`) before plotting.
     downsample_how : {"mean", "sum", "min", "max", "stride"},
         default "mean"
         How to collapse rows when `max_rows` is given. See
         `utils.downsample`.
     vmin : float, optional
-        Lower bound for the color scale. If None, inferred from
-        `data`. For "energy", combined with `vmax` into a symmetric
-        half-range so the color scale stays centered at zero.
+        Lower bound for the color scale. If None, inferred from the data
+        (over all panels). For "energy", combined with `vmax` into a
+        symmetric half-range so the color scale stays centered at zero.
     vmax : float, optional
-        Upper bound for the color scale. If None, inferred from
-        `data`. See `vmin` for "energy".
+        Upper bound for the color scale. If None, inferred from the data
+        (over all panels). See `vmin` for "energy".
     cmap : str, optional
         Matplotlib colormap name to use for this plot. If None, the
         `MethPlot` default is used for "prob" and "RdBu_r" for
@@ -1486,11 +1493,16 @@ def plot_meth(
     out_file : str | Path, optional
         Path where the generated plot will be saved. If None, the plot
         is not saved to disk.
-    link_mat : np.ndarray or pd.DataFrame, optional
+    link_mat : np.ndarray, pd.DataFrame, or dict, optional
         Linkage matrix of these molecules (as returned or stored by
         `sort_by_linkage`). If given, the rows are put in its leaf order
         before `max_rows` downsampling and its dendrogram is drawn
-        alongside. Cannot be combined with `mols`.
+        alongside. Cannot be combined with `mols`. With several chroms, a
+        dict keyed by chrom, e.g. the result of `sort_by_linkage` (chroms
+        not in it are not sorted; extra keys are ignored).
+    sharex : bool, default False
+        If True, all panels span the widest chromosome, so they share
+        one bp scale. If False, each panel spans its own.
     show : bool, default True
         Whether to display the figure using the active plotting
         backend.
@@ -1498,15 +1510,27 @@ def plot_meth(
     Raises
     ------
     ValueError
-        If `value` is not "prob" or "energy"; if neither `data` nor all
-        of `exp`/`chrom`/`raw_which` are given; if `data` is combined
-        with any of `exp`/`chrom`/`raw_which`/`mols`/`mask_name`; if
-        "energy" is used without `data`; or if `emax` is given with
-        "prob".
+        If `value` is not "prob" or "energy"; if neither `data` nor
+        `exp` and `chroms` with exactly one of `raw_which`/`data_name`
+        are given; if `data` is combined with any of `exp`/`chroms`/
+        `raw_which`/`data_name`/`mols`/`mask_name`; if `mols` or
+        `mask_name` is given without `raw_which`; if "energy" is
+        combined with `raw_which`/`mols`/`mask_name`; if `emax` is given
+        with "prob"; or if `mols` or `link_mat` is not a dict with
+        several chroms.
+
+    Warns
+    -----
+    UserWarning
+        If more than 10 chroms are plotted in one figure, or if
+        rendering is estimated to need more than 1 GB of memory.
     """
     if value not in ("prob", "energy"):
         raise ValueError(f'value must be "prob" or "energy", got {value!r}')
     kwargs = dict(
+        exp=exp,
+        chroms=chroms,
+        data_name=data_name,
         max_rows=max_rows,
         downsample_how=downsample_how,
         vmin=vmin,
@@ -1514,6 +1538,7 @@ def plot_meth(
         cmap=cmap,
         out_file=out_file,
         link_mat=link_mat,
+        sharex=sharex,
         show=show,
     )
     if cbar_label is not None:
@@ -1524,20 +1549,15 @@ def plot_meth(
             raise ValueError('emax is only valid with value="energy"')
         methplot.plot_meth_prob(
             data,
-            exp=exp,
-            chrom=chrom,
             raw_which=raw_which,
             mols=mols,
             mask_name=mask_name,
             **kwargs,
         )
         return
-    if data is None or any(
-        v is not None for v in (exp, chrom, raw_which, mols, mask_name)
-    ):
+    if any(v is not None for v in (raw_which, mols, mask_name)):
         raise ValueError(
-            'value="energy" requires data; exp, chrom, raw_which, mols '
-            "and mask_name are not supported"
+            'value="energy" does not support raw_which, mols or mask_name'
         )
     methplot.plot_meth_energy(data, emax=emax, **kwargs)
 

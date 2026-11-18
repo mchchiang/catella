@@ -1,5 +1,6 @@
 # plot.py
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path
@@ -12,15 +13,26 @@ from scipy.special import logit
 
 from catella import utils
 from catella._plotting import (
+    _chrom_list,
+    _colorbar,
     _finish,
     _leaf_order,
     _panel_grid,
+    _per_chrom,
+    _share_xlim,
     _warn_if_large,
 )
 from catella._warnings import _warn
 
 # Position of each plot_dropout_ecdf split_by field in a dropout key.
 _ECDF_FIELDS = {"chrom": 0, "source": 1, "channel": 2}
+
+
+def _close_raw(sources):
+    """Close the `to_dense` results among the panel sources."""
+    for source in sources:
+        if source["raw"]:
+            source["data"].close()
 
 
 @dataclass(slots=True, kw_only=True)
@@ -76,8 +88,9 @@ class MethPlot:
         data=None,
         *,
         exp=None,
-        chrom: str | None = None,
+        chroms: str | Iterable[str] | None = None,
         raw_which: str | None = None,
+        data_name: str | None = None,
         mols=None,
         mask_name: str | None = None,
         max_rows: int | None = None,
@@ -87,55 +100,62 @@ class MethPlot:
         cmap: str | None = None,
         cbar_label: str = "Methylation prob.",
         out_file: str | Path | None = None,
-        link_mat: np.ndarray | None = None,
+        link_mat: np.ndarray | dict | None = None,
+        sharex: bool = False,
         show: bool = True,
     ):
         """
-        Plot a methylation heatmap.
+        Plot a methylation heatmap of one matrix, or of one or more
+        chromosomes of an experiment.
 
-        Plots `data` at full resolution -- for large data, pass
-        `max_rows` to downsample first, or downsample it yourself
-        (`utils.downsample`, works uniformly for `H5Array`,
-        `pd.DataFrame`, or `np.ndarray`) and pass the reduced result.
+        Plots at full resolution -- for large data, pass `max_rows` to
+        downsample first, or downsample it yourself (`utils.downsample`,
+        works uniformly for `H5Array`, `pd.DataFrame`, or `np.ndarray`)
+        and pass the reduced result. Several chromosomes get one panel
+        each, stacked vertically in one figure, aligned and sharing one
+        colorbar on a common color scale.
 
         Parameters
         ----------
         data : H5Array, pd.DataFrame, or np.ndarray, optional
             Dense signal matrix to plot (rows=molecules, columns=bp
-            position), e.g. `exp.analysis[chrom]["meth_prob"]`,
-            `exp.analysis[chrom]["test_smoothed"]`, or the result of
-            `MethPrintExperiment.to_dense()`. Required unless `exp`,
-            `chrom`, and `raw_which` are given instead.
+            position), e.g. `exp.analysis[chrom]["meth_prob"]` or the
+            result of `MethPrintExperiment.to_dense()`. Required unless
+            `exp` and `chroms` are given instead.
         exp : MethPrintExperiment, optional
-            Experiment to pull raw data from. Must be given together
-            with `chrom` and `raw_which`, and not combined with `data`.
-        chrom : str, optional
-            Chromosome to plot, when using `exp`/`raw_which`.
+            Experiment to read from, together with `chroms` and exactly
+            one of `raw_which`/`data_name`. Not combined with `data`.
+        chroms : str or iterable of str, optional
+            Chromosome(s) to plot from `exp`, one panel each, top to
+            bottom.
         raw_which : {"test", "unmeth", "meth"}, optional
-            Which raw table to plot, when using `exp`/`chrom`. Calls
+            Which raw table to plot per chromosome. Calls
             `exp.to_dense(chrom, which=raw_which, mols=mols,
             mask_name=mask_name)` internally.
-        mols : int or sequence of int, optional
-            Molecule index/indices to include, when using `exp`/
-            `chrom`/`raw_which`. See `MethPrintExperiment.to_dense`.
+        data_name : str, optional
+            Key of a dense array to plot per chromosome, read from
+            `exp.analysis[chrom][data_name]` (e.g., "meth_prob").
+        mols : int, sequence of int, or dict, optional
+            Molecule index/indices to include; only with `raw_which`.
+            See `MethPrintExperiment.to_dense`. With several chroms, a
+            dict keyed by chrom (chroms not in it show all molecules).
         mask_name : str, optional
-            Dropout mask name to apply, when using `exp`/`chrom`/
-            `raw_which`. See `MethPrintExperiment.to_dense`.
+            Dropout mask name to apply; only with `raw_which`. See
+            `MethPrintExperiment.to_dense`.
         max_rows : int, optional
-            If given, `data` is downsampled to at most this many rows
-            (via `utils.downsample`) before plotting. Applied after
-            `data`/`raw_which` resolution and before the size check
-            (see Warns).
+            If given, each panel is downsampled to at most this many
+            rows (via `utils.downsample`) before plotting, and before
+            the size check (see Warns).
         downsample_how : {"mean", "sum", "min", "max", "stride"},
             default "mean"
             How to collapse rows when `max_rows` is given. See
             `utils.downsample`.
         vmin : float, optional
-            Lower bound for the color scale. If None, inferred from
-            `data`.
+            Lower bound for the color scale. If None, inferred from the
+            data (over all panels).
         vmax : float, optional
-            Upper bound for the color scale. If None, inferred from
-            `data`.
+            Upper bound for the color scale. If None, inferred from the
+            data (over all panels).
         cmap : str, optional
             Matplotlib colormap name to use for this plot. If None,
             `self.cmap` is used.
@@ -144,103 +164,222 @@ class MethPlot:
         out_file : str or pathlib.Path, optional
             Path to save the generated figure. Directories are created
             if they do not exist.
-        link_mat : np.ndarray or pd.DataFrame, optional
+        link_mat : np.ndarray, pd.DataFrame, or dict, optional
             Linkage matrix of these molecules (as returned or stored by
             `MethPrintAnalysis.sort_by_linkage`). If given, the rows are
             put in its leaf order before `max_rows` downsampling, and its
             dendrogram is drawn alongside. Cannot be combined with
-            `mols`. With `data`, the whole array is loaded to reorder it.
+            `mols`. With `data` or `data_name`, the whole array is
+            loaded to reorder it. With several chroms, a dict keyed by
+            chrom, e.g. the result of `sort_by_linkage` (chroms not in
+            it are not sorted; extra keys are ignored).
+        sharex : bool, default False
+            If True, all panels span the widest chromosome, so they
+            share one bp scale. If False, each panel spans its own.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
         Raises
         ------
         ValueError
-            If neither `data` nor all of `exp`/`chrom`/`raw_which` are
-            given, if `data` is combined with any of `exp`/`chrom`/
-            `raw_which`/`mols`/`mask_name`, or if `link_mat` is combined
-            with `mols` or does not match the number of molecules.
+            If neither `data` nor `exp` and `chroms` with exactly one of
+            `raw_which`/`data_name` are given, if `data` is combined
+            with any of `exp`/`chroms`/`raw_which`/`data_name`/`mols`/
+            `mask_name`, if `mols` or `mask_name` is given without
+            `raw_which`, if `chroms` is empty, if `mols` or `link_mat`
+            is not a dict with several chroms, or if `link_mat` is
+            combined with `mols` or does not match the number of
+            molecules.
 
         Warns
         -----
         UserWarning
-            If rendering `data` at full resolution is estimated to need
-            more than 1 GB of memory (about 80 bytes per row and base
-            pair). Pass `max_rows`, or downsample first
-            (`utils.downsample`), to avoid it.
+            If rendering is estimated to need more than 1 GB of memory
+            (about 80 bytes per row and base pair, over all panels).
+            Pass `max_rows`, or downsample first (`utils.downsample`),
+            to avoid it. Also if more than 10 chroms are plotted.
         """
-        raw_data = None
-        if data is None:
-            if exp is None or chrom is None or raw_which is None:
-                raise ValueError(
-                    "provide either 'data', or all of 'exp', 'chrom', "
-                    "and 'raw_which'"
-                )
-            if link_mat is not None:
-                mol_id = getattr(exp.raw[chrom], f"{raw_which}_mol_id")
-                nmol = 0 if mol_id is None else len(mol_id)
-                link_mat, order = _leaf_order(link_mat, nmol, mols)
-                mols = order
-            data = exp.to_dense(
-                chrom, which=raw_which, mols=mols, mask_name=mask_name
-            )
-            raw_data = data
-        elif (
-            exp is not None
-            or chrom is not None
-            or raw_which is not None
-            or mols is not None
-            or mask_name is not None
-        ):
-            raise ValueError(
-                "'exp'/'chrom'/'raw_which'/'mols'/'mask_name' cannot "
-                "be combined with 'data'"
-            )
-        elif link_mat is not None:
-            link_mat, order = _leaf_order(link_mat, data.shape[0])
-            data = np.asarray(data)[order]
-
+        sources = self._meth_sources(
+            data,
+            exp=exp,
+            chroms=chroms,
+            raw_which=raw_which,
+            data_name=data_name,
+            mols=mols,
+            mask_name=mask_name,
+            link_mat=link_mat,
+        )
         try:
-            if max_rows is not None:
-                data = utils.downsample(data, max_rows, how=downsample_how)
-
-            _warn_if_large(
-                data.shape[0],
-                data.shape[1],
-                "consider passing 'max_rows', or downsampling first "
-                "(utils.downsample)",
-            )
-
-            sorted_rows = link_mat is not None
-            fig, (panel,) = _panel_grid(
-                1,
-                [5, 1, 0.25] if sorted_rows else [20, 1],
-                dendrogram=sorted_rows,
-                eseq=False,
-            )
-            self._draw_meth(
-                panel,
-                np.asarray(data),
+            self._plot_panels(
+                sources,
+                max_rows=max_rows,
+                downsample_how=downsample_how,
                 vmin=vmin,
                 vmax=vmax,
                 cmap=cmap,
                 cbar_label=cbar_label,
-                link_mat=link_mat,
+                sharex=sharex,
+                show=show,
+                out_file=out_file,
             )
-            _finish(fig, show, out_file)
         finally:
-            if raw_data is not None:
-                raw_data.close()
+            _close_raw(sources)
 
-    def _draw_meth(
-        self, panel, matrix, *, vmin, vmax, cmap, cbar_label, link_mat
+    def _meth_sources(
+        self,
+        data,
+        *,
+        exp,
+        chroms,
+        raw_which,
+        data_name,
+        mols,
+        mask_name,
+        link_mat,
     ):
+        """
+        Check the inputs of `plot_meth_prob`/`plot_meth_energy` and read
+        the matrix of each panel, in the leaf order of its `link_mat`.
+
+        Returns
+        -------
+        list of dict
+            Per panel: "title" (the chrom with several chroms, else
+            None), "data", "link_mat" (float array or None), and "raw"
+            (True if "data" is a `to_dense` result to close).
+        """
+        if data is not None:
+            given = (exp, chroms, raw_which, data_name, mols, mask_name)
+            if any(v is not None for v in given):
+                raise ValueError(
+                    "'exp'/'chroms'/'raw_which'/'data_name'/'mols'/"
+                    "'mask_name' cannot be combined with 'data'"
+                )
+            if link_mat is not None:
+                link_mat, order = _leaf_order(link_mat, data.shape[0])
+                data = np.asarray(data)[order]
+            return [
+                {"title": None, "data": data, "link_mat": link_mat,
+                 "raw": False}
+            ]
+        if exp is None or chroms is None or (
+            (raw_which is None) == (data_name is None)
+        ):
+            raise ValueError(
+                "provide either 'data', or 'exp' and 'chroms' with "
+                "exactly one of 'raw_which' and 'data_name'"
+            )
+        if raw_which is None and (mols is not None or mask_name is not None):
+            raise ValueError("'mols' and 'mask_name' require 'raw_which'")
+        chroms = _chrom_list(chroms)
+        mols = _per_chrom(mols, chroms, "mols")
+        link_mat = _per_chrom(link_mat, chroms, "link_mat")
+        sources = []
+        try:
+            for chrom in chroms:
+                link, sel = link_mat[chrom], mols[chrom]
+                if raw_which is not None:
+                    if link is not None:
+                        mol_id = getattr(
+                            exp.raw[chrom], f"{raw_which}_mol_id"
+                        )
+                        nmol = 0 if mol_id is None else len(mol_id)
+                        link, sel = _leaf_order(link, nmol, sel)
+                    matrix = exp.to_dense(
+                        chrom, which=raw_which, mols=sel, mask_name=mask_name
+                    )
+                else:
+                    matrix = exp.analysis[chrom][data_name]
+                    if link is not None:
+                        link, order = _leaf_order(link, matrix.shape[0])
+                        matrix = np.asarray(matrix)[order]
+                sources.append(
+                    {
+                        "title": chrom if len(chroms) > 1 else None,
+                        "data": matrix,
+                        "link_mat": link,
+                        "raw": raw_which is not None,
+                    }
+                )
+        except BaseException:
+            _close_raw(sources)
+            raise
+        return sources
+
+    def _plot_panels(
+        self,
+        sources,
+        *,
+        max_rows,
+        downsample_how,
+        vmin,
+        vmax,
+        cmap,
+        cbar_label,
+        sharex,
+        show,
+        out_file,
+    ):
+        """
+        Downsample, draw and lay out the panels from `_meth_sources`,
+        with one colorbar on a common color scale.
+        """
+        matrices = []
+        for source in sources:
+            matrix = source["data"]
+            if max_rows is not None:
+                matrix = utils.downsample(matrix, max_rows, how=downsample_how)
+            matrices.append(matrix)
+        _warn_if_large(
+            sum(m.shape[0] for m in matrices),
+            max(m.shape[1] for m in matrices),
+            "consider passing 'max_rows', or downsampling first "
+            "(utils.downsample)",
+        )
+        matrices = [np.asarray(m) for m in matrices]
+        if len(matrices) > 1 and (vmin is None or vmax is None):
+            finite = np.concatenate(
+                [m[np.isfinite(m)].ravel() for m in matrices]
+            )
+            if finite.size > 0:
+                vmin = finite.min() if vmin is None else vmin
+                vmax = finite.max() if vmax is None else vmax
+
+        sorted_rows = any(s["link_mat"] is not None for s in sources)
+        fig, panels = _panel_grid(
+            len(sources),
+            [5, 1, 0.25] if sorted_rows else [20, 1],
+            dendrogram=sorted_rows,
+            eseq=False,
+        )
+        for source, matrix, panel in zip(sources, matrices, panels):
+            im = self._draw_meth(
+                panel,
+                matrix,
+                vmin=vmin,
+                vmax=vmax,
+                cmap=cmap,
+                link_mat=source["link_mat"],
+            )
+            if source["title"] is not None:
+                panel["hm_ax"].set_title(source["title"], pad=12)
+        _colorbar(fig, panels, im, cbar_label)
+        if sharex:
+            _share_xlim(panels, max(m.shape[1] for m in matrices))
+        _finish(fig, show, out_file)
+
+    def _draw_meth(self, panel, matrix, *, vmin, vmax, cmap, link_mat):
         """
         Draw a methylation heatmap into the axes of `panel` (from
         `_panel_grid`), with a dendrogram if `link_mat` is given (rows
-        already in its leaf order) and a colorbar in the last column.
+        already in its leaf order).
+
+        Returns
+        -------
+        matplotlib.image.AxesImage
+            The heatmap, for the colorbar drawn by the caller.
         """
-        hm_ax, cbar_ax = panel["hm_ax"], panel["side_ax"]
+        hm_ax = panel["hm_ax"]
         nrow, ncol = matrix.shape
         norm = Normalize(vmin=vmin, vmax=vmax)
         cmap_obj = plt.get_cmap(cmap if cmap is not None else self.cmap)
@@ -261,8 +400,8 @@ class MethPlot:
             "Row (leaf order)" if sorted_rows else "Molecule index"
         )
 
+        dend_ax = panel["dend_ax"]
         if sorted_rows:
-            dend_ax = panel["dend_ax"]
             sch.dendrogram(
                 link_mat,
                 orientation="right",
@@ -270,18 +409,18 @@ class MethPlot:
                 no_labels=True,
                 link_color_func=lambda x: "black",
             )
+        if dend_ax is not None:
             dend_ax.axis("off")
-
-        # cbar_ax is always the rightmost column, so the colorbar
-        # appears to the right of the dendrogram when one is shown.
-        cbar = hm_ax.figure.colorbar(im, cax=cbar_ax)
-        cbar.set_label(cbar_label, rotation=270, labelpad=15)
+        return im
 
     @_apply_style
     def plot_meth_energy(
         self,
-        data,
+        data=None,
         *,
+        exp=None,
+        chroms: str | Iterable[str] | None = None,
+        data_name: str | None = None,
         emax: float | None = None,
         max_rows: int | None = None,
         downsample_how: str = "mean",
@@ -290,21 +429,32 @@ class MethPlot:
         cmap: str | None = None,
         cbar_label: str = r"Energy [$k_BT$]",
         out_file: str | Path | None = None,
-        link_mat: np.ndarray | None = None,
+        link_mat: np.ndarray | dict | None = None,
+        sharex: bool = False,
         show: bool = True,
     ):
         """
         Plot a methylation heatmap on an energy scale.
 
-        Thin wrapper around `plot_meth_prob` showing `logit(data)`
-        instead of the raw probability, the same quantity
-        `catella.simulation.engine` treats as physical energy.
+        Like `plot_meth_prob`, but showing `logit(data)` instead of the
+        raw probability, the same quantity `catella.simulation.engine`
+        treats as physical energy, on a color scale centered at zero
+        (common to all panels).
 
         Parameters
         ----------
-        data : H5Array, pd.DataFrame, or np.ndarray
+        data : H5Array, pd.DataFrame, or np.ndarray, optional
             Dense probability matrix in [0, 1], e.g.
-            `exp.analysis[chrom]["meth_prob"]`.
+            `exp.analysis[chrom]["meth_prob"]`. Required unless `exp`,
+            `chroms`, and `data_name` are given instead.
+        exp : MethPrintExperiment, optional
+            Experiment to read `data_name` from. Not combined with
+            `data`.
+        chroms : str or iterable of str, optional
+            Chromosome(s) to plot from `exp`, one panel each.
+        data_name : str, optional
+            Key of the probability array per chromosome, read from
+            `exp.analysis[chrom][data_name]`.
         emax : float, optional
             If given, clamp energy to [-emax, emax] (matching
             `SimSettings.emax`'s clamping in `NucPosMCMC.setEnergy`)
@@ -328,40 +478,66 @@ class MethPlot:
             Label drawn next to the colorbar.
         out_file : str or pathlib.Path, optional
             Path to save the generated figure.
-        link_mat : np.ndarray or pd.DataFrame, optional
+        link_mat : np.ndarray, pd.DataFrame, or dict, optional
             Linkage matrix of these molecules; the rows are put in its
-            leaf order and its dendrogram is drawn alongside. See
-            `plot_meth_prob`.
+            leaf order and its dendrogram is drawn alongside. With
+            several chroms, a dict keyed by chrom. See `plot_meth_prob`.
+        sharex : bool, default False
+            If True, all panels span the widest chromosome.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
-        """
-        energy = logit(np.asarray(data))
 
-        if emax is not None:
-            energy = np.clip(energy, -emax, emax)
+        Raises
+        ------
+        ValueError
+            If neither `data` nor `exp`, `chroms`, and `data_name` are
+            given, if `data` is combined with any of them, or for an
+            invalid `chroms` or `link_mat` (see `plot_meth_prob`).
+        """
+        if data is None and exp is not None and data_name is None:
+            raise ValueError(
+                "provide either 'data', or 'exp', 'chroms' and 'data_name'"
+            )
+        sources = self._meth_sources(
+            data,
+            exp=exp,
+            chroms=chroms,
+            raw_which=None,
+            data_name=data_name,
+            mols=None,
+            mask_name=None,
+            link_mat=link_mat,
+        )
+        for source in sources:
+            energy = logit(np.asarray(source["data"]))
+            if emax is not None:
+                energy = np.clip(energy, -emax, emax)
+            source["data"] = energy
 
         if vmin is not None or vmax is not None:
             halfrange = max(abs(v) for v in (vmin, vmax) if v is not None)
         elif emax is not None:
             halfrange = emax
         else:
-            finite = energy[np.isfinite(energy)]
+            finite = np.concatenate(
+                [s["data"][np.isfinite(s["data"])] for s in sources]
+            )
             halfrange = np.nanmax(np.abs(finite)) if finite.size > 0 else None
 
         if halfrange is not None:
             vmin, vmax = -halfrange, halfrange
 
-        self.plot_meth_prob(
-            energy,
+        self._plot_panels(
+            sources,
+            max_rows=max_rows,
+            downsample_how=downsample_how,
             vmin=vmin,
             vmax=vmax,
             cmap=cmap if cmap is not None else "RdBu_r",
             cbar_label=cbar_label,
-            out_file=out_file,
-            max_rows=max_rows,
-            downsample_how=downsample_how,
-            link_mat=link_mat,
+            sharex=sharex,
             show=show,
+            out_file=out_file,
         )
 
     @_apply_style

@@ -3,9 +3,11 @@
 from dataclasses import replace
 
 import catella
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
+import scipy.cluster.hierarchy as sch
 from catella import utils
 from catella.experiment.methdata import MethPrintData, MethPrintExperiment
 from catella.experiment.plot import MethPlot
@@ -946,10 +948,155 @@ class TestPlotMeth:
         exp = _make_experiment(nmol=6, nbp=10, seed=3)
         out_file = tmp_path / "raw.png"
         catella.plot_meth(
-            exp=exp, chrom="chr1", raw_which="test", out_file=out_file,
+            exp=exp, chroms="chr1", raw_which="test", out_file=out_file,
             show=False,
         )
         assert out_file.exists()
+
+    def _two_chrom_exp(self):
+        rng = np.random.default_rng(5)
+        raws = {}
+        for chrom, nmol, nbp in (("chr1", 6, 10), ("chr2", 4, 14)):
+            rows = [
+                (m, p, "+", float(rng.random()), 0)
+                for m in range(nmol)
+                for p in rng.choice(nbp, size=6, replace=False)
+            ]
+            raws[chrom] = MethPrintData._create(
+                chrom=chrom,
+                nbp=nbp,
+                test_mol_id=np.array(
+                    [f"m{m}" for m in range(nmol)], dtype=object
+                ),
+                test_data=pd.DataFrame(
+                    rows,
+                    columns=["mol_index", "pos", "strand", "mod_qual",
+                             "mod_code"],
+                ),
+                meth_mol_id=None,
+                meth_data=None,
+                unmeth_mol_id=None,
+                unmeth_data=None,
+            )
+        exp = MethPrintExperiment._create(_raw_data=raws)
+        exp.analysis["chr1"]["prob"] = pd.DataFrame(
+            rng.uniform(0.1, 0.5, (6, 10))
+        )
+        exp.analysis["chr2"]["prob"] = pd.DataFrame(
+            rng.uniform(0.4, 0.9, (4, 14))
+        )
+        return exp
+
+    def _images(self):
+        return [ax.images[0] for ax in plt.gcf().axes if ax.images]
+
+    @pytest.mark.parametrize("value", ["prob", "energy"])
+    def test_data_name_several_chroms(self, value):
+        exp = self._two_chrom_exp()
+        catella.plot_meth(
+            exp=exp,
+            chroms=["chr1", "chr2"],
+            data_name="prob",
+            value=value,
+            show=False,
+        )
+        images = self._images()
+        assert [im.get_array().shape for im in images] == [(6, 10), (4, 14)]
+        assert len(plt.gcf().axes) == 3
+
+    def test_raw_several_chroms_with_mols_dict(self):
+        exp = self._two_chrom_exp()
+        catella.plot_meth(
+            exp=exp,
+            chroms=["chr1", "chr2"],
+            raw_which="test",
+            mols={"chr2": [0, 1]},
+            show=False,
+        )
+        shapes = [im.get_array().shape for im in self._images()]
+        assert shapes == [(6, 10), (2, 14)]
+
+    def test_common_color_scale(self):
+        exp = self._two_chrom_exp()
+        catella.plot_meth(
+            exp=exp, chroms=["chr1", "chr2"], data_name="prob", show=False
+        )
+        data = [exp.analysis[c]["prob"].to_numpy() for c in ("chr1", "chr2")]
+        for im in self._images():
+            assert im.norm.vmin == pytest.approx(min(d.min() for d in data))
+            assert im.norm.vmax == pytest.approx(max(d.max() for d in data))
+
+    def test_energy_common_symmetric_scale(self):
+        exp = self._two_chrom_exp()
+        catella.plot_meth(
+            exp=exp,
+            chroms=["chr1", "chr2"],
+            data_name="prob",
+            value="energy",
+            show=False,
+        )
+        halfrange = max(
+            np.abs(logit(exp.analysis[c]["prob"].to_numpy())).max()
+            for c in ("chr1", "chr2")
+        )
+        for im in self._images():
+            assert im.norm.vmin == pytest.approx(-halfrange)
+            assert im.norm.vmax == pytest.approx(halfrange)
+
+    def test_link_mat_dict_sorts_each_chrom(self):
+        exp = self._two_chrom_exp()
+        link = catella.sort_by_linkage(exp=exp, data_name="prob")
+        catella.plot_meth(
+            exp=exp,
+            chroms=["chr1", "chr2"],
+            data_name="prob",
+            link_mat=link,
+            show=False,
+        )
+        for chrom, im in zip(("chr1", "chr2"), self._images()):
+            order = sch.leaves_list(link[chrom])
+            np.testing.assert_allclose(
+                np.ma.getdata(im.get_array()),
+                exp.analysis[chrom]["prob"].to_numpy()[order],
+            )
+
+    def test_sharex_uses_widest_chrom(self):
+        exp = self._two_chrom_exp()
+        catella.plot_meth(
+            exp=exp,
+            chroms=["chr1", "chr2"],
+            data_name="prob",
+            sharex=True,
+            show=False,
+        )
+        xlims = [ax.get_xlim() for ax in plt.gcf().axes if ax.images]
+        assert xlims == [(0, 14), (0, 14)]
+
+    def test_data_with_chroms_raises(self):
+        exp = self._two_chrom_exp()
+        with pytest.raises(ValueError, match="cannot be combined"):
+            catella.plot_meth(
+                self._data(), exp=exp, chroms="chr1", show=False
+            )
+
+    def test_raw_which_and_data_name_raises(self):
+        exp = self._two_chrom_exp()
+        with pytest.raises(ValueError, match="exactly one of"):
+            catella.plot_meth(
+                exp=exp,
+                chroms="chr1",
+                raw_which="test",
+                data_name="prob",
+                show=False,
+            )
+
+    def test_mols_with_data_name_raises(self):
+        exp = self._two_chrom_exp()
+        with pytest.raises(ValueError, match="require 'raw_which'"):
+            catella.plot_meth(
+                exp=exp, chroms="chr1", data_name="prob", mols=[0],
+                show=False,
+            )
 
     def test_prob_dispatches_to_plot_meth_prob(self, monkeypatch):
         calls = self._record(monkeypatch)
@@ -981,14 +1128,14 @@ class TestPlotMeth:
 
     def test_energy_with_raw_which_raises(self):
         exp = _make_experiment(nmol=6, nbp=10, seed=3)
-        with pytest.raises(ValueError, match="requires data"):
+        with pytest.raises(ValueError, match="does not support raw_which"):
             catella.plot_meth(
-                exp=exp, chrom="chr1", raw_which="test", value="energy",
+                exp=exp, chroms="chr1", raw_which="test", value="energy",
                 show=False,
             )
 
     def test_energy_without_data_raises(self):
-        with pytest.raises(ValueError, match="requires data"):
+        with pytest.raises(ValueError, match="provide either 'data'"):
             catella.plot_meth(value="energy", show=False)
 
 

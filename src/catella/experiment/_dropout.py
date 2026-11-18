@@ -61,32 +61,6 @@ def _resolve_sources(raw, which):
     ]
 
 
-def _mtase_site_masks(refseq, mtases):
-    """
-    Per-strand methylatable-site masks for each methyltransferase.
-
-    Parameters
-    ----------
-    refseq : str
-        Reference sequence for this chromosome.
-    mtases : sequence of str
-        Methyltransferases, each in {"A", "CG", "GC"}.
-
-    Returns
-    -------
-    dict of str to (np.ndarray, np.ndarray)
-        Maps each mtase to `(plus_mask, minus_mask)`, bool, length
-        `len(refseq)`.
-    """
-    return {
-        m: (
-            _methylatable_positions(refseq, m, "+"),
-            _methylatable_positions(refseq, m, "-"),
-        )
-        for m in mtases
-    }
-
-
 def _channel_site_masks(refseq, channels):
     """
     Per-strand site masks for each context channel.

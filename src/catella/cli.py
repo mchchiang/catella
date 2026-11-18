@@ -231,10 +231,11 @@ def filter_dropout(
             help="test, meth, or unmeth; default evaluates every source"
         ),
     ] = None,
-    mtase: Annotated[
+    channels: Annotated[
         str | None,
         typer.Option(
-            callback=csv_parser(str), help="Subset of mtase labels to evaluate"
+            callback=csv_parser(str),
+            help="Channels as in qc, e.g. A,GC or GCH,GCG",
         ),
     ] = None,
     chroms: Annotated[
@@ -283,7 +284,7 @@ def filter_dropout(
     catella.filter_dropout(
         exp=exp,
         which=which,
-        mtase=mtase,
+        channels=channels,
         chroms=chroms,
         thres_min=thres_min,
         thres_max=thres_max,
@@ -398,10 +399,11 @@ def plot_dropout_ecdf(
     which: Annotated[
         str | None, typer.Option(help="test, meth, or unmeth")
     ] = None,
-    mtase: Annotated[
+    channels: Annotated[
         str | None,
         typer.Option(
-            callback=csv_parser(str), help="Subset of mtase labels to evaluate"
+            callback=csv_parser(str),
+            help="Channels as in qc, e.g. A,GC or GCH,GCG",
         ),
     ] = None,
     unmapped_strand: Annotated[
@@ -423,7 +425,7 @@ def plot_dropout_ecdf(
         exp=exp,
         chrom=chrom,
         which=which,
-        mtase=mtase,
+        channels=channels,
         unmapped_strand=unmapped_strand,
         out_file=out_file,
         show=show,

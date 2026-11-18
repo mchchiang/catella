@@ -636,7 +636,7 @@ def filter_dropout(
     exp: MethPrintExperiment,
     *,
     which: str | None = None,
-    mtase: list | None = None,
+    channels: str | list | None = None,
     chroms: list | None = None,
     thres_min: float = 0.0,
     thres_max: float = 1.0,
@@ -656,27 +656,28 @@ def filter_dropout(
     which : {"test", "meth", "unmeth"} or None, default None
         Source(s) to evaluate. None evaluates every source present
         for each chromosome.
-    mtase : list of str, optional
-        Subset of `exp.mtase` labels to evaluate. None uses all of
-        them.
+    channels : str, list of str, or None, default None
+        Channels to evaluate, as in `qc`. None uses one channel per
+        `exp.mtase` label, or every assayed channel unmerged if both
+        "GC" and "CG" are present.
     chroms : list of str, optional
         Subset of `exp.chroms` to evaluate. None (default) evaluates
         every chromosome.
     thres_min : float, default 0.0
-        Min allowed no-signal fraction (per label, or of the pooled
+        Min allowed no-signal fraction (per channel, or of the pooled
         total under `method="aggregate"`) to be kept.
     thres_max : float, default 1.0
-        Max allowed no-signal fraction (per label, or of the pooled
+        Max allowed no-signal fraction (per channel, or of the pooled
         total under `method="aggregate"`) to be kept.
     unmapped_strand : {"union", "drop", "+", "-"}, default "union"
         How to evaluate unmapped ('.') strand molecules: union of
         '+'/'-' position sets, always dropout, or treat as that
         strand.
     method : {"separate", "aggregate"}, default "separate"
-        How multiple `mtase` labels combine into `keep`. "separate":
-        must clear `thres_min`/`thres_max` per label. "aggregate":
-        site counts pooled across labels into one fraction first.
-        Irrelevant for a single label.
+        How multiple channels combine into `keep`. "separate": must
+        clear `thres_min`/`thres_max` per channel. "aggregate": site
+        counts pooled across channels into one fraction first.
+        Irrelevant for a single channel.
     mask_name : str, default "dropout_mask"
         Key for the mask in `exp.analysis[chrom]`, as
         `f"{source}_{mask_name}"`.
@@ -684,8 +685,8 @@ def filter_dropout(
     Raises
     ------
     ValueError
-        If `mtase` is unset on `exp`, `mtase` contains a label not in
-        `exp.mtase`, `chroms` contains a chromosome not in
+        If `mtase` is unset on `exp`, `channels` is invalid,
+        `chroms` contains a chromosome not in
         `exp.chroms`, `thres_min` or `thres_max` is not in [0, 1],
         `thres_min` is greater than `thres_max`,
         `unmapped_strand`/`method` is invalid, a requested source is
@@ -693,7 +694,7 @@ def filter_dropout(
     """
     exp.filter_dropout(
         which=which,
-        mtase=mtase,
+        channels=channels,
         chroms=chroms,
         thres_min=thres_min,
         thres_max=thres_max,
@@ -769,7 +770,7 @@ def plot_dropout_ecdf(
     *,
     chrom: str,
     which: str | None = None,
-    mtase: list | None = None,
+    channels: str | list | None = None,
     unmapped_strand: str = "union",
     out_file: str | Path | None = None,
     show: bool = True,
@@ -791,9 +792,8 @@ def plot_dropout_ecdf(
     which : {"test", "meth", "unmeth"} or None, default None
         Source to evaluate and plot. None uses every source present
         for `chrom`.
-    mtase : list of str, optional
-        Subset of `exp.mtase` labels to evaluate. None uses all of
-        them.
+    channels : str, list of str, or None, default None
+        Channels to evaluate, as in `filter_dropout`.
     unmapped_strand : {"union", "drop", "+", "-"}, default "union"
         How to evaluate unmapped ('.') strand molecules.
     out_file : str or pathlib.Path, optional
@@ -805,7 +805,7 @@ def plot_dropout_ecdf(
     Raises
     ------
     ValueError
-        If `mtase` is unset, contains an unknown label,
+        If `mtase` is unset, `channels` is invalid,
         `unmapped_strand` is invalid, a source is missing for some
         chromosome, or `refseq` is missing (from
         `exp.dropout_fractions`); or if `chrom` has no matching
@@ -813,7 +813,7 @@ def plot_dropout_ecdf(
     """
     fractions = exp.dropout_fractions(
         which=which,
-        mtase=mtase,
+        channels=channels,
         chroms=[chrom],
         unmapped_strand=unmapped_strand,
     )

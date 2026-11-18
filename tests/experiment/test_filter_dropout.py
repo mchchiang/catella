@@ -407,43 +407,42 @@ class TestSaveLoadRoundTrip:
         exp2.close()
 
 
-class TestMtaseSubset:
+class TestChannelSubset:
     # refseq "AGCG": A-site at idx0; CG match at (2,3), C at idx2.
     # m0 covers only the A-site.
-    def test_unknown_label_raises(self, tmp_path):
-        exp = _load(
+    def _make(self, tmp_path):
+        return _load(
             tmp_path,
             "AGCG",
             [("m0", 0, "chr1", "+", 0.5, "a")],
             mtase=["A", "CG"],
         )
+
+    def test_unassayed_channel_raises(self, tmp_path):
+        exp = self._make(tmp_path)
         with pytest.raises(ValueError):
-            exp.filter_dropout(mtase=["GC"])
+            exp.filter_dropout(channels=["GC"])
         exp.close()
 
-    def test_subset_narrows_evaluated_labels(self, tmp_path):
-        exp = _load(
-            tmp_path,
-            "AGCG",
-            [("m0", 0, "chr1", "+", 0.5, "a")],
-            mtase=["A", "CG"],
-        )
-        # Full mtase ["A", "CG"]: CG-site (idx2) uncovered -> fails.
+    def test_unknown_channel_raises(self, tmp_path):
+        exp = self._make(tmp_path)
+        with pytest.raises(ValueError):
+            exp.filter_dropout(channels=["bogus"])
+        exp.close()
+
+    def test_subset_narrows_evaluated_channels(self, tmp_path):
+        exp = self._make(tmp_path)
         exp.filter_dropout(thres_max=0.0, mask_name="full")
         assert exp.analysis["chr1"]["test_full"]["keep"].tolist() == [False]
-        # Subset to just ["A"]: only the covered A-site is checked.
-        exp.filter_dropout(mtase=["A"], thres_max=0.0, mask_name="a_only")
+        exp.filter_dropout(channels=["A"], thres_max=0.0, mask_name="a_only")
         assert exp.analysis["chr1"]["test_a_only"]["keep"].tolist() == [True]
         exp.close()
 
-    def test_default_none_uses_full_mtase(self, tmp_path):
-        exp = _load(
-            tmp_path,
-            "AGCG",
-            [("m0", 0, "chr1", "+", 0.5, "a")],
-            mtase=["A", "CG"],
+    def test_default_none_is_one_channel_per_mtase(self, tmp_path):
+        exp = self._make(tmp_path)
+        exp.filter_dropout(
+            channels=["A", "CG"], thres_max=0.0, mask_name="explicit"
         )
-        exp.filter_dropout(mtase=None, thres_max=0.0, mask_name="explicit")
         exp.filter_dropout(thres_max=0.0, mask_name="implicit")
         explicit = exp.analysis["chr1"]["test_explicit"]["keep"].tolist()
         implicit = exp.analysis["chr1"]["test_implicit"]["keep"].tolist()
@@ -511,25 +510,53 @@ class TestDropoutFractions:
         assert set(fracs) == {
             ("chr1", "test", "A"),
             ("chr1", "test", "CG"),
-            ("chr1", "test", "aggregate"),
+            ("chr1", "test", "all"),
         }
         assert fracs[("chr1", "test", "A")] == pytest.approx([0.1])
         assert fracs[("chr1", "test", "CG")] == pytest.approx([1.0])
-        assert fracs[("chr1", "test", "aggregate")] == pytest.approx(
+        assert fracs[("chr1", "test", "all")] == pytest.approx(
             [1.0 - 9 / 11]
         )
         exp.close()
 
-    def test_mtase_subset_no_aggregate_key(self, tmp_path):
+    def test_channel_subset_no_all_key(self, tmp_path):
         exp = self._make(tmp_path)
-        fracs = exp.dropout_fractions(mtase=["A"])
+        fracs = exp.dropout_fractions(channels=["A"])
         assert set(fracs) == {("chr1", "test", "A")}
         exp.close()
 
-    def test_unknown_mtase_label_raises(self, tmp_path):
+    def test_unassayed_channel_raises(self, tmp_path):
         exp = self._make(tmp_path)
         with pytest.raises(ValueError):
-            exp.dropout_fractions(mtase=["GC"])
+            exp.dropout_fractions(channels=["GC"])
+        exp.close()
+
+    def test_both_c_mtases_default_unmerged(self, tmp_path):
+        # "AGCAACGAGCG", + strand: A at 0,3,4,7; GCH at 2; HCG at 5;
+        # GCG at 9. m0 covers 0, 2, 9.
+        rows = [("m0", i, "chr1", "+", 0.5, "a") for i in (0, 2, 9)]
+        exp = _load(
+            tmp_path, "AGCAACGAGCG", rows, mtase=["A", "CG", "GC"]
+        )
+        fracs = exp.dropout_fractions()
+        assert {key[2] for key in fracs} == {
+            "A", "GCH", "HCG", "GCG", "all"
+        }
+        assert fracs[("chr1", "test", "A")] == pytest.approx([0.75])
+        assert fracs[("chr1", "test", "GCH")] == pytest.approx([0.0])
+        assert fracs[("chr1", "test", "HCG")] == pytest.approx([1.0])
+        assert fracs[("chr1", "test", "GCG")] == pytest.approx([0.0])
+        assert fracs[("chr1", "test", "all")] == pytest.approx(
+            [1.0 - 3 / 7]
+        )
+        exp.close()
+
+    def test_no_mtase_raises(self, tmp_path):
+        exp = _load(
+            tmp_path, "AAAA", [("m0", 0, "chr1", "+", 0.5, "a")], mtase=None
+        )
+        with pytest.raises(ValueError):
+            exp.dropout_fractions()
         exp.close()
 
     def test_missing_source_raises(self, tmp_path):

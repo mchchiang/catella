@@ -327,6 +327,19 @@ class TestFilterDropout:
         reloaded = MethPrintExperiment.load(raw_file)
         assert "test_qc_mask" in reloaded.analysis["chr1"]
 
+    def test_channels_option(self, tmp_path):
+        raw_file, *_ = _load_raw_a_mtase(tmp_path)
+
+        ok = runner.invoke(
+            app, ["filter_dropout", str(raw_file), "--channels", "A"]
+        )
+        assert ok.exit_code == 0, ok.output
+
+        bad = runner.invoke(
+            app, ["filter_dropout", str(raw_file), "--channels", "GC"]
+        )
+        assert bad.exit_code != 0
+
 
 class TestQC:
     def test_prints_tsv_writes_tsv_and_saves(self, tmp_path):

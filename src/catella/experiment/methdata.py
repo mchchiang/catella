@@ -22,9 +22,9 @@ from catella.containers import DataFrameMap, FixedKeyMap
 from catella.experiment._contexts import _resolve_channels
 from catella.experiment._dropout import (
     _apply_keep_mask,
+    _channel_site_masks,
     _dropout_fracs,
     _fold_site_masks,
-    _mtase_site_masks,
     _resolve_sources,
     _site_coverage,
 )
@@ -1020,25 +1020,27 @@ class MethPrintExperiment:
             out.write_batch(start, stop, arr)
         return out
 
-    def _resolve_mtase_subset(self, mtase):
+    def _resolve_dropout_channels(self, channels):
         """
-        Validate and resolve an `mtase` label subset.
+        Validate and resolve the channels to evaluate dropout on.
 
         Parameters
         ----------
-        mtase : list of str or None
-            Subset of `self.mtase` to use. None resolves to all of
-            `self.mtase`.
+        channels : str, list of str, or None
+            Channel names, as in `qc`. None uses one channel per
+            `self.mtase` label (A, GC, CG), or every assayed channel
+            unmerged if both "GC" and "CG" are present, so GCG sites
+            are counted once.
 
         Returns
         -------
-        Tuple[str, ...]
+        tuple of int
+            Channel codes, as from `_resolve_channels`.
 
         Raises
         ------
         ValueError
-            If `self.mtase` is unset, or `mtase` contains a label not
-            in `self.mtase`.
+            If `self.mtase` is unset, or `channels` is invalid.
         """
         if self._mtase is None:
             raise ValueError(
@@ -1046,16 +1048,9 @@ class MethPrintExperiment:
                 "load_raw()); required to determine methylatable "
                 "positions"
             )
-        if mtase is None:
-            return self._mtase
-        labels = _normalize_mtase(mtase)
-        unknown = set(labels) - set(self._mtase)
-        if unknown:
-            raise ValueError(
-                "'mtase' contains label(s) not in this experiment's "
-                f"mtase {list(self._mtase)}: {sorted(unknown)}"
-            )
-        return labels
+        if channels is None and not {"GC", "CG"} <= set(self._mtase):
+            channels = list(self._mtase)
+        return _resolve_channels(self, channels)
 
     def _resolve_chroms_subset(self, chroms):
         """
@@ -1087,23 +1082,24 @@ class MethPrintExperiment:
             )
         return tuple(chroms)
 
-    def _mtase_masks(self, raw, mtases):
+    def _channel_masks(self, raw, codes):
         """
-        Per-strand site masks of each mtase, on stored positions.
+        Per-strand site masks of each channel, on stored positions.
 
         Parameters
         ----------
         raw : MethPrintData
             Raw data block of one chromosome, with `refseq`.
-        mtases : sequence of str
-            Methyltransferases, each in {"A", "CG", "GC"}.
+        codes : tuple of int
+            Channel codes, as from `_resolve_dropout_channels`.
 
         Returns
         -------
         dict of str to (np.ndarray, np.ndarray)
-            As `_mtase_site_masks`, folded to `raw.nbp` if `self.wrap`.
+            As `_channel_site_masks`, folded to `raw.nbp` if
+            `self.wrap`.
         """
-        masks = _mtase_site_masks(raw.refseq, mtases)
+        masks = _channel_site_masks(raw.refseq, codes)
         if self._wrap:
             masks = _fold_site_masks(masks, raw.nbp)
         return masks
@@ -1112,7 +1108,7 @@ class MethPrintExperiment:
         self,
         *,
         which: str | None = None,
-        mtase: list | None = None,
+        channels: str | list | None = None,
         chroms: list | None = None,
         thres_min: float = 0.0,
         thres_max: float = 1.0,
@@ -1124,7 +1120,7 @@ class MethPrintExperiment:
         Flag molecules with poor coverage at methylatable positions.
 
         Computes, per molecule, the fraction of methylatable positions
-        (per `mtase` label, on that molecule's own strand) with no
+        (per channel, on that molecule's own strand) with no
         signal, and stores a keep/drop mask in `analysis`. Raw data is
         never modified -- pass `mask_name` to `to_dense`/
         `MethPrintAnalysis.smooth`/`.meth_prob` to apply it downstream.
@@ -1136,28 +1132,30 @@ class MethPrintExperiment:
         which : {"test", "meth", "unmeth"} or None, default None
             Source(s) to evaluate. None evaluates every source present
             for each chromosome.
-        mtase : list of str, optional
-            Subset of `self.mtase` labels to evaluate. None uses all
-            of them.
+        channels : str, list of str, or None, default None
+            Channels to evaluate, as in `qc`: among "A", "GCH", "HCG",
+            "GCG", "GC" (GCH and GCG merged) and "CG" (HCG and GCG
+            merged). None uses one channel per `self.mtase` label, or
+            every assayed channel unmerged if both "GC" and "CG" are
+            present, so GCG sites are counted once.
         chroms : list of str, optional
             Subset of `self.chroms` to evaluate. None (default)
             evaluates every chromosome.
         thres_min : float, default 0.0
-            Min allowed no-signal fraction (per label, or of the
+            Min allowed no-signal fraction (per channel, or of the
             pooled total under `method="aggregate"`) to be kept.
         thres_max : float, default 1.0
-            Max allowed no-signal fraction (per label, or of the
+            Max allowed no-signal fraction (per channel, or of the
             pooled total under `method="aggregate"`) to be kept.
         unmapped_strand : {"union", "drop", "+", "-"}, default "union"
             How to evaluate unmapped ('.') strand molecules: union of
             '+'/'-' position sets, always dropout, or treat as that
             strand.
         method : {"separate", "aggregate"}, default "separate"
-            How multiple `mtase` labels combine into `keep`.
-            "separate": must clear `thres_min`/`thres_max` per label.
-            "aggregate":
-            site counts pooled across labels into one fraction first.
-            Irrelevant for a single label.
+            How multiple channels combine into `keep`. "separate":
+            must clear `thres_min`/`thres_max` per channel.
+            "aggregate": site counts pooled across channels into one
+            fraction first. Irrelevant for a single channel.
         mask_name : str, default "dropout_mask"
             Key for the mask in `analysis[chrom]`, as
             `f"{source}_{mask_name}"` -- a single-column DataFrame
@@ -1166,14 +1164,14 @@ class MethPrintExperiment:
         Raises
         ------
         ValueError
-            If `mtase` is unset on this experiment, `mtase` contains a
-            label not in `self.mtase`, `chroms` contains a chromosome
+            If `mtase` is unset on this experiment, `channels` is
+            invalid (see `qc`), `chroms` contains a chromosome
             not in `self.chroms`, `thres_min` or `thres_max` is not
             in [0, 1], `thres_min` is greater than `thres_max`,
             `unmapped_strand`/`method` is invalid, a requested source
             is missing for some chromosome, or `refseq` is missing.
         """
-        mtases = self._resolve_mtase_subset(mtase)
+        codes = self._resolve_dropout_channels(channels)
         chroms = self._resolve_chroms_subset(chroms)
         if not (0.0 <= thres_min <= 1.0):
             raise ValueError(
@@ -1209,6 +1207,8 @@ class MethPrintExperiment:
                     "required to determine methylatable positions"
                 )
             sources = _resolve_sources(raw, which)
+            masks = self._channel_masks(raw, codes)
+            names = list(masks)
 
             for src in sources:
                 df = getattr(raw, f"{src}_data")
@@ -1220,11 +1220,11 @@ class MethPrintExperiment:
                 cov = _site_coverage(
                     df,
                     len(mol_id),
-                    self._mtase_masks(raw, mtases),
+                    masks,
                     unmapped_strand,
                     ignore_strand=self._ignore_strand,
                 )
-                dropout_frac, combined_frac = _dropout_fracs(cov, mtases)
+                dropout_frac, combined_frac = _dropout_fracs(cov, names)
 
                 if method == "separate":
                     keep = (
@@ -1249,7 +1249,7 @@ class MethPrintExperiment:
         self,
         *,
         which: str | None = None,
-        mtase: list | None = None,
+        channels: str | list | None = None,
         chroms: list | None = None,
         unmapped_strand: str = "union",
     ) -> dict:
@@ -1264,9 +1264,8 @@ class MethPrintExperiment:
         which : {"test", "meth", "unmeth"} or None, default None
             Source(s) to evaluate. None evaluates every source
             present for each chromosome.
-        mtase : list of str, optional
-            Subset of `self.mtase` labels to evaluate. None uses
-            all of them.
+        channels : str, list of str, or None, default None
+            Channels to evaluate, as in `filter_dropout`.
         chroms : list of str, optional
             Subset of `self.chroms` to evaluate. None (default)
             evaluates every chromosome. Restricting this avoids the
@@ -1280,21 +1279,21 @@ class MethPrintExperiment:
         Returns
         -------
         dict of (str, str, str) to np.ndarray
-            Maps `(chrom, source, label)` to that group's
+            Maps `(chrom, source, channel)` to that group's
             per-molecule dropout fraction array. Includes a
-            `label="aggregate"` entry per (chrom, source) pooling
-            all labels, if more than one label is evaluated.
+            `channel="all"` entry per (chrom, source) pooling
+            all channels, if more than one channel is evaluated.
 
         Raises
         ------
         ValueError
-            If `mtase` is unset on this experiment, `mtase` contains
-            a label not in `self.mtase`, `chroms` contains a
+            If `mtase` is unset on this experiment, `channels` is
+            invalid (see `qc`), `chroms` contains a
             chromosome not in `self.chroms`, `unmapped_strand` is
             invalid, a requested source is missing for some
             chromosome, or `refseq` is missing.
         """
-        mtases = self._resolve_mtase_subset(mtase)
+        codes = self._resolve_dropout_channels(channels)
         chroms = self._resolve_chroms_subset(chroms)
         if unmapped_strand not in _VALID_UNMAPPED_STRAND:
             raise ValueError(
@@ -1312,6 +1311,8 @@ class MethPrintExperiment:
                     "required to determine methylatable positions"
                 )
             sources = _resolve_sources(raw, which)
+            masks = self._channel_masks(raw, codes)
+            names = list(masks)
 
             for src in sources:
                 df = getattr(raw, f"{src}_data")
@@ -1323,16 +1324,16 @@ class MethPrintExperiment:
                 cov = _site_coverage(
                     df,
                     len(mol_id),
-                    self._mtase_masks(raw, mtases),
+                    masks,
                     unmapped_strand,
                     ignore_strand=self._ignore_strand,
                 )
-                frac, pooled = _dropout_fracs(cov, mtases)
+                frac, pooled = _dropout_fracs(cov, names)
 
-                for i, m in enumerate(mtases):
-                    result[(chrom, src, m)] = frac[i]
-                if len(mtases) > 1:
-                    result[(chrom, src, "aggregate")] = pooled
+                for i, name in enumerate(names):
+                    result[(chrom, src, name)] = frac[i]
+                if len(names) > 1:
+                    result[(chrom, src, "all")] = pooled
 
         return result
 
@@ -1413,8 +1414,8 @@ class MethPrintExperiment:
         it is noisy when `meth_frac_meth` - `meth_frac_unmeth` is
         small.
 
-        Dropout is computed on the channel's sites, so it can differ
-        from what `filter_dropout` (per mtase) removes. Molecules of
+        Dropout is computed on the channel's sites, as in
+        `filter_dropout` with the same `channels`. Molecules of
         unmapped ('.') strand are left out of the dropout columns,
         since their sites are not defined; if a source has no strand
         information at all, its dropout columns are NaN, and

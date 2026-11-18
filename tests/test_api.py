@@ -261,6 +261,14 @@ class TestFilterDropout:
         with pytest.raises(ValueError):
             catella.filter_dropout(exp=exp, chroms=["bogus"])
 
+    def test_channels_forwarded(self):
+        nbp = 10
+        exp = _make_experiment(
+            nmol=6, nbp=nbp, seed=3, refseq="A" * nbp, mtase=("A",)
+        )
+        with pytest.raises(ValueError):
+            catella.filter_dropout(exp=exp, channels=["GC"])
+
     def test_exp_accepted_positionally(self):
         nbp = 10
         exp = _make_experiment(

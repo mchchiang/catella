@@ -1845,6 +1845,67 @@ class TestPlotOccup:
         assert result.exit_code == 0, result.output
         assert out_file.exists()
 
+    def _two_chrom_file(self, tmp_path):
+        rng = np.random.default_rng(2)
+        dataset = SimManager(nworker=1, verbose=False).run(
+            chroms=["chr1", "chr2"],
+            nsim=2,
+            settings=SimSettings(**_settings_dict()),
+            meth_prob={
+                "chr1": rng.random((4, 20)),
+                "chr2": rng.random((3, 30)),
+            },
+            out_dir=tmp_path / "sim_out",
+            seed=2,
+        )
+        for chrom, shape in (("chr1", (4, 20)), ("chr2", (3, 30))):
+            dataset.analysis[chrom]["occup"] = pd.DataFrame(rng.random(shape))
+        SimAnalysis().sort_by_linkage(dataset=dataset)
+        dataset.save()
+        return dataset._dataset_file
+
+    @pytest.mark.filterwarnings(
+        "ignore:__array__ implementation doesn't accept a copy keyword"
+        ":DeprecationWarning"
+    )
+    def test_several_chroms(self, tmp_path):
+        dataset_file = self._two_chrom_file(tmp_path)
+        out_file = tmp_path / "occup_two.png"
+
+        result = runner.invoke(
+            app,
+            [
+                "plot_occup",
+                "chr1,chr2",
+                str(dataset_file),
+                "--link-mat-name",
+                "occup_linkage",
+                "--sharex",
+                "--out-file",
+                str(out_file),
+                "--no-show",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert out_file.exists()
+
+    def test_mols_with_several_chroms_fails(self, tmp_path):
+        dataset_file = self._two_chrom_file(tmp_path)
+
+        result = runner.invoke(
+            app,
+            [
+                "plot_occup",
+                "chr1,chr2",
+                str(dataset_file),
+                "--mols",
+                "0",
+                "--no-show",
+            ],
+        )
+        assert result.exit_code != 0
+        assert "single chromosome" in result.output
+
 
 class TestPlotMeth:
     def test_with_link_mat_name(self, tmp_path):

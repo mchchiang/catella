@@ -1246,7 +1246,13 @@ def plot_config(
 
 @app.command(name="plot_occup")
 def plot_occup(
-    chrom: Annotated[str, typer.Argument(help="Chromosome identifier")],
+    chroms: Annotated[
+        str,
+        typer.Argument(
+            callback=csv_parser(str),
+            help="Chromosome(s) to plot (comma-separated)",
+        ),
+    ],
     dataset_file: Annotated[
         Path,
         typer.Argument(
@@ -1294,19 +1300,28 @@ def plot_occup(
             "dendrogram"
         ),
     ] = None,
+    sharex: Annotated[
+        bool,
+        typer.Option(help="Put all panels on the longest chromosome's scale"),
+    ] = False,
     show: Annotated[bool, typer.Option(help="Display the figure")] = True,
 ):
     """
-    Visualize nucleosome occupancy for a chromosome.
+    Visualize nucleosome occupancy for one or more chromosomes.
     """
+    if mols and len(chroms) > 1:
+        raise typer.BadParameter("--mols requires a single chromosome")
     dataset = SimDataset.load(dataset_file)
     link_mat = (
-        dataset.analysis[chrom][link_mat_name].to_numpy()
+        {
+            c: dataset.analysis[c][link_mat_name].to_numpy()
+            for c in chroms
+        }
         if link_mat_name is not None
         else None
     )
     catella.plot_occup(
-        chrom=chrom,
+        chroms=chroms,
         dataset=dataset,
         time=time,
         out_file=out_file,
@@ -1316,6 +1331,7 @@ def plot_occup(
         cmap=cmap,
         plot_eseq=plot_eseq,
         link_mat=link_mat,
+        sharex=sharex,
         show=show,
     )
 

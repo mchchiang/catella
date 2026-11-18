@@ -1285,30 +1285,33 @@ def plot_config(
 def plot_occup(
     dataset: SimDataset,
     *,
-    chrom: str,
+    chroms: str | Iterable[str],
     time: int | None = None,
     out_file: str | Path | None = None,
     occup_name: str = "occup",
-    mols: Iterable[int] | None = None,
+    mols: Iterable[int] | dict | None = None,
     xscale: int = 1000,
     cmap: str | None = None,
     plot_eseq: bool = False,
-    link_mat: np.ndarray | None = None,
+    link_mat: np.ndarray | dict | None = None,
+    sharex: bool = False,
     show: bool = True,
 ):
     """
-    Visualize nucleosome occupancy profiles for a specific chromosome.
+    Visualize nucleosome occupancy profiles for one or more chromosomes.
 
     Generate a plot showing the probability of nucleosome occupancy across
     the genomic coordinates based on previously computed analysis within
-    the SimDataset.
+    the SimDataset. Each chromosome gets its own panel; several panels
+    are stacked vertically in one figure, aligned and sharing one
+    colorbar.
 
     Parameters
     ----------
     dataset : SimDataset
         The simulation dataset containing the computed occupancy data.
-    chrom : str
-        The identifier of the chromosome to plot.
+    chroms : str or iterable of str
+        The chromosome(s) to plot, one panel each, top to bottom.
     time : int, optional
         The time step of interest if occupancy needs to be computed.
     out_file : str | Path, optional
@@ -1317,10 +1320,12 @@ def plot_occup(
     occup_name : str, default "occup"
         The key or name of the occupancy data to retrieve from the dataset.
         This should match the `occup_name` used by `compute_occup`.
-    mols : iterable of int, optional
+    mols : iterable of int or dict, optional
         Molecule indices to display, restricting the heatmap (and, if
         `plot_eseq` is True, the sequence-energy average) to this
-        subset. If None (default), all molecules are shown.
+        subset. If None (default), all molecules are shown. With several
+        chroms, a dict keyed by chrom (chroms not in it show all
+        molecules).
     xscale : int, default 1000
         Spatial scaling factor (must be a power of 10) for the x-axis
         labels.
@@ -1330,11 +1335,18 @@ def plot_occup(
     plot_eseq : bool, default False
         Whether to plot the underlying sequence-specific nucleosome binding
         energy, averaged across all molecules.
-    link_mat : np.ndarray or pd.DataFrame, optional
+    link_mat : np.ndarray, pd.DataFrame, or dict, optional
         Linkage matrix of these molecules (as returned or stored by
         `sort_by_linkage`). If given, the rows are put in its leaf order
         and its dendrogram is drawn alongside. Cannot be combined with
-        `mols`. If None (default), rows are in molecule order.
+        `mols`. If None (default), rows are in molecule order. With
+        several chroms, a dict keyed by chrom, e.g. the result of
+        `sort_by_linkage` (chroms not in it are not sorted; extra keys
+        are ignored).
+    sharex : bool, default False
+        If True, all panels span the length of the longest chrom, so
+        they share one bp scale. If False, each panel spans its own
+        chrom.
     show : bool, default True
         If True, invokes the active plotting backend to display the
         figure immediately.
@@ -1342,8 +1354,15 @@ def plot_occup(
     Raises
     ------
     ValueError
-        If the occupancy is missing and no `time` is provided for
-        computation.
+        If `chroms` is empty, if the occupancy is missing and no `time`
+        is provided for computation, or if `mols` or `link_mat` is not
+        a dict with several chroms.
+
+    Warns
+    -----
+    UserWarning
+        If more than 10 chroms are plotted in one figure, or if
+        rendering is estimated to need more than 1 GB of memory.
 
     Notes
     -----
@@ -1352,7 +1371,7 @@ def plot_occup(
     """
     simplot = SimPlot()
     simplot.plot_occup(
-        chrom=chrom,
+        chroms=chroms,
         dataset=dataset,
         time=time,
         occup_name=occup_name,
@@ -1362,6 +1381,7 @@ def plot_occup(
         out_file=out_file,
         plot_eseq=plot_eseq,
         link_mat=link_mat,
+        sharex=sharex,
         show=show,
     )
 
@@ -1574,7 +1594,7 @@ def sort_by_linkage(
     the same molecules can share one linkage:
 
     >>> lm = catella.sort_by_linkage(dataset=ds, data_name="occup")
-    >>> catella.plot_occup(ds, chrom=c, link_mat=lm[c])
+    >>> catella.plot_occup(ds, chroms=c, link_mat=lm[c])
     >>> catella.plot_config(ds, chrom=c, name="best_match", link_mat=lm[c])
 
     Dispatches to `SimAnalysis.sort_by_linkage` (if `dataset` is given)

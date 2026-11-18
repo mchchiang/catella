@@ -884,6 +884,39 @@ class TestPlotConfig:
         assert out_file.exists()
 
 
+class TestPlotOccup:
+    @pytest.mark.filterwarnings(
+        "ignore:__array__ implementation doesn't accept a copy keyword"
+        ":DeprecationWarning"
+    )
+    def test_several_chroms_with_linkage_dict(self, tmp_path):
+        rng = np.random.default_rng(4)
+        dataset = SimManager(nworker=1, verbose=False).run(
+            chroms=["chr1", "chr2"],
+            nsim=2,
+            settings=_settings(),
+            meth_prob={
+                "chr1": rng.random((4, 10)),
+                "chr2": rng.random((3, 12)),
+            },
+            out_dir=tmp_path / "sim",
+            seed=4,
+        )
+        for chrom, shape in (("chr1", (4, 10)), ("chr2", (3, 12))):
+            dataset.analysis[chrom]["occup"] = pd.DataFrame(rng.random(shape))
+        link = catella.sort_by_linkage(dataset=dataset, data_name="occup")
+        out_file = tmp_path / "occup.png"
+        catella.plot_occup(
+            dataset,
+            chroms=["chr1", "chr2"],
+            link_mat=link,
+            sharex=True,
+            out_file=out_file,
+            show=False,
+        )
+        assert out_file.exists()
+
+
 class TestPlotMeth:
     def _data(self):
         return np.random.default_rng(0).uniform(0.05, 0.95, (6, 10))

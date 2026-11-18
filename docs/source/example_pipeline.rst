@@ -121,6 +121,5 @@ commentary. See :doc:`tutorials/tut01_meth_prob` and
    # Analyze and save results
    catella.compute_occup(sim_data)
    link = catella.sort_by_linkage(dataset=sim_data, data_name="occup")
-   catella.plot_occup(sim_data, chrom="601", link_mat=link["601"],
-                      plot_eseq=True)
+   catella.plot_occup(sim_data, chroms="601", link_mat=link, plot_eseq=True)
    sim_data.save()

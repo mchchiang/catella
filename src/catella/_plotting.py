@@ -16,6 +16,61 @@ _RENDER_BYTES_PER_CELL = 80
 # Warn when rendering a heatmap is estimated to need more than this
 _RENDER_WARN_BYTES = 10**9
 
+# Warn when stacking more chromosome panels than this in one figure
+_MAX_PANELS = 10
+
+
+def _chrom_list(chroms):
+    """
+    Return `chroms` (a str or an iterable of str) as a list.
+
+    Raises
+    ------
+    ValueError
+        If `chroms` is empty.
+    """
+    chroms = [chroms] if isinstance(chroms, str) else list(chroms)
+    if not chroms:
+        raise ValueError("chroms must not be empty")
+    return chroms
+
+
+def _per_chrom(value, chroms, name):
+    """
+    Map a per-chromosome argument onto each chromosome of `chroms`.
+
+    Parameters
+    ----------
+    value : object, dict, or None
+        None (None for every chromosome), a dict keyed by chromosome
+        (missing chromosomes get None; extra keys are ignored), or a
+        single value (only allowed for one chromosome).
+    chroms : list of str
+        The chromosomes plotted.
+    name : str
+        The argument name, for the error message.
+
+    Returns
+    -------
+    dict
+        The value for each chromosome of `chroms`.
+
+    Raises
+    ------
+    ValueError
+        If `value` is a single value and `chroms` has several entries.
+    """
+    if value is None:
+        return dict.fromkeys(chroms)
+    if isinstance(value, dict):
+        return {c: value.get(c) for c in chroms}
+    if len(chroms) > 1:
+        raise ValueError(
+            f"{name} must be a dict keyed by chrom when plotting several "
+            "chroms"
+        )
+    return {chroms[0]: value}
+
 
 def _warn_if_large(nrow, ncol, hint):
     """
@@ -83,9 +138,11 @@ def _panel_grid(
     """
     Create a figure with one heatmap panel per chromosome.
 
-    The panels are stacked vertically in one grid whose columns
-    (heatmap, optional dendrogram, colorbar or legend) are shared, so
-    the panels line up.
+    Columns: heatmap, optional dendrogram, and a last column for the
+    colorbar or legend. With several chromosomes, the panels are
+    stacked vertically in one grid with aligned columns, and the last
+    column is left out: one colorbar (`_colorbar`) or legend is then
+    shared by all panels, placed by the layout engine to the right.
 
     Parameters
     ----------
@@ -107,21 +164,32 @@ def _panel_grid(
         The figure; it uses constrained layout if `nchrom` > 1.
     panels : list of dict
         Per panel, the axes "hm_ax", "dend_ax" (None without a
-        dendrogram), "side_ax" (last column), and "seq_ax" (None
-        without an energy row).
+        dendrogram), "side_ax" (last column; None if `nchrom` > 1),
+        and "seq_ax" (None without an energy row).
     """
+    if nchrom > _MAX_PANELS:
+        _warn(
+            f"plotting {nchrom} chromosomes in one figure; consider fewer "
+            "chroms, or one figure per chrom with out_file"
+        )
     nsub = 2 if eseq else 1
-    gridspec_kw = {"width_ratios": width_ratios}
-    if eseq:
-        gridspec_kw["height_ratios"] = [4, 1] * nchrom
+    height_ratios = [4, 1] if eseq else None
     w, h = plt.rcParams["figure.figsize"]
+    figsize = (w * scale_w, h * scale_h * nchrom)
+    # A shared colorbar or legend is attached to all axes instead of
+    # spanning a grid column, which would equalize all row gaps.
+    shared = nchrom > 1
+    cols = width_ratios[:-1] if shared else width_ratios
     fig, ax = plt.subplots(
         nrows=nchrom * nsub,
-        ncols=len(width_ratios),
-        gridspec_kw=gridspec_kw,
+        ncols=len(cols),
+        gridspec_kw={
+            "width_ratios": cols,
+            "height_ratios": None if not eseq else height_ratios * nchrom,
+        },
         squeeze=False,
-        figsize=(w * scale_w, h * scale_h * nchrom),
-        layout="constrained" if nchrom > 1 else None,
+        figsize=figsize,
+        layout="constrained" if shared else None,
     )
     panels = []
     for i in range(nchrom):
@@ -129,7 +197,7 @@ def _panel_grid(
         panel = {
             "hm_ax": row[0],
             "dend_ax": row[1] if dendrogram else None,
-            "side_ax": row[-1],
+            "side_ax": None if shared else row[-1],
             "seq_ax": None,
         }
         if eseq:
@@ -139,6 +207,27 @@ def _panel_grid(
                 extra.axis("off")
         panels.append(panel)
     return fig, panels
+
+
+def _colorbar(fig, panels, mappable, label):
+    """
+    Draw the colorbar of `mappable` in the last column of a single
+    panel, or as one colorbar shared by several panels.
+
+    Returns
+    -------
+    matplotlib.colorbar.Colorbar
+        The colorbar.
+    """
+    side_ax = panels[0]["side_ax"]
+    if side_ax is not None:
+        cbar = fig.colorbar(mappable, cax=side_ax)
+    else:
+        cbar = fig.colorbar(
+            mappable, ax=fig.axes, fraction=0.05, aspect=20 * len(panels)
+        )
+    cbar.set_label(label, rotation=270, labelpad=15)
+    return cbar
 
 
 def _finish(fig, show, out_file):

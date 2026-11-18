@@ -15,9 +15,12 @@ from matplotlib.patches import Patch
 from matplotlib.ticker import MaxNLocator
 
 from catella._plotting import (
+    _chrom_list,
+    _colorbar,
     _finish,
     _leaf_order,
     _panel_grid,
+    _per_chrom,
     _warn_if_large,
 )
 from catella.mapping import CoordsTransform
@@ -859,41 +862,45 @@ class SimPlot:
         self,
         dataset: SimDataset,
         *,
-        chrom: str,
+        chroms: str | Iterable[str],
         time: int | None = None,
         occup_name: str = "occup",
-        mols: Iterable[int] | None = None,
+        mols: Iterable[int] | dict | None = None,
         xscale: int = 1000,
         cmap: str | None = None,
         out_file: str | Path | None = None,
         plot_eseq: bool = False,
-        link_mat: np.ndarray | None = None,
+        link_mat: np.ndarray | dict | None = None,
+        sharex: bool = False,
         show: bool = True,
     ):
         """
-        Plot the nucleosome occupancy across all molecules for a specific
-        chromosome.
+        Plot the nucleosome occupancy across all molecules of one or
+        more chromosomes.
 
-        If the occupancy data is not found in the dataset analysis, it will be
-        computed on-the-fly using `SimAnalysis`.
+        Each chromosome gets its own panel; several panels are stacked
+        vertically in one figure, aligned and sharing one colorbar. If
+        the occupancy data is not found in the dataset analysis, it
+        will be computed on-the-fly using `SimAnalysis`.
 
         Parameters
         ----------
         dataset : SimDataset
             The dataset object containing analysis results or raw data.
-        chrom : str
-            Chromosome identifier.
+        chroms : str or iterable of str
+            Chromosome(s) to plot, one panel each, top to bottom.
         time : int, optional
             The time step of interest if occupancy needs to be computed.
         occup_name : str, default "occup"
             The key used to look up or store the occupancy analysis in the
             dataset.
-        mols : iterable of int, optional
+        mols : iterable of int or dict, optional
             Molecule indices to display, restricting the heatmap (and,
             if `plot_eseq` is True, the sequence-energy average) to
             this subset. If None (default), all molecules are shown.
             The y-axis reflects positions within this subset (0..n),
-            not the original molecule indices.
+            not the original molecule indices. With several chroms, a
+            dict keyed by chrom (chroms not in it show all molecules).
         xscale : int, default 1000
             Spatial scaling factor (must be a power of 10) for the x-axis
             labels.
@@ -906,53 +913,84 @@ class SimPlot:
         plot_eseq : bool, default False
             Whether to plot the underlying sequence-specific nucleosome binding
             energy, averaged across all molecules.
-        link_mat : np.ndarray or pd.DataFrame, optional
+        link_mat : np.ndarray, pd.DataFrame, or dict, optional
             Linkage matrix of these molecules (as returned or stored by
             `SimAnalysis.sort_by_linkage`). If given, the rows are put in
             its leaf order and its dendrogram is drawn alongside. Cannot
-            be combined with `mols`.
+            be combined with `mols`. With several chroms, a dict keyed by
+            chrom, e.g. the result of `sort_by_linkage` (chroms not in it
+            are not sorted; extra keys are ignored).
+        sharex : bool, default False
+            If True, all panels span the length of the longest chrom,
+            so they share one bp scale. If False, each panel spans its
+            own chrom.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
         Raises
         ------
         ValueError
-            If the occupancy is missing and no `time` is provided for
-            computation, or if `link_mat` is combined with `mols` or does
-            not match the number of molecules.
+            If `chroms` is empty, if the occupancy is missing and no
+            `time` is provided for computation, if `mols` or `link_mat`
+            is not a dict with several chroms, or if `link_mat` is
+            combined with `mols` or does not match the number of
+            molecules.
 
         Warns
         -----
         UserWarning
             If rendering the plot is estimated to need more than 1 GB of
-            memory; pass `mols` to plot a subset.
+            memory (pass `mols` to plot a subset), or if more than 10
+            chroms are plotted in one figure.
         """
+        chroms = _chrom_list(chroms)
+        mols = {
+            c: None if m is None else list(m)
+            for c, m in _per_chrom(mols, chroms, "mols").items()
+        }
+        link_mat = _per_chrom(link_mat, chroms, "link_mat")
         xpow = int(self._log10(xscale, "xscale"))
-        sort_data = link_mat is not None
+        _warn_if_large(
+            sum(
+                dataset.nmol[c] if mols[c] is None else len(mols[c])
+                for c in chroms
+            ),
+            max(dataset.nbp[c] for c in chroms),
+            "consider passing 'mols' to plot a subset",
+        )
+        sort_data = any(link_mat[c] is not None for c in chroms)
         # The rightmost column is a dedicated, narrow slot for the
         # colorbar, so it appears to the right of the dendrogram (when
         # shown) instead of shrinking hm_ax.
-        fig, (panel,) = _panel_grid(
-            1,
+        fig, panels = _panel_grid(
+            len(chroms),
             [5, 1, 0.25] if sort_data else [20, 1],
             dendrogram=sort_data,
             eseq=plot_eseq,
             scale_w=1.25 if plot_eseq else 1.0,
             scale_h=1.25 if plot_eseq else 1.0,
         )
-        self._draw_occup(
-            panel,
-            dataset,
-            chrom,
-            time=time,
-            occup_name=occup_name,
-            mols=mols,
-            xscale=xscale,
-            xpow=xpow,
-            cmap=cmap,
-            plot_eseq=plot_eseq,
-            link_mat=link_mat,
-        )
+        for chrom, panel in zip(chroms, panels):
+            im = self._draw_occup(
+                panel,
+                dataset,
+                chrom,
+                time=time,
+                occup_name=occup_name,
+                mols=mols[chrom],
+                xscale=xscale,
+                xpow=xpow,
+                cmap=cmap,
+                plot_eseq=plot_eseq,
+                link_mat=link_mat[chrom],
+            )
+        _colorbar(fig, panels, im, "Occupancy")
+        if sharex:
+            xmax = max(dataset.nbp[c] for c in chroms) / xscale
+            for panel in panels:
+                for ax in (panel["hm_ax"], panel["seq_ax"]):
+                    if ax is not None:
+                        ax.set_xlim(0, xmax)
         _finish(fig, show, out_file)
 
     def _draw_occup(
@@ -973,10 +1011,14 @@ class SimPlot:
         """
         Draw the occupancy of one chromosome into the axes of `panel`
         (from `_panel_grid`), computing it first if missing.
+
+        Returns
+        -------
+        matplotlib.image.AxesImage
+            The heatmap, for the colorbar drawn by the caller.
         """
-        hm_ax, cbar_ax = panel["hm_ax"], panel["side_ax"]
+        hm_ax = panel["hm_ax"]
         dend_ax, seq_ax = panel["dend_ax"], panel["seq_ax"]
-        fig = hm_ax.figure
 
         # Retrieve the occupancy data
         if occup_name not in dataset.analysis[chrom]:
@@ -995,11 +1037,6 @@ class SimPlot:
         order = None
         if link_mat is not None:
             link_mat, order = _leaf_order(link_mat, occup.shape[0], mols)
-        _warn_if_large(
-            occup.shape[0] if mols is None else len(mols),
-            occup.shape[1],
-            "consider passing 'mols' to plot a subset",
-        )
         if mols is not None:
             occup = np.asarray(occup)[mols]
         if order is not None:
@@ -1025,8 +1062,6 @@ class SimPlot:
         if plot_eseq:
             hm_ax.get_xaxis().set_visible(False)
         hm_ax.set_ylabel("Row (leaf order)" if sort_data else "Molecule index")
-        cbar = fig.colorbar(im, cax=cbar_ax)
-        cbar.set_label("Occupancy", rotation=270, labelpad=15)
 
         # Plot dendrogram on the right panel
         if sort_data:
@@ -1037,6 +1072,7 @@ class SimPlot:
                 no_labels=True,
                 link_color_func=lambda x: "black",
             )
+        if dend_ax is not None:
             dend_ax.axis("off")
 
         # Plot the sequence energy if needed
@@ -1065,3 +1101,4 @@ class SimPlot:
         btm_ax.set_xlabel(rf"Position $x$ [{xpow_str} bp]")
 
         hm_ax.set_title(f"Occupancy Profile for {chrom}", pad=12)
+        return im

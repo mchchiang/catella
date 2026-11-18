@@ -61,7 +61,7 @@ class TestPlotOccupMolsSlicing:
         link_mats = SimAnalysis().sort_by_linkage(dataset=dataset)
         SimPlot().plot_occup(
             dataset,
-            chrom="chr1",
+            chroms="chr1",
             link_mat=dataset.analysis["chr1"]["occup_linkage"],
             show=False,
         )
@@ -77,7 +77,7 @@ class TestPlotOccupMolsSlicing:
         with pytest.raises(ValueError, match="mols cannot be combined"):
             SimPlot().plot_occup(
                 dataset,
-                chrom="chr1",
+                chroms="chr1",
                 mols=[0, 1],
                 link_mat=link_mat,
                 show=False,
@@ -90,11 +90,11 @@ class TestPlotOccupMolsSlicing:
             "catella._plotting._RENDER_WARN_BYTES", 3 * 20 * 80
         )
         with pytest.warns(UserWarning, match="6 rows x 20 bp"):
-            SimPlot().plot_occup(dataset, chrom="chr1", show=False)
+            SimPlot().plot_occup(dataset, chroms="chr1", show=False)
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             SimPlot().plot_occup(
-                dataset, chrom="chr1", mols=[0, 1, 2], show=False
+                dataset, chroms="chr1", mols=[0, 1, 2], show=False
             )
 
     def test_mols_none_shows_all_molecules(self, tmp_path):
@@ -102,7 +102,7 @@ class TestPlotOccupMolsSlicing:
         ana = SimAnalysis()
         ana.compute_occup(dataset=dataset, batch_size=2)
 
-        SimPlot().plot_occup(chrom="chr1", dataset=dataset, show=False)
+        SimPlot().plot_occup(chroms="chr1", dataset=dataset, show=False)
 
         img = plt.gcf().axes[0].images[0].get_array()
         assert img.shape[0] == 6
@@ -115,7 +115,7 @@ class TestPlotOccupMolsSlicing:
 
         mols = [0, 2, 5]
         SimPlot().plot_occup(
-            chrom="chr1", dataset=dataset, mols=mols, show=False
+            chroms="chr1", dataset=dataset, mols=mols, show=False
         )
 
         img = plt.gcf().axes[0].images[0].get_array()
@@ -128,7 +128,7 @@ class TestPlotOccupMolsSlicing:
         ana.compute_occup(dataset=dataset, batch_size=2)
 
         SimPlot().plot_occup(
-            chrom="chr1",
+            chroms="chr1",
             dataset=dataset,
             mols=[1, 3],
             plot_eseq=True,
@@ -159,7 +159,7 @@ class TestPlotOccupMolsSlicing:
         assert np.isnan(dataset.eseq["chr1"][:, 5]).all()
 
         SimPlot().plot_occup(
-            chrom="chr1", dataset=dataset, plot_eseq=True, show=False
+            chroms="chr1", dataset=dataset, plot_eseq=True, show=False
         )
 
     def test_plot_eseq_skips_ylim_when_all_nan(self, tmp_path):
@@ -183,7 +183,8 @@ class TestPlotOccupMolsSlicing:
         assert np.isnan(dataset.eseq["chr1"][0, :]).all()
 
         SimPlot().plot_occup(
-            chrom="chr1", dataset=dataset, mols=[0], plot_eseq=True, show=False
+            chroms="chr1", dataset=dataset, mols=[0], plot_eseq=True,
+            show=False,
         )
 
         seq_ax = plt.gcf().axes[2]
@@ -198,7 +199,7 @@ class TestPlotOccupMolsSlicing:
         ana.compute_occup(dataset=dataset, batch_size=2)
 
         SimPlot().plot_occup(
-            chrom="chr1", dataset=dataset, plot_eseq=True, show=False
+            chroms="chr1", dataset=dataset, plot_eseq=True, show=False
         )
 
         seq_ax = plt.gcf().axes[2]
@@ -221,7 +222,7 @@ class TestPlotOccupCmapAndNan:
         occup[0, 0] = np.nan
         dataset.analysis["chr1"]["occup"] = pd.DataFrame(occup)
 
-        SimPlot().plot_occup(chrom="chr1", dataset=dataset, show=False)
+        SimPlot().plot_occup(chroms="chr1", dataset=dataset, show=False)
 
     def test_cmap_override_does_not_mutate_instance(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=6, nbp=20)
@@ -230,9 +231,164 @@ class TestPlotOccupCmapAndNan:
 
         simplot = SimPlot()
         simplot.plot_occup(
-            chrom="chr1", dataset=dataset, cmap="viridis", show=False
+            chroms="chr1", dataset=dataset, cmap="viridis", show=False
         )
         assert simplot.cmap == "OrRd"
+
+
+def _make_two_chrom_dataset(tmp_path, seed=5):
+    rng = np.random.default_rng(seed)
+    manager = SimManager(nworker=1, verbose=False)
+    dataset = manager.run(
+        chroms=["chr1", "chr2"],
+        nsim=2,
+        settings=_make_settings(),
+        meth_prob={"chr1": rng.random((6, 20)), "chr2": rng.random((4, 30))},
+        out_dir=tmp_path / "dataset",
+        seed=seed,
+    )
+    for chrom, shape in (("chr1", (6, 20)), ("chr2", (4, 30))):
+        dataset.analysis[chrom]["occup"] = pd.DataFrame(rng.random(shape))
+    return dataset
+
+
+def _heatmap_axes(fig):
+    return [ax for ax in fig.axes if ax.images]
+
+
+@pytest.mark.filterwarnings(
+    "ignore:__array__ implementation doesn't accept a copy keyword"
+    ":DeprecationWarning"
+)
+class TestPlotOccupMultiChrom:
+    def test_one_panel_per_chrom(self, tmp_path):
+        dataset = _make_two_chrom_dataset(tmp_path)
+        out_file = tmp_path / "occup.png"
+        SimPlot().plot_occup(
+            dataset, chroms=["chr1", "chr2"], out_file=out_file, show=False
+        )
+        assert out_file.exists()
+        hm_axes = _heatmap_axes(plt.gcf())
+        assert [ax.images[0].get_array().shape for ax in hm_axes] == [
+            (6, 20),
+            (4, 30),
+        ]
+        assert [ax.get_title() for ax in hm_axes] == [
+            "Occupancy Profile for chr1",
+            "Occupancy Profile for chr2",
+        ]
+
+    def test_one_shared_colorbar(self, tmp_path):
+        dataset = _make_two_chrom_dataset(tmp_path)
+        SimPlot().plot_occup(dataset, chroms=["chr1", "chr2"], show=False)
+        assert len(plt.gcf().axes) == 3
+
+    def test_heatmaps_are_aligned(self, tmp_path):
+        dataset = _make_two_chrom_dataset(tmp_path)
+        SimPlot().plot_occup(
+            dataset,
+            chroms=["chr1", "chr2"],
+            mols={"chr2": [0, 1, 2, 3]},
+            show=False,
+        )
+        fig = plt.gcf()
+        fig.canvas.draw()
+        boxes = [ax.get_position() for ax in _heatmap_axes(fig)]
+        assert boxes[0].x0 == pytest.approx(boxes[1].x0)
+        assert boxes[0].x1 == pytest.approx(boxes[1].x1)
+
+    def test_xlim_per_chrom_by_default(self, tmp_path):
+        dataset = _make_two_chrom_dataset(tmp_path)
+        SimPlot().plot_occup(
+            dataset, chroms=["chr1", "chr2"], xscale=1, show=False
+        )
+        xlims = [ax.get_xlim() for ax in _heatmap_axes(plt.gcf())]
+        assert xlims == [(0, 20), (0, 30)]
+
+    def test_sharex_uses_longest_chrom(self, tmp_path):
+        dataset = _make_two_chrom_dataset(tmp_path)
+        SimPlot().plot_occup(
+            dataset,
+            chroms=["chr1", "chr2"],
+            xscale=1,
+            plot_eseq=True,
+            sharex=True,
+            show=False,
+        )
+        fig = plt.gcf()
+        hm_axes = _heatmap_axes(fig)
+        assert [ax.get_xlim() for ax in hm_axes] == [(0, 30), (0, 30)]
+        seq_axes = [ax for ax in fig.axes if ax.lines]
+        assert [ax.get_xlim() for ax in seq_axes] == [(0, 30), (0, 30)]
+
+    def test_link_mat_dict_sorts_each_chrom(self, tmp_path):
+        dataset = _make_two_chrom_dataset(tmp_path)
+        links = SimAnalysis().sort_by_linkage(dataset=dataset)
+        SimPlot().plot_occup(
+            dataset, chroms=["chr1", "chr2"], link_mat=links, show=False
+        )
+        for chrom, ax in zip(["chr1", "chr2"], _heatmap_axes(plt.gcf())):
+            occup = dataset.analysis[chrom]["occup"].to_numpy()
+            order = sch.leaves_list(links[chrom])
+            np.testing.assert_allclose(
+                np.ma.getdata(ax.images[0].get_array()), occup[order]
+            )
+
+    def test_link_mat_dict_with_chrom_subset(self, tmp_path):
+        dataset = _make_two_chrom_dataset(tmp_path)
+        links = SimAnalysis().sort_by_linkage(dataset=dataset)
+        SimPlot().plot_occup(
+            dataset, chroms="chr2", link_mat=links, show=False
+        )
+        occup = dataset.analysis["chr2"]["occup"].to_numpy()
+        img = _heatmap_axes(plt.gcf())[0].images[0].get_array()
+        order = sch.leaves_list(links["chr2"])
+        np.testing.assert_allclose(np.ma.getdata(img), occup[order])
+
+    def test_link_mat_dict_missing_chrom_is_unsorted(self, tmp_path):
+        dataset = _make_two_chrom_dataset(tmp_path)
+        links = SimAnalysis().sort_by_linkage(dataset=dataset)
+        SimPlot().plot_occup(
+            dataset,
+            chroms=["chr1", "chr2"],
+            link_mat={"chr2": links["chr2"]},
+            show=False,
+        )
+        occup = dataset.analysis["chr1"]["occup"].to_numpy()
+        img = _heatmap_axes(plt.gcf())[0].images[0].get_array()
+        np.testing.assert_allclose(np.ma.getdata(img), occup)
+
+    @pytest.mark.parametrize("name", ["link_mat", "mols"])
+    def test_non_dict_with_several_chroms_raises(self, tmp_path, name):
+        dataset = _make_two_chrom_dataset(tmp_path)
+        value = np.zeros((3, 4)) if name == "link_mat" else [0, 1]
+        with pytest.raises(ValueError, match=f"{name} must be a dict"):
+            SimPlot().plot_occup(
+                dataset, chroms=["chr1", "chr2"], show=False, **{name: value}
+            )
+
+    def test_empty_chroms_raises(self, tmp_path):
+        dataset = _make_two_chrom_dataset(tmp_path)
+        with pytest.raises(ValueError, match="chroms must not be empty"):
+            SimPlot().plot_occup(dataset, chroms=[], show=False)
+
+    def test_many_chroms_warn(self, tmp_path, monkeypatch):
+        dataset = _make_two_chrom_dataset(tmp_path)
+        monkeypatch.setattr("catella._plotting._MAX_PANELS", 1)
+        with pytest.warns(UserWarning, match="2 chromosomes in one figure"):
+            SimPlot().plot_occup(
+                dataset, chroms=["chr1", "chr2"], show=False
+            )
+
+    def test_size_warning_counts_all_panels(self, tmp_path, monkeypatch):
+        dataset = _make_two_chrom_dataset(tmp_path)
+        monkeypatch.setattr(
+            "catella._plotting._RENDER_WARN_BYTES", 8 * 30 * 80
+        )
+        with pytest.warns(UserWarning, match="10 rows x 30 bp"):
+            SimPlot().plot_occup(
+                dataset, chroms=["chr1", "chr2"], show=False
+            )
 
 
 @pytest.mark.filterwarnings(
@@ -245,7 +401,7 @@ class TestPositionalDatasetArg:
         ana = SimAnalysis()
         ana.compute_occup(dataset=dataset, batch_size=2)
 
-        SimPlot().plot_occup(dataset, chrom="chr1", show=False)
+        SimPlot().plot_occup(dataset, chroms="chr1", show=False)
 
         assert plt.gcf().axes[0].images
 

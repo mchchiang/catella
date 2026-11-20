@@ -14,15 +14,14 @@ from matplotlib.colors import Normalize
 from matplotlib.patches import Patch
 from matplotlib.ticker import MaxNLocator
 
+from catella._chroms import _chrom_list, _per_chrom
 from catella._plotting import (
-    _chrom_list,
     _colorbar,
     _draw_mean,
     _finish,
     _leaf_order,
     _left_ylabels,
     _panel_grid,
-    _per_chrom,
     _power_of_10,
     _row_axes,
     _share_xlim,

@@ -51,58 +51,6 @@ def _power_of_10(x, name=None):
     return log10x
 
 
-def _chrom_list(chroms):
-    """
-    Return `chroms` (a str or an iterable of str) as a list.
-
-    Raises
-    ------
-    ValueError
-        If `chroms` is empty.
-    """
-    chroms = [chroms] if isinstance(chroms, str) else list(chroms)
-    if not chroms:
-        raise ValueError("chroms must not be empty")
-    return chroms
-
-
-def _per_chrom(value, chroms, name):
-    """
-    Map a per-chromosome argument onto each chromosome of `chroms`.
-
-    Parameters
-    ----------
-    value : object, dict, or None
-        None (None for every chromosome), a dict keyed by chromosome
-        (missing chromosomes get None; extra keys are ignored), or a
-        single value (only allowed for one chromosome).
-    chroms : list of str
-        The chromosomes plotted.
-    name : str
-        The argument name, for the error message.
-
-    Returns
-    -------
-    dict
-        The value for each chromosome of `chroms`.
-
-    Raises
-    ------
-    ValueError
-        If `value` is a single value and `chroms` has several entries.
-    """
-    if value is None:
-        return dict.fromkeys(chroms)
-    if isinstance(value, dict):
-        return {c: value.get(c) for c in chroms}
-    if len(chroms) > 1:
-        raise ValueError(
-            f"{name} must be a dict keyed by chrom when plotting several "
-            "chroms"
-        )
-    return {chroms[0]: value}
-
-
 def _warn_if_large(nrow, ncol, hint):
     """
     Warn if rendering an `nrow` x `ncol` heatmap may need a lot of memory.

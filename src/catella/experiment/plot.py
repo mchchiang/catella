@@ -12,14 +12,13 @@ from matplotlib.colors import Normalize
 from scipy.special import logit
 
 from catella import utils
+from catella._chroms import _chrom_list, _per_chrom
 from catella._plotting import (
-    _chrom_list,
     _colorbar,
     _finish,
     _leaf_order,
     _left_ylabels,
     _panel_grid,
-    _per_chrom,
     _power_of_10,
     _share_xlim,
     _warn_if_large,

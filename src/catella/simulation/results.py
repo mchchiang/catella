@@ -5,7 +5,7 @@ import shutil
 import weakref
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator, Mapping
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from threading import Semaphore
@@ -16,6 +16,7 @@ import h5py
 import numpy as np
 
 from catella import h5_utils, utils
+from catella._dataclasses import _add_frozen_properties, _init_frozen_fields
 from catella.containers import DataclassPublicProxy, DataFrameMap, FixedKeyMap
 from catella.h5_array import H5Array
 from catella.simulation._inputs import _check_fill_nan
@@ -35,35 +36,6 @@ from catella.simulation.config import SimSettings
 
 # Limit the concurrent open files to stay under OS limits
 MAX_OPEN_FILES = Semaphore(500)
-
-
-def _init_fields(obj, kwargs, msg):
-    """
-    Set the dataclass fields of a frozen run-data object from `kwargs`.
-
-    A field named `_frozen_<name>` is also set from `kwargs[<name>]`.
-
-    Parameters
-    ----------
-    obj : dataclass instance
-        The object to initialize.
-    kwargs : dict
-        The field values; must contain `_internal=True`, which is removed.
-    msg : str
-        The error message if `_internal` is missing.
-
-    Raises
-    ------
-    TypeError
-        If `kwargs` lacks `_internal=True`.
-    """
-    if not kwargs.pop("_internal", False):
-        raise TypeError(msg)
-    for f in fields(obj):
-        val = kwargs.get(f.name)
-        if val is None:
-            val = kwargs.get(f.name.removeprefix("_frozen_"))
-        object.__setattr__(obj, f.name, val)
 
 
 def _check_run_params(nucbp, nbp, llink, seed):
@@ -115,7 +87,7 @@ def _public_repr(obj):
     return f"{cls.__name__}({', '.join(names)})"
 
 
-@utils.add_frozen_properties
+@_add_frozen_properties
 @dataclass(frozen=True, slots=True, init=False)
 class SimMCMCData:
     """
@@ -181,7 +153,7 @@ class SimMCMCData:
     __repr__ = _public_repr
 
     def __init__(self, **kwargs: Any):
-        _init_fields(
+        _init_frozen_fields(
             self, kwargs, "use SimMCMCData.load() to instantiate this class"
         )
 
@@ -339,7 +311,7 @@ class SimMCMCData:
         return cls(**kwargs, _internal=True)
 
 
-@utils.add_frozen_properties
+@_add_frozen_properties
 @dataclass(frozen=True, slots=True, init=False)
 class SimTMData:
     """
@@ -393,7 +365,7 @@ class SimTMData:
     __repr__ = _public_repr
 
     def __init__(self, **kwargs: Any):
-        _init_fields(
+        _init_frozen_fields(
             self,
             kwargs,
             "SimTMData cannot be instantiated directly; access samples "

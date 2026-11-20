@@ -16,7 +16,8 @@ import h5py
 import numpy as np
 import pandas as pd
 
-from catella import h5_utils, utils
+from catella import h5_utils
+from catella._dataclasses import _add_frozen_properties, _init_frozen_fields
 from catella._warnings import _warn
 from catella.containers import DataFrameMap, FixedKeyMap
 from catella.experiment._contexts import _resolve_channels
@@ -48,7 +49,7 @@ _DENSE_BYTES_PER_CELL = 72
 _DENSE_WARN_BYTES = 10**9
 
 
-@utils.add_frozen_properties
+@_add_frozen_properties
 @dataclass(frozen=True, slots=True, init=False, eq=False)
 class MethPrintData:
     """
@@ -122,15 +123,9 @@ class MethPrintData:
     )
 
     def __init__(self, **kwargs: Any):
-        if not kwargs.pop("_internal", False):
-            raise TypeError(
-                "use MethPrintData._load() to instantiate this class"
-            )
-        for f in fields(self):
-            val = kwargs.get(f.name)
-            if val is None:
-                val = kwargs.get(f.name.removeprefix("_frozen_"))
-            object.__setattr__(self, f.name, val)
+        _init_frozen_fields(
+            self, kwargs, "use MethPrintData._load() to instantiate this class"
+        )
 
     def _save(self, group):
         dt = h5py.string_dtype(encoding="utf-8")  # For storing strings

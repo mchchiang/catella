@@ -14,7 +14,7 @@ import pandas as pd
 from catella_cpp import NucPosMCMC, NucPosTM
 from scipy.special import logit
 
-from catella import utils
+from catella._chroms import _normalize_chroms
 from catella.experiment._reads import _lookup_mask
 from catella.experiment.methdata import MethPrintExperiment
 from catella.simulation._inputs import (
@@ -290,7 +290,7 @@ class SimManager:
         if method not in ("mcmc", "tm"):
             raise ValueError("'method' must be 'mcmc' or 'tm'")
 
-        chroms = utils.normalize_chroms(chroms)
+        chroms = _normalize_chroms(chroms)
         settings = _resolve_settings(settings)
         meth_prob, no_data = _prepare_meth_prob(
             meth_prob, chroms, settings.nucbp, fill_nan

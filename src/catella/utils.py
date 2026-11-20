@@ -2,7 +2,7 @@
 
 import shutil
 import warnings
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 
 import numpy as np
 import pandas as pd
@@ -19,21 +19,6 @@ IndexType = int | slice | Sequence[int]
 # pairwise-distance clustering needs an nrow x nrow matrix regardless
 # of how it is built.
 _CLUSTER_WARN_ROWS = 5000
-
-
-def normalize_chroms(
-    chroms: str | Iterable[str] | None = None,
-    default_chroms: Iterable[str] | None = None,
-) -> list[str]:
-    if chroms is None:
-        return list(default_chroms) if default_chroms is not None else []
-    if isinstance(chroms, str):
-        if chroms == "":
-            raise ValueError("chroms must not be an empty string")
-        return [chroms]
-    if not isinstance(chroms, Iterable):
-        raise TypeError("chroms must be a str or an iterable")
-    return list(chroms)
 
 
 def downsample(arr, max_rows, *, how="mean", batch_size=20000):

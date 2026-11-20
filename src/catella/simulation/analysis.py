@@ -662,10 +662,14 @@ class SimAnalysis:
         For each molecule, this is the configuration of non-overlapping
         nucleosome footprints that maximizes the expected number of base
         pairs whose occupancy is called correctly under the posterior
-        (maximum expected accuracy, MEA). With `gamma = 1`, it is the
-        valid configuration closest to the occupancy profile thresholded
-        at 0.5. Only available for `dataset.method == "tm"` datasets.
-        Results are stored as for `compute_most_likely_config`.
+        (maximum expected accuracy, MEA), minus the linker repulsion of
+        the model. The penalty keeps out linkers that the model forbids
+        (e.g., touching footprints), so the result is always a
+        configuration that the model allows. With `gamma = 1`, it is
+        the configuration closest to the occupancy profile thresholded
+        at 0.5 among those the model allows. Only available for
+        `dataset.method == "tm"` datasets. Results are stored as for
+        `compute_most_likely_config`.
 
         Parameters
         ----------

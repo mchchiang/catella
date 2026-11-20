@@ -1052,9 +1052,11 @@ def compute_config(
         A "tm" dataset with a stored energy landscape.
     method : {"best_match", "most_likely"}, default "best_match"
         "best_match" calls the configuration that best matches the
-        occupancy profile (maximum expected accuracy); "most_likely"
-        calls the single most probable configuration (maximum a
-        posteriori), which tends to be more densely packed.
+        occupancy profile (maximum expected accuracy), penalized by the
+        linker repulsion so that it never contains linkers the model
+        forbids; "most_likely" calls the single most probable
+        configuration (maximum a posteriori), which tends to be more
+        densely packed.
     gamma : float, optional
         For "best_match" only: the weight of correctly called occupied
         sites relative to correctly called empty sites; larger values

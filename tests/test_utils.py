@@ -212,11 +212,19 @@ def test_fill_nan_handles_zero_overlap_row(as_h5array, fill_nan):
 
 
 @pytest.mark.filterwarnings("ignore:Mean of empty slice:RuntimeWarning")
-def test_fill_nan_all_nan_column_falls_back_to_zero():
+@pytest.mark.parametrize("as_h5array", [False, True])
+def test_fill_nan_all_nan_column_falls_back_to_zero(as_h5array):
     data = np.random.default_rng(10).random((6, 3))
     data[:, 1] = np.nan
 
-    order, link_mat = utils.compute_linkage(data, fill_nan="mean")
+    source = data
+    if as_h5array:
+        source = H5Array.create(data.shape)
+        source.write_batch(0, data.shape[0], data)
+
+    order, link_mat = utils.compute_linkage(
+        source, batch_size=2, fill_nan="mean"
+    )
     ref_order, ref_link = _reference_linkage(_filled(data, "mean"))
     np.testing.assert_array_equal(order, ref_order)
     np.testing.assert_allclose(link_mat, ref_link)

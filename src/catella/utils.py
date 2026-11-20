@@ -276,23 +276,6 @@ def _apply_fill_nan(dense, fill_nan):
     return np.where(np.isnan(dense), fill_values, dense)
 
 
-def _h5_column_nanmean(h5arr, batch_size):
-    # Column-wise nan-safe mean over the full H5Array, computed in
-    # row batches so peak memory stays O(batch_size * ncol). A global
-    # (not per-batch) mean is needed so fill_nan="mean" matches the
-    # dense code path regardless of how rows are batched.
-    nrow, ncol = h5arr.shape
-    sums = np.zeros(ncol)
-    counts = np.zeros(ncol)
-    for a0 in range(0, nrow, batch_size):
-        a1 = min(a0 + batch_size, nrow)
-        block = h5arr[a0:a1, :]
-        mask = ~np.isnan(block)
-        sums += np.where(mask, block, 0.0).sum(axis=0)
-        counts += mask.sum(axis=0)
-    return np.divide(sums, counts, out=np.zeros_like(sums), where=counts > 0)
-
-
 def _streamed_pdist(h5arr, *, metric, batch_size, dir, fill_nan=None):
     # Builds the nrow x nrow distance matrix on disk in row-blocks (so
     # peak memory is O(batch_size * nrow), not O(nrow^2)) and only
@@ -306,7 +289,9 @@ def _streamed_pdist(h5arr, *, metric, batch_size, dir, fill_nan=None):
     try:
         fill_values = None
         if fill_nan == "mean":
-            fill_values = _h5_column_nanmean(h5arr, batch_size)
+            # Means over all rows (as the dense path), 0 for all-nan columns
+            means = h5arr.mean(axis=0, batch_size=batch_size)
+            fill_values = np.where(np.isnan(means), 0.0, means)
         elif fill_nan is not None:
             fill_values = fill_nan
 

@@ -53,6 +53,7 @@ def test_permanent_path_survives_close(tmp_path):
     assert path.exists()
 
 
+@pytest.mark.usefixtures("isolated_tempdir")
 def test_scratch_dir_removed_on_keyboard_interrupt():
     import os
     import tempfile

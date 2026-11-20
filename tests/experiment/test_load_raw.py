@@ -1097,6 +1097,7 @@ class TestLazyAndScratchLifecycle:
         exp.close()
         assert not os.path.exists(tmp_dir)
 
+    @pytest.mark.usefixtures("isolated_tempdir")
     def test_staging_dir_cleaned_up_when_load_raw_raises(self, tmp_path):
         import os
         import tempfile
@@ -1121,6 +1122,7 @@ class TestLazyAndScratchLifecycle:
         leaked = [d for d in after - before if d.startswith("catella_")]
         assert not leaked
 
+    @pytest.mark.usefixtures("isolated_tempdir")
     def test_staging_dir_cleaned_up_on_keyboard_interrupt(self, tmp_path):
         import os
         import tempfile

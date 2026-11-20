@@ -59,6 +59,7 @@ def test_h5array_matches_reference_across_batch_sizes(batch_size):
     np.testing.assert_allclose(link_mat, ref_link)
 
 
+@pytest.mark.usefixtures("isolated_tempdir")
 def test_h5array_scratch_dir_is_cleaned_up():
     before = set(os.listdir(tempfile.gettempdir()))
 
@@ -73,6 +74,7 @@ def test_h5array_scratch_dir_is_cleaned_up():
     assert not leaked
 
 
+@pytest.mark.usefixtures("isolated_tempdir")
 def test_h5array_scratch_dir_is_cleaned_up_on_raise():
     data = np.random.default_rng(6).random((6, 3))
     data[0, 0] = np.nan

@@ -147,7 +147,7 @@ def _control_means(arrs, labels, norm_by_strand, batch_size):
 
     def mean(src, s):
         mask = None if s is None else labels[src] == s
-        return arrs[src]._streamed_reduce("mean", 0, batch_size, row_mask=mask)
+        return arrs[src].mean(axis=0, batch_size=batch_size, row_mask=mask)
 
     return {s: (mean("meth", s), mean("unmeth", s)) for s in strata}
 

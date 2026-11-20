@@ -193,6 +193,40 @@ def test_streaming_reductions_match_numpy(op, batch_size):
         np.testing.assert_allclose(result, expected)
 
 
+@pytest.mark.parametrize("batch_size", [2, 1000])
+@pytest.mark.parametrize("op", ["mean", "sum", "min", "max"])
+def test_streaming_reductions_with_row_mask(op, batch_size):
+    arr, values = _filled((9, 5), seed=2)
+    mask = np.array([True, False, True, True, False, False, True, False, True])
+    numpy_op = getattr(np, op)
+    for axis in (0, 1):
+        result = getattr(arr, op)(
+            axis=axis, batch_size=batch_size, row_mask=mask
+        )
+        expected = numpy_op(values[mask], axis=axis)
+        np.testing.assert_allclose(result, expected)
+
+
+def test_row_mask_accepts_list():
+    arr, values = _filled((4, 3), seed=3)
+    result = arr.sum(row_mask=[True, False, False, True])
+    np.testing.assert_allclose(result, values[[0, 3]].sum(axis=0))
+
+
+def test_row_mask_selecting_nothing():
+    arr, _ = _filled((4, 3), seed=4)
+    mask = np.zeros(4, dtype=bool)
+    np.testing.assert_allclose(arr.sum(row_mask=mask), np.zeros(3))
+    assert np.isnan(arr.mean(row_mask=mask)).all()
+
+
+@pytest.mark.parametrize("op", ["mean", "sum", "min", "max"])
+def test_row_mask_wrong_length_raises(op):
+    arr, _ = _filled((4, 3), seed=5)
+    with pytest.raises(ValueError, match="one entry per row"):
+        getattr(arr, op)(row_mask=np.ones(3, dtype=bool))
+
+
 def test_downsample_noop_when_nrow_within_max_rows():
     arr, values = _filled((5, 3), seed=2)
     np.testing.assert_array_equal(arr.downsample(10), values)

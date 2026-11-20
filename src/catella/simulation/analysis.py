@@ -1141,8 +1141,8 @@ class SimAnalysis:
                     "bins across chroms; pool them one chrom at a time"
                 )
             mask = _mol_mask(mols[chrom], arr.shape[0], chrom)
-            pooled[chrom] = arr._streamed_reduce(
-                how, 0, batch_size, row_mask=mask
+            pooled[chrom] = getattr(arr, how)(
+                axis=0, batch_size=batch_size, row_mask=mask
             )
         return pd.DataFrame(pooled, index=pd.Index(columns))
 

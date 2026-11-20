@@ -437,7 +437,7 @@ class H5Array:
             self.to_numpy(), index=self.index, columns=self.columns
         )
 
-    def mean(self, axis=0, batch_size=20000) -> np.ndarray:
+    def mean(self, axis=0, batch_size=20000, row_mask=None) -> np.ndarray:
         """
         Compute the mean along an axis without materializing the array.
 
@@ -447,35 +447,53 @@ class H5Array:
             Axis along which to reduce. 0 reduces over rows (one value
             per column, matching pandas' default); 1 reduces over
             columns (one value per row).
-        batch_size : int, default 20_000
+        batch_size : int, default 20000
             Number of rows read (and held in memory) per batch.
+        row_mask : array-like of bool, optional
+            One entry per row, True for the rows to include. If None
+            (default), all rows. Rows are still read in contiguous
+            batches, so any selection is efficient.
 
         Returns
         -------
         np.ndarray
-            The reduced values.
-        """
-        return self._streamed_reduce("mean", axis, batch_size)
+            The reduced values; with `axis=1`, one value per selected
+            row.
 
-    def sum(self, axis=0, batch_size=20000) -> np.ndarray:
+        Raises
+        ------
+        ValueError
+            If `axis` is not 0 or 1, or `row_mask` does not have one
+            entry per row.
+        """
+        return self._streamed_reduce("mean", axis, batch_size, row_mask)
+
+    def sum(self, axis=0, batch_size=20000, row_mask=None) -> np.ndarray:
         """Sum along an axis without materializing the array. See `mean`
         for parameter/return details."""
-        return self._streamed_reduce("sum", axis, batch_size)
+        return self._streamed_reduce("sum", axis, batch_size, row_mask)
 
-    def min(self, axis=0, batch_size=20000) -> np.ndarray:
+    def min(self, axis=0, batch_size=20000, row_mask=None) -> np.ndarray:
         """Minimum along an axis without materializing the array. See
         `mean` for parameter/return details."""
-        return self._streamed_reduce("min", axis, batch_size)
+        return self._streamed_reduce("min", axis, batch_size, row_mask)
 
-    def max(self, axis=0, batch_size=20000) -> np.ndarray:
+    def max(self, axis=0, batch_size=20000, row_mask=None) -> np.ndarray:
         """Maximum along an axis without materializing the array. See
         `mean` for parameter/return details."""
-        return self._streamed_reduce("max", axis, batch_size)
+        return self._streamed_reduce("max", axis, batch_size, row_mask)
 
     def _streamed_reduce(self, op, axis, batch_size, row_mask=None):
         if axis not in (0, 1):
             raise ValueError("axis must be 0 or 1")
         nrow, ncol = self.shape
+        if row_mask is not None:
+            row_mask = np.asarray(row_mask, dtype=bool)
+            if row_mask.shape != (nrow,):
+                raise ValueError(
+                    f"row_mask must have one entry per row ({nrow}), got "
+                    f"shape {row_mask.shape}"
+                )
 
         if axis == 1:
             chunks = []

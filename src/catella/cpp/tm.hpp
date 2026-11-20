@@ -48,8 +48,9 @@ public:
   // not need solve(). Returns start positions and exact energy.
   std::pair<std::vector<int>, double> getMostLikelyConfig() const;
 
-  // Configuration best matching the occupancy profile (MEA); gamma
-  // weights occupied sites. Requires solve().
+  // Configuration best matching the occupancy profile (MEA), penalized
+  // by the linker repulsion so only model-allowed configurations are
+  // returned; gamma weights occupied sites. Requires solve().
   std::pair<std::vector<int>, double> getBestMatchConfig(
     double gamma = 1.0) const;
 

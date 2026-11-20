@@ -392,6 +392,13 @@ def _footprint_gain(occup, nucbp, gamma):
     return np.array([c[x : x + nucbp].sum() for x in range(npos)])
 
 
+def _repulsion(placed, nucbp, llink, elink):
+    return sum(
+        _erep(b - a, nucbp, llink, elink)
+        for a, b in itertools.pairwise(placed)
+    )
+
+
 class TestBestMatchConfig:
     @pytest.mark.parametrize("nucbp,llink,elink,mu,nbp", PARAM_SETS)
     @pytest.mark.parametrize("gamma", [0.5, 1.0, 2.0])
@@ -403,16 +410,60 @@ class TestBestMatchConfig:
         tm = _tm(nucbp, llink, elink, mu, eseq)
         gain = _footprint_gain(tm.getOccup(), nucbp, gamma)
         configs = _valid_configs(nucbp, nbp - nucbp + 1)
-        scores = [gain[c].sum() if c else 0.0 for c in configs]
+        scores = [
+            gain[c].sum() - _repulsion(c, nucbp, llink, elink) if c else 0.0
+            for c in configs
+        ]
         best = configs[int(np.argmax(scores))]
 
         positions, energy = tm.getBestMatchConfig(gamma)
+        positions = list(positions)
 
-        assert list(positions) == best
-        assert gain[list(positions)].sum() == pytest.approx(max(scores))
+        assert positions == best
+        score = gain[positions].sum() - _repulsion(
+            positions, nucbp, llink, elink
+        )
+        assert score == pytest.approx(max(scores))
         assert energy == pytest.approx(
             _config_energy(nucbp, llink, elink, mu, eseq, best)
         )
+
+    @pytest.mark.parametrize("gamma", [0.5, 1.0, 2.0])
+    def test_no_gap_with_repulsion_above_max_gain(self, gamma):
+        nucbp, llink, elink = 20, 6, 1.0
+        rng = np.random.default_rng(3)
+        eseq = (rng.normal(size=600) - 2.0).tolist()
+        tm = _tm(nucbp, llink, elink, 0.0, eseq)
+
+        positions, _ = tm.getBestMatchConfig(gamma)
+
+        gaps = np.diff(positions)
+        assert len(gaps) > 0
+        assert all(
+            _erep(g, nucbp, llink, elink) <= gamma * nucbp for g in gaps
+        )
+
+    def test_flat_high_occupancy_not_packed(self):
+        nucbp, llink = 147, 25
+        tm = _tm(nucbp, llink, 1.0, 0.0, [-5.0] * 3000)
+
+        positions, _ = tm.getBestMatchConfig()
+
+        assert len(positions) > 1
+        assert np.diff(positions).min() > nucbp
+
+    def test_no_repulsion_matches_unpenalized(self):
+        nucbp, nbp = 3, 14
+        rng = np.random.default_rng(4)
+        eseq = rng.normal(size=nbp).tolist()
+        tm = _tm(nucbp, 0, 1.0, 0.5, eseq)
+        gain = _footprint_gain(tm.getOccup(), nucbp, 1.0)
+        configs = _valid_configs(nucbp, nbp - nucbp + 1)
+        scores = [gain[c].sum() if c else 0.0 for c in configs]
+
+        positions, _ = tm.getBestMatchConfig()
+
+        assert list(positions) == configs[int(np.argmax(scores))]
 
     def test_default_gamma_covers_sites_above_half(self):
         tm = NucPosTM(3, 8, 0, 0.0, 0.0, seed=1)

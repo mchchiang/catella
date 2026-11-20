@@ -353,7 +353,7 @@ std::pair<vector<int>, double> NucPosTM::getBestMatchConfig(
     siteScore[x] = prefix[x+nucbp] - prefix[x];
   }
   vector<double> stateScore(W, NINF);
-  for (int k = nucbp-1; k < W; k++) stateScore[k] = 0.0;
+  for (int k = nucbp-1; k < W; k++) stateScore[k] = -model.erep(k+1);
 
   vector<int> positions = maxScoreConfig(siteScore, stateScore);
   return {positions, configEnergy(positions)};

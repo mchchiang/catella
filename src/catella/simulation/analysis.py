@@ -133,11 +133,13 @@ def _check_nonneg_int(value, name):
 
     Raises
     ------
+    TypeError
+        If `value` is not an integer.
     ValueError
-        If `value` is not a nonnegative integer.
+        If `value` is negative.
     """
     if isinstance(value, bool) or not isinstance(value, Integral):
-        raise ValueError(f"{name} must be an integer, got {value!r}")
+        raise TypeError(f"{name} must be an integer, got {value!r}")
     if value < 0:
         raise ValueError(f"{name} must be nonnegative, got {value}")
 
@@ -1012,12 +1014,13 @@ class SimAnalysis:
 
         Raises
         ------
+        TypeError
+            If `lmax` or `trim` is not an integer.
         ValueError
             If `dataset.method != "tm"`, the dataset has no stored energy
-            landscape, `lmax` or `trim` is not a nonnegative integer,
-            `window` is invalid or outside the fiber, the window after
-            trimming cannot hold two nucleosomes, or `nworker` is not
-            positive.
+            landscape, `lmax` or `trim` is negative, `window` is invalid
+            or outside the fiber, the window after trimming cannot hold
+            two nucleosomes, or `nworker` is not positive.
 
         Warns
         -----

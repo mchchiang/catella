@@ -41,7 +41,8 @@ def _check_downsample(max_rows, how):
     """Check `max_rows` and `downsample_how`."""
     if how not in _PLOT_DOWNSAMPLE_HOW:
         raise ValueError(
-            f"downsample_how must be one of {_PLOT_DOWNSAMPLE_HOW}, got {how!r}"
+            f"downsample_how must be one of {_PLOT_DOWNSAMPLE_HOW}, "
+            f"got {how!r}"
         )
     if max_rows is not None and max_rows < 1:
         raise ValueError(f"max_rows must be positive, got {max_rows}")

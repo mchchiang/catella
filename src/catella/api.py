@@ -1168,11 +1168,13 @@ def compute_linker_hist(
 
     Raises
     ------
+    TypeError
+        If `lmax` or `trim` is not an integer.
     ValueError
         If `dataset.method != "tm"`, the dataset has no stored energy
-        landscape, `lmax` or `trim` is not a nonnegative integer, `window`
-        is invalid or outside the fiber, the window after trimming cannot
-        hold two nucleosomes, or `nworker` is not positive.
+        landscape, `lmax` or `trim` is negative, `window` is invalid or
+        outside the fiber, the window after trimming cannot hold two
+        nucleosomes, or `nworker` is not positive.
 
     Warns
     -----

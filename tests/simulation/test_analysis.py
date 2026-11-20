@@ -1150,10 +1150,15 @@ class TestComputeLinkerHist:
         with pytest.raises(ValueError, match="window must satisfy"):
             SimAnalysis().compute_linker_hist(dataset, window=(0, 21))
 
-    @pytest.mark.parametrize("lmax", [-1, 1.5, True])
-    def test_invalid_lmax_raises(self, tmp_path, lmax):
+    def test_negative_lmax_raises(self, tmp_path):
         dataset = _make_tm_dataset(tmp_path)
-        with pytest.raises(ValueError, match="lmax must be"):
+        with pytest.raises(ValueError, match="lmax must be nonnegative"):
+            SimAnalysis().compute_linker_hist(dataset, lmax=-1)
+
+    @pytest.mark.parametrize("lmax", [1.5, True])
+    def test_non_integer_lmax_raises(self, tmp_path, lmax):
+        dataset = _make_tm_dataset(tmp_path)
+        with pytest.raises(TypeError, match="lmax must be an integer"):
             SimAnalysis().compute_linker_hist(dataset, lmax=lmax)
 
     def test_negative_trim_raises(self, tmp_path):
@@ -1311,7 +1316,9 @@ class TestExtractLinkerStats:
     def test_pooled_values(self, tmp_path):
         dataset = _make_tm_dataset(tmp_path, nmol=3)
         _put_hist(dataset, "chr1", _HIST)
-        got = SimAnalysis().extract_linker_stats(dataset, name="h", pooled=True)
+        got = SimAnalysis().extract_linker_stats(
+            dataset, name="h", pooled=True
+        )
         assert got.index.name == "chrom"
         np.testing.assert_allclose(
             got.loc["chr1"], [1 / 3, np.sqrt(2 / 9), 6.0]

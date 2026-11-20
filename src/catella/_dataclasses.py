@@ -42,15 +42,23 @@ def _init_frozen_fields(obj, kwargs, msg):
         object.__setattr__(obj, f.name, val)
 
 
+def _read_only_view(arr):
+    """Return a read-only view of a NumPy array."""
+    view = arr.view()
+    view.flags.writeable = False
+    return view
+
+
 def _add_frozen_properties(cls):
     """
-    Add a property for each `_frozen_` field of a dataclass.
+    Add a read-only property for each `_frozen_` field of a dataclass.
 
     For every field named `_frozen_<name>`, a property `<name>` is added
     whose docstring is the field's `metadata["doc"]`. The property
     returns a read-only view of a NumPy array, a copy of a pandas
-    object, a tuple of the elements (with views of any arrays) for a
-    list or tuple, and any other value as is.
+    object, a tuple of the elements (with read-only views of any arrays)
+    for a list or tuple, and any other value as is, so that callers
+    cannot modify the stored arrays and frames.
 
     Parameters
     ----------
@@ -73,18 +81,14 @@ def _add_frozen_properties(cls):
         def make_getter(p_name):
             def getter(self):
                 val = getattr(self, p_name)
-                # NumPy: return read-only view
                 if isinstance(val, np.ndarray):
-                    view = val.view()
-                    view.flags.writeable = False
-                    return view
+                    return _read_only_view(val)
                 # Pandas 3.0: standard copy is O(1) and safe
                 if isinstance(val, (pd.DataFrame, pd.Series)):
                     return val.copy()
-                # Nested lists/tuples: convert to tuple of views
                 if isinstance(val, (tuple, list)):
                     return tuple(
-                        v.view() if isinstance(v, np.ndarray) else v
+                        _read_only_view(v) if isinstance(v, np.ndarray) else v
                         for v in val
                     )
                 return val

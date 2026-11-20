@@ -74,7 +74,7 @@ class TestAddFrozenProperties:
         got.loc[0, "a"] = 10
         assert data.df.loc[0, "a"] == 1
 
-    def test_list_becomes_tuple_of_views(self):
+    def test_list_becomes_tuple_of_read_only_views(self):
         arrs = [np.arange(2), np.arange(3)]
         data = _Data(_internal=True, seq=[*arrs, "x"])
         got = data.seq
@@ -82,6 +82,9 @@ class TestAddFrozenProperties:
         assert got[2] == "x"
         for view, arr in zip(got[:2], arrs):
             assert np.shares_memory(view, arr)
+            with pytest.raises(ValueError):
+                view[0] = 10
+            assert arr.flags.writeable
 
     def test_other_values_returned_as_is(self):
         data = _Data(_internal=True, value=1.5)

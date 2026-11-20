@@ -1183,3 +1183,112 @@ class TestComputeLinkerHist:
         dataset = _make_tm_dataset(tmp_path)
         SimAnalysis().compute_linker_hist(dataset, lmax=2)
         assert not [w for w in recwarn if "fill_nan" in str(w.message)]
+
+
+def _put_hist(dataset, chrom, values, name="h"):
+    values = np.asarray(values, dtype=np.float64)
+    columns = [*(str(i) for i in range(values.shape[1] - 1)), "tail"]
+    arr = H5Array.create(values.shape, columns=columns)
+    arr.write_batch(0, values.shape[0], values)
+    dataset.analysis[chrom][name] = arr
+    return values
+
+
+_HIST = [
+    [1.0, 2.0, 0.5],
+    [np.nan, np.nan, np.nan],
+    [3.0, 0.0, 1.5],
+]
+
+
+class TestPoolLinkerHist:
+    def test_sum_skips_nan_rows(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=3)
+        _put_hist(dataset, "chr1", _HIST)
+        got = SimAnalysis().pool_linker_hist(dataset, name="h")
+        assert list(got.index) == ["0", "1", "tail"]
+        assert list(got.columns) == ["chr1"]
+        np.testing.assert_allclose(got["chr1"], [4.0, 2.0, 2.0])
+
+    def test_mean_divides_by_molecules_with_data(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=3)
+        _put_hist(dataset, "chr1", _HIST)
+        got = SimAnalysis().pool_linker_hist(dataset, name="h", how="mean")
+        np.testing.assert_allclose(got["chr1"], [2.0, 1.0, 1.0])
+
+    def test_mols_unsorted_with_duplicates(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=3)
+        _put_hist(dataset, "chr1", _HIST)
+        got = SimAnalysis().pool_linker_hist(
+            dataset, name="h", mols=[2, 0, 2]
+        )
+        np.testing.assert_allclose(got["chr1"], [4.0, 2.0, 2.0])
+        only = SimAnalysis().pool_linker_hist(dataset, name="h", mols=[2])
+        np.testing.assert_allclose(only["chr1"], [3.0, 0.0, 1.5])
+
+    def test_small_batch_size_matches(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=3)
+        _put_hist(dataset, "chr1", _HIST)
+        ana = SimAnalysis()
+        full = ana.pool_linker_hist(dataset, name="h")
+        small = ana.pool_linker_hist(dataset, name="h", batch_size=1)
+        pd.testing.assert_frame_equal(full, small)
+
+    def test_empty_selection(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=3)
+        _put_hist(dataset, "chr1", _HIST)
+        ana = SimAnalysis()
+        total = ana.pool_linker_hist(dataset, name="h", mols=[1])
+        mean = ana.pool_linker_hist(dataset, name="h", mols=[1], how="mean")
+        np.testing.assert_allclose(total["chr1"], 0.0)
+        assert mean["chr1"].isna().all()
+
+    def test_dict_mols_by_chrom(self, tmp_path):
+        dataset = _make_multi_chrom_tm_dataset(tmp_path)
+        v1 = _put_hist(dataset, "chr1", np.arange(15).reshape(5, 3))
+        v2 = _put_hist(dataset, "chr2", np.ones((3, 3)))
+        got = SimAnalysis().pool_linker_hist(
+            dataset, name="h", mols={"chr1": [0, 4], "chrX": [0]}
+        )
+        np.testing.assert_allclose(got["chr1"], v1[[0, 4]].sum(axis=0))
+        np.testing.assert_allclose(got["chr2"], v2.sum(axis=0))
+
+    def test_non_dict_mols_with_several_chroms_raises(self, tmp_path):
+        dataset = _make_multi_chrom_tm_dataset(tmp_path)
+        _put_hist(dataset, "chr1", np.ones((5, 3)))
+        _put_hist(dataset, "chr2", np.ones((3, 3)))
+        with pytest.raises(ValueError, match="dict keyed by chrom"):
+            SimAnalysis().pool_linker_hist(dataset, name="h", mols=[0])
+
+    def test_different_bins_raise(self, tmp_path):
+        dataset = _make_multi_chrom_tm_dataset(tmp_path)
+        _put_hist(dataset, "chr1", np.ones((5, 3)))
+        _put_hist(dataset, "chr2", np.ones((3, 4)))
+        with pytest.raises(ValueError, match="different bins"):
+            SimAnalysis().pool_linker_hist(dataset, name="h")
+
+    def test_mols_out_of_range_raises(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=3)
+        _put_hist(dataset, "chr1", _HIST)
+        with pytest.raises(ValueError, match="mols must be in"):
+            SimAnalysis().pool_linker_hist(dataset, name="h", mols=[3])
+
+    def test_invalid_how_raises(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=3)
+        _put_hist(dataset, "chr1", _HIST)
+        with pytest.raises(ValueError, match="how must be"):
+            SimAnalysis().pool_linker_hist(dataset, name="h", how="max")
+
+    def test_missing_name_raises(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path)
+        with pytest.raises(KeyError, match="run compute_linker_hist first"):
+            SimAnalysis().pool_linker_hist(dataset)
+
+    def test_pools_computed_histogram(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=4)
+        ana = SimAnalysis()
+        ana.compute_linker_hist(dataset, lmax=3)
+        got = ana.pool_linker_hist(dataset)
+        rows = dataset.analysis["chr1"]["linker_hist"].to_numpy()
+        np.testing.assert_allclose(got["chr1"], rows.sum(axis=0))
+        assert list(got.index) == ["0", "1", "2", "3", "tail"]

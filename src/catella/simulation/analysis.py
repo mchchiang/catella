@@ -9,6 +9,7 @@ import pandas as pd
 from catella_cpp import NucPosTM
 
 from catella import utils
+from catella._chroms import _per_chrom
 from catella._warnings import _warn
 from catella.h5_array import H5Array
 from catella.simulation._exact import (
@@ -223,6 +224,75 @@ def _linker_window(window, chrom, nbp, nucbp, trim):
             f"'{chrom}', got ({xlo}, {xhi})"
         )
     return xlo, xhi
+
+
+def _stored_linker_hist(dataset, chrom, name):
+    """
+    Return the linker histogram stored under `name` for a chromosome.
+
+    Parameters
+    ----------
+    dataset : SimDataset
+        The dataset holding the histogram.
+    chrom : str
+        The chromosome.
+    name : str
+        The key of the histogram.
+
+    Returns
+    -------
+    H5Array
+        The histogram, molecules by linker-length bins.
+
+    Raises
+    ------
+    KeyError
+        If no histogram is stored under `name` for `chrom`.
+    """
+    analysis = dataset.analysis[chrom]
+    if name not in analysis:
+        raise KeyError(
+            f"no linker histogram stored under '{name}' for chrom "
+            f"'{chrom}'; run compute_linker_hist first"
+        )
+    return analysis[name]
+
+
+def _mol_mask(mols, nmol, chrom):
+    """
+    Return a boolean mask of the selected molecules of a chromosome.
+
+    Parameters
+    ----------
+    mols : iterable of int or None
+        The selected molecules (duplicates are counted once), or None
+        for all.
+    nmol : int
+        The number of molecules of the chromosome.
+    chrom : str
+        The chromosome, for the error message.
+
+    Returns
+    -------
+    np.ndarray or None
+        bool, True for each selected molecule; None for all.
+
+    Raises
+    ------
+    ValueError
+        If a molecule index is out of range.
+    """
+    if mols is None:
+        return None
+    idx = np.asarray(list(mols), dtype=np.int64)
+    if idx.size and (idx.min() < 0 or idx.max() >= nmol):
+        raise ValueError(
+            f"mols must be in [0, {nmol}) for chrom '{chrom}', got "
+            f"{idx.min()} to {idx.max()}"
+        )
+    mask = np.zeros(nmol, dtype=bool)
+    mask[idx] = True
+    return mask
 
 
 @dataclass(slots=True)
@@ -942,6 +1012,82 @@ class SimAnalysis:
                     "llink": [_chrom_settings(dataset, chrom).llink],
                 }
             )
+
+    def pool_linker_hist(
+        self,
+        dataset: SimDataset,
+        *,
+        chroms: str | Iterable[str] | None = None,
+        name: str = "linker_hist",
+        mols: Iterable[int] | dict | None = None,
+        how: str = "sum",
+        batch_size: int = 20000,
+    ) -> pd.DataFrame:
+        """
+        Pool the linker histograms of molecules, per chromosome.
+
+        Reads the per-molecule histograms stored by `compute_linker_hist`
+        in batches, so memory does not scale with the number of
+        molecules. Molecules with no data (nan rows) are skipped.
+
+        Parameters
+        ----------
+        dataset : SimDataset
+            The dataset holding the histograms.
+        chroms : str or iterable of str, optional
+            The chromosome(s) to pool. If None (default), all chromosomes
+            in the dataset.
+        name : str, default "linker_hist"
+            The key of the histograms, as passed to `compute_linker_hist`.
+        mols : iterable of int or dict, optional
+            The molecules to pool (duplicates are counted once). If None
+            (default), all molecules. With several chroms, a dict keyed
+            by chrom (chroms not in it use all molecules; extra keys are
+            ignored).
+        how : {"sum", "mean"}, default "sum"
+            "sum" adds the expected counts of the molecules, so that each
+            linker counts equally; "mean" divides the sum by the number
+            of molecules with data, giving the expected counts per
+            molecule.
+        batch_size : int, default 20000
+            Number of molecules read (and held in memory) per batch.
+
+        Returns
+        -------
+        pd.DataFrame
+            One row per linker-length bin (labeled "0" to str(lmax), then
+            "tail") and one column per chromosome; nan for a chromosome
+            with no molecules with data under "mean".
+
+        Raises
+        ------
+        KeyError
+            If no histogram is stored under `name` for a chromosome.
+        ValueError
+            If `how` is invalid, `mols` is not a dict with several chroms
+            or is out of range, or the chromosomes have histograms with
+            different bins.
+        """
+        if how not in ("sum", "mean"):
+            raise ValueError(f"how must be 'sum' or 'mean', got {how!r}")
+        chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)
+        mols = _per_chrom(mols, chroms, "mols")
+        pooled = {}
+        columns = None
+        for chrom in chroms:
+            arr = _stored_linker_hist(dataset, chrom, name)
+            if columns is None:
+                columns = list(arr.columns)
+            elif list(arr.columns) != columns:
+                raise ValueError(
+                    f"linker histograms under '{name}' have different "
+                    "bins across chroms; pool them one chrom at a time"
+                )
+            mask = _mol_mask(mols[chrom], arr.shape[0], chrom)
+            pooled[chrom] = arr._streamed_reduce(
+                how, 0, batch_size, row_mask=mask
+            )
+        return pd.DataFrame(pooled, index=pd.Index(columns))
 
     def extract_config(
         self,

@@ -870,6 +870,40 @@ class TestComputeConfig:
             catella.compute_config(dataset)
 
 
+class TestComputeLinkerHist:
+    def test_is_exported(self):
+        assert "compute_linker_hist" in catella.__all__
+
+    def test_matches_analysis_method(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path)
+        catella.compute_linker_hist(
+            dataset, lmax=3, trim=1, chroms="chr1", name="lh", nworker=1
+        )
+        ref = _make_tm_dataset(tmp_path / "ref")
+        SimAnalysis().compute_linker_hist(ref, lmax=3, trim=1, name="ref")
+        np.testing.assert_allclose(
+            dataset.analysis["chr1"]["lh"].to_numpy(),
+            ref.analysis["chr1"]["ref"].to_numpy(),
+        )
+        pd.testing.assert_frame_equal(
+            dataset.analysis["chr1"]["lh_settings"],
+            ref.analysis["chr1"]["ref_settings"],
+        )
+
+    def test_window_forwarded(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path)
+        nbp = dataset.nbp["chr1"]
+        catella.compute_linker_hist(dataset, lmax=2, window=(1, nbp - 1))
+        settings = dataset.analysis["chr1"]["linker_hist_settings"]
+        assert settings["xlo"].iloc[0] == 1
+        assert settings["xhi"].iloc[0] == nbp - 1
+
+    def test_mcmc_dataset_raises(self, tmp_path):
+        dataset = _make_dataset(tmp_path)
+        with pytest.raises(ValueError, match="requires a method='tm'"):
+            catella.compute_linker_hist(dataset)
+
+
 class TestPlotConfig:
     def test_writes_figure_file(self, tmp_path):
         dataset = _make_tm_dataset(tmp_path)

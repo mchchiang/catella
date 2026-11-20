@@ -1107,6 +1107,89 @@ def compute_config(
     )
 
 
+def compute_linker_hist(
+    dataset: SimDataset,
+    *,
+    lmax: int = 200,
+    window: tuple[int, int] | Mapping | None = None,
+    trim: int = 0,
+    chroms: str | Iterable[str] | None = None,
+    name: str = "linker_hist",
+    batch_size: int | None = None,
+    nworker: int = 1,
+):
+    """
+    Compute the exact linker-length histogram of each molecule.
+
+    A linker is the DNA between two consecutive nucleosomes; the
+    stretches between the fiber ends and the outermost nucleosomes are
+    not linkers. For each molecule, the expected number of linkers of
+    each length under the posterior is computed exactly via the
+    transfer-matrix solver, with no sampling. The values are expected
+    counts, not normalized. Requires `dataset.method == "tm"`. Results
+    are stored in `dataset.analysis[chrom]`; molecules with no data (see
+    `SimDataset.no_data`) get nan rows.
+
+    The histogram reflects both the spacing of the nucleosomes and the
+    uncertainty of their positions, which widens it; a strongly
+    positioned array (e.g., the 601) shows how much. The results assume
+    that each molecule is read along the whole fiber; linkers in regions
+    filled by `fill_nan` follow the prior.
+
+    Parameters
+    ----------
+    dataset : SimDataset
+        The simulation dataset, with a stored energy landscape.
+    lmax : int, default 200
+        The longest linker length (bp) with its own bin; longer linkers
+        are pooled into the last column ("tail").
+    window : tuple of int or dict, optional
+        The region `(xlo, xhi)` (bp, half-open, in the coordinates of the
+        stored start positions) in which linkers are counted: both
+        nucleosomes of a linker must lie inside it. A dict keyed by chrom
+        gives one window per chrom (chroms not in it use the whole fiber;
+        extra keys are ignored). If None (default), the whole fiber.
+    trim : int, default 0
+        Number of base pairs removed from each end of the window, e.g.,
+        to drop nucleosomes near the fiber ends.
+    chroms : str or iterable of str, optional
+        The chromosome(s) to process. If None (default), all of
+        `dataset.chroms`.
+    name : str, default "linker_hist"
+        The key of the histogram: an `H5Array` of shape (nmol, lmax + 2)
+        with columns "0" to str(lmax) and "tail". The window and settings
+        used are stored under `f"{name}_settings"`.
+    batch_size : int, optional
+        Number of molecules per worker job (default 64).
+    nworker : int, default 1
+        Number of worker processes.
+
+    Raises
+    ------
+    ValueError
+        If `dataset.method != "tm"`, the dataset has no stored energy
+        landscape, `lmax` or `trim` is not a nonnegative integer, `window`
+        is invalid or outside the fiber, the window after trimming cannot
+        hold two nucleosomes, or `nworker` is not positive.
+
+    Warns
+    -----
+    UserWarning
+        If the dataset was created with `fill_nan`, since linkers in
+        filled regions are counted.
+    """
+    SimAnalysis().compute_linker_hist(
+        dataset,
+        lmax=lmax,
+        window=window,
+        trim=trim,
+        chroms=chroms,
+        name=name,
+        batch_size=batch_size,
+        nworker=nworker,
+    )
+
+
 def extract_config(
     dataset: SimDataset,
     *,

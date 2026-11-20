@@ -403,6 +403,15 @@ Common ``analysis[chrom]`` keys produced by ``catella.compute_occup``:
    * - ``<...>_linkage``
      - Linkage matrix from ``sort_by_linkage``; plots take it as
        ``link_mat`` to order their rows.
+   * - ``linker_hist`` (default name)
+     - ``H5Array`` float64, ``(n_mol, lmax + 2)``, from
+       ``compute_linker_hist``: expected number of linkers of each
+       length (columns ``"0"`` to ``str(lmax)``) and longer than
+       ``lmax`` (column ``"tail"``) per molecule; not normalized.
+       Molecules with no data are all-``NaN`` rows.
+   * - ``linker_hist_settings``
+     - One-row DataFrame: ``lmax`` and the window ``xlo``, ``xhi`` in
+       which linkers were counted, and the ``llink`` of the chrom.
    * - ``<name>_position_flat``, ``<name>_position_offset``,
        ``<name>_energy``
      - One configuration per molecule from ``compute_config`` (read

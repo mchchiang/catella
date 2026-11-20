@@ -16,6 +16,7 @@ from catella.api import *
 __all__ = [
     "compute_config",
     "compute_empirical_prob",
+    "compute_linker_hist",
     "compute_model_prob",
     "compute_occup",
     "downsample",

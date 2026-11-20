@@ -1,17 +1,20 @@
 # analysis.py
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from numbers import Integral
 
 import numpy as np
 import pandas as pd
 from catella_cpp import NucPosTM
 
 from catella import utils
+from catella._warnings import _warn
 from catella.h5_array import H5Array
 from catella.simulation._exact import (
     TM_BATCH_SIZE,
     TMStat,
+    _chrom_settings,
     _reject_time,
     _require_eseq,
     _require_tm,
@@ -114,6 +117,112 @@ def _resolve_batch_size(dataset, batch_size):
     if batch_size is not None:
         return batch_size
     return TM_BATCH_SIZE if dataset.method == "tm" else MCMC_BATCH_SIZE
+
+
+def _check_nonneg_int(value, name):
+    """
+    Check that a value is a nonnegative integer.
+
+    Parameters
+    ----------
+    value : object
+        The value to check.
+    name : str
+        The argument name, for the error message.
+
+    Raises
+    ------
+    ValueError
+        If `value` is not a nonnegative integer.
+    """
+    if isinstance(value, bool) or not isinstance(value, Integral):
+        raise ValueError(f"{name} must be an integer, got {value!r}")
+    if value < 0:
+        raise ValueError(f"{name} must be nonnegative, got {value}")
+
+
+def _is_window(value):
+    """Return True if `value` is a pair of integers."""
+    return (
+        isinstance(value, (tuple, list))
+        and len(value) == 2
+        and all(
+            isinstance(v, Integral) and not isinstance(v, bool) for v in value
+        )
+    )
+
+
+def _check_window(window):
+    """
+    Check a `window` argument of `compute_linker_hist`.
+
+    Parameters
+    ----------
+    window : object
+        None, a pair of integers, or a mapping from chromosome to a pair
+        of integers.
+
+    Raises
+    ------
+    ValueError
+        If `window` is none of these.
+    """
+    if window is None or _is_window(window):
+        return
+    if isinstance(window, Mapping) and all(
+        _is_window(w) for w in window.values()
+    ):
+        return
+    raise ValueError(
+        "window must be a pair of integers or a dict of them by chrom, "
+        f"got {window!r}"
+    )
+
+
+def _linker_window(window, chrom, nbp, nucbp, trim):
+    """
+    Return the window of a chromosome in which linkers are counted.
+
+    Parameters
+    ----------
+    window : None, tuple of int, or mapping of str to tuple of int
+        A checked `window` argument; chromosomes missing from a mapping
+        use the full fiber.
+    chrom : str
+        The chromosome.
+    nbp : int
+        The number of base pairs of the chromosome.
+    nucbp : int
+        The nucleosome footprint size.
+    trim : int
+        The number of base pairs removed from each end of the window.
+
+    Returns
+    -------
+    tuple of int
+        The window `(xlo, xhi)` after trimming.
+
+    Raises
+    ------
+    ValueError
+        If the window is not inside the fiber, or cannot hold two
+        nucleosomes after trimming.
+    """
+    if isinstance(window, Mapping):
+        window = window.get(chrom)
+    xlo, xhi = (0, nbp) if window is None else tuple(window)
+    if not 0 <= xlo <= xhi <= nbp:
+        raise ValueError(
+            f"window must satisfy 0 <= xlo <= xhi <= {nbp} for chrom "
+            f"'{chrom}', got ({xlo}, {xhi})"
+        )
+    xlo, xhi = xlo + trim, xhi - trim
+    if xhi - xlo < 2 * nucbp:
+        raise ValueError(
+            "window after trim must hold two nucleosomes for chrom "
+            f"'{chrom}', got ({xlo}, {xhi})"
+        )
+    return xlo, xhi
 
 
 @dataclass(slots=True)
@@ -709,6 +818,130 @@ class SimAnalysis:
             kwargs={"gamma": gamma},
             nworker=nworker,
         )
+
+    def compute_linker_hist(
+        self,
+        dataset: SimDataset,
+        *,
+        lmax: int = 200,
+        window: tuple[int, int] | Mapping | None = None,
+        trim: int = 0,
+        chroms: str | Iterable[str] | None = None,
+        name: str = "linker_hist",
+        batch_size: int | None = None,
+        nworker: int = 1,
+    ):
+        """
+        Calculate the exact linker-length histogram of each molecule.
+
+        A linker is the DNA between two consecutive nucleosomes, of length
+        `b - a - nucbp` for nucleosomes starting at `a` and `b`; the
+        stretches between the fiber ends and the outermost nucleosomes
+        are not linkers. For each molecule, the expected number of
+        linkers of each length under the posterior is computed exactly
+        from the pair probabilities of the transfer matrix, with no
+        sampling. The values are expected counts, not normalized: a row
+        sums to the expected number of linkers in the window. Only
+        linkers whose two nucleosome footprints lie inside the window
+        are counted. Only available for `dataset.method == "tm"`
+        datasets.
+
+        The histogram reflects both the spacing of the nucleosomes and
+        the uncertainty of their positions, which widens it; a strongly
+        positioned array (e.g., the 601) shows how much. The results
+        assume that each molecule is read along the whole fiber; linkers
+        in regions filled by `fill_nan` follow the prior.
+
+        Parameters
+        ----------
+        dataset : SimDataset
+            The dataset containing the stored energy landscape.
+        lmax : int, default 200
+            The longest linker length (bp) with its own bin; longer
+            linkers are pooled into the last column ("tail").
+        window : tuple of int or dict, optional
+            The region `(xlo, xhi)` (bp, half-open, in the coordinates of
+            the stored start positions) in which linkers are counted. A
+            dict keyed by chrom gives one window per chrom (chroms not in
+            it use the whole fiber; extra keys are ignored). If None
+            (default), the whole fiber.
+        trim : int, default 0
+            Number of base pairs removed from each end of the window,
+            e.g., to drop nucleosomes near the fiber ends.
+        chroms : str or iterable of str, optional
+            The chromosome(s) to process. If None (default), all chromosomes
+            in the dataset are analyzed.
+        name : str, default "linker_hist"
+            The key of the histogram in `dataset.analysis`: an `H5Array`
+            of shape (nmol, lmax + 2) with columns "0" to str(lmax) and
+            "tail". Molecules with no data get nan rows. The window and
+            settings used are stored under `f"{name}_settings"` (a
+            one-row DataFrame with lmax, xlo, xhi, and llink).
+        batch_size : int, optional
+            Number of molecules per worker job (default 64); peak memory
+            scales with `2 * nworker * batch_size` molecules.
+        nworker : int, default 1
+            Number of worker processes.
+
+        Raises
+        ------
+        ValueError
+            If `dataset.method != "tm"`, the dataset has no stored energy
+            landscape, `lmax` or `trim` is not a nonnegative integer,
+            `window` is invalid or outside the fiber, the window after
+            trimming cannot hold two nucleosomes, or `nworker` is not
+            positive.
+
+        Warns
+        -----
+        UserWarning
+            If the dataset was created with `fill_nan`, since linkers in
+            filled regions are counted.
+        """
+        _check_nonneg_int(lmax, "lmax")
+        _check_nonneg_int(trim, "trim")
+        _check_window(window)
+        _require_tm(dataset, "compute_linker_hist")
+        _check_nworker(dataset, nworker)
+        batch_size = _resolve_batch_size(dataset, batch_size)
+        chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)
+        nucbp = dataset.settings["nucbp"]
+        windows = {
+            chrom: _linker_window(
+                window, chrom, dataset.nbp[chrom], nucbp, trim
+            )
+            for chrom in chroms
+        }
+        if dataset.nan_fill is not None:
+            _warn(
+                f"dataset was created with fill_nan={dataset.nan_fill!r}; "
+                "linkers in filled regions, if any, are counted"
+            )
+        columns = (*(str(i) for i in range(lmax + 1)), "tail")
+        for chrom in chroms:
+            xlo, xhi = windows[chrom]
+            stat = TMStat(
+                name,
+                "getLinkerHist",
+                {"lmax": lmax, "xlo": xlo, "xhi": xhi},
+                ncol=lmax + 2,
+                columns=columns,
+            )
+            _tm_stats(
+                dataset,
+                [chrom],
+                [stat],
+                batch_size=batch_size,
+                nworker=nworker,
+            )
+            dataset.analysis[chrom][f"{name}_settings"] = pd.DataFrame(
+                {
+                    "lmax": [lmax],
+                    "xlo": [xlo],
+                    "xhi": [xhi],
+                    "llink": [_chrom_settings(dataset, chrom).llink],
+                }
+            )
 
     def extract_config(
         self,

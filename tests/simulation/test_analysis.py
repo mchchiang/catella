@@ -1038,3 +1038,148 @@ class TestParallelTM:
         ana = SimAnalysis()
         getattr(ana, method)(dataset=dataset, name="x", nworker=1)
         assert "x" in dataset.analysis["chr1"]
+
+
+def _linker_dataset_with_gap(tmp_path):
+    rng = np.random.default_rng(3)
+    meth_prob = rng.random((3, 20))
+    meth_prob[1] = np.nan
+    return SimManager(nworker=1, verbose=False).run(
+        chroms="chr1",
+        nsim=0,
+        method="tm",
+        settings=_make_tm_settings(),
+        meth_prob=meth_prob,
+        out_dir=tmp_path / "tm_gap",
+        seed=1,
+    )
+
+
+class TestComputeLinkerHist:
+    def test_rows_match_direct_solver(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=3, nbp=20)
+        SimAnalysis().compute_linker_hist(dataset, lmax=4)
+        arr = dataset.analysis["chr1"]["linker_hist"]
+        assert isinstance(arr, H5Array)
+        assert arr.shape == (3, 6)
+        settings = _make_tm_settings()
+        for mol in range(3):
+            expected = _direct_tm(dataset, mol, settings).getLinkerHist(4)
+            np.testing.assert_allclose(arr.to_numpy()[mol], expected)
+
+    def test_column_labels(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path)
+        SimAnalysis().compute_linker_hist(dataset, lmax=2)
+        cols = dataset.analysis["chr1"]["linker_hist"].columns
+        assert list(cols) == ["0", "1", "2", "tail"]
+
+    def test_settings_entry(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nbp=20)
+        SimAnalysis().compute_linker_hist(dataset, lmax=3, trim=2)
+        settings = dataset.analysis["chr1"]["linker_hist_settings"]
+        assert settings.iloc[0].to_dict() == {
+            "lmax": 3,
+            "xlo": 2,
+            "xhi": 18,
+            "llink": 2,
+        }
+
+    def test_custom_name(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path)
+        SimAnalysis().compute_linker_hist(dataset, lmax=2, name="lh")
+        assert "lh" in dataset.analysis["chr1"]
+        assert "lh_settings" in dataset.analysis["chr1"]
+
+    def test_trim_matches_window(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=3, nbp=20)
+        ana = SimAnalysis()
+        ana.compute_linker_hist(dataset, lmax=3, trim=2, name="a")
+        ana.compute_linker_hist(dataset, lmax=3, window=(2, 18), name="b")
+        a = dataset.analysis["chr1"]["a"].to_numpy()
+        b = dataset.analysis["chr1"]["b"].to_numpy()
+        np.testing.assert_allclose(a, b)
+        settings = _make_tm_settings()
+        expected = _direct_tm(dataset, 0, settings).getLinkerHist(3, 2, 18)
+        np.testing.assert_allclose(a[0], expected)
+
+    def test_window_and_trim_combine(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nbp=20)
+        SimAnalysis().compute_linker_hist(
+            dataset, lmax=3, window=(1, 19), trim=1
+        )
+        settings = dataset.analysis["chr1"]["linker_hist_settings"]
+        assert (settings["xlo"].iloc[0], settings["xhi"].iloc[0]) == (2, 18)
+
+    def test_window_dict_by_chrom(self, tmp_path):
+        dataset = _make_multi_chrom_tm_dataset(tmp_path)
+        SimAnalysis().compute_linker_hist(
+            dataset, lmax=3, window={"chr1": (2, 18), "chrX": (0, 5)}
+        )
+        s1 = dataset.analysis["chr1"]["linker_hist_settings"].iloc[0]
+        s2 = dataset.analysis["chr2"]["linker_hist_settings"].iloc[0]
+        assert (s1["xlo"], s1["xhi"]) == (2, 18)
+        assert (s2["xlo"], s2["xhi"]) == (0, 16)
+        assert dataset.analysis["chr2"]["linker_hist"].shape == (3, 5)
+
+    def test_no_data_molecule_gives_nan_row(self, tmp_path):
+        dataset = _linker_dataset_with_gap(tmp_path)
+        SimAnalysis().compute_linker_hist(dataset, lmax=3)
+        arr = dataset.analysis["chr1"]["linker_hist"].to_numpy()
+        assert np.isnan(arr[1]).all()
+        assert np.isfinite(arr[[0, 2]]).all()
+
+    def test_parallel_matches_serial(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=5)
+        ana = SimAnalysis()
+        ana.compute_linker_hist(dataset, lmax=3, name="s")
+        ana.compute_linker_hist(
+            dataset, lmax=3, name="p", nworker=2, batch_size=2
+        )
+        np.testing.assert_allclose(
+            dataset.analysis["chr1"]["s"].to_numpy(),
+            dataset.analysis["chr1"]["p"].to_numpy(),
+        )
+
+    def test_window_too_small_raises(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nbp=20)
+        with pytest.raises(ValueError, match="two nucleosomes"):
+            SimAnalysis().compute_linker_hist(dataset, trim=8)
+
+    def test_window_outside_fiber_raises(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nbp=20)
+        with pytest.raises(ValueError, match="window must satisfy"):
+            SimAnalysis().compute_linker_hist(dataset, window=(0, 21))
+
+    @pytest.mark.parametrize("lmax", [-1, 1.5, True])
+    def test_invalid_lmax_raises(self, tmp_path, lmax):
+        dataset = _make_tm_dataset(tmp_path)
+        with pytest.raises(ValueError, match="lmax must be"):
+            SimAnalysis().compute_linker_hist(dataset, lmax=lmax)
+
+    def test_negative_trim_raises(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path)
+        with pytest.raises(ValueError, match="trim must be nonnegative"):
+            SimAnalysis().compute_linker_hist(dataset, trim=-1)
+
+    @pytest.mark.parametrize(
+        "window", ["a", (1,), (0, 2.5), {"chr1": (1,)}]
+    )
+    def test_invalid_window_raises(self, tmp_path, window):
+        dataset = _make_tm_dataset(tmp_path)
+        with pytest.raises(ValueError, match="window must be a pair"):
+            SimAnalysis().compute_linker_hist(dataset, window=window)
+
+    def test_mcmc_dataset_raises(self, tmp_path):
+        dataset = _make_mcmc_dataset(tmp_path)
+        with pytest.raises(ValueError, match="compute_linker_hist requires"):
+            SimAnalysis().compute_linker_hist(dataset)
+
+    def test_warns_when_dataset_used_fill_nan(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, fill_nan=0.5)
+        with pytest.warns(UserWarning, match="fill_nan=0.5"):
+            SimAnalysis().compute_linker_hist(dataset, lmax=2)
+
+    def test_no_warning_without_fill_nan(self, tmp_path, recwarn):
+        dataset = _make_tm_dataset(tmp_path)
+        SimAnalysis().compute_linker_hist(dataset, lmax=2)
+        assert not [w for w in recwarn if "fill_nan" in str(w.message)]

@@ -64,6 +64,33 @@ class TMStat:
     per_bp: bool = False
     """If True, the getter returns one value per base pair."""
 
+    ncol: int | None = None
+    """If given, the getter returns this many values per molecule."""
+
+    columns: tuple | None = None
+    """Column labels of a `per_bp` or `ncol` result; None for none."""
+
+    def __post_init__(self):
+        if self.per_bp and self.ncol is not None:
+            raise ValueError("per_bp and ncol are mutually exclusive")
+
+    def width(self, nbp):
+        """
+        Return the number of values per molecule, or None for a scalar.
+
+        Parameters
+        ----------
+        nbp : int
+            The number of base pairs of each molecule.
+
+        Returns
+        -------
+        int or None
+            `nbp` for a `per_bp` stat, `ncol` for a fixed-width one, and
+            None for a scalar.
+        """
+        return nbp if self.per_bp else self.ncol
+
 
 def _require_eseq(dataset):
     """
@@ -326,10 +353,10 @@ def _tm_stats(
     """
     Store several exact quantities, solving each molecule only once.
 
-    Per-molecule quantities are stored as DataFrames and per-bp ones as
-    H5Arrays. Each batch is written as soon as it arrives, so peak memory
-    scales with `2 * nworker * batch_size` molecules. Molecules with no
-    data get nan.
+    Per-molecule quantities are stored as DataFrames, and per-bp and
+    fixed-width ones as H5Arrays. Each batch is written as soon as it
+    arrives, so peak memory scales with `2 * nworker * batch_size`
+    molecules. Molecules with no data get nan.
 
     Parameters
     ----------
@@ -351,15 +378,20 @@ def _tm_stats(
     """
     chroms = list(chroms)
     stats = list(stats)
-    per_bp = any(s.per_bp for s in stats)
-    tmp_dir = dataset.resolve_tmp_dir() if per_bp else None
+    vector = any(s.per_bp or s.ncol is not None for s in stats)
+    tmp_dir = dataset.resolve_tmp_dir() if vector else None
     out = {}
     for chrom in chroms:
-        shape = (dataset.nmol[chrom], dataset.nbp[chrom])
+        nmol, nbp = dataset.nmol[chrom], dataset.nbp[chrom]
         out[chrom] = [
-            H5Array.create(shape, dtype=np.float64, dir=tmp_dir)
-            if s.per_bp
-            else np.empty(shape[0], dtype=np.float64)
+            np.empty(nmol, dtype=np.float64)
+            if s.width(nbp) is None
+            else H5Array.create(
+                (nmol, s.width(nbp)),
+                dtype=np.float64,
+                dir=tmp_dir,
+                columns=s.columns,
+            )
             for s in stats
         ]
     getters = [(s.getter, s.kwargs) for s in stats]
@@ -367,20 +399,19 @@ def _tm_stats(
     for chrom, start, results in batches:
         stop = start + len(results)
         for i, (stat, arr) in enumerate(zip(stats, out[chrom])):
-            fill = np.nan
-            if stat.per_bp:
-                fill = np.full(dataset.nbp[chrom], np.nan)
+            width = stat.width(dataset.nbp[chrom])
+            fill = np.nan if width is None else np.full(width, np.nan)
             block = np.array(
                 [fill if r is None else r[i] for r in results],
                 dtype=np.float64,
             )
-            if stat.per_bp:
-                arr.write_batch(start, stop, block)
-            else:
+            if width is None:
                 arr[start:stop] = block
+            else:
+                arr.write_batch(start, stop, block)
     for chrom in chroms:
         for stat, arr in zip(stats, out[chrom]):
-            value = arr if stat.per_bp else pd.DataFrame(arr)
+            value = arr if isinstance(arr, H5Array) else pd.DataFrame(arr)
             dataset.analysis[chrom][stat.name] = value
 
 

@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 from catella.h5_array import H5Array
 from catella.simulation._exact import (
+    TMStat,
     _reject_time,
     _require_eseq,
     _require_tm,
@@ -12,6 +13,7 @@ from catella.simulation._exact import (
     _tm_configs,
     _tm_per_bp,
     _tm_per_mol,
+    _tm_stats,
 )
 from catella.simulation.config import SimSettings
 from catella.simulation.engine import SimManager
@@ -127,6 +129,81 @@ class TestTMPerBp:
         for mol in range(3):
             expected = _solved_tm(dataset, "chr1", mol).getOccup()
             np.testing.assert_allclose(arr.to_numpy()[mol], expected)
+
+
+def _make_tm_dataset_with_gap(tmp_path):
+    rng = np.random.default_rng(5)
+    meth_prob = rng.uniform(0.05, 0.95, (3, 12))
+    meth_prob[1] = np.nan
+    return SimManager(nworker=1, verbose=False).run(
+        chroms="chr1",
+        nsim=0,
+        method="tm",
+        settings=_make_tm_settings(),
+        meth_prob=meth_prob,
+        out_dir=tmp_path / "tm_gap",
+        seed=1,
+    )
+
+
+class TestTMStatsFixedWidth:
+    def test_stores_fixed_width_rows(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=3, nbp=12)
+        stat = TMStat("h", "getLinkerHist", {"lmax": 2}, ncol=4)
+        _tm_stats(dataset, ["chr1"], [stat], batch_size=2)
+        arr = dataset.analysis["chr1"]["h"]
+        assert isinstance(arr, H5Array)
+        assert arr.shape == (3, 4)
+        for mol in range(3):
+            expected = _solved_tm(dataset, "chr1", mol).getLinkerHist(2)
+            np.testing.assert_allclose(arr.to_numpy()[mol], expected)
+
+    def test_column_labels(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path)
+        labels = ("0", "1", "2", "tail")
+        stat = TMStat(
+            "h", "getLinkerHist", {"lmax": 2}, ncol=4, columns=labels
+        )
+        _tm_stats(dataset, ["chr1"], [stat])
+        cols = dataset.analysis["chr1"]["h"].columns
+        assert list(cols) == list(labels)
+
+    def test_no_data_molecule_gives_nan_row(self, tmp_path):
+        dataset = _make_tm_dataset_with_gap(tmp_path)
+        stat = TMStat("h", "getLinkerHist", {"lmax": 2}, ncol=4)
+        _tm_stats(dataset, ["chr1"], [stat])
+        arr = dataset.analysis["chr1"]["h"].to_numpy()
+        assert np.isnan(arr[1]).all()
+        assert np.isfinite(arr[[0, 2]]).all()
+
+    def test_mixed_with_scalar_stat(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=3)
+        stats = [
+            TMStat("h", "getLinkerHist", {"lmax": 1}, ncol=3),
+            TMStat("n", "getMeanN"),
+        ]
+        _tm_stats(dataset, ["chr1"], stats)
+        analysis = dataset.analysis["chr1"]
+        assert analysis["h"].shape == (3, 3)
+        assert isinstance(analysis["n"], pd.DataFrame)
+        for mol in range(3):
+            tm = _solved_tm(dataset, "chr1", mol)
+            assert analysis["n"].iloc[mol, 0] == pytest.approx(tm.getMeanN())
+
+    def test_per_bp_and_ncol_raise(self):
+        with pytest.raises(ValueError, match="mutually exclusive"):
+            TMStat("h", "getOccup", per_bp=True, ncol=3)
+
+    @pytest.mark.parametrize(
+        ("stat", "expected"),
+        [
+            (TMStat("a", "getMeanN"), None),
+            (TMStat("b", "getOccup", per_bp=True), 12),
+            (TMStat("c", "getLinkerHist", ncol=5), 5),
+        ],
+    )
+    def test_width(self, stat, expected):
+        assert stat.width(12) == expected
 
 
 class TestTMConfigs:

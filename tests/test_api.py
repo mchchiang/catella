@@ -921,6 +921,26 @@ class TestExtractLinkerStats:
         pd.testing.assert_frame_equal(got, want)
 
 
+class TestPlotLinkerHist:
+    def test_is_exported(self):
+        assert "plot_linker_hist" in catella.__all__
+
+    def test_writes_figure_file(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path)
+        catella.compute_linker_hist(dataset, lmax=4)
+        out_file = tmp_path / "linker.png"
+        catella.plot_linker_hist(
+            dataset,
+            chroms="chr1",
+            panels=True,
+            density=False,
+            out_file=out_file,
+            show=False,
+        )
+        assert out_file.exists()
+        assert plt.gcf().axes[0].get_title() == "chr1"
+
+
 class TestPlotConfig:
     def test_writes_figure_file(self, tmp_path):
         dataset = _make_tm_dataset(tmp_path)

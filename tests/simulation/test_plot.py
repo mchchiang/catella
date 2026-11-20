@@ -11,6 +11,7 @@ import pandas as pd
 import pytest
 import scipy.cluster.hierarchy as sch
 from catella import utils
+from catella.h5_array import H5Array
 from catella.simulation.analysis import NucFiberMap, SimAnalysis
 from catella.simulation.config import SimSettings
 from catella.simulation.engine import SimManager
@@ -1347,4 +1348,169 @@ class TestPlotConfigMultiChrom:
         with pytest.warns(UserWarning, match="9 rows x 30 bp"):
             SimPlot().plot_config(
                 dataset, chroms=["chr1", "chr2"], name="bm", show=False
+            )
+
+
+_LINKER_ROWS = np.array(
+    [
+        [1.0, 2.0, 3.0, 0.5],
+        [2.0, 2.0, 2.0, 1.0],
+        [np.nan, np.nan, np.nan, np.nan],
+        [0.0, 1.0, 1.0, 0.0],
+    ]
+)
+
+
+def _put_linker_hist(dataset, chrom, values, name="linker_hist"):
+    values = np.asarray(values, dtype=np.float64)
+    columns = [*(str(i) for i in range(values.shape[1] - 1)), "tail"]
+    arr = H5Array.create(values.shape, columns=columns)
+    arr.write_batch(0, values.shape[0], values)
+    dataset.analysis[chrom][name] = arr
+
+
+def _linker_dataset(tmp_path, nchrom, scales=None):
+    dataset = _make_chrom_dataset(tmp_path, nchrom)
+    scales = scales or [1.0] * nchrom
+    for chrom, scale in zip(dataset.chroms, scales):
+        _put_linker_hist(dataset, chrom, scale * _LINKER_ROWS)
+    return dataset
+
+
+def _step_ydata(ax):
+    return [np.asarray(line.get_ydata()) for line in ax.get_lines()]
+
+
+class TestPlotLinkerHist:
+    def test_overlay_draws_one_filled_step_per_chrom(self, tmp_path):
+        dataset = _linker_dataset(tmp_path, 2)
+        SimPlot().plot_linker_hist(
+            dataset, chroms=["chr1", "chr2"], show=False
+        )
+        axes = plt.gcf().axes
+        assert len(axes) == 1
+        assert len(axes[0].get_lines()) == 2
+        assert len(axes[0].collections) == 2
+
+    def test_density_is_fraction_of_linkers(self, tmp_path):
+        dataset = _linker_dataset(tmp_path, 1)
+        SimPlot().plot_linker_hist(dataset, chroms="chr1", show=False)
+        (ydata,) = _step_ydata(plt.gca())
+        counts = np.nansum(_LINKER_ROWS[:, :-1], axis=0)
+        np.testing.assert_allclose(ydata, counts / counts.sum())
+        assert plt.gca().get_ylabel() == "Fraction of linkers"
+
+    def test_counts_per_molecule(self, tmp_path):
+        dataset = _linker_dataset(tmp_path, 1)
+        SimPlot().plot_linker_hist(
+            dataset, chroms="chr1", density=False, show=False
+        )
+        (ydata,) = _step_ydata(plt.gca())
+        expected = np.nanmean(_LINKER_ROWS[:, :-1], axis=0)
+        np.testing.assert_allclose(ydata, expected)
+        assert plt.gca().get_ylabel() == "Linkers per molecule"
+
+    def test_mols_subset(self, tmp_path):
+        dataset = _linker_dataset(tmp_path, 1)
+        SimPlot().plot_linker_hist(
+            dataset, chroms="chr1", mols=[3], density=False, show=False
+        )
+        (ydata,) = _step_ydata(plt.gca())
+        np.testing.assert_allclose(ydata, [0.0, 1.0, 1.0])
+
+    def test_legend_shows_pooled_stats(self, tmp_path):
+        dataset = _linker_dataset(tmp_path, 2)
+        SimPlot().plot_linker_hist(
+            dataset, chroms=["chr1", "chr2"], show=False
+        )
+        stats = SimAnalysis().extract_linker_stats(dataset, pooled=True)
+        texts = [t.get_text() for t in plt.gca().get_legend().get_texts()]
+        row = stats.loc["chr1"]
+        assert texts[0] == (
+            f"chr1 (mean {row['mean']:.1f} bp, SD {row['sd']:.1f} bp)"
+        )
+
+    def test_legend_without_stats(self, tmp_path):
+        dataset = _linker_dataset(tmp_path, 2)
+        SimPlot().plot_linker_hist(
+            dataset, chroms=["chr1", "chr2"], plot_stats=False, show=False
+        )
+        texts = [t.get_text() for t in plt.gca().get_legend().get_texts()]
+        assert texts == ["chr1", "chr2"]
+
+    def test_panels_one_per_chrom(self, tmp_path):
+        dataset = _linker_dataset(tmp_path, 2)
+        SimPlot().plot_linker_hist(
+            dataset, chroms=["chr1", "chr2"], panels=True, show=False
+        )
+        axes = [ax for ax in plt.gcf().axes if ax.get_visible()]
+        assert [ax.get_title() for ax in axes] == ["chr1", "chr2"]
+        for ax in axes:
+            assert len(ax.get_lines()) == 1
+            assert any("SD" in t.get_text() for t in ax.texts)
+
+    def test_five_panels_use_two_rows(self, tmp_path):
+        dataset = _linker_dataset(tmp_path, 5)
+        SimPlot().plot_linker_hist(
+            dataset, chroms=dataset.chroms, panels=True, show=False
+        )
+        axes = plt.gcf().axes
+        assert len(axes) == 8
+        assert sum(ax.get_visible() for ax in axes) == 5
+
+    @pytest.mark.parametrize("sharey", [True, False])
+    def test_sharey(self, tmp_path, sharey):
+        dataset = _linker_dataset(tmp_path, 2, scales=[1.0, 10.0])
+        SimPlot().plot_linker_hist(
+            dataset,
+            chroms=["chr1", "chr2"],
+            panels=True,
+            sharey=sharey,
+            density=False,
+            show=False,
+        )
+        ax1, ax2 = plt.gcf().axes
+        assert (ax1.get_ylim() == ax2.get_ylim()) == sharey
+
+    def test_logy(self, tmp_path):
+        dataset = _linker_dataset(tmp_path, 1)
+        SimPlot().plot_linker_hist(
+            dataset, chroms="chr1", logy=True, show=False
+        )
+        assert plt.gca().get_yscale() == "log"
+
+    def test_chrom_without_linkers_is_skipped(self, tmp_path):
+        dataset = _linker_dataset(tmp_path, 2)
+        _put_linker_hist(dataset, "chr2", np.zeros((4, 4)))
+        with pytest.warns(UserWarning, match="no linkers up to lmax"):
+            SimPlot().plot_linker_hist(
+                dataset, chroms=["chr1", "chr2"], show=False
+            )
+        assert len(plt.gca().get_lines()) == 1
+
+    def test_writes_out_file(self, tmp_path):
+        dataset = _linker_dataset(tmp_path, 1)
+        out_file = tmp_path / "plots" / "linker.png"
+        SimPlot().plot_linker_hist(
+            dataset, chroms="chr1", out_file=out_file, show=False
+        )
+        assert out_file.exists()
+
+    def test_empty_chroms_raises(self, tmp_path):
+        dataset = _linker_dataset(tmp_path, 1)
+        with pytest.raises(ValueError, match="must not be empty"):
+            SimPlot().plot_linker_hist(dataset, chroms=[], show=False)
+
+    def test_non_dict_mols_with_several_chroms_raises(self, tmp_path):
+        dataset = _linker_dataset(tmp_path, 2)
+        with pytest.raises(ValueError, match="dict keyed by chrom"):
+            SimPlot().plot_linker_hist(
+                dataset, chroms=["chr1", "chr2"], mols=[0], show=False
+            )
+
+    def test_missing_name_raises(self, tmp_path):
+        dataset = _linker_dataset(tmp_path, 1)
+        with pytest.raises(KeyError, match="run compute_linker_hist first"):
+            SimPlot().plot_linker_hist(
+                dataset, chroms="chr1", name="other", show=False
             )

@@ -1128,7 +1128,9 @@ def compute_linker_hist(
     transfer-matrix solver, with no sampling. The values are expected
     counts, not normalized. Requires `dataset.method == "tm"`. Results
     are stored in `dataset.analysis[chrom]`; molecules with no data (see
-    `SimDataset.no_data`) get nan rows.
+    `SimDataset.no_data`) get nan rows. Use `extract_linker_stats` for
+    the mean and standard deviation of the linker lengths, and
+    `plot_linker_hist` to plot the histograms.
 
     The histogram reflects both the spacing of the nucleosomes and the
     uncertainty of their positions, which widens it; a strongly
@@ -1553,6 +1555,94 @@ def plot_occup(
         plot_eseq=plot_eseq,
         link_mat=link_mat,
         sharex=sharex,
+        show=show,
+    )
+
+
+def plot_linker_hist(
+    dataset: SimDataset,
+    *,
+    chroms: str | Iterable[str],
+    name: str = "linker_hist",
+    mols: Iterable[int] | dict | None = None,
+    panels: bool = False,
+    sharey: bool = True,
+    density: bool = True,
+    plot_stats: bool = True,
+    logy: bool = False,
+    out_file: str | Path | None = None,
+    show: bool = True,
+):
+    """
+    Plot the pooled linker-length histogram of one or more chromosomes.
+
+    Uses the histograms stored by `compute_linker_hist`, pooled over the
+    selected molecules of each chromosome. Only linkers up to `lmax` are
+    shown (the tail bin is left out). By default, all chromosomes are
+    drawn as filled steps on one axis, which suits a few chromosomes;
+    with `panels`, each gets its own panel, laid out side by side (at
+    most 4 per row).
+
+    Parameters
+    ----------
+    dataset : SimDataset
+        The simulation dataset holding the histograms.
+    chroms : str or iterable of str
+        The chromosome(s) to plot, in order.
+    name : str, default "linker_hist"
+        The key of the histograms, as passed to `compute_linker_hist`.
+    mols : iterable of int or dict, optional
+        The molecules to pool. If None (default), all molecules. With
+        several chroms, a dict keyed by chrom (chroms not in it use all
+        molecules; extra keys are ignored).
+    panels : bool, default False
+        If True, one panel per chromosome; otherwise all on one axis.
+    sharey : bool, default True
+        Whether the panels share the y-axis. Only used if `panels` is
+        True.
+    density : bool, default True
+        If True, plot the fraction of linkers (up to `lmax`) of each
+        length, so that chromosomes with different numbers of molecules
+        can be compared. If False, plot the expected number of linkers of
+        each length per molecule with data.
+    plot_stats : bool, default True
+        Whether to show the mean and standard deviation of the linker
+        lengths (as from `extract_linker_stats` with `pooled=True`), in
+        the legend or, with `panels`, in each panel.
+    logy : bool, default False
+        Whether to use a logarithmic y-axis.
+    out_file : str or Path, optional
+        Path where the generated plot will be saved. If None, the plot is
+        not saved to disk.
+    show : bool, default True
+        If True, invokes the active plotting backend to display the
+        figure immediately.
+
+    Raises
+    ------
+    KeyError
+        If no histogram is stored under `name` for a chromosome.
+    ValueError
+        If `chroms` is empty, or `mols` is not a dict with several chroms
+        or is out of range.
+
+    Warns
+    -----
+    UserWarning
+        If more than 10 chroms are plotted in one figure, or a chromosome
+        has no linkers up to `lmax` (it is then not plotted).
+    """
+    SimPlot().plot_linker_hist(
+        dataset,
+        chroms=chroms,
+        name=name,
+        mols=mols,
+        panels=panels,
+        sharey=sharey,
+        density=density,
+        plot_stats=plot_stats,
+        logy=logy,
+        out_file=out_file,
         show=show,
     )
 

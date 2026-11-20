@@ -16,6 +16,8 @@ from matplotlib.ticker import MaxNLocator
 
 from catella._chroms import _chrom_list, _per_chrom
 from catella._plotting import (
+    _MAX_PANELS,
+    _PANELS_PER_ROW,
     _colorbar,
     _draw_mean,
     _finish,
@@ -27,6 +29,7 @@ from catella._plotting import (
     _share_xlim,
     _warn_if_large,
 )
+from catella._warnings import _warn
 from catella.mapping import CoordsTransform
 from catella.simulation.analysis import NucFiberMap, SimAnalysis
 from catella.simulation.results import SimDataset
@@ -1214,3 +1217,205 @@ class SimPlot:
 
         hm_ax.set_title(chrom, pad=12)
         return im
+
+    @_apply_style
+    def plot_linker_hist(
+        self,
+        dataset: SimDataset,
+        *,
+        chroms: str | Iterable[str],
+        name: str = "linker_hist",
+        mols: Iterable[int] | dict | None = None,
+        panels: bool = False,
+        sharey: bool = True,
+        density: bool = True,
+        plot_stats: bool = True,
+        logy: bool = False,
+        out_file: str | Path | None = None,
+        show: bool = True,
+    ):
+        """
+        Plot the pooled linker-length histogram of one or more chromosomes.
+
+        Uses the histograms stored by `compute_linker_hist`, pooled over
+        the selected molecules of each chromosome. Only linkers up to
+        `lmax` are shown (the tail bin is left out). By default, all
+        chromosomes are drawn as filled steps on one axis, which suits a
+        few chromosomes; with `panels`, each gets its own panel, laid
+        out side by side (at most 4 per row).
+
+        Parameters
+        ----------
+        dataset : SimDataset
+            The dataset holding the histograms.
+        chroms : str or iterable of str
+            The chromosome(s) to plot, in order.
+        name : str, default "linker_hist"
+            The key of the histograms, as passed to `compute_linker_hist`.
+        mols : iterable of int or dict, optional
+            The molecules to pool. If None (default), all molecules. With
+            several chroms, a dict keyed by chrom (chroms not in it use
+            all molecules; extra keys are ignored).
+        panels : bool, default False
+            If True, one panel per chromosome; otherwise all on one axis.
+        sharey : bool, default True
+            Whether the panels share the y-axis. Only used if `panels` is
+            True.
+        density : bool, default True
+            If True, plot the fraction of linkers (up to `lmax`) of each
+            length, so that chromosomes with different numbers of
+            molecules can be compared. If False, plot the expected number
+            of linkers of each length per molecule with data.
+        plot_stats : bool, default True
+            Whether to show the mean and standard deviation of the linker
+            lengths (as from `extract_linker_stats` with `pooled=True`),
+            in the legend or, with `panels`, in each panel.
+        logy : bool, default False
+            Whether to use a logarithmic y-axis.
+        out_file : str or Path, optional
+            Path to save the generated figure. Directories are created if
+            they do not exist.
+        show : bool, default True
+            Whether to display the plot using `plt.show()`.
+
+        Raises
+        ------
+        KeyError
+            If no histogram is stored under `name` for a chromosome.
+        ValueError
+            If `chroms` is empty, or `mols` is not a dict with several
+            chroms or is out of range.
+
+        Warns
+        -----
+        UserWarning
+            If more than 10 chroms are plotted in one figure, or a
+            chromosome has no linkers up to `lmax` (it is then not
+            plotted).
+        """
+        chroms = _chrom_list(chroms)
+        mols = _per_chrom(mols, chroms, "mols")
+        if len(chroms) > _MAX_PANELS:
+            _warn(
+                f"plotting {len(chroms)} chromosomes in one figure; "
+                "consider fewer chroms, or one figure per chrom with "
+                "out_file"
+            )
+        ana = SimAnalysis()
+        how = "sum" if density else "mean"
+        curves = {}
+        for chrom in chroms:
+            pooled = ana.pool_linker_hist(
+                dataset, chroms=chrom, name=name, mols=mols[chrom], how=how
+            )
+            values = pooled[chrom].to_numpy()[:-1]
+            total = np.nansum(values)
+            if not total > 0:
+                _warn(
+                    f"no linkers up to lmax for chrom '{chrom}'; not plotted"
+                )
+                continue
+            curves[chrom] = values / total if density else values
+        stats = None
+        if plot_stats and curves:
+            stats = ana.extract_linker_stats(
+                dataset,
+                chroms=list(curves),
+                name=name,
+                mols={c: mols[c] for c in curves},
+                pooled=True,
+            )
+
+        ylabel = "Fraction of linkers" if density else "Linkers per molecule"
+        if panels:
+            fig, axes = self._linker_panels(len(chroms), sharey)
+            for ax, chrom in zip(axes, chroms):
+                ax.set_title(chrom)
+                if chrom not in curves:
+                    continue
+                self._draw_linker_curve(ax, curves[chrom], "C0", None)
+                if stats is not None:
+                    ax.text(
+                        0.97,
+                        0.95,
+                        _linker_stats_text(stats.loc[chrom], "\n"),
+                        transform=ax.transAxes,
+                        ha="right",
+                        va="top",
+                    )
+            if len(chroms) > 1:
+                fig.supxlabel("Linker length [bp]")
+                fig.supylabel(ylabel)
+            else:
+                axes[0].set_xlabel("Linker length [bp]")
+                axes[0].set_ylabel(ylabel)
+        else:
+            fig, ax = plt.subplots()
+            axes = [ax]
+            for i, chrom in enumerate(chroms):
+                if chrom not in curves:
+                    continue
+                label = chrom
+                if stats is not None:
+                    text = _linker_stats_text(stats.loc[chrom], ", ")
+                    label = f"{chrom} ({text})"
+                color = f"C{i % 10}"
+                self._draw_linker_curve(ax, curves[chrom], color, label)
+            ax.set_xlabel("Linker length [bp]")
+            ax.set_ylabel(ylabel)
+            if curves:
+                ax.legend(frameon=False)
+        if logy:
+            for ax in axes:
+                ax.set_yscale("log")
+        _finish(fig, show, out_file)
+
+    def _linker_panels(self, npanel, sharey):
+        """
+        Create one panel per chromosome, at most 4 per row.
+
+        Parameters
+        ----------
+        npanel : int
+            The number of panels.
+        sharey : bool
+            Whether the panels share the y-axis.
+
+        Returns
+        -------
+        fig : matplotlib.figure.Figure
+            The figure.
+        axes : list of matplotlib.axes.Axes
+            The visible axes, in reading order.
+        """
+        ncols = min(npanel, _PANELS_PER_ROW)
+        nrows = -(-npanel // ncols)
+        width, height = plt.rcParams["figure.figsize"]
+        scale = 1.0 if npanel == 1 else 0.6
+        fig, grid = plt.subplots(
+            nrows,
+            ncols,
+            sharex=True,
+            sharey=sharey,
+            squeeze=False,
+            figsize=(width * scale * ncols, height * scale * nrows),
+            layout="constrained",
+        )
+        for idx in range(npanel, nrows * ncols):
+            grid.flat[idx].set_visible(False)
+            grid.flat[idx - ncols].tick_params(labelbottom=True)
+        return fig, list(grid.flat[:npanel])
+
+    def _draw_linker_curve(self, ax, values, color, label):
+        """Draw one linker histogram (bins 0 to lmax) as a filled step."""
+        lengths = np.arange(len(values))
+        ax.step(lengths, values, where="mid", color=color, label=label)
+        ax.fill_between(
+            lengths, values, step="mid", color=color, alpha=0.25, lw=0
+        )
+        ax.set_xlim(0, len(values) - 1)
+
+
+def _linker_stats_text(row, sep):
+    """Format the mean and standard deviation of a linker stats row."""
+    return f"mean {row['mean']:.1f} bp{sep}SD {row['sd']:.1f} bp"

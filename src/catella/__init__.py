@@ -28,6 +28,7 @@ __all__ = [
     "load_raw",
     "plot_config",
     "plot_dropout_ecdf",
+    "plot_linker_hist",
     "plot_meth",
     "plot_occup",
     "qc",

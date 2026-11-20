@@ -41,7 +41,7 @@ catella = "catella.cli:app"
 
 [dependency-groups]
 dev = ["ruff"]
-test = ["pytest"]
+test = ["pytest", "pytest-xdist"]
 doc = [
     "numpy",
     "pandas>=3.0",
@@ -77,6 +77,7 @@ dependency-groups = ["dev", "test"]
 
 [tool.pytest.ini_options]
 pythonpath = ["benchmarks"]
+addopts = "-n auto"
 filterwarnings = [
     "ignore:'click.utils.get_binary_stream' is deprecated:DeprecationWarning:typer",
     "ignore:'click.utils.get_text_stream' is deprecated:DeprecationWarning:typer",

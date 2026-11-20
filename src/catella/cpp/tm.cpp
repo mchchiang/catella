@@ -358,3 +358,55 @@ std::pair<vector<int>, double> NucPosTM::getBestMatchConfig(
   vector<int> positions = maxScoreConfig(siteScore, stateScore);
   return {positions, configEnergy(positions)};
 }
+
+vector<double> NucPosTM::getLinkerHist(int lmax, int xlo, int xhi) const {
+  requireSolved();
+  int nbp = model.nbp();
+  if (xhi < 0) xhi = nbp;
+  if (lmax < 0) {
+    std::ostringstream msg;
+    msg << "lmax must be nonnegative, got " << lmax;
+    throw std::invalid_argument(msg.str());
+  }
+  if (xlo < 0 || xlo > xhi || xhi > nbp) {
+    std::ostringstream msg;
+    msg << "window must satisfy 0 <= xlo <= xhi <= nbp, got (" << xlo
+	<< ", " << xhi << ")";
+    throw std::invalid_argument(msg.str());
+  }
+  int nucbp = model.nucbp();
+  int W = nucbp + model.llink();
+  double mu = model.mu();
+  int bmax = xhi - nucbp;
+
+  // Probability summed over consecutive pairs (a, a+g) in the window
+  auto pairSum = [&](int g) {
+    int s = std::min(g, W);
+    double sum = 0.0;
+    for (int a = xlo; a + g <= bmax; a++) {
+      int b = a + g;
+      sum += std::exp(logV[a+1][0] + logPlaceWeight(b, s, temp, mu)
+		      + logU[b+1][0] - logZ);
+    }
+    return sum;
+  };
+
+  vector<double> hist(lmax+2, 0.0);
+  for (int l = 0; l <= lmax; l++) hist[l] = pairSum(nucbp + l);
+
+  int gmin = std::max(nucbp + lmax + 1, W);
+  for (int g = nucbp + lmax + 1; g < gmin; g++) hist[lmax+1] += pairSum(g);
+
+  // Gaps >= W factorize, so sum them with a log-space suffix over b
+  if (xlo + gmin <= bmax) {
+    vector<double> logSuf(bmax+2, NINF);
+    for (int b = bmax; b >= xlo + gmin; b--) {
+      double logB = logPlaceWeight(b, W, temp, mu) + logU[b+1][0];
+      logSuf[b] = logAdd(logSuf[b+1], logB);
+    }
+    for (int a = xlo; a + gmin <= bmax; a++) {
+      hist[lmax+1] += std::exp(logV[a+1][0] + logSuf[a+gmin] - logZ);
+    }
+  }
+  return hist;
+}

@@ -518,3 +518,119 @@ class TestBestMatchConfig:
         assert energy == pytest.approx(
             _config_energy(147, 50, 1.0, 0.0, eseq, positions.tolist())
         )
+
+
+def _linker_hist_bf(nucbp, llink, elink, mu, eseq, temp, lmax, xlo, xhi):
+    nbp = len(eseq)
+    configs = _valid_configs(nucbp, nbp - nucbp + 1)
+    logw = np.array(
+        [
+            -_config_energy(nucbp, llink, elink, mu, eseq, c) / temp
+            for c in configs
+        ]
+    )
+    probs = np.exp(logw - logw.max())
+    probs /= probs.sum()
+    hist = np.zeros(lmax + 2)
+    for p, c in zip(probs, configs):
+        for a, b in itertools.pairwise(c):
+            if a < xlo or b + nucbp > xhi:
+                continue
+            length = b - a - nucbp
+            hist[min(length, lmax + 1)] += p
+    return hist
+
+
+class TestLinkerHist:
+    @pytest.mark.parametrize("nucbp,llink,elink,mu,nbp", PARAM_SETS)
+    @pytest.mark.parametrize("temp", [1.0, 2.0])
+    @pytest.mark.parametrize("trim", [0, 1])
+    def test_matches_brute_force(
+        self, nucbp, llink, elink, mu, nbp, temp, trim
+    ):
+        rng = np.random.default_rng(nbp)
+        eseq = rng.normal(size=nbp).tolist()
+        tm = _tm(nucbp, llink, elink, mu, eseq, temp=temp)
+        lmax = 2
+        xlo, xhi = trim, nbp - trim
+        expected = _linker_hist_bf(
+            nucbp, llink, elink, mu, eseq, temp, lmax, xlo, xhi
+        )
+        got = tm.getLinkerHist(lmax, xlo, xhi)
+        np.testing.assert_allclose(got, expected, rtol=1e-9, atol=1e-12)
+
+    @pytest.mark.parametrize("nucbp,llink,elink,mu,nbp", PARAM_SETS)
+    def test_sum_rule(self, nucbp, llink, elink, mu, nbp):
+        rng = np.random.default_rng(nbp + 1)
+        eseq = rng.normal(size=nbp).tolist()
+        tm = _tm(nucbp, llink, elink, mu, eseq)
+        hist = np.asarray(tm.getLinkerHist(nbp))
+        expected = tm.getMeanN() - 1.0 + math.exp(-tm.getLogZ())
+        assert hist.sum() == pytest.approx(expected, rel=1e-10)
+        assert hist[-1] == pytest.approx(0.0, abs=1e-15)
+
+    def test_default_window_is_full_fiber(self):
+        rng = np.random.default_rng(3)
+        eseq = rng.normal(size=14).tolist()
+        tm = _tm(3, 2, 1.0, 0.5, eseq)
+        np.testing.assert_array_equal(
+            tm.getLinkerHist(2), tm.getLinkerHist(2, 0, 14)
+        )
+
+    def test_short_fiber_gives_zeros(self):
+        tm = _tm(3, 2, 1.0, 0.5, [-1.0] * 5)
+        assert list(tm.getLinkerHist(4)) == [0.0] * 6
+
+    def test_lmax_zero_has_one_bin_and_tail(self):
+        rng = np.random.default_rng(4)
+        tm = _tm(2, 2, 1.0, 0.5, rng.normal(size=10).tolist())
+        assert len(tm.getLinkerHist(0)) == 2
+
+    def test_empty_window_gives_zeros(self):
+        rng = np.random.default_rng(5)
+        tm = _tm(2, 2, 1.0, 0.5, rng.normal(size=10).tolist())
+        assert list(tm.getLinkerHist(3, 4, 4)) == [0.0] * 5
+
+    def test_negative_lmax_raises(self):
+        tm = _tm(2, 2, 1.0, 0.5, [0.0] * 10)
+        with pytest.raises(ValueError, match="lmax must be nonnegative"):
+            tm.getLinkerHist(-1)
+
+    @pytest.mark.parametrize("xlo,xhi", [(-1, 10), (5, 3), (0, 11)])
+    def test_invalid_window_raises(self, xlo, xhi):
+        tm = _tm(2, 2, 1.0, 0.5, [0.0] * 10)
+        with pytest.raises(ValueError, match="window must satisfy"):
+            tm.getLinkerHist(3, xlo, xhi)
+
+    def test_requires_solve(self):
+        tm = NucPosTM(2, 10, 2, 1.0, 0.5, seed=1)
+        tm.setEnergy([0.0] * 10, 1e9)
+        with pytest.raises(RuntimeError):
+            tm.getLinkerHist(3)
+
+    def test_matches_sampled_histogram(self):
+        rng = np.random.default_rng(6)
+        nucbp, llink, elink, mu, nbp = 2, 2, 1.0, 0.5, 30
+        eseq = rng.normal(size=nbp).tolist()
+        tm = _tm(nucbp, llink, elink, mu, eseq, seed=9)
+        lmax = 5
+        exact = np.asarray(tm.getLinkerHist(lmax))
+        n_samples = 20000
+        counts = np.zeros(lmax + 2)
+        for _ in range(n_samples):
+            positions, _energy = tm.sampleConfig()
+            for a, b in itertools.pairwise(positions):
+                counts[min(b - a - nucbp, lmax + 1)] += 1
+        np.testing.assert_allclose(counts / n_samples, exact, atol=0.05)
+
+    def test_long_fiber_is_finite_and_obeys_sum_rule(self):
+        rng = np.random.default_rng(7)
+        eseq = np.clip(rng.normal(size=2000) - 1.0, -10.0, 10.0).tolist()
+        tm = _tm(147, 50, 1.0, 0.0, eseq)
+        hist = np.asarray(tm.getLinkerHist(1853))
+        assert np.all(np.isfinite(hist)) and np.all(hist >= 0.0)
+        expected = tm.getMeanN() - 1.0 + math.exp(-tm.getLogZ())
+        assert hist.sum() == pytest.approx(expected, rel=1e-8)
+        short = np.asarray(tm.getLinkerHist(100))
+        np.testing.assert_allclose(short[:101], hist[:101])
+        assert short[-1] == pytest.approx(hist[101:].sum(), rel=1e-8)

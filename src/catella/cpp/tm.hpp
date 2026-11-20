@@ -54,6 +54,12 @@ public:
   std::pair<std::vector<int>, double> getBestMatchConfig(
     double gamma = 1.0) const;
 
+  // Expected linker counts for lengths 0..lmax plus a tail bin (> lmax),
+  // over pairs with both footprints in [xlo, xhi) (xhi < 0: nbp).
+  // Requires solve().
+  std::vector<double> getLinkerHist(int lmax, int xlo = 0,
+				    int xhi = -1) const;
+
   const std::vector<double>& getSeqEnergy() const;
 
   // Re-seeds the sampling RNG from the original seed.

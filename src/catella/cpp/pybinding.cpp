@@ -58,6 +58,8 @@ PYBIND11_MODULE(catella_cpp, m) {
   tmcls.def("getMostLikelyConfig", &NucPosTM::getMostLikelyConfig);
   tmcls.def("getBestMatchConfig", &NucPosTM::getBestMatchConfig,
 	    py::arg("gamma") = 1.0);
+  tmcls.def("getLinkerHist", &NucPosTM::getLinkerHist, py::arg("lmax"),
+	    py::arg("xlo") = 0, py::arg("xhi") = -1);
   tmcls.def("getSeqEnergy", &NucPosTM::getSeqEnergy);
   tmcls.def("reset", &NucPosTM::reset);
   tmcls.def("setSeed", &NucPosTM::setSeed, py::arg("seed"));

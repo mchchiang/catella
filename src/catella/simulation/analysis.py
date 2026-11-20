@@ -295,6 +295,63 @@ def _mol_mask(mols, nmol, chrom):
     return mask
 
 
+def _linker_moments(counts):
+    """
+    Return the mean, standard deviation, and number of linkers.
+
+    Parameters
+    ----------
+    counts : np.ndarray
+        2D, one row per histogram and one column per linker length
+        0, 1, ..., lmax (the tail bin excluded).
+
+    Returns
+    -------
+    mean, sd, nlink : np.ndarray
+        Per row: the mean and standard deviation of the linker length
+        (nan if there are no linkers) and the number of linkers.
+    """
+    lengths = np.arange(counts.shape[1], dtype=np.float64)
+    nlink = counts.sum(axis=1)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        mean = counts @ lengths / nlink
+        second = counts @ lengths**2 / nlink
+    mean[nlink == 0] = np.nan
+    var = np.maximum(second - mean**2, 0.0)
+    return mean, np.sqrt(var), nlink
+
+
+def _iter_hist_rows(arr, mask, batch_size):
+    """
+    Yield the selected rows of a histogram array in batches.
+
+    Parameters
+    ----------
+    arr : H5Array
+        The histograms, one row per molecule.
+    mask : np.ndarray or None
+        bool, True for each selected molecule; None for all.
+    batch_size : int
+        Number of rows read per batch.
+
+    Yields
+    ------
+    mol_ids : np.ndarray
+        The molecule indices of the batch.
+    rows : np.ndarray
+        Their histograms.
+    """
+    nmol = arr.shape[0]
+    for start in range(0, nmol, batch_size):
+        stop = min(start + batch_size, nmol)
+        mol_ids = np.arange(start, stop)
+        rows = arr.iloc[start:stop, :]
+        if mask is not None:
+            mol_ids, rows = mol_ids[mask[start:stop]], rows[mask[start:stop]]
+        if mol_ids.size:
+            yield mol_ids, rows
+
+
 @dataclass(slots=True)
 class NucFiberMap:
     """
@@ -1088,6 +1145,104 @@ class SimAnalysis:
                 how, 0, batch_size, row_mask=mask
             )
         return pd.DataFrame(pooled, index=pd.Index(columns))
+
+    def extract_linker_stats(
+        self,
+        dataset: SimDataset,
+        *,
+        chroms: str | Iterable[str] | None = None,
+        name: str = "linker_hist",
+        mols: Iterable[int] | dict | None = None,
+        pooled: bool = False,
+        batch_size: int = 20000,
+    ) -> pd.DataFrame:
+        """
+        Calculate the mean and standard deviation of the linker lengths.
+
+        Uses the histograms stored by `compute_linker_hist`, so the
+        values are exact posterior averages. Only linkers up to `lmax`
+        enter; the tail bin is excluded, since its lengths are not
+        resolved. The spread reflects both the irregularity of the
+        spacing and the uncertainty of the nucleosome positions; compare
+        with a strongly positioned array (e.g., the 601) to separate the
+        two.
+
+        Parameters
+        ----------
+        dataset : SimDataset
+            The dataset holding the histograms.
+        chroms : str or iterable of str, optional
+            The chromosome(s) to use. If None (default), all chromosomes
+            in the dataset.
+        name : str, default "linker_hist"
+            The key of the histograms, as passed to `compute_linker_hist`.
+        mols : iterable of int or dict, optional
+            The molecules to use (duplicates are counted once). If None
+            (default), all molecules. With several chroms, a dict keyed
+            by chrom (chroms not in it use all molecules; extra keys are
+            ignored).
+        pooled : bool, default False
+            If False, one row per molecule. If True, one row per
+            chromosome, from the linkers of all selected molecules pooled
+            together, so that each linker counts equally. The pooled
+            standard deviation also includes the differences between the
+            mean linker lengths of the molecules, so it is not the mean
+            of the per-molecule values.
+        batch_size : int, default 20000
+            Number of molecules read (and held in memory) per batch.
+
+        Returns
+        -------
+        pd.DataFrame
+            Columns "mean" and "sd" (bp) and "nlink", the expected number
+            of linkers up to `lmax`. Indexed by (chrom, mol) if `pooled`
+            is False, otherwise by chrom. Molecules with no data get nan;
+            molecules or chromosomes with no linkers get nan mean and sd.
+
+        Raises
+        ------
+        KeyError
+            If no histogram is stored under `name` for a chromosome.
+        ValueError
+            If `mols` is not a dict with several chroms or is out of
+            range.
+        """
+        chroms = utils.normalize_chroms(chroms, default_chroms=dataset.chroms)
+        mols = _per_chrom(mols, chroms, "mols")
+        columns = ["mean", "sd", "nlink"]
+        if pooled:
+            rows = []
+            for chrom in chroms:
+                counts = self.pool_linker_hist(
+                    dataset,
+                    chroms=chrom,
+                    name=name,
+                    mols=mols[chrom],
+                    batch_size=batch_size,
+                )[chrom].to_numpy()
+                mean, sd, nlink = _linker_moments(counts[None, :-1])
+                rows.append([mean[0], sd[0], nlink[0]])
+            return pd.DataFrame(
+                rows, index=pd.Index(chroms, name="chrom"), columns=columns
+            )
+        frames = []
+        for chrom in chroms:
+            arr = _stored_linker_hist(dataset, chrom, name)
+            mask = _mol_mask(mols[chrom], arr.shape[0], chrom)
+            for mol_ids, rows in _iter_hist_rows(arr, mask, batch_size):
+                mean, sd, nlink = _linker_moments(rows[:, :-1])
+                index = pd.MultiIndex.from_arrays(
+                    [[chrom] * len(mol_ids), mol_ids], names=["chrom", "mol"]
+                )
+                frames.append(
+                    pd.DataFrame(
+                        {"mean": mean, "sd": sd, "nlink": nlink}, index=index
+                    )
+                )
+        if not frames:
+            index = pd.MultiIndex.from_arrays([[], []], names=["chrom", "mol"])
+            return pd.DataFrame(columns=columns, index=index, dtype=float)
+        return pd.concat(frames)
 
     def extract_config(
         self,

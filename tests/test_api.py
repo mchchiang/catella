@@ -904,6 +904,23 @@ class TestComputeLinkerHist:
             catella.compute_linker_hist(dataset)
 
 
+class TestExtractLinkerStats:
+    def test_is_exported(self):
+        assert "extract_linker_stats" in catella.__all__
+
+    @pytest.mark.parametrize("pooled", [False, True])
+    def test_matches_analysis_method(self, tmp_path, pooled):
+        dataset = _make_tm_dataset(tmp_path)
+        catella.compute_linker_hist(dataset, lmax=4)
+        got = catella.extract_linker_stats(
+            dataset, mols=[0, 1], pooled=pooled
+        )
+        want = SimAnalysis().extract_linker_stats(
+            dataset, mols=[0, 1], pooled=pooled
+        )
+        pd.testing.assert_frame_equal(got, want)
+
+
 class TestPlotConfig:
     def test_writes_figure_file(self, tmp_path):
         dataset = _make_tm_dataset(tmp_path)

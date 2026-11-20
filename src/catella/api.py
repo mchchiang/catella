@@ -1190,6 +1190,65 @@ def compute_linker_hist(
     )
 
 
+def extract_linker_stats(
+    dataset: SimDataset,
+    *,
+    chroms: str | Iterable[str] | None = None,
+    name: str = "linker_hist",
+    mols: Iterable[int] | dict | None = None,
+    pooled: bool = False,
+) -> pd.DataFrame:
+    """
+    Compute the mean and standard deviation of the linker lengths.
+
+    Uses the histograms stored by `compute_linker_hist`, so the values
+    are exact posterior averages. Only linkers up to `lmax` enter; the
+    tail bin is excluded, since its lengths are not resolved. The spread
+    reflects both the irregularity of the spacing and the uncertainty of
+    the nucleosome positions; compare with a strongly positioned array
+    (e.g., the 601) to separate the two.
+
+    Parameters
+    ----------
+    dataset : SimDataset
+        The simulation dataset holding the histograms.
+    chroms : str or iterable of str, optional
+        The chromosome(s) to use. If None (default), all of
+        `dataset.chroms`.
+    name : str, default "linker_hist"
+        The key of the histograms, as passed to `compute_linker_hist`.
+    mols : iterable of int or dict, optional
+        The molecules to use (duplicates are counted once). If None
+        (default), all molecules. With several chroms, a dict keyed by
+        chrom (chroms not in it use all molecules; extra keys are
+        ignored).
+    pooled : bool, default False
+        If False, one row per molecule. If True, one row per chromosome,
+        from the linkers of all selected molecules pooled together, so
+        that each linker counts equally. The pooled standard deviation
+        also includes the differences between the mean linker lengths of
+        the molecules, so it is not the mean of the per-molecule values.
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns "mean" and "sd" (bp) and "nlink", the expected number of
+        linkers up to `lmax`. Indexed by (chrom, mol) if `pooled` is
+        False, otherwise by chrom. Molecules with no data get nan;
+        molecules or chromosomes with no linkers get nan mean and sd.
+
+    Raises
+    ------
+    KeyError
+        If no histogram is stored under `name` for a chromosome.
+    ValueError
+        If `mols` is not a dict with several chroms or is out of range.
+    """
+    return SimAnalysis().extract_linker_stats(
+        dataset, chroms=chroms, name=name, mols=mols, pooled=pooled
+    )
+
+
 def extract_config(
     dataset: SimDataset,
     *,

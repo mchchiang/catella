@@ -23,6 +23,7 @@ __all__ = [
     "estimate_llink",
     "estimate_start_temp",
     "extract_config",
+    "extract_linker_stats",
     "filter_dropout",
     "load_raw",
     "plot_config",

@@ -1292,3 +1292,130 @@ class TestPoolLinkerHist:
         rows = dataset.analysis["chr1"]["linker_hist"].to_numpy()
         np.testing.assert_allclose(got["chr1"], rows.sum(axis=0))
         assert list(got.index) == ["0", "1", "2", "3", "tail"]
+
+
+class TestExtractLinkerStats:
+    def test_per_molecule_values(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=3)
+        _put_hist(dataset, "chr1", _HIST)
+        got = SimAnalysis().extract_linker_stats(dataset, name="h")
+        assert list(got.columns) == ["mean", "sd", "nlink"]
+        assert got.index.names == ["chrom", "mol"]
+        assert list(got.index) == [("chr1", 0), ("chr1", 1), ("chr1", 2)]
+        np.testing.assert_allclose(
+            got.loc[("chr1", 0)], [2 / 3, np.sqrt(2 / 9), 3.0]
+        )
+        np.testing.assert_allclose(got.loc[("chr1", 2)], [0.0, 0.0, 3.0])
+        assert got.loc[("chr1", 1)].isna().all()
+
+    def test_pooled_values(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=3)
+        _put_hist(dataset, "chr1", _HIST)
+        got = SimAnalysis().extract_linker_stats(dataset, name="h", pooled=True)
+        assert got.index.name == "chrom"
+        np.testing.assert_allclose(
+            got.loc["chr1"], [1 / 3, np.sqrt(2 / 9), 6.0]
+        )
+
+    def test_pooled_sd_is_not_mean_of_per_molecule_sd(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=3)
+        _put_hist(dataset, "chr1", _HIST)
+        ana = SimAnalysis()
+        per_mol = ana.extract_linker_stats(dataset, name="h")["sd"].mean()
+        pooled = ana.extract_linker_stats(dataset, name="h", pooled=True)["sd"]
+        assert pooled.iloc[0] != pytest.approx(per_mol)
+
+    def test_tail_is_ignored(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=3)
+        values = np.array(_HIST)
+        values[[0, 2], -1] = 100.0
+        _put_hist(dataset, "chr1", values)
+        _put_hist(dataset, "chr1", _HIST, name="ref")
+        ana = SimAnalysis()
+        pd.testing.assert_frame_equal(
+            ana.extract_linker_stats(dataset, name="h"),
+            ana.extract_linker_stats(dataset, name="ref"),
+        )
+
+    def test_no_linkers_gives_nan_mean_and_sd(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=3)
+        _put_hist(dataset, "chr1", [[0, 0, 2], [1, 0, 0], [0, 0, 0]])
+        got = SimAnalysis().extract_linker_stats(dataset, name="h")
+        assert np.isnan(got.loc[("chr1", 0), "mean"])
+        assert np.isnan(got.loc[("chr1", 0), "sd"])
+        assert got.loc[("chr1", 0), "nlink"] == 0.0
+
+    def test_mols_subset(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=3)
+        _put_hist(dataset, "chr1", _HIST)
+        ana = SimAnalysis()
+        got = ana.extract_linker_stats(dataset, name="h", mols=[2, 0, 2])
+        assert list(got.index) == [("chr1", 0), ("chr1", 2)]
+        pooled = ana.extract_linker_stats(
+            dataset, name="h", mols=[2], pooled=True
+        )
+        np.testing.assert_allclose(pooled.loc["chr1"], [0.0, 0.0, 3.0])
+
+    def test_small_batch_size_matches(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=3)
+        _put_hist(dataset, "chr1", _HIST)
+        ana = SimAnalysis()
+        pd.testing.assert_frame_equal(
+            ana.extract_linker_stats(dataset, name="h"),
+            ana.extract_linker_stats(dataset, name="h", batch_size=1),
+        )
+
+    def test_several_chroms_with_different_bins(self, tmp_path):
+        dataset = _make_multi_chrom_tm_dataset(tmp_path)
+        _put_hist(dataset, "chr1", np.ones((5, 3)))
+        _put_hist(dataset, "chr2", np.ones((3, 4)))
+        ana = SimAnalysis()
+        per_mol = ana.extract_linker_stats(dataset, name="h")
+        assert len(per_mol) == 8
+        pooled = ana.extract_linker_stats(dataset, name="h", pooled=True)
+        assert list(pooled.index) == ["chr1", "chr2"]
+        np.testing.assert_allclose(pooled["mean"], [0.5, 1.0])
+
+    def test_dict_mols_by_chrom(self, tmp_path):
+        dataset = _make_multi_chrom_tm_dataset(tmp_path)
+        _put_hist(dataset, "chr1", np.ones((5, 3)))
+        _put_hist(dataset, "chr2", np.ones((3, 3)))
+        got = SimAnalysis().extract_linker_stats(
+            dataset, name="h", mols={"chr1": [1, 3]}
+        )
+        assert list(got.loc["chr1"].index) == [1, 3]
+        assert list(got.loc["chr2"].index) == [0, 1, 2]
+
+    def test_empty_selection(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=3)
+        _put_hist(dataset, "chr1", _HIST)
+        got = SimAnalysis().extract_linker_stats(dataset, name="h", mols=[])
+        assert got.empty
+        assert list(got.columns) == ["mean", "sd", "nlink"]
+
+    def test_non_dict_mols_with_several_chroms_raises(self, tmp_path):
+        dataset = _make_multi_chrom_tm_dataset(tmp_path)
+        _put_hist(dataset, "chr1", np.ones((5, 3)))
+        _put_hist(dataset, "chr2", np.ones((3, 3)))
+        with pytest.raises(ValueError, match="dict keyed by chrom"):
+            SimAnalysis().extract_linker_stats(dataset, name="h", mols=[0])
+
+    def test_missing_name_raises(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path)
+        with pytest.raises(KeyError, match="run compute_linker_hist first"):
+            SimAnalysis().extract_linker_stats(dataset)
+
+    def test_matches_computed_histogram(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=4)
+        ana = SimAnalysis()
+        ana.compute_linker_hist(dataset, lmax=5)
+        got = ana.extract_linker_stats(dataset)
+        rows = dataset.analysis["chr1"]["linker_hist"].to_numpy()[:, :-1]
+        lengths = np.arange(6)
+        for mol in range(4):
+            c = rows[mol]
+            mean = (c * lengths).sum() / c.sum()
+            sd = np.sqrt((c * lengths**2).sum() / c.sum() - mean**2)
+            np.testing.assert_allclose(
+                got.loc[("chr1", mol)], [mean, sd, c.sum()]
+            )

@@ -2,11 +2,13 @@
 
 import json
 import warnings
+from functools import partial
 from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
 import pytest
+from catella.experiment.methdata import MethPrintExperiment
 from catella.h5_array import H5Array
 from catella.simulation._llink import _estimate_llink, _llink_evidence
 from catella.simulation.config import SimSettings
@@ -29,10 +31,12 @@ def _settings(**overrides):
 
 
 def _exp(arrays):
-    return SimpleNamespace(
+    exp = SimpleNamespace(
         chroms=tuple(arrays),
         analysis={c: {"meth_prob": a} for c, a in arrays.items()},
     )
+    exp.is_kept = partial(MethPrintExperiment.is_kept, exp)
+    return exp
 
 
 def _planted(nmol, linker, nucbp=20, nbp=600, seed=0):

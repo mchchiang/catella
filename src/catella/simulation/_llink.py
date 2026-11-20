@@ -11,7 +11,6 @@ from catella_cpp import NucPosTM
 from scipy.special import logit
 
 from catella._warnings import _warn
-from catella.experiment._reads import _lookup_mask
 from catella.simulation._inputs import (
     _check_fill_nan,
     _is_valid_llink,
@@ -222,9 +221,7 @@ def _llink_evidence(
         arr = _chrom_array(exp, chrom, prob_name)
         keep = None
         if mask_name is not None:
-            keep = np.asarray(
-                _lookup_mask(exp, chrom, "test", mask_name), dtype=bool
-            )
+            keep = exp.is_kept(chrom, mask_name=mask_name)
         rows = _chrom_rows(
             arr,
             keep,

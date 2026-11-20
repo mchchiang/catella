@@ -37,7 +37,7 @@ from catella.experiment._eta import (
     _estimate_channel_eta,
     _resolve_eta_overrides,
 )
-from catella.experiment._reads import _check_mapped_strands, _lookup_mask
+from catella.experiment._reads import _check_mapped_strands
 from catella.experiment._scoring import _score_test_reads
 from catella.experiment.methdata import MethPrintExperiment
 
@@ -162,7 +162,7 @@ class MethPrintAnalysis:
                 if df is None:
                     continue
                 keep = (
-                    _lookup_mask(exp, chrom, src, mask_name)
+                    exp.is_kept(chrom, which=src, mask_name=mask_name)
                     if mask_name is not None
                     else None
                 )

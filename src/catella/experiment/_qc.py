@@ -12,7 +12,6 @@ from catella.experiment._dropout import (
     _site_coverage,
     _strand_of_mol,
 )
-from catella.experiment._reads import _mol_keep
 
 _QC_SOURCES = ("test", "meth", "unmeth")
 
@@ -79,7 +78,7 @@ def _source_stats(exp, chrom, src, site_masks, percentiles, mask_name):
     raw = exp.raw[chrom]
     df = getattr(raw, f"{src}_data")
     nmol_all = len(getattr(raw, f"{src}_mol_id"))
-    keep = _mol_keep(exp, chrom, src, mask_name)
+    keep = exp.is_kept(chrom, which=src, mask_name=mask_name)
     strand = _strand_of_mol(df, nmol_all)
     kept = strand[keep]
 

@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 
 from catella.experiment._dropout import _apply_keep_mask
-from catella.experiment._reads import _lookup_mask
 from catella.h5_array import H5Array
 
 
@@ -117,7 +116,7 @@ def _masked_smoothed(exp, chrom, src, smoothed_name, mask_name, batch_size):
     arr = exp.analysis[chrom][f"{src}_{smoothed_name}"]
     if mask_name is None:
         return arr
-    keep = _lookup_mask(exp, chrom, src, mask_name)
+    keep = exp.is_kept(chrom, which=src, mask_name=mask_name)
     return _apply_keep_mask(arr, keep, batch_size)
 
 

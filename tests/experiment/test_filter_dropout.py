@@ -589,3 +589,49 @@ class TestWrap:
         with pytest.raises(ValueError):
             exp.dropout_fractions(unmapped_strand="bogus")
         exp.close()
+
+
+class TestIsKept:
+    def _make(self, tmp_path):
+        return TestThresholdRange()._make(tmp_path)
+
+    def test_matches_stored_flags(self, tmp_path):
+        exp = self._make(tmp_path)
+        exp.filter_dropout(thres_min=0.2, thres_max=0.8)
+        got = exp.is_kept("chr1")
+        assert got.dtype == bool
+        stored = exp.analysis["chr1"]["test_dropout_mask"]["keep"]
+        np.testing.assert_array_equal(got, stored.to_numpy().astype(bool))
+        mol_id = list(exp.raw["chr1"].test_mol_id)
+        assert got[mol_id.index("mol_mid")]
+        assert not got[mol_id.index("mol_full")]
+        exp.close()
+
+    def test_custom_mask_name(self, tmp_path):
+        exp = self._make(tmp_path)
+        exp.filter_dropout(thres_max=0.2, mask_name="strict")
+        exp.filter_dropout(thres_max=1.0)
+        strict = exp.is_kept("chr1", mask_name="strict")
+        loose = exp.is_kept("chr1")
+        assert strict.sum() < loose.sum()
+        exp.close()
+
+    def test_none_keeps_every_molecule(self, tmp_path):
+        exp = self._make(tmp_path)
+        got = exp.is_kept("chr1", mask_name=None)
+        assert got.dtype == bool
+        assert got.tolist() == [True] * len(exp.raw["chr1"].test_mol_id)
+        exp.close()
+
+    def test_missing_flags_raise(self, tmp_path):
+        exp = self._make(tmp_path)
+        with pytest.raises(KeyError, match="run filter_dropout"):
+            exp.is_kept("chr1")
+        exp.close()
+
+    def test_missing_source_flags_raise(self, tmp_path):
+        exp = self._make(tmp_path)
+        exp.filter_dropout()
+        with pytest.raises(KeyError, match="meth_dropout_mask"):
+            exp.is_kept("chr1", which="meth")
+        exp.close()

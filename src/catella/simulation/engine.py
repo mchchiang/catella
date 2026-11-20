@@ -15,7 +15,6 @@ from catella_cpp import NucPosMCMC, NucPosTM
 from scipy.special import logit
 
 from catella._chroms import _normalize_chroms
-from catella.experiment._reads import _lookup_mask
 from catella.experiment.methdata import MethPrintExperiment
 from catella.simulation._inputs import (
     _check_llink,
@@ -627,9 +626,7 @@ class SimManager:
                 arr = arr.to_numpy()
             keep = None
             if mask_name is not None:
-                keep = np.asarray(
-                    _lookup_mask(exp, chrom, "test", mask_name), dtype=bool
-                )
+                keep = exp.is_kept(chrom, mask_name=mask_name)
             n_total = arr.shape[0]
             if n_total == 0:
                 continue

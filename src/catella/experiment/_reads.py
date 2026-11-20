@@ -12,26 +12,6 @@ _UNMAPPED_STRAND_MSG = (
 )
 
 
-def _lookup_mask(exp, chrom, source, mask_name):
-    """Fetch a filter_dropout() 'keep' array, or raise KeyError."""
-    key = f"{source}_{mask_name}"
-    if key not in exp.analysis[chrom]:
-        raise KeyError(
-            f"'{key}' not found in exp.analysis['{chrom}']; run "
-            "filter_dropout() for this source first, matching "
-            "mask_name"
-        )
-    return exp.analysis[chrom][key]["keep"].to_numpy()
-
-
-def _mol_keep(exp, chrom, which, mask_name):
-    """Per-molecule keep flags of `which`; all True without a mask."""
-    nmol = len(getattr(exp.raw[chrom], f"{which}_mol_id"))
-    if mask_name is None:
-        return np.ones(nmol, dtype=bool)
-    return np.asarray(_lookup_mask(exp, chrom, which, mask_name), dtype=bool)
-
-
 def _mol_strand(exp, chrom, which):
     """Per-molecule strand labels ('+'/'-'/'.') of `which`."""
     raw = exp.raw[chrom]
@@ -254,7 +234,7 @@ def _iter_read_sites(
         strand nor a call (only with `span="full"`); and `frac`, the
         fraction of kept stranded molecules on each strand ("+"/"-").
     """
-    keep_all = _mol_keep(exp, chrom, which, mask_name)
+    keep_all = exp.is_kept(chrom, which=which, mask_name=mask_name)
     labels_all = _mol_strand(exp, chrom, which)
     n_strand = {s: (keep_all & (labels_all == s)).sum() for s in "+-"}
     total = n_strand["+"] + n_strand["-"]

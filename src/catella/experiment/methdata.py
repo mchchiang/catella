@@ -1240,6 +1240,53 @@ class MethPrintExperiment:
                     {"keep": keep.astype(np.int8)}
                 )
 
+    def is_kept(
+        self,
+        chrom: str,
+        *,
+        which: str = "test",
+        mask_name: str | None = "dropout_mask",
+    ) -> np.ndarray:
+        """
+        Return whether each molecule is kept by a molecule filter.
+
+        Reads the per-molecule flags that a filter stored in
+        `analysis[chrom]` under `f"{which}_{mask_name}"`, with a "keep"
+        column; `filter_dropout` stores them this way.
+
+        Parameters
+        ----------
+        chrom : str
+            The chromosome.
+        which : {"test", "meth", "unmeth"}, default "test"
+            The source of the molecules.
+        mask_name : str or None, default "dropout_mask"
+            The name under which the filter stored its flags, as passed
+            to `filter_dropout`. If None, every molecule is kept.
+
+        Returns
+        -------
+        np.ndarray
+            bool, one entry per molecule of `which`; True if kept.
+
+        Raises
+        ------
+        KeyError
+            If no flags are stored under `mask_name` for `which` and
+            `chrom`.
+        """
+        if mask_name is None:
+            nmol = len(getattr(self.raw[chrom], f"{which}_mol_id"))
+            return np.ones(nmol, dtype=bool)
+        key = f"{which}_{mask_name}"
+        if key not in self.analysis[chrom]:
+            raise KeyError(
+                f"'{key}' not found in analysis['{chrom}']; run "
+                "filter_dropout() for this source first, matching "
+                "mask_name"
+            )
+        return self.analysis[chrom][key]["keep"].to_numpy().astype(bool)
+
     def dropout_fractions(
         self,
         *,

@@ -475,6 +475,45 @@ class TestCanonicalCallFiltering:
         exp.close()
 
 
+class TestOutOfBoundsRows:
+    def _setup(self, tmp_path, with_fasta):
+        rows = [
+            ("m0", -1, "chr1", "+", 0.9, "a"),
+            ("m0", 1, "chr1", "+", 0.8, "a"),
+            ("m0", 8, "chr1", "+", 0.7, "a"),
+        ]
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 8})
+        kwargs = {"chromsize": chromsize, "test_file": test_file}
+        if with_fasta:
+            fasta = tmp_path / "ref.fa"
+            _write_fasta(fasta, {"chr1": "AAAAAAAA"})
+            kwargs.update(fasta_file=fasta, mtase="A")
+        return kwargs
+
+    @pytest.mark.parametrize("with_fasta", [False, True])
+    def test_rows_dropped_with_warning(self, tmp_path, with_fasta):
+        kwargs = self._setup(tmp_path, with_fasta)
+        with pytest.warns(UserWarning, match="dropped 2 row"):
+            exp = MethPrintExperiment.load_raw(**kwargs)
+        assert exp.raw["chr1"].test_data["pos"].tolist() == [1]
+        exp.close()
+
+    def test_no_warning_when_in_bounds(self, tmp_path, recwarn):
+        rows = [("m0", 1, "chr1", "+", 0.8, "a")]
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 8})
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file
+        )
+        exp.close()
+        assert not [w for w in recwarn if "dropped" in str(w.message)]
+
+
 class TestColidx:
     def test_headerless_file_with_colidx(self, tmp_path):
         # File columns: extra, chrom, upos, strand, mod_qual, mod_code, mol_id

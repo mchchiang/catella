@@ -613,7 +613,14 @@ def _stream_rows_to_staging(
         If True, a row is kept if its `upos` is methylatable by any
         `mtase` label on either strand, instead of only the row's own
         recorded `strand`.
+
+    Warns
+    -----
+    UserWarning
+        If rows have `upos` outside `[0, full_size)` (e.g., -1 for
+        unaligned bases); those rows are dropped.
     """
+    n_out = {}
     valid_by_chrom = {}
     if mtase is not None and refseq_by_chrom is not None:
         for chrom, seq in refseq_by_chrom.items():
@@ -632,6 +639,11 @@ def _stream_rows_to_staging(
             mapping = mol_maps.get(chrom)
             if mapping is None:
                 continue
+            upos_all = group["upos"].to_numpy()
+            in_bounds = (upos_all >= 0) & (upos_all < full_sizes[chrom])
+            if not in_bounds.all():
+                n_out[chrom] = n_out.get(chrom, 0) + int((~in_bounds).sum())
+                group = group.loc[in_bounds]
             mol_index = group["mol_id"].map(mapping["index"])
             keep = mol_index.notna().to_numpy() & (
                 group["mod_code"].to_numpy() != "-"
@@ -679,6 +691,12 @@ def _stream_rows_to_staging(
                 }
             )
             appenders[chrom].append(out)
+
+    for chrom, n in n_out.items():
+        _warn(
+            f"dropped {n} row(s) on chrom '{chrom}' with ref_position "
+            f"outside [0, {full_sizes[chrom]})"
+        )
 
 
 def _ensure_chrom_data_group(graw, chrom, nbp, refseq_by_chrom):

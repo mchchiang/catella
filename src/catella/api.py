@@ -1856,7 +1856,8 @@ def downsample(
     Raises
     ------
     ValueError
-        If `how` is not a recognized option.
+        If `how` is not a recognized option, or if `max_rows` or
+        `batch_size` is not positive.
     """
     return utils.downsample(data, max_rows, how=how, batch_size=batch_size)
 

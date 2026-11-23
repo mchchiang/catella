@@ -99,6 +99,10 @@ _COL_FINALIZERS = {
 
 def _downsample_rows(data, max_rows, how, batch_size):
     """Downsample a row-sliceable 2D array (ndarray or h5py dataset)."""
+    if max_rows < 1:
+        raise ValueError(f"max_rows must be positive, got {max_rows}")
+    if batch_size < 1:
+        raise ValueError(f"batch_size must be positive, got {batch_size}")
     if how not in _DOWNSAMPLE_HOW:
         raise ValueError(f"'how' must be one of {_DOWNSAMPLE_HOW}")
     nrow, ncol = data.shape
@@ -589,7 +593,8 @@ class H5Array:
         Raises
         ------
         ValueError
-            If `how` is not a recognized option.
+            If `how` is not a recognized option, or if `max_rows` or
+            `batch_size` is not positive.
         """
         return _downsample_rows(self._dataset, max_rows, how, batch_size)
 

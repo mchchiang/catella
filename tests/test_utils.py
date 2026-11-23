@@ -296,6 +296,23 @@ def test_downsample_ndarray_batch_size_does_not_change_result(how):
     np.testing.assert_allclose(small, large)
 
 
+@pytest.mark.parametrize("kind", ["h5array", "ndarray"])
+@pytest.mark.parametrize(
+    ("max_rows", "batch_size", "match"),
+    [
+        (0, 20000, "max_rows must be positive, got 0"),
+        (-1, 20000, "max_rows must be positive, got -1"),
+        (3, 0, "batch_size must be positive, got 0"),
+        (3, -5, "batch_size must be positive, got -5"),
+    ],
+)
+def test_downsample_nonpositive_args_raise(kind, max_rows, batch_size, match):
+    values = np.random.default_rng(14).random((10, 2))
+    data = _filled_h5array(values) if kind == "h5array" else values
+    with pytest.raises(ValueError, match=match):
+        utils.downsample(data, max_rows, batch_size=batch_size)
+
+
 def test_downsample_noop_when_nrow_within_max_rows():
     values = np.random.default_rng(11).random((5, 2))
     np.testing.assert_array_equal(utils.downsample(values, 10), values)

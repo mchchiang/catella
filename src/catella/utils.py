@@ -52,7 +52,8 @@ def downsample(arr, max_rows, *, how="mean", batch_size=20000):
     Raises
     ------
     ValueError
-        If `how` is not a recognized option.
+        If `how` is not a recognized option, or if `max_rows` or
+        `batch_size` is not positive.
     """
     if isinstance(arr, H5Array):
         return arr.downsample(max_rows, how=how, batch_size=batch_size)

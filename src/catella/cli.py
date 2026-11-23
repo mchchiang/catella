@@ -292,10 +292,7 @@ def filter_dropout(
         method=method,
         mask_name=mask_name,
     )
-    if out_file is not None:
-        exp.save(out_file, overwrite=overwrite)
-    else:
-        exp.save(overwrite=True)
+    exp.save(out_file)
 
 
 @app.command(name="qc")
@@ -378,10 +375,7 @@ def qc(
     typer.echo(df.to_csv(sep="\t", index=False), nl=False)
     if tsv_file is not None:
         df.to_csv(tsv_file, sep="\t", index=False)
-    if out_file is not None:
-        exp.save(out_file, overwrite=overwrite)
-    else:
-        exp.save(overwrite=True)
+    exp.save(out_file)
 
 
 @app.command(name="plot_dropout_ecdf")
@@ -526,10 +520,7 @@ def compute_empirical_prob(
         seed=seed,
         mask_name=mask_name,
     )
-    if out_file is not None:
-        exp.save(out_file, overwrite=overwrite)
-    else:
-        exp.save(overwrite=True)
+    exp.save(out_file)
 
 
 @app.command(name="compute_model_prob")
@@ -681,10 +672,7 @@ def compute_model_prob(
         batch_size=batch_size,
         mask_name=mask_name,
     )
-    if out_file is not None:
-        exp.save(out_file, overwrite=overwrite)
-    else:
-        exp.save(overwrite=True)
+    exp.save(out_file)
 
 
 @app.command()
@@ -865,10 +853,7 @@ def compute_occup(
         var_occup_name=var_occup_name,
         nworker=nworker,
     )
-    if out_file is not None:
-        dataset.save(out_file, overwrite=overwrite)
-    else:
-        dataset.save(overwrite=True)
+    dataset.save(out_file)
 
 
 @app.command(name="compute_config")
@@ -957,10 +942,7 @@ def compute_config(
         pd.DataFrame(rows, columns=["chrom", "mol", "starts"]).to_csv(
             tsv_file, sep="\t", index=False
         )
-    if out_file is not None:
-        dataset.save(out_file, overwrite=overwrite)
-    else:
-        dataset.save(overwrite=True)
+    dataset.save(out_file)
 
 
 @app.command()
@@ -1025,10 +1007,7 @@ def downsample(
     )
     name = out_key if out_key is not None else f"{key}_downsampled"
     obj.analysis[chrom][name] = pd.DataFrame(result)
-    if out_file is not None:
-        obj.save(out_file, overwrite=overwrite)
-    else:
-        obj.save(overwrite=True)
+    obj.save(out_file)
 
 
 @app.command(name="sort_by_linkage")
@@ -1151,10 +1130,7 @@ def sort_by_linkage(
             batch_size=batch_size,
             fill_nan=fill_nan,
         )
-    if out_file is not None:
-        obj.save(out_file, overwrite=overwrite)
-    else:
-        obj.save(overwrite=True)
+    obj.save(out_file)
 
 
 @app.command(name="plot_config")

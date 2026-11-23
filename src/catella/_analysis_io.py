@@ -173,27 +173,6 @@ def _reopen_all(path, linked, sources, staged, swapped):
         arr._reopen(arr.path, targets[key])
 
 
-def _replace_group(parent, name):
-    """
-    Create an empty group, deleting any existing one of the same name.
-
-    Parameters
-    ----------
-    parent : h5py.Group
-        The parent group.
-    name : str
-        The name of the group.
-
-    Returns
-    -------
-    h5py.Group
-        The new, empty group.
-    """
-    if name in parent:
-        del parent[name]
-    return parent.create_group(name)
-
-
 def _write_entries(group, entries):
     """
     Write analysis entries (H5Array or DataFrame) into `group`.

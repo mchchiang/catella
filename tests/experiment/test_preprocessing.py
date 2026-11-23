@@ -744,7 +744,7 @@ class TestSaveLoadRoundTrip:
         assert isinstance(arr, H5Array)
         np.testing.assert_array_equal(arr.to_numpy(), expected)
 
-    def test_save_rejects_same_path_as_backing_h5array(self, tmp_path):
+    def test_resave_to_backing_file_keeps_h5array(self, tmp_path):
         exp = _make_experiment(nmol=3, nbp=4)
         ana = MethPrintAnalysis()
         ana.smooth(lnuc=2, exp=exp, batch_size=2)
@@ -752,8 +752,24 @@ class TestSaveLoadRoundTrip:
         out_file = tmp_path / "experiment.h5"
         exp.save(out_file)
         loaded = MethPrintExperiment.load(out_file)
-        with pytest.raises(ValueError):
-            loaded.save(out_file)
+        keys = set(loaded.analysis["chr1"])
+        want = {
+            k: v.to_numpy()
+            for k, v in loaded.analysis["chr1"].items()
+            if isinstance(v, H5Array)
+        }
+        assert want
+        loaded.save(out_file)
+
+        reloaded = MethPrintExperiment.load(out_file)
+        assert set(reloaded.analysis["chr1"]) == keys
+        for k, v in want.items():
+            np.testing.assert_array_equal(
+                reloaded.analysis["chr1"][k].to_numpy(), v
+            )
+            np.testing.assert_array_equal(
+                loaded.analysis["chr1"][k].to_numpy(), v
+            )
 
 
 class TestSortByLinkage:

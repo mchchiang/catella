@@ -2044,7 +2044,7 @@ class TestPlotMeth:
         catella.compute_empirical_prob(exp=exp, out_file=exp_file, lnuc=5)
         exp = MethPrintExperiment.load(exp_file)
         MethPrintAnalysis().sort_by_linkage(exp=exp, data_name="meth_prob")
-        exp.save(overwrite=True)
+        exp.save()
         out_file = tmp_path / "methmap_sorted.png"
 
         result = runner.invoke(
@@ -2198,7 +2198,7 @@ class TestPlotMeth:
         MethPrintAnalysis().sort_by_linkage(
             exp=exp, data_name="meth_prob", fill_nan=0.0
         )
-        exp.save(overwrite=True)
+        exp.save()
         return exp_file
 
     @pytest.mark.parametrize("value", ["prob", "energy"])

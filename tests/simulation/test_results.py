@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import h5py
 import numpy as np
+import pandas as pd
 import pytest
 from catella.h5_array import H5Array
 from catella.simulation._io import (
@@ -129,8 +130,9 @@ class TestNoData:
             self._create(tmp_path, no_data={"chr1": [False, True]})
 
 
-class TestSaveOverwriteCleanup:
-    def test_tmp_file_removed_on_keyboard_interrupt(self, tmp_path):
+class TestSaveInPlace:
+    @pytest.fixture
+    def path(self, tmp_path):
         dataset = SimDataset.create(
             chroms=["chr1"],
             nmol={"chr1": 1},
@@ -139,23 +141,52 @@ class TestSaveOverwriteCleanup:
             settings=_make_settings(),
             out_dir=tmp_path / "ds",
         )
+        arr = H5Array.create((2, 3), dir=tmp_path)
+        arr.write_batch(0, 2, np.arange(6.0).reshape(2, 3))
+        dataset._analysis["chr1"]["sig"] = arr
         dataset.save()
-        path = Path(dataset._dataset_file)
-        # An analysis entry backed by the destination file itself
-        # forces save() onto its tmp-then-replace overwrite path.
-        dataset._global_analysis["dummy"] = H5Array.create((2, 2), path=path)
+        return Path(dataset._dataset_file)
 
+    def test_resave_keeps_entries_and_size(self, path):
+        size = path.stat().st_size
+        loaded = SimDataset.load(path)
+        loaded.save()
+        assert path.stat().st_size < 1.5 * size
+        reloaded = SimDataset.load(path)
+        np.testing.assert_array_equal(
+            reloaded.analysis["chr1"]["sig"].to_numpy(),
+            np.arange(6.0).reshape(2, 3),
+        )
+
+    def test_held_reference_usable_after_save(self, path):
+        loaded = SimDataset.load(path)
+        ref = loaded.analysis["chr1"]["sig"]
+        loaded.save()
+        np.testing.assert_array_equal(
+            ref.to_numpy(), np.arange(6.0).reshape(2, 3)
+        )
+
+    def test_interrupted_save_keeps_previous_analysis(self, path):
+        loaded = SimDataset.load(path)
+        loaded._analysis["chr1"]["df"] = pd.DataFrame({"v": [1.0]})
         with (
             patch(
-                "catella.simulation.results.os.replace",
+                "catella._analysis_io._link_or_write",
                 side_effect=KeyboardInterrupt,
             ),
             pytest.raises(KeyboardInterrupt),
         ):
-            dataset.save(path, overwrite=True)
+            loaded.save()
+        reloaded = SimDataset.load(path)
+        assert set(reloaded.analysis["chr1"]) == {"sig"}
+        assert loaded.analysis["chr1"]["sig"].shape == (2, 3)
 
-        leaked = list(path.parent.glob(f"{path.name}.tmp*"))
-        assert not leaked
+    def test_file_open_elsewhere_raises(self, path):
+        loaded = SimDataset.load(path)
+        other = SimDataset.load(path)
+        with pytest.raises(OSError, match="open elsewhere"):
+            loaded.save()
+        other.analysis["chr1"]["sig"].close()
 
 
 class TestExtractMissingMolecules:

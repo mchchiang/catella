@@ -162,29 +162,75 @@ class TestSaveToExistingFile:
             exp.save(path)
             assert spy.call_count == 0
 
-    def test_tmp_file_removed_on_keyboard_interrupt_during_overwrite(
-        self, tmp_path
-    ):
+
+class TestSaveInPlace:
+    @pytest.fixture
+    def path(self, tmp_path):
         exp = MethPrintExperiment._create(
             _raw_data={"chr1": _make_raw("chr1", nmol=2, nbp=6, seed=0)}
         )
+        arr = H5Array.create((2, 3), dir=tmp_path)
+        arr.write_batch(0, 2, np.arange(6.0).reshape(2, 3))
+        exp._analysis["chr1"]["sig"] = arr
         path = tmp_path / "experiment.h5"
         exp.save(path)
-        # An analysis entry backed by the destination file itself
-        # forces save() onto its tmp-then-replace overwrite path.
-        exp._global_analysis["dummy"] = H5Array.create((2, 2), path=path)
+        return path
 
+    def test_resave_keeps_entries_and_size(self, path):
+        size = path.stat().st_size
+        loaded = MethPrintExperiment.load(path)
+        loaded.save()
+        assert path.stat().st_size < 1.5 * size
+        reloaded = MethPrintExperiment.load(path)
+        np.testing.assert_array_equal(
+            reloaded.analysis["chr1"]["sig"].to_numpy(),
+            np.arange(6.0).reshape(2, 3),
+        )
+
+    def test_held_reference_usable_after_save(self, path):
+        loaded = MethPrintExperiment.load(path)
+        ref = loaded.analysis["chr1"]["sig"]
+        loaded.save(path)
+        np.testing.assert_array_equal(
+            ref.to_numpy(), np.arange(6.0).reshape(2, 3)
+        )
+
+    def test_interrupted_save_keeps_previous_analysis(self, path):
+        loaded = MethPrintExperiment.load(path)
+        loaded._analysis["chr1"]["df"] = pd.DataFrame({"v": [1.0]})
         with (
             patch(
-                "catella.experiment.methdata.os.replace",
+                "catella._analysis_io._link_or_write",
                 side_effect=KeyboardInterrupt,
             ),
             pytest.raises(KeyboardInterrupt),
         ):
-            exp.save(path, overwrite=True)
+            loaded.save()
+        reloaded = MethPrintExperiment.load(path)
+        assert set(reloaded.analysis["chr1"]) == {"sig"}
+        assert loaded.analysis["chr1"]["sig"].shape == (2, 3)
 
-        leaked = list(tmp_path.glob(f"{path.name}.tmp*"))
-        assert not leaked
+    def test_save_to_other_existing_file(self, path, tmp_path):
+        other = tmp_path / "other.h5"
+        exp = MethPrintExperiment._create(
+            _raw_data={"chr2": _make_raw("chr2", nmol=2, nbp=6, seed=1)}
+        )
+        exp.save(other)
+        loaded = MethPrintExperiment.load(path)
+        loaded.save(other)
+        reloaded = MethPrintExperiment.load(other)
+        assert reloaded.chroms == ("chr1",)
+        np.testing.assert_array_equal(
+            reloaded.analysis["chr1"]["sig"].to_numpy(),
+            np.arange(6.0).reshape(2, 3),
+        )
+
+    def test_file_open_elsewhere_raises(self, path):
+        loaded = MethPrintExperiment.load(path)
+        other = MethPrintExperiment.load(path)
+        with pytest.raises(OSError, match="open elsewhere"):
+            loaded.save()
+        other.analysis["chr1"]["sig"].close()
 
 
 class TestLabeledAnalysisLoad:

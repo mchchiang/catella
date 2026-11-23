@@ -17,6 +17,11 @@ import numpy as np
 import pandas as pd
 
 from catella import h5_utils
+from catella._analysis_io import (
+    _analysis_group,
+    _read_entries,
+    _save_analysis,
+)
 from catella._batches import _row_batches
 from catella._dataclasses import _add_frozen_properties, _init_frozen_fields
 from catella._warnings import _warn
@@ -39,7 +44,7 @@ from catella.experiment._ingest import (
     _read_chromsize,
 )
 from catella.experiment._qc import _check_percentiles, _chrom_qc_rows
-from catella.h5_array import H5Array, _is_label
+from catella.h5_array import H5Array
 
 # Estimated peak memory of to_dense(as_h5array=False) per molecule and
 # base pair: the pivot needs ~9x the 8-byte result (measured on 1000 and
@@ -557,11 +562,14 @@ class MethPrintExperiment:
         )
         return exp
 
-    def save(
-        self, exp_file: str | Path | None = None, *, overwrite: bool = False
-    ):
+    def save(self, exp_file: str | Path | None = None):
         """
         Save the experiment data and analysis to an HDF5 file.
+
+        Saving to an existing file updates it in place. Analysis arrays
+        already stored in the file are relinked rather than copied, so
+        re-saving needs no extra disk space for them, and loaded arrays
+        held elsewhere stay usable afterwards.
 
         Parameters
         ----------
@@ -570,21 +578,21 @@ class MethPrintExperiment:
             the file the experiment is already backed by. If None,
             saves to the file this experiment was loaded from or last
             saved to.
-        overwrite : bool, default False
-            If True, allow saving to the same file that backs an
-            existing `H5Array` analysis entry, by writing to a temporary
-            sibling file and atomically renaming it into place.
 
         Raises
         ------
         ValueError
             If `exp_file` is None and this experiment has no file to
-            default to (e.g. fresh from `load_raw()` and never saved),
-            or if `exp_file` is the same file that backs an `H5Array`
-            analysis entry already held by this experiment and
-            `overwrite` is False.
+            default to (e.g. fresh from `load_raw()` and never saved).
         OSError
-            If the file cannot be written to disk.
+            If the file is open elsewhere (e.g. by another loaded
+            experiment) or cannot be written to disk.
+
+        Notes
+        -----
+        An interrupted save keeps the previous analysis. A hard kill or
+        power loss mid-save can corrupt the file; save to a new path to
+        be safe.
         """
         if exp_file is None:
             exp_file = self._exp_file
@@ -595,90 +603,34 @@ class MethPrintExperiment:
                 )
 
         dest_path = Path(exp_file)
-        dest = str(dest_path.resolve())
-        collision = any(
-            isinstance(entry, H5Array)
-            and str(Path(entry.path).resolve()) == dest
-            for data in list(self._analysis.values()) + [self._global_analysis]
-            for entry in data.values()
+        same_file = (
+            self._exp_file is not None
+            and dest_path.exists()
+            and Path(self._exp_file).exists()
+            and os.path.samefile(self._exp_file, dest_path)
         )
-        if collision:
-            if not overwrite:
-                raise ValueError(
-                    "cannot save to the same file that backs an "
-                    "existing H5Array analysis entry; save to a "
-                    "different path, or pass overwrite=True to safely "
-                    "replace it in place"
-                )
-            colliding = [
-                (data, name, entry.dataset_path)
-                for data in list(self._analysis.values())
-                + [self._global_analysis]
-                for name, entry in data.items()
-                if isinstance(entry, H5Array)
-                and str(Path(entry.path).resolve()) == dest
-            ]
-            tmp_path = dest_path.with_name(
-                dest_path.name + f".tmp{os.getpid()}"
-            )
-            closed = False
-            try:
-                self.save(tmp_path)
-                # Release the OS-level handles on dest before
-                # replacing it: unlike POSIX, Windows refuses to
-                # rename over a file that is still open.
-                for data, name, _ in colliding:
-                    data[name].close()
-                closed = True
-                os.replace(tmp_path, dest_path)
-            except BaseException:
-                tmp_path.unlink(missing_ok=True)
-                raise
-            finally:
-                if closed:
-                    for data, name, dataset_path in colliding:
-                        data[name] = H5Array.load_from(dest_path, dataset_path)
-            self._exp_file = dest
-            return
 
-        with h5py.File(exp_file, "a") as h5stream:
-            # Skip only if re-saving to the same file we're already
-            # backed by; other destinations always get a fresh copy.
-            same_file = (
-                self._exp_file is not None
-                and str(Path(self._exp_file).resolve()) == dest
-            )
-            if not same_file or "raw_data" not in h5stream:
-                if "raw_data" in h5stream:
-                    del h5stream["raw_data"]
-                graw = h5stream.create_group("raw_data")
-                for chrom, rdata in self._raw_data.items():
-                    rdata._save(graw)
-                if self._mtase is not None:
-                    h5stream.attrs["mtase"] = ",".join(self._mtase)
-                h5stream.attrs["wrap"] = self._wrap
-                h5stream.attrs["ignore_strand"] = self._ignore_strand
+        def write_raw(h5stream):
+            # Other destinations always get a fresh copy of raw data
+            if same_file and "raw_data" in h5stream:
+                return
+            if "raw_data" in h5stream:
+                del h5stream["raw_data"]
+            graw = h5stream.create_group("raw_data")
+            for rdata in self._raw_data.values():
+                rdata._save(graw)
+            if self._mtase is not None:
+                h5stream.attrs["mtase"] = ",".join(self._mtase)
+            h5stream.attrs["wrap"] = self._wrap
+            h5stream.attrs["ignore_strand"] = self._ignore_strand
 
-            # Save any analysis data
-            if "analysis" in h5stream:
-                del h5stream["analysis"]
-            gana = h5stream.create_group("analysis")
-            for chrom, data in self._analysis.items():
-                gchrom = gana.create_group(chrom)
-                for name, entry in data.items():
-                    if isinstance(entry, H5Array):
-                        entry.save_to(gchrom, name)
-                    else:
-                        h5_utils.save_df(name, entry, gchrom)
-            if "global_analysis" in h5stream:
-                del h5stream["global_analysis"]
-            gana = h5stream.create_group("global_analysis")
-            for name, entry in self._global_analysis.items():
-                if isinstance(entry, H5Array):
-                    entry.save_to(gana, name)
-                else:
-                    h5_utils.save_df(name, entry, gana)
-        self._exp_file = dest
+        _save_analysis(
+            dest_path,
+            self._analysis,
+            self._global_analysis,
+            write_extra=write_raw,
+        )
+        self._exp_file = str(dest_path.resolve())
 
     @classmethod
     def load(
@@ -750,32 +702,17 @@ class MethPrintExperiment:
             )
 
             # Load any analysis data
-            gana = h5stream["analysis"]
+            gana = _analysis_group(h5stream, "analysis")
             for chrom in gana:
                 if chrom not in selected:
                     continue
-                gchrom = gana[chrom]
-                for name in gchrom:
-                    if _is_label(gchrom, name):
-                        continue
-                    if isinstance(gchrom[name], h5py.Dataset):
-                        obj._analysis[chrom][name] = H5Array.load_from(
-                            exp_file, f"analysis/{chrom}/{name}"
-                        )
-                    else:
-                        obj._analysis[chrom][name] = h5_utils.load_df(
-                            name, gchrom
-                        )
-            gana = h5stream["global_analysis"]
-            for name in gana:
-                if _is_label(gana, name):
-                    continue
-                if isinstance(gana[name], h5py.Dataset):
-                    obj._global_analysis[name] = H5Array.load_from(
-                        exp_file, f"global_analysis/{name}"
-                    )
-                else:
-                    obj._global_analysis[name] = h5_utils.load_df(name, gana)
+                entries = _read_entries(gana[chrom], exp_file)
+                for name, entry in entries.items():
+                    obj._analysis[chrom][name] = entry
+            gglobal = _analysis_group(h5stream, "global_analysis")
+            entries = _read_entries(gglobal, exp_file)
+            for name, entry in entries.items():
+                obj._global_analysis[name] = entry
             return obj
 
     @classmethod

@@ -7,7 +7,6 @@ import pytest
 from catella._analysis_io import (
     _analysis_group,
     _read_entries,
-    _replace_group,
     _save_analysis,
     _write_entries,
 )
@@ -177,16 +176,6 @@ class TestSaveAnalysis:
             _save_analysis(path, analysis, glob)
         other.close()
         np.testing.assert_array_equal(analysis["c1"]["a"].to_numpy(), A)
-
-
-class TestReplaceGroup:
-    def test_creates_empty_group(self, tmp_path):
-        with h5py.File(tmp_path / "f.h5", "w") as f:
-            g = f.create_group("a")
-            g.create_dataset("x", data=[1])
-            new = _replace_group(f, "a")
-            assert len(new) == 0
-            assert _replace_group(f, "b").name == "/b"
 
 
 class TestEntries:

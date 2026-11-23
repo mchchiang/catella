@@ -1,6 +1,5 @@
 # results.py
 
-import os
 import shutil
 import weakref
 from collections import Counter
@@ -17,14 +16,13 @@ import numpy as np
 
 from catella import h5_utils
 from catella._analysis_io import (
+    _analysis_group,
     _read_entries,
-    _replace_group,
-    _write_entries,
+    _save_analysis,
 )
 from catella._chroms import _normalize_chroms
 from catella._dataclasses import _add_frozen_properties, _init_frozen_fields
 from catella.containers import DataclassPublicProxy, DataFrameMap, FixedKeyMap
-from catella.h5_array import H5Array
 from catella.simulation._inputs import _check_fill_nan
 from catella.simulation._io import (
     SimFileMapper,
@@ -765,64 +763,51 @@ class SimDataset:
                 file_map=file_map,
                 dataset_file=dataset_file,
             )
-            gana = h5stream["analysis"]
+            gana = _analysis_group(h5stream, "analysis")
             for chrom in gana:
                 entries = _read_entries(gana[chrom], dataset_file)
                 for name, entry in entries.items():
                     obj._analysis[chrom][name] = entry
-            entries = _read_entries(h5stream["global_analysis"], dataset_file)
+            gglobal = _analysis_group(h5stream, "global_analysis")
+            entries = _read_entries(gglobal, dataset_file)
             for name, entry in entries.items():
                 obj._global_analysis[name] = entry
             return obj
 
-    def save(
-        self,
-        dataset_file: str | Path | None = None,
-        *,
-        overwrite: bool = False,
-    ):
+    def save(self, dataset_file: str | Path | None = None):
         """
         Save the dataset metadata and analysis results to an HDF5 file.
 
         Serialize the current state of all chromosome-specific and global
         analysis :class:`DataFrameMap` objects into a persistent HDF5 format.
+        Saving to an existing file updates it in place. Analysis arrays
+        already stored in the file are relinked rather than copied, so
+        re-saving needs no extra disk space for them, and loaded arrays
+        held elsewhere stay usable afterwards.
 
         Parameters
         ----------
         dataset_file : str | Path, optional
             The output HDF5 file for the dataset. If the file already exists,
-            analysis groups will be overwritten. If None, data will be written
-            to the original dataset file from loading or creation.
-        overwrite : bool, default False
-            If True, allow saving to the same file that backs an
-            existing `H5Array` analysis entry, by writing to a temporary
-            sibling file and atomically renaming it into place.
+            its metadata and analysis groups are replaced. If None, data will
+            be written to the original dataset file from loading or creation.
 
         Raises
         ------
         OSError
-            If the file cannot be written to disk.
-        ValueError
-            If `dataset_file` is the same file that backs an `H5Array`
-            analysis entry already held by this dataset, and `overwrite`
-            is False.
+            If the file is open elsewhere (e.g. by another loaded dataset)
+            or cannot be written to disk.
+
+        Notes
+        -----
+        An interrupted save keeps the previous analysis. A hard kill or
+        power loss mid-save can corrupt the file; save to a new path to
+        be safe.
         """
         if dataset_file is None:
             dataset_file = self._dataset_file
-        dest_path = Path(dataset_file)
-        colliding = self._entries_backed_by(dest_path)
-        if colliding:
-            if not overwrite:
-                raise ValueError(
-                    "cannot save to the same file that backs an "
-                    "existing H5Array analysis entry; save to a "
-                    "different path, or pass overwrite=True to safely "
-                    "replace it in place"
-                )
-            self._save_replacing(dest_path, colliding)
-            return
 
-        with h5py.File(dataset_file, "a") as h5stream:
+        def write_metadata(h5stream):
             _write_metadata(
                 h5stream,
                 raw_dir=self._raw_dir,
@@ -839,41 +824,13 @@ class SimDataset:
                 no_data=self._no_data,
                 nan_fill=self._nan_fill,
             )
-            gana = _replace_group(h5stream, "analysis")
-            for chrom, data in self._analysis.items():
-                _write_entries(gana.create_group(chrom), data)
-            gglobal = _replace_group(h5stream, "global_analysis")
-            _write_entries(gglobal, self._global_analysis)
 
-    def _entries_backed_by(self, path):
-        """Return `(data, name, dataset_path)` of H5Array entries in `path`."""
-        dest = str(Path(path).resolve())
-        return [
-            (data, name, entry.dataset_path)
-            for data in [*self._analysis.values(), self._global_analysis]
-            for name, entry in data.items()
-            if isinstance(entry, H5Array)
-            and str(Path(entry.path).resolve()) == dest
-        ]
-
-    def _save_replacing(self, dest_path, colliding):
-        """Save to a sibling file, then atomically replace `dest_path`."""
-        tmp_path = dest_path.with_name(dest_path.name + f".tmp{os.getpid()}")
-        closed = False
-        try:
-            self.save(tmp_path)
-            # Windows cannot rename over an open file, so close entries first
-            for data, name, _ in colliding:
-                data[name].close()
-            closed = True
-            os.replace(tmp_path, dest_path)
-        except BaseException:
-            tmp_path.unlink(missing_ok=True)
-            raise
-        finally:
-            if closed:
-                for data, name, dataset_path in colliding:
-                    data[name] = H5Array.load_from(dest_path, dataset_path)
+        _save_analysis(
+            Path(dataset_file),
+            self._analysis,
+            self._global_analysis,
+            write_extra=write_metadata,
+        )
 
     @staticmethod
     def _cleanup_tmp_dir(tmp_dir):

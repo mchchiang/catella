@@ -202,15 +202,23 @@ class TestSaveLoadRoundTrip:
             occup.to_numpy(), dataset.analysis["chr1"]["occup"].to_numpy()
         )
 
-    def test_save_rejects_same_path_as_backing_h5array(self, tmp_path):
+    def test_resave_to_backing_file_keeps_h5array(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=3, nbp=10)
         ana = SimAnalysis()
         ana.compute_occup(dataset=dataset, batch_size=2)
         dataset.save()
         loaded = SimDataset.load(dataset._dataset_file)
+        want = loaded.analysis["chr1"]["occup"].to_numpy()
 
-        with pytest.raises(ValueError):
-            loaded.save(loaded._dataset_file)
+        loaded.save(loaded._dataset_file)
+
+        reloaded = SimDataset.load(dataset._dataset_file)
+        np.testing.assert_array_equal(
+            reloaded.analysis["chr1"]["occup"].to_numpy(), want
+        )
+        np.testing.assert_array_equal(
+            loaded.analysis["chr1"]["occup"].to_numpy(), want
+        )
 
 
 class TestSortByLinkage:

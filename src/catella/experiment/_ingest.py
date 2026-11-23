@@ -635,6 +635,17 @@ def _stream_rows_to_staging(
         `mtase` label on either strand, instead of only the row's own
         recorded `strand`.
 
+    Returns
+    -------
+    dict of str to (np.ndarray, np.ndarray) or None
+        Chromosome -> `(start, end)`, int64 of length nmol, the
+        half-open extent `[start, end)` of each molecule, taken before
+        the `mod_code` and strand filters and clipped to the
+        chromosome; `(0, 0)` for a molecule with no in-bounds row.
+        Taken from the `align_start`/`align_end` columns if present,
+        else from the first and last row of each molecule. None if
+        `wrap`, since folded positions have no extent.
+
     Warns
     -----
     UserWarning
@@ -642,6 +653,16 @@ def _stream_rows_to_staging(
         unaligned bases); those rows are dropped.
     """
     n_out = {}
+    extents = None
+    if not wrap:
+        extents = {
+            chrom: (
+                np.full(len(m["mol_id"]), full_sizes[chrom], dtype=np.int64),
+                np.zeros(len(m["mol_id"]), dtype=np.int64),
+            )
+            for chrom, m in mol_maps.items()
+        }
+    has_align = all(c in name_for for c in _OPTIONAL_NAMES)
     valid_by_chrom = {}
     if mtase is not None and refseq_by_chrom is not None:
         for chrom, seq in refseq_by_chrom.items():
@@ -653,6 +674,8 @@ def _stream_rows_to_staging(
             valid_by_chrom[chrom] = (plus, minus)
 
     needed = ["mol_id", "upos", "chrom", "strand", "mod_qual", "mod_code"]
+    if has_align and extents is not None:
+        needed += list(_OPTIONAL_NAMES)
     for batch_df in _iter_csv_chunks(
         data_file, header_names, name_for, sep, needed, chunk_size, block_size
     ):
@@ -666,6 +689,8 @@ def _stream_rows_to_staging(
                 n_out[chrom] = n_out.get(chrom, 0) + int((~in_bounds).sum())
                 group = group.loc[in_bounds]
             mol_index = group["mol_id"].map(mapping["index"])
+            if extents is not None:
+                _update_extents(extents[chrom], group, mol_index, has_align)
             keep = mol_index.notna().to_numpy() & (
                 group["mod_code"].to_numpy() != "-"
             )
@@ -718,6 +743,67 @@ def _stream_rows_to_staging(
             f"dropped {n} row(s) on chrom '{chrom}' with ref_position "
             f"outside [0, {full_sizes[chrom]})"
         )
+    if extents is None:
+        return None
+    return {
+        chrom: _clip_extents(start, end, full_sizes[chrom])
+        for chrom, (start, end) in extents.items()
+    }
+
+
+def _update_extents(extent, group, mol_index, has_align):
+    """
+    Widen per-molecule extents in place with one chunk of rows.
+
+    Parameters
+    ----------
+    extent : (np.ndarray, np.ndarray)
+        int64 running `(start, end)` per molecule.
+    group : pd.DataFrame
+        Rows of one chromosome, with `upos` and, if `has_align`,
+        `align_start`/`align_end` columns.
+    mol_index : pd.Series
+        Molecule index of each row of `group`; nan for molecules not
+        kept.
+    has_align : bool
+        Whether to use the alignment columns instead of `upos`.
+    """
+    mapped = mol_index.notna().to_numpy()
+    if not mapped.any():
+        return
+    idx = mol_index.to_numpy()[mapped].astype(np.int64)
+    if has_align:
+        lo = group["align_start"].to_numpy()[mapped]
+        hi = group["align_end"].to_numpy()[mapped]
+    else:
+        lo = group["upos"].to_numpy()[mapped]
+        hi = lo + 1
+    np.minimum.at(extent[0], idx, lo.astype(np.int64))
+    np.maximum.at(extent[1], idx, hi.astype(np.int64))
+
+
+def _clip_extents(start, end, nbp):
+    """
+    Clip extents to `[0, nbp]`, with empty ones set to `(0, 0)`.
+
+    Parameters
+    ----------
+    start, end : np.ndarray
+        int64 half-open extent per molecule.
+    nbp : int
+        Chromosome length (bp).
+
+    Returns
+    -------
+    start, end : np.ndarray
+        int64, clipped copies.
+    """
+    start = np.clip(start, 0, nbp)
+    end = np.clip(end, 0, nbp)
+    empty = start >= end
+    start[empty] = 0
+    end[empty] = 0
+    return start, end
 
 
 def _ensure_chrom_data_group(graw, chrom, nbp, refseq_by_chrom):
@@ -807,6 +893,7 @@ def _ingest_into(
 
         dt = h5py.string_dtype(encoding="utf-8")
         appenders = {}
+        gdatas = {}
         for chrom, m in mol_maps.items():
             gdata = _ensure_chrom_data_group(
                 graw, chrom, sizes[chrom], refseq_by_chrom
@@ -818,8 +905,9 @@ def _ingest_into(
                 columns=list(_RAW_COLUMN_SPEC),
                 dtypes=_RAW_COLUMN_SPEC,
             )
+            gdatas[chrom] = gdata
 
-        _stream_rows_to_staging(
+        extents = _stream_rows_to_staging(
             read_path,
             header_names,
             name_for,
@@ -834,6 +922,9 @@ def _ingest_into(
             mtase=mtase,
             ignore_strand=ignore_strand,
         )
+        for chrom, (start, end) in (extents or {}).items():
+            gdatas[chrom].create_dataset(f"{name}_mol_start", data=start)
+            gdatas[chrom].create_dataset(f"{name}_mol_end", data=end)
     finally:
         if scratch_path is not None:
             os.remove(scratch_path)
@@ -962,6 +1053,9 @@ def _merge_staging(graw, ingested):
                 src = handles[name][f"raw_data/{chrom}/data"]
                 src.copy(f"{name}_mol_id", gdata, name=f"{name}_mol_id")
                 src.copy(f"{name}_data", gdata, name=f"{name}_data")
+                for key in (f"{name}_mol_start", f"{name}_mol_end"):
+                    if key in src:
+                        src.copy(key, gdata, name=key)
     finally:
         for h in handles.values():
             h.close()

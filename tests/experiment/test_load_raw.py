@@ -1326,3 +1326,176 @@ class TestParallelReading:
         exp_gz.close()
 
         _assert_snapshots_equal(snap_plain, snap_gz)
+
+
+_ALIGN_HEADER = (
+    "read_id\tref_position\tchrom\tref_strand\tmod_qual\tmod_code\t"
+    "alignment_start\talignment_end\n"
+)
+
+
+def _extent_setup(tmp_path, rows, header=_HEADER, sizes=None, name="t"):
+    data_file = tmp_path / f"{name}.tsv"
+    _write_tsv(data_file, rows, header=header)
+    chromsize = tmp_path / "sizes.tsv"
+    _write_chromsize(chromsize, sizes or {"chr1": 100})
+    return chromsize, data_file
+
+
+def _extent(raw, src="test"):
+    return (
+        getattr(raw, f"{src}_mol_start").tolist(),
+        getattr(raw, f"{src}_mol_end").tolist(),
+    )
+
+
+class TestReadExtents:
+    def test_from_alignment_columns(self, tmp_path):
+        rows = [
+            ("m0", 12, "chr1", "+", 0.9, "a", 10, 40),
+            ("m0", 30, "chr1", "+", 0.8, "a", 10, 40),
+            ("m1", 60, "chr1", "-", 0.7, "a", 55, 90),
+        ]
+        chromsize, f = _extent_setup(tmp_path, rows, header=_ALIGN_HEADER)
+        exp = MethPrintExperiment.load_raw(chromsize=chromsize, test_file=f)
+        assert _extent(exp.raw["chr1"]) == ([10, 55], [40, 90])
+        exp.close()
+
+    def test_fallback_to_first_and_last_row(self, tmp_path):
+        rows = [
+            ("m0", 12, "chr1", "+", 0.9, "a"),
+            ("m0", 30, "chr1", "+", 0.8, "a"),
+            ("m1", 60, "chr1", "+", 0.7, "a"),
+        ]
+        chromsize, f = _extent_setup(tmp_path, rows)
+        exp = MethPrintExperiment.load_raw(chromsize=chromsize, test_file=f)
+        assert _extent(exp.raw["chr1"]) == ([12, 60], [31, 61])
+        exp.close()
+
+    def test_filtered_rows_keep_extent(self, tmp_path):
+        rows = [
+            ("m0", 5, "chr1", "+", 0.9, "-"),
+            ("m0", 20, "chr1", "+", 0.8, "a"),
+            ("m0", 50, "chr1", "+", 0.7, "-"),
+            ("m1", 70, "chr1", "+", 0.7, "-"),
+        ]
+        chromsize, f = _extent_setup(tmp_path, rows)
+        exp = MethPrintExperiment.load_raw(chromsize=chromsize, test_file=f)
+        raw = exp.raw["chr1"]
+        assert _extent(raw) == ([5, 70], [51, 71])
+        assert raw.test_data["pos"].tolist() == [20]
+        exp.close()
+
+    def test_clipped_to_chromosome(self, tmp_path):
+        rows = [("m0", 5, "chr1", "+", 0.9, "a", -3, 140)]
+        chromsize, f = _extent_setup(tmp_path, rows, header=_ALIGN_HEADER)
+        exp = MethPrintExperiment.load_raw(chromsize=chromsize, test_file=f)
+        assert _extent(exp.raw["chr1"]) == ([0], [100])
+        exp.close()
+
+    def test_out_of_bounds_rows_do_not_widen_fallback(self, tmp_path):
+        rows = [
+            ("m0", -1, "chr1", "+", 0.9, "a"),
+            ("m0", 7, "chr1", "+", 0.8, "a"),
+        ]
+        chromsize, f = _extent_setup(tmp_path, rows)
+        with pytest.warns(UserWarning, match="dropped 1 row"):
+            exp = MethPrintExperiment.load_raw(
+                chromsize=chromsize, test_file=f
+            )
+        assert _extent(exp.raw["chr1"]) == ([7], [8])
+        exp.close()
+
+    def test_chunks_do_not_change_extent(self, tmp_path):
+        rows = [("m0", p, "chr1", "+", 0.5, "a") for p in (40, 3, 77, 15)]
+        chromsize, f = _extent_setup(tmp_path, rows)
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=f, chunk_size=1
+        )
+        assert _extent(exp.raw["chr1"]) == ([3], [78])
+        exp.close()
+
+    def test_colidx_with_alignment_columns(self, tmp_path):
+        rows = [("m0", 12, "chr1", "+", 0.9, "a", 10, 40)]
+        chromsize, f = _extent_setup(tmp_path, rows, header=None)
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize,
+            test_file=f,
+            colidx=[0, 1, 2, 3, 4, 5, 6, 7],
+        )
+        assert _extent(exp.raw["chr1"]) == ([10], [40])
+        exp.close()
+
+    def test_colidx_without_alignment_columns(self, tmp_path):
+        rows = [("m0", 12, "chr1", "+", 0.9, "a", 10, 40)]
+        chromsize, f = _extent_setup(tmp_path, rows, header=None)
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=f, colidx=[0, 1, 2, 3, 4, 5]
+        )
+        assert _extent(exp.raw["chr1"]) == ([12], [13])
+        exp.close()
+
+    def test_none_with_wrap(self, tmp_path):
+        rows = [("m0", 12, "chr1", "+", 0.9, "a", 10, 40)]
+        chromsize, f = _extent_setup(tmp_path, rows, header=_ALIGN_HEADER)
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=f, wrap=True
+        )
+        raw = exp.raw["chr1"]
+        assert raw.test_mol_start is None
+        assert raw.test_mol_end is None
+        exp.close()
+
+    def test_multi_file_stores_each_source(self, tmp_path):
+        test_rows = [("m0", 12, "chr1", "+", 0.9, "a", 10, 40)]
+        ctrl_rows = [("u0", 50, "chr1", "+", 0.1, "a", 45, 95)]
+        chromsize, f = _extent_setup(
+            tmp_path, test_rows, header=_ALIGN_HEADER
+        )
+        _, uf = _extent_setup(
+            tmp_path, ctrl_rows, header=_ALIGN_HEADER, name="u"
+        )
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=f, unmeth_file=uf
+        )
+        raw = exp.raw["chr1"]
+        assert _extent(raw) == ([10], [40])
+        assert _extent(raw, "unmeth") == ([45], [95])
+        assert raw.meth_mol_start is None
+        exp.close()
+
+    def test_save_load_roundtrip(self, tmp_path):
+        rows = [
+            ("m0", 12, "chr1", "+", 0.9, "a", 10, 40),
+            ("m1", 60, "chr1", "-", 0.7, "a", 55, 90),
+        ]
+        chromsize, f = _extent_setup(tmp_path, rows, header=_ALIGN_HEADER)
+        exp = MethPrintExperiment.load_raw(chromsize=chromsize, test_file=f)
+        saved = tmp_path / "exp.h5"
+        exp.save(saved)
+        exp.close()
+        reloaded = MethPrintExperiment.load(saved)
+        raw = reloaded.raw["chr1"]
+        assert _extent(raw) == ([10, 55], [40, 90])
+        assert raw.test_mol_start.dtype == np.int64
+        reloaded.close()
+
+    def test_old_file_without_extents_loads(self, tmp_path):
+        import h5py
+
+        rows = [("m0", 12, "chr1", "+", 0.9, "a", 10, 40)]
+        chromsize, f = _extent_setup(tmp_path, rows, header=_ALIGN_HEADER)
+        exp = MethPrintExperiment.load_raw(chromsize=chromsize, test_file=f)
+        saved = tmp_path / "exp.h5"
+        exp.save(saved)
+        exp.close()
+        with h5py.File(saved, "a") as h5:
+            gdata = h5["raw_data/chr1/data"]
+            del gdata["test_mol_start"]
+            del gdata["test_mol_end"]
+        reloaded = MethPrintExperiment.load(saved)
+        raw = reloaded.raw["chr1"]
+        assert raw.test_mol_start is None
+        assert raw.test_mol_end is None
+        assert list(raw.test_mol_id) == ["m0"]
+        reloaded.close()

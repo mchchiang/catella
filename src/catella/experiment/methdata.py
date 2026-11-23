@@ -128,6 +128,48 @@ class MethPrintData:
         }
     )
 
+    _frozen_test_mol_start: np.ndarray | None = field(
+        metadata={
+            "doc": "np.ndarray: Start (bp, inclusive) of each test "
+            "molecule's read extent, or None if not recorded."
+        }
+    )
+
+    _frozen_test_mol_end: np.ndarray | None = field(
+        metadata={
+            "doc": "np.ndarray: End (bp, exclusive) of each test "
+            "molecule's read extent, or None if not recorded."
+        }
+    )
+
+    _frozen_unmeth_mol_start: np.ndarray | None = field(
+        metadata={
+            "doc": "np.ndarray: Start (bp, inclusive) of each "
+            "unmethylated control's read extent, or None."
+        }
+    )
+
+    _frozen_unmeth_mol_end: np.ndarray | None = field(
+        metadata={
+            "doc": "np.ndarray: End (bp, exclusive) of each "
+            "unmethylated control's read extent, or None."
+        }
+    )
+
+    _frozen_meth_mol_start: np.ndarray | None = field(
+        metadata={
+            "doc": "np.ndarray: Start (bp, inclusive) of each "
+            "methylated control's read extent, or None."
+        }
+    )
+
+    _frozen_meth_mol_end: np.ndarray | None = field(
+        metadata={
+            "doc": "np.ndarray: End (bp, exclusive) of each "
+            "methylated control's read extent, or None."
+        }
+    )
+
     def __init__(self, **kwargs: Any):
         _init_frozen_fields(
             self, kwargs, "use MethPrintData._load() to instantiate this class"
@@ -143,23 +185,17 @@ class MethPrintData:
             gmeta.create_dataset("refseq", data=self._frozen_refseq, dtype=dt)
         gdata = gchrom.create_group("data")
 
-        def save_data(name, mol_id, df, gdata):
-            if mol_id is not None and df is not None:
-                gdata.create_dataset(name + "_mol_id", data=mol_id, dtype=dt)
-                h5_utils.save_df(name + "_data", df, gdata)
-
-        save_data(
-            "test", self._frozen_test_mol_id, self._frozen_test_data, gdata
-        )
-        save_data(
-            "unmeth",
-            self._frozen_unmeth_mol_id,
-            self._frozen_unmeth_data,
-            gdata,
-        )
-        save_data(
-            "meth", self._frozen_meth_mol_id, self._frozen_meth_data, gdata
-        )
+        for name in ("test", "unmeth", "meth"):
+            mol_id = getattr(self, f"_frozen_{name}_mol_id")
+            df = getattr(self, f"_frozen_{name}_data")
+            if mol_id is None or df is None:
+                continue
+            gdata.create_dataset(name + "_mol_id", data=mol_id, dtype=dt)
+            h5_utils.save_df(name + "_data", df, gdata)
+            for key in ("mol_start", "mol_end"):
+                arr = getattr(self, f"_frozen_{name}_{key}")
+                if arr is not None:
+                    gdata.create_dataset(f"{name}_{key}", data=arr)
 
     @classmethod
     def _load(cls, group, chrom) -> Self:
@@ -181,20 +217,16 @@ class MethPrintData:
             return None, None
 
         gdata = gchrom["data"]
-        test_mol_id, test_data = load_data("test", gdata)
-        unmeth_mol_id, unmeth_data = load_data("unmeth", gdata)
-        meth_mol_id, meth_data = load_data("meth", gdata)
-        return cls._create(
-            chrom=chrom,
-            nbp=nbp,
-            refseq=refseq,
-            test_mol_id=test_mol_id,
-            test_data=test_data,
-            unmeth_mol_id=unmeth_mol_id,
-            unmeth_data=unmeth_data,
-            meth_mol_id=meth_mol_id,
-            meth_data=meth_data,
-        )
+        kwargs = {}
+        for name in ("test", "unmeth", "meth"):
+            mol_id, df = load_data(name, gdata)
+            kwargs[f"{name}_mol_id"] = mol_id
+            kwargs[f"{name}_data"] = df
+            for key in ("mol_start", "mol_end"):
+                ds = f"{name}_{key}"
+                if mol_id is not None and ds in gdata:
+                    kwargs[ds] = gdata[ds][()].astype(np.int64)
+        return cls._create(chrom=chrom, nbp=nbp, refseq=refseq, **kwargs)
 
     @classmethod
     def _create(cls, **kwargs) -> Self:
@@ -424,7 +456,8 @@ class MethPrintExperiment:
             (default), all chromosomes in `chromsize` are processed.
         wrap : bool, default False
             If True, calculates positions relative to the fiber center
-            (useful for circular or symmetrical fibers).
+            (useful for circular or symmetrical fibers). No read
+            extents are recorded (see Notes).
         ignore_strand : bool, default False
             If True, ignore each row's recorded `strand` for `mtase`
             context filtering, and in `filter_dropout`,
@@ -483,13 +516,24 @@ class MethPrintExperiment:
             chromosome's length in `chromsize`, if `mtase`
             contains an unknown or duplicate label, or if
             `balance_strand` is True and `max_nmol` is None or less
-            than 2.
+            than 2, or if `colidx` has neither 6 nor 8 entries.
 
         Warns
         -----
         UserWarning
             If `balance_strand` is True and a chromosome has fewer
-            than `max_nmol // 2` molecules on either strand.
+            than `max_nmol // 2` molecules on either strand, or if
+            rows have a `ref_position` outside the chromosome (those
+            rows are dropped).
+
+        Notes
+        -----
+        Unless `wrap` is True, the half-open read extent of each
+        molecule is stored as `MethPrintData.{src}_mol_start` and
+        `{src}_mol_end`, clipped to the chromosome. It comes from the
+        `alignment_start`/`alignment_end` columns if the file has
+        them, and otherwise from the first and last row of the
+        molecule, which is shorter if rows were filtered out upstream.
         """
         if balance_strand:
             if max_nmol is None:

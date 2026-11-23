@@ -267,6 +267,60 @@ def test_downsample_stride_selects_expected_rows():
     np.testing.assert_array_equal(result, values[0:nrow:step, :])
 
 
+@pytest.mark.parametrize(
+    ("dtype", "how", "expected"),
+    [
+        (np.int8, "mean", np.float64),
+        (np.int8, "sum", np.int64),
+        (np.int8, "min", np.int8),
+        (np.int8, "max", np.int8),
+        (np.int8, "stride", np.int8),
+        (np.float32, "mean", np.float32),
+        (np.float32, "sum", np.float32),
+        (np.float32, "max", np.float32),
+    ],
+)
+def test_downsample_output_dtype(dtype, how, expected):
+    values = np.arange(20).reshape(10, 2).astype(dtype)
+    arr = H5Array.create(values.shape, dtype=dtype)
+    arr.write_batch(0, 10, values)
+    assert arr.downsample(3, how=how).dtype == expected
+
+
+@pytest.mark.parametrize("how", ["sum", "min", "max"])
+def test_downsample_integer_values_match_manual_bins(how):
+    nrow, ncol, max_rows = 10, 3, 3
+    values = np.arange(nrow * ncol, dtype=np.int64).reshape(nrow, ncol)
+    arr = H5Array.create(values.shape, dtype=np.int64)
+    arr.write_batch(0, nrow, values)
+
+    edges = np.linspace(0, nrow, max_rows + 1).astype(int)
+    expected = np.stack(
+        [
+            getattr(np, how)(values[edges[i] : edges[i + 1]], axis=0)
+            for i in range(max_rows)
+        ]
+    )
+    result = arr.downsample(max_rows, how=how, batch_size=2)
+    np.testing.assert_array_equal(result, expected)
+
+
+def test_downsample_float16_mean_of_large_bin_is_finite():
+    values = np.ones((140000, 1), dtype=np.float16)
+    arr = H5Array.create(values.shape, dtype=np.float16)
+    arr.write_batch(0, values.shape[0], values)
+    np.testing.assert_array_equal(arr.downsample(1, how="mean"), [[1.0]])
+
+
+def test_sum_of_integer_array_keeps_integer_dtype():
+    values = np.arange(12, dtype=np.int32).reshape(4, 3)
+    arr = H5Array.create(values.shape, dtype=np.int32)
+    arr.write_batch(0, 4, values)
+    result = arr.sum(axis=0, batch_size=2)
+    assert np.issubdtype(result.dtype, np.integer)
+    np.testing.assert_array_equal(result, values.sum(axis=0))
+
+
 def test_downsample_invalid_how_raises():
     arr, _ = _filled((5, 2), seed=3)
     with pytest.raises(ValueError):

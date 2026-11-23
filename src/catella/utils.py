@@ -43,7 +43,11 @@ def downsample(arr, max_rows, *, how="mean", batch_size=20000):
     Returns
     -------
     np.ndarray
-        Array of shape (min(nrow, max_rows), ncol).
+        Array of shape (min(nrow, max_rows), ncol). If nrow <=
+        `max_rows`, the data are returned as given. Otherwise, "mean"
+        keeps a float dtype and gives float64 for other input; "sum"
+        follows `np.nansum` (e.g., int8 gives int64); "min", "max", and
+        "stride" keep the input dtype.
 
     Raises
     ------

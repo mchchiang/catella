@@ -24,12 +24,13 @@ _ROW_REDUCERS = {
 
 def _acc_mean(acc, batch):
     s, c = acc if acc is not None else (0.0, 0.0)
-    return (s + np.nansum(batch, axis=0), c + (~np.isnan(batch)).sum(axis=0))
+    s = s + np.nansum(batch, axis=0, dtype=np.float64)
+    return (s, c + (~np.isnan(batch)).sum(axis=0))
 
 
 def _acc_sum(acc, batch):
-    s = acc if acc is not None else 0.0
-    return s + np.nansum(batch, axis=0)
+    s = np.nansum(batch, axis=0)
+    return s if acc is None else acc + s
 
 
 def _acc_min(acc, batch):
@@ -50,6 +51,17 @@ _COL_ACCUMULATORS = {
 }
 
 _DOWNSAMPLE_HOW = ("mean", "sum", "min", "max", "stride")
+
+
+def _out_dtype(dtype, how):
+    """Dtype of downsampled output, following NumPy's reductions."""
+    if how == "mean":
+        if np.issubdtype(dtype, np.floating):
+            return np.dtype(dtype)
+        return np.dtype(np.float64)
+    if how == "sum":
+        return np.nansum(np.zeros((0, 1), dtype=dtype), axis=0).dtype
+    return np.dtype(dtype)
 
 _DEFAULT_CHUNK_TARGET_BYTES = 1 << 20  # ~1 MiB per chunk
 
@@ -541,7 +553,11 @@ class H5Array:
         Returns
         -------
         np.ndarray
-            Array of shape (min(nrow, max_rows), ncol).
+            Array of shape (min(nrow, max_rows), ncol). If nrow <=
+            `max_rows`, the data are returned as stored. Otherwise,
+            "mean" keeps a float dtype and gives float64 for other
+            input; "sum" follows `np.nansum` (e.g., int8 gives int64);
+            "min", "max", and "stride" keep the input dtype.
 
         Raises
         ------
@@ -562,7 +578,7 @@ class H5Array:
         acc_fn = _COL_ACCUMULATORS[how]
         fin_fn = _COL_FINALIZERS[how]
         edges = np.linspace(0, nrow, max_rows + 1).astype(int)
-        out = np.empty((max_rows, ncol))
+        out = np.empty((max_rows, ncol), dtype=_out_dtype(self.dtype, how))
         for i in range(max_rows):
             start, stop = edges[i], edges[i + 1]
             acc = None

@@ -264,6 +264,29 @@ def test_downsample_dispatches_h5array_to_its_own_method():
     np.testing.assert_allclose(result, expected)
 
 
+@pytest.mark.parametrize("kind", ["h5array", "ndarray", "dataframe"])
+@pytest.mark.parametrize(
+    ("how", "expected"),
+    [
+        ("mean", np.float64),
+        ("sum", np.int64),
+        ("min", np.int8),
+        ("max", np.int8),
+        ("stride", np.int8),
+    ],
+)
+def test_downsample_integer_input_dtype(kind, how, expected):
+    values = np.arange(20).reshape(10, 2).astype(np.int8)
+    if kind == "h5array":
+        data = H5Array.create(values.shape, dtype=np.int8)
+        data.write_batch(0, 10, values)
+    elif kind == "dataframe":
+        data = pd.DataFrame(values)
+    else:
+        data = values
+    assert utils.downsample(data, 3, how=how).dtype == expected
+
+
 def test_downsample_noop_when_nrow_within_max_rows():
     values = np.random.default_rng(11).random((5, 2))
     np.testing.assert_array_equal(utils.downsample(values, 10), values)

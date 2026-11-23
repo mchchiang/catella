@@ -424,7 +424,7 @@ class TestPlotOccupMultiChrom:
 
     def test_empty_chroms_raises(self, tmp_path):
         dataset = _make_two_chrom_dataset(tmp_path)
-        with pytest.raises(ValueError, match="chroms must not be empty"):
+        with pytest.raises(ValueError, match="regions must not be empty"):
             SimPlot().plot_occup(dataset, chroms=[], show=False)
 
     def test_many_chroms_warn(self, tmp_path, monkeypatch):
@@ -1503,7 +1503,7 @@ class TestPlotLinkerHist:
 
     def test_non_dict_mols_with_several_chroms_raises(self, tmp_path):
         dataset = _linker_dataset(tmp_path, 2)
-        with pytest.raises(ValueError, match="dict keyed by chrom"):
+        with pytest.raises(ValueError, match="dict keyed by region"):
             SimPlot().plot_linker_hist(
                 dataset, chroms=["chr1", "chr2"], mols=[0], show=False
             )

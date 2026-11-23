@@ -1275,7 +1275,7 @@ class TestPoolLinkerHist:
         dataset = _make_multi_chrom_tm_dataset(tmp_path)
         _put_hist(dataset, "chr1", np.ones((5, 3)))
         _put_hist(dataset, "chr2", np.ones((3, 3)))
-        with pytest.raises(ValueError, match="dict keyed by chrom"):
+        with pytest.raises(ValueError, match="dict keyed by region"):
             SimAnalysis().pool_linker_hist(dataset, name="h", mols=[0])
 
     def test_different_bins_raise(self, tmp_path):
@@ -1417,7 +1417,7 @@ class TestExtractLinkerStats:
         dataset = _make_multi_chrom_tm_dataset(tmp_path)
         _put_hist(dataset, "chr1", np.ones((5, 3)))
         _put_hist(dataset, "chr2", np.ones((3, 3)))
-        with pytest.raises(ValueError, match="dict keyed by chrom"):
+        with pytest.raises(ValueError, match="dict keyed by region"):
             SimAnalysis().extract_linker_stats(dataset, name="h", mols=[0])
 
     def test_missing_name_raises(self, tmp_path):

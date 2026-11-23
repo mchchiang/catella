@@ -10,7 +10,7 @@ from catella_cpp import NucPosTM
 
 from catella import utils
 from catella._batches import _row_batches
-from catella._chroms import _normalize_chroms, _per_chrom
+from catella._regions import _normalize_regions, _per_region
 from catella._warnings import _warn
 from catella.h5_array import H5Array
 from catella.simulation._exact import (
@@ -575,7 +575,7 @@ class SimAnalysis:
         if compute_var:
             _require_tm(dataset, "compute_var=True")
         batch_size = _resolve_batch_size(dataset, batch_size)
-        chroms = _normalize_chroms(chroms, default_chroms=dataset.chroms)
+        chroms = _normalize_regions(chroms, default_regions=dataset.chroms)
         if dataset.method == "tm":
             _reject_time(time, record_time)
             _require_eseq(dataset)
@@ -701,7 +701,7 @@ class SimAnalysis:
             exist for `chroms`, or `nworker` is invalid.
         """
         _check_nworker(dataset, nworker)
-        chroms = _normalize_chroms(chroms, default_chroms=dataset.chroms)
+        chroms = _normalize_regions(chroms, default_regions=dataset.chroms)
         if dataset.method == "tm":
             _reject_time(time, record_time)
             _require_eseq(dataset)
@@ -774,7 +774,7 @@ class SimAnalysis:
         """
         _require_tm(dataset, "compute_var_nnuc")
         _check_nworker(dataset, nworker)
-        chroms = _normalize_chroms(chroms, default_chroms=dataset.chroms)
+        chroms = _normalize_regions(chroms, default_regions=dataset.chroms)
         _tm_per_mol(dataset, chroms, name, NucPosTM.getVarN, nworker=nworker)
 
     def compute_var_occup(
@@ -819,7 +819,7 @@ class SimAnalysis:
         _require_tm(dataset, "compute_var_occup")
         _check_nworker(dataset, nworker)
         batch_size = _resolve_batch_size(dataset, batch_size)
-        chroms = _normalize_chroms(chroms, default_chroms=dataset.chroms)
+        chroms = _normalize_regions(chroms, default_regions=dataset.chroms)
         _tm_per_bp(
             dataset,
             chroms,
@@ -875,7 +875,7 @@ class SimAnalysis:
         """
         _require_tm(dataset, "compute_most_likely_config")
         _check_nworker(dataset, nworker)
-        chroms = _normalize_chroms(chroms, default_chroms=dataset.chroms)
+        chroms = _normalize_regions(chroms, default_regions=dataset.chroms)
         _tm_configs(
             dataset,
             chroms,
@@ -937,7 +937,7 @@ class SimAnalysis:
             raise ValueError(f"gamma must be positive, got {gamma}")
         _require_tm(dataset, "compute_best_match_config")
         _check_nworker(dataset, nworker)
-        chroms = _normalize_chroms(chroms, default_chroms=dataset.chroms)
+        chroms = _normalize_regions(chroms, default_regions=dataset.chroms)
         _tm_configs(
             dataset,
             chroms,
@@ -1033,7 +1033,7 @@ class SimAnalysis:
         _require_tm(dataset, "compute_linker_hist")
         _check_nworker(dataset, nworker)
         batch_size = _resolve_batch_size(dataset, batch_size)
-        chroms = _normalize_chroms(chroms, default_chroms=dataset.chroms)
+        chroms = _normalize_regions(chroms, default_regions=dataset.chroms)
         nucbp = dataset.settings["nucbp"]
         windows = {
             chrom: _linker_window(
@@ -1129,8 +1129,8 @@ class SimAnalysis:
         """
         if how not in ("sum", "mean"):
             raise ValueError(f"how must be 'sum' or 'mean', got {how!r}")
-        chroms = _normalize_chroms(chroms, default_chroms=dataset.chroms)
-        mols = _per_chrom(mols, chroms, "mols")
+        chroms = _normalize_regions(chroms, default_regions=dataset.chroms)
+        mols = _per_region(mols, chroms, "mols")
         pooled = {}
         columns = None
         for chrom in chroms:
@@ -1209,8 +1209,8 @@ class SimAnalysis:
             If `mols` is not a dict with several chroms or is out of
             range.
         """
-        chroms = _normalize_chroms(chroms, default_chroms=dataset.chroms)
-        mols = _per_chrom(mols, chroms, "mols")
+        chroms = _normalize_regions(chroms, default_regions=dataset.chroms)
+        mols = _per_region(mols, chroms, "mols")
         columns = ["mean", "sd", "nlink"]
         if pooled:
             rows = []
@@ -1453,7 +1453,7 @@ class SimAnalysis:
         if config_name is None and data_name is None:
             data_name = "occup"
         base_name = data_name if config_name is None else config_name
-        chroms = _normalize_chroms(chroms, default_chroms=dataset.chroms)
+        chroms = _normalize_regions(chroms, default_regions=dataset.chroms)
         tmp_dir = dataset.resolve_tmp_dir()
         link_mats = {}
         for chrom in chroms:

@@ -12,7 +12,6 @@ from matplotlib.colors import Normalize
 from scipy.special import logit
 
 from catella import utils
-from catella._chroms import _chrom_list, _per_chrom
 from catella._plotting import (
     _colorbar,
     _finish,
@@ -23,6 +22,7 @@ from catella._plotting import (
     _share_xlim,
     _warn_if_large,
 )
+from catella._regions import _per_region, _region_list
 from catella._warnings import _warn
 
 # Position of each plot_dropout_ecdf split_by field in a dropout key.
@@ -278,9 +278,9 @@ class MethPlot:
             )
         if raw_which is None and (mols is not None or mask_name is not None):
             raise ValueError("'mols' and 'mask_name' require 'raw_which'")
-        chroms = _chrom_list(chroms)
-        mols = _per_chrom(mols, chroms, "mols")
-        link_mat = _per_chrom(link_mat, chroms, "link_mat")
+        chroms = _region_list(chroms)
+        mols = _per_region(mols, chroms, "mols")
+        link_mat = _per_region(link_mat, chroms, "link_mat")
         sources = []
         try:
             for chrom in chroms:

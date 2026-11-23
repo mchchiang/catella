@@ -15,7 +15,6 @@ from matplotlib.patches import Patch
 from matplotlib.ticker import MaxNLocator
 
 from catella import utils
-from catella._chroms import _chrom_list, _per_chrom
 from catella._plotting import (
     _MAX_PANELS,
     _PANELS_PER_ROW,
@@ -30,6 +29,7 @@ from catella._plotting import (
     _share_xlim,
     _warn_if_large,
 )
+from catella._regions import _per_region, _region_list
 from catella._warnings import _warn
 from catella.mapping import CoordsTransform
 from catella.simulation.analysis import NucFiberMap, SimAnalysis
@@ -656,12 +656,12 @@ class SimPlot:
         colorbar of the covered share is shown if any panel is merged
         with "mean"; 0/1 panels then use its ends.
         """
-        chroms = _chrom_list(chroms)
+        chroms = _region_list(chroms)
         mols = {
             c: None if m is None else [int(i) for i in m]
-            for c, m in _per_chrom(mols, chroms, "mols").items()
+            for c, m in _per_region(mols, chroms, "mols").items()
         }
-        link_mat = _per_chrom(link_mat, chroms, "link_mat")
+        link_mat = _per_region(link_mat, chroms, "link_mat")
         xpow = int(self._log10(xscale, "xscale"))
         _check_downsample(max_rows, downsample_how)
         _check_eseq(dataset, plot_eseq)
@@ -1040,12 +1040,12 @@ class SimPlot:
             memory (pass `mols` to plot a subset), or if more than 10
             chroms are plotted in one figure.
         """
-        chroms = _chrom_list(chroms)
+        chroms = _region_list(chroms)
         mols = {
             c: None if m is None else list(m)
-            for c, m in _per_chrom(mols, chroms, "mols").items()
+            for c, m in _per_region(mols, chroms, "mols").items()
         }
-        link_mat = _per_chrom(link_mat, chroms, "link_mat")
+        link_mat = _per_region(link_mat, chroms, "link_mat")
         xpow = int(self._log10(xscale, "xscale"))
         _warn_if_large(
             sum(
@@ -1286,8 +1286,8 @@ class SimPlot:
             chromosome has no linkers up to `lmax` (it is then not
             plotted).
         """
-        chroms = _chrom_list(chroms)
-        mols = _per_chrom(mols, chroms, "mols")
+        chroms = _region_list(chroms)
+        mols = _per_region(mols, chroms, "mols")
         if len(chroms) > _MAX_PANELS:
             _warn(
                 f"plotting {len(chroms)} chromosomes in one figure; "

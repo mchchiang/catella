@@ -20,8 +20,8 @@ from catella._analysis_io import (
     _read_entries,
     _save_analysis,
 )
-from catella._chroms import _normalize_chroms
 from catella._dataclasses import _add_frozen_properties, _init_frozen_fields
+from catella._regions import _normalize_regions
 from catella.containers import DataclassPublicProxy, DataFrameMap, FixedKeyMap
 from catella.simulation._inputs import _check_fill_nan
 from catella.simulation._io import (
@@ -674,7 +674,7 @@ class SimDataset:
         ValueError
             If the chromosome keys in `nmol` do not match `chroms`.
         """
-        chroms = _normalize_chroms(chroms)
+        chroms = _normalize_regions(chroms)
         if isinstance(nmol, int):
             nmol = {chrom: nmol for chrom in chroms}
         elif not isinstance(nmol, Mapping):
@@ -908,7 +908,7 @@ class SimDataset:
         Only triplets (chrom, mol, run) that have an existing simulation
         file on disk according to the internal file map are yielded.
         """
-        chroms = _normalize_chroms(chroms, default_chroms=self._chroms)
+        chroms = _normalize_regions(chroms, default_regions=self._chroms)
         for chrom in chroms:
             if chrom not in self._chroms:
                 continue
@@ -995,7 +995,7 @@ class SimDataset:
                 "'agg_func' is provided"
             )
 
-        chroms = _normalize_chroms(chroms, default_chroms=self._chroms)
+        chroms = _normalize_regions(chroms, default_regions=self._chroms)
 
         results = {}
         for chrom in chroms:
@@ -1139,7 +1139,7 @@ class SimDataset:
         so cost scales with the size of the dataset. Use `nworker > 1` to
         speed up scanning of large datasets.
         """
-        chroms = _normalize_chroms(chroms, default_chroms=self._chroms)
+        chroms = _normalize_regions(chroms, default_regions=self._chroms)
 
         def all_triplets():
             for chrom in chroms:

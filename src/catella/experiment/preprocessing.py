@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from catella import utils
-from catella._chroms import _normalize_chroms
+from catella._regions import _normalize_regions
 from catella.experiment._calibration import (
     _calib_rows,
     _call_frac_info,
@@ -853,7 +853,7 @@ class MethPrintAnalysis:
         """
         if mask_name is not None and raw_which is None:
             raise ValueError("'mask_name' requires 'raw_which' to be given")
-        chroms = _normalize_chroms(chroms, default_chroms=exp.chroms)
+        chroms = _normalize_regions(chroms, default_regions=exp.chroms)
         tmp_dir = exp.resolve_tmp_dir()
         link_mats = {}
         for chrom in chroms:

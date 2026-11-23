@@ -14,6 +14,7 @@ from matplotlib.colors import Normalize
 from matplotlib.patches import Patch
 from matplotlib.ticker import MaxNLocator
 
+from catella import utils
 from catella._chroms import _chrom_list, _per_chrom
 from catella._plotting import (
     _MAX_PANELS,
@@ -160,21 +161,12 @@ def _merge_rows(matrix, max_rows, how):
     nrow = matrix.shape[0]
     if how == "stride" or max_rows is None or nrow <= max_rows:
         return matrix
-    edges = np.linspace(0, nrow, max_rows + 1).astype(int)
-    out = np.empty(
-        (max_rows, matrix.shape[1]),
-        dtype=np.float64 if how == "mean" else np.int8,
-    )
-    for i in range(max_rows):
-        block = matrix[edges[i] : edges[i + 1]]
-        if how == "max":
-            out[i] = block.max(axis=0)
-            continue
-        count = (block >= 0).sum(axis=0)
-        covered = (block > 0).sum(axis=0)
-        with np.errstate(invalid="ignore", divide="ignore"):
-            out[i] = np.where(count > 0, covered / count, np.nan)
-    return out
+    if how == "max":
+        return utils.downsample(matrix, max_rows, how="max")
+    covered = utils.downsample(matrix > 0, max_rows, how="sum")
+    count = utils.downsample(matrix >= 0, max_rows, how="sum")
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return np.where(count > 0, covered / count, np.nan)
 
 
 @dataclass(slots=True, kw_only=True)

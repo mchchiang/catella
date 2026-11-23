@@ -15,7 +15,7 @@ from catella.h5_array import H5Array
 from catella.simulation.analysis import NucFiberMap, SimAnalysis
 from catella.simulation.config import SimSettings
 from catella.simulation.engine import SimManager
-from catella.simulation.plot import SimPlot
+from catella.simulation.plot import SimPlot, _merge_rows
 
 
 def _make_settings(**overrides):
@@ -1514,3 +1514,27 @@ class TestPlotLinkerHist:
             SimPlot().plot_linker_hist(
                 dataset, chroms="chr1", name="other", show=False
             )
+
+
+_FOOTPRINTS = np.array(
+    [[1, 0, -1], [0, 0, -1], [-1, -1, -1], [-1, 1, -1]], dtype=np.int8
+)
+
+
+class TestMergeRows:
+    def test_max_ignores_no_data_rows(self):
+        result = _merge_rows(_FOOTPRINTS, 2, "max")
+        np.testing.assert_array_equal(result, [[1, 0, -1], [-1, 1, -1]])
+        assert result.dtype == np.int8
+
+    def test_mean_is_covered_share_among_rows_with_data(self):
+        result = _merge_rows(_FOOTPRINTS, 2, "mean")
+        expected = [[0.5, 0.0, np.nan], [np.nan, 1.0, np.nan]]
+        np.testing.assert_array_equal(result, expected)
+        assert result.dtype == np.float64
+
+    @pytest.mark.parametrize(
+        ("max_rows", "how"), [(2, "stride"), (None, "mean"), (4, "max")]
+    )
+    def test_returns_matrix_as_is(self, max_rows, how):
+        assert _merge_rows(_FOOTPRINTS, max_rows, how) is _FOOTPRINTS

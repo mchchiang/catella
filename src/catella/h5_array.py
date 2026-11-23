@@ -691,6 +691,23 @@ class H5Array:
         """Close the backing file, deleting it if it is a scratch file."""
         self._finalizer()
 
+    def _release(self):
+        """Close the file handle of a permanent array, for `_reopen`."""
+        if self._owns_file:
+            raise ValueError("cannot release a scratch H5Array")
+        if self._finalizer.detach() is not None:
+            self._file.close()
+
+    def _reopen(self, path, dataset_path):
+        """Reattach a released array to `dataset_path` in `path`."""
+        file = h5py.File(str(path), "r")
+        self._path = str(path)
+        self._file = file
+        self._dataset = file[dataset_path]
+        self._finalizer = weakref.finalize(
+            self, H5Array._cleanup, file, self._path, False, False
+        )
+
     def __enter__(self):
         return self
 

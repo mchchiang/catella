@@ -98,6 +98,58 @@ def test_scratch_dir_removed_on_keyboard_interrupt():
     assert not leaked
 
 
+class TestReleaseReopen:
+    @pytest.fixture
+    def path(self, tmp_path):
+        path = tmp_path / "p.h5"
+        with h5py.File(path, "w") as f:
+            f.create_dataset("a", data=np.arange(4.0).reshape(2, 2))
+            f.create_dataset("b", data=np.ones((2, 2)))
+        return path
+
+    def test_release_frees_file_for_writing(self, path):
+        arr = H5Array.load_from(path, "a")
+        arr._release()
+        with h5py.File(path, "a") as f:
+            f.attrs["x"] = 1
+
+    def test_reference_usable_after_reopen(self, path):
+        arr = H5Array.load_from(path, "a")
+        ref = arr
+        arr._release()
+        arr._reopen(path, "a")
+        np.testing.assert_array_equal(
+            ref.to_numpy(), np.arange(4.0).reshape(2, 2)
+        )
+
+    def test_reopen_at_new_dataset_path(self, path):
+        arr = H5Array.load_from(path, "a")
+        arr._release()
+        arr._reopen(path, "b")
+        assert arr.dataset_path == "/b"
+        np.testing.assert_array_equal(arr.to_numpy(), np.ones((2, 2)))
+
+    def test_release_twice_is_noop(self, path):
+        arr = H5Array.load_from(path, "a")
+        arr._release()
+        arr._release()
+        arr._reopen(path, "a")
+        assert arr.shape == (2, 2)
+
+    def test_close_after_reopen_frees_file(self, path):
+        arr = H5Array.load_from(path, "a")
+        arr._release()
+        arr._reopen(path, "a")
+        arr.close()
+        with h5py.File(path, "a") as f:
+            f.attrs["x"] = 1
+
+    def test_release_scratch_raises(self):
+        arr = H5Array.create((2, 2))
+        with pytest.raises(ValueError, match="scratch"):
+            arr._release()
+
+
 def test_save_to_and_load_from_round_trip(tmp_path):
     import h5py
 

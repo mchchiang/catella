@@ -40,7 +40,7 @@ def _make_dataset(tmp_path, *, nmol=6, nbp=40, nsim=2, seed=1):
     meth_prob = rng.random((nmol, nbp))
     manager = SimManager(nworker=1, verbose=False)
     return manager.run(
-        chroms="chr1",
+        regions="chr1",
         nsim=nsim,
         settings=_make_settings(),
         meth_prob=meth_prob,
@@ -62,7 +62,7 @@ class TestPlotOccupMolsSlicing:
         link_mats = SimAnalysis().sort_by_linkage(dataset=dataset)
         SimPlot().plot_occup(
             dataset,
-            chroms="chr1",
+            regions="chr1",
             link_mat=dataset.analysis["chr1"]["occup_linkage"],
             show=False,
         )
@@ -78,7 +78,7 @@ class TestPlotOccupMolsSlicing:
         with pytest.raises(ValueError, match="mols cannot be combined"):
             SimPlot().plot_occup(
                 dataset,
-                chroms="chr1",
+                regions="chr1",
                 mols=[0, 1],
                 link_mat=link_mat,
                 show=False,
@@ -91,11 +91,11 @@ class TestPlotOccupMolsSlicing:
             "catella._plotting._RENDER_WARN_BYTES", 3 * 20 * 80
         )
         with pytest.warns(UserWarning, match="6 rows x 20 bp"):
-            SimPlot().plot_occup(dataset, chroms="chr1", show=False)
+            SimPlot().plot_occup(dataset, regions="chr1", show=False)
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             SimPlot().plot_occup(
-                dataset, chroms="chr1", mols=[0, 1, 2], show=False
+                dataset, regions="chr1", mols=[0, 1, 2], show=False
             )
 
     def test_mols_none_shows_all_molecules(self, tmp_path):
@@ -103,7 +103,7 @@ class TestPlotOccupMolsSlicing:
         ana = SimAnalysis()
         ana.compute_occup(dataset=dataset, batch_size=2)
 
-        SimPlot().plot_occup(chroms="chr1", dataset=dataset, show=False)
+        SimPlot().plot_occup(regions="chr1", dataset=dataset, show=False)
 
         img = plt.gcf().axes[0].images[0].get_array()
         assert img.shape[0] == 6
@@ -116,7 +116,7 @@ class TestPlotOccupMolsSlicing:
 
         mols = [0, 2, 5]
         SimPlot().plot_occup(
-            chroms="chr1", dataset=dataset, mols=mols, show=False
+            regions="chr1", dataset=dataset, mols=mols, show=False
         )
 
         img = plt.gcf().axes[0].images[0].get_array()
@@ -129,7 +129,7 @@ class TestPlotOccupMolsSlicing:
         ana.compute_occup(dataset=dataset, batch_size=2)
 
         SimPlot().plot_occup(
-            chroms="chr1",
+            regions="chr1",
             dataset=dataset,
             mols=[1, 3],
             plot_eseq=True,
@@ -148,7 +148,7 @@ class TestPlotOccupMolsSlicing:
         meth_prob[:, 5] = np.nan
         manager = SimManager(nworker=1, verbose=False)
         dataset = manager.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=2,
             settings=_make_settings(),
             meth_prob=meth_prob,
@@ -160,7 +160,7 @@ class TestPlotOccupMolsSlicing:
         assert np.isnan(dataset.eseq["chr1"][:, 5]).all()
 
         SimPlot().plot_occup(
-            chroms="chr1", dataset=dataset, plot_eseq=True, show=False
+            regions="chr1", dataset=dataset, plot_eseq=True, show=False
         )
 
     def test_plot_eseq_skips_ylim_when_all_nan(self, tmp_path):
@@ -172,7 +172,7 @@ class TestPlotOccupMolsSlicing:
         meth_prob[0, :] = np.nan
         manager = SimManager(nworker=1, verbose=False)
         dataset = manager.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=2,
             settings=_make_settings(),
             meth_prob=meth_prob,
@@ -184,7 +184,7 @@ class TestPlotOccupMolsSlicing:
         assert np.isnan(dataset.eseq["chr1"][0, :]).all()
 
         SimPlot().plot_occup(
-            chroms="chr1", dataset=dataset, mols=[0], plot_eseq=True,
+            regions="chr1", dataset=dataset, mols=[0], plot_eseq=True,
             show=False,
         )
 
@@ -200,7 +200,7 @@ class TestPlotOccupMolsSlicing:
         ana.compute_occup(dataset=dataset, batch_size=2)
 
         SimPlot().plot_occup(
-            chroms="chr1", dataset=dataset, plot_eseq=True, show=False
+            regions="chr1", dataset=dataset, plot_eseq=True, show=False
         )
 
         seq_ax = plt.gcf().axes[2]
@@ -223,7 +223,7 @@ class TestPlotOccupCmapAndNan:
         occup[0, 0] = np.nan
         dataset.analysis["chr1"]["occup"] = pd.DataFrame(occup)
 
-        SimPlot().plot_occup(chroms="chr1", dataset=dataset, show=False)
+        SimPlot().plot_occup(regions="chr1", dataset=dataset, show=False)
 
     def test_cmap_override_does_not_mutate_instance(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=6, nbp=20)
@@ -232,40 +232,40 @@ class TestPlotOccupCmapAndNan:
 
         simplot = SimPlot()
         simplot.plot_occup(
-            chroms="chr1", dataset=dataset, cmap="viridis", show=False
+            regions="chr1", dataset=dataset, cmap="viridis", show=False
         )
         assert simplot.cmap == "OrRd"
 
 
-def _make_two_chrom_dataset(tmp_path, seed=5):
+def _make_two_region_dataset(tmp_path, seed=5):
     rng = np.random.default_rng(seed)
     manager = SimManager(nworker=1, verbose=False)
     dataset = manager.run(
-        chroms=["chr1", "chr2"],
+        regions=["chr1", "chr2"],
         nsim=2,
         settings=_make_settings(),
         meth_prob={"chr1": rng.random((6, 20)), "chr2": rng.random((4, 30))},
         out_dir=tmp_path / "dataset",
         seed=seed,
     )
-    for chrom, shape in (("chr1", (6, 20)), ("chr2", (4, 30))):
-        dataset.analysis[chrom]["occup"] = pd.DataFrame(rng.random(shape))
+    for region, shape in (("chr1", (6, 20)), ("chr2", (4, 30))):
+        dataset.analysis[region]["occup"] = pd.DataFrame(rng.random(shape))
     return dataset
 
 
-def _make_chrom_dataset(tmp_path, nchrom, seed=6):
+def _make_region_dataset(tmp_path, nregion, seed=6):
     rng = np.random.default_rng(seed)
-    chroms = [f"chr{i + 1}" for i in range(nchrom)]
+    regions = [f"chr{i + 1}" for i in range(nregion)]
     dataset = SimManager(nworker=1, verbose=False).run(
-        chroms=chroms,
+        regions=regions,
         nsim=2,
         settings=_make_settings(),
-        meth_prob={c: rng.random((4, 20)) for c in chroms},
+        meth_prob={c: rng.random((4, 20)) for c in regions},
         out_dir=tmp_path / "dataset_n",
         seed=seed,
     )
-    for chrom in chroms:
-        dataset.analysis[chrom]["occup"] = pd.DataFrame(rng.random((4, 20)))
+    for region in regions:
+        dataset.analysis[region]["occup"] = pd.DataFrame(rng.random((4, 20)))
     return dataset
 
 
@@ -282,12 +282,12 @@ def _boxes(axes):
     "ignore:__array__ implementation doesn't accept a copy keyword"
     ":DeprecationWarning"
 )
-class TestPlotOccupMultiChrom:
-    def test_one_panel_per_chrom(self, tmp_path):
-        dataset = _make_two_chrom_dataset(tmp_path)
+class TestPlotOccupMultiRegion:
+    def test_one_panel_per_region(self, tmp_path):
+        dataset = _make_two_region_dataset(tmp_path)
         out_file = tmp_path / "occup.png"
         SimPlot().plot_occup(
-            dataset, chroms=["chr1", "chr2"], out_file=out_file, show=False
+            dataset, regions=["chr1", "chr2"], out_file=out_file, show=False
         )
         assert out_file.exists()
         hm_axes = _heatmap_axes(plt.gcf())
@@ -298,15 +298,15 @@ class TestPlotOccupMultiChrom:
         assert [ax.get_title() for ax in hm_axes] == ["chr1", "chr2"]
 
     def test_one_shared_colorbar(self, tmp_path):
-        dataset = _make_two_chrom_dataset(tmp_path)
-        SimPlot().plot_occup(dataset, chroms=["chr1", "chr2"], show=False)
+        dataset = _make_two_region_dataset(tmp_path)
+        SimPlot().plot_occup(dataset, regions=["chr1", "chr2"], show=False)
         assert len(plt.gcf().axes) == 3
 
     def test_panels_side_by_side(self, tmp_path):
-        dataset = _make_two_chrom_dataset(tmp_path)
+        dataset = _make_two_region_dataset(tmp_path)
         SimPlot().plot_occup(
             dataset,
-            chroms=["chr1", "chr2"],
+            regions=["chr1", "chr2"],
             mols={"chr2": [0, 1, 2, 3]},
             show=False,
         )
@@ -316,8 +316,8 @@ class TestPlotOccupMultiChrom:
         assert boxes[0].x1 < boxes[1].x0
 
     def test_four_per_row_then_wrap(self, tmp_path):
-        dataset = _make_chrom_dataset(tmp_path, 5)
-        SimPlot().plot_occup(dataset, chroms=dataset.chroms, show=False)
+        dataset = _make_region_dataset(tmp_path, 5)
+        SimPlot().plot_occup(dataset, regions=dataset.regions, show=False)
         fig = plt.gcf()
         hm_axes = _heatmap_axes(fig)
         boxes = _boxes(hm_axes)
@@ -329,8 +329,8 @@ class TestPlotOccupMultiChrom:
         assert sum(not ax.get_visible() for ax in fig.axes) == 3
 
     def test_colorbar_next_to_top_right_heatmap(self, tmp_path):
-        dataset = _make_chrom_dataset(tmp_path, 5)
-        SimPlot().plot_occup(dataset, chroms=dataset.chroms, show=False)
+        dataset = _make_region_dataset(tmp_path, 5)
+        SimPlot().plot_occup(dataset, regions=dataset.regions, show=False)
         fig = plt.gcf()
         hm_axes = _heatmap_axes(fig)
         cbar_ax = next(ax for ax in fig.axes if ax.get_ylabel() == "Occupancy")
@@ -340,9 +340,9 @@ class TestPlotOccupMultiChrom:
         assert cbar.x0 > top_right.x1
 
     def test_ylabel_on_leftmost_panels_only(self, tmp_path):
-        dataset = _make_chrom_dataset(tmp_path, 5)
+        dataset = _make_region_dataset(tmp_path, 5)
         SimPlot().plot_occup(
-            dataset, chroms=dataset.chroms, plot_eseq=True, show=False
+            dataset, regions=dataset.regions, plot_eseq=True, show=False
         )
         fig = plt.gcf()
         labels = [ax.get_ylabel() for ax in _heatmap_axes(fig)]
@@ -352,19 +352,19 @@ class TestPlotOccupMultiChrom:
             True, False, False, False, True
         ]
 
-    def test_xlim_per_chrom_by_default(self, tmp_path):
-        dataset = _make_two_chrom_dataset(tmp_path)
+    def test_xlim_per_region_by_default(self, tmp_path):
+        dataset = _make_two_region_dataset(tmp_path)
         SimPlot().plot_occup(
-            dataset, chroms=["chr1", "chr2"], xscale=1, show=False
+            dataset, regions=["chr1", "chr2"], xscale=1, show=False
         )
         xlims = [ax.get_xlim() for ax in _heatmap_axes(plt.gcf())]
         assert xlims == [(0, 20), (0, 30)]
 
-    def test_sharex_uses_longest_chrom(self, tmp_path):
-        dataset = _make_two_chrom_dataset(tmp_path)
+    def test_sharex_uses_longest_region(self, tmp_path):
+        dataset = _make_two_region_dataset(tmp_path)
         SimPlot().plot_occup(
             dataset,
-            chroms=["chr1", "chr2"],
+            regions=["chr1", "chr2"],
             xscale=1,
             plot_eseq=True,
             sharex=True,
@@ -376,36 +376,36 @@ class TestPlotOccupMultiChrom:
         seq_axes = [ax for ax in fig.axes if ax.lines]
         assert [ax.get_xlim() for ax in seq_axes] == [(0, 30), (0, 30)]
 
-    def test_link_mat_dict_sorts_each_chrom(self, tmp_path):
-        dataset = _make_two_chrom_dataset(tmp_path)
+    def test_link_mat_dict_sorts_each_region(self, tmp_path):
+        dataset = _make_two_region_dataset(tmp_path)
         links = SimAnalysis().sort_by_linkage(dataset=dataset)
         SimPlot().plot_occup(
-            dataset, chroms=["chr1", "chr2"], link_mat=links, show=False
+            dataset, regions=["chr1", "chr2"], link_mat=links, show=False
         )
-        for chrom, ax in zip(["chr1", "chr2"], _heatmap_axes(plt.gcf())):
-            occup = dataset.analysis[chrom]["occup"].to_numpy()
-            order = sch.leaves_list(links[chrom])
+        for region, ax in zip(["chr1", "chr2"], _heatmap_axes(plt.gcf())):
+            occup = dataset.analysis[region]["occup"].to_numpy()
+            order = sch.leaves_list(links[region])
             np.testing.assert_allclose(
                 np.ma.getdata(ax.images[0].get_array()), occup[order]
             )
 
-    def test_link_mat_dict_with_chrom_subset(self, tmp_path):
-        dataset = _make_two_chrom_dataset(tmp_path)
+    def test_link_mat_dict_with_region_subset(self, tmp_path):
+        dataset = _make_two_region_dataset(tmp_path)
         links = SimAnalysis().sort_by_linkage(dataset=dataset)
         SimPlot().plot_occup(
-            dataset, chroms="chr2", link_mat=links, show=False
+            dataset, regions="chr2", link_mat=links, show=False
         )
         occup = dataset.analysis["chr2"]["occup"].to_numpy()
         img = _heatmap_axes(plt.gcf())[0].images[0].get_array()
         order = sch.leaves_list(links["chr2"])
         np.testing.assert_allclose(np.ma.getdata(img), occup[order])
 
-    def test_link_mat_dict_missing_chrom_is_unsorted(self, tmp_path):
-        dataset = _make_two_chrom_dataset(tmp_path)
+    def test_link_mat_dict_missing_region_is_unsorted(self, tmp_path):
+        dataset = _make_two_region_dataset(tmp_path)
         links = SimAnalysis().sort_by_linkage(dataset=dataset)
         SimPlot().plot_occup(
             dataset,
-            chroms=["chr1", "chr2"],
+            regions=["chr1", "chr2"],
             link_mat={"chr2": links["chr2"]},
             show=False,
         )
@@ -414,35 +414,35 @@ class TestPlotOccupMultiChrom:
         np.testing.assert_allclose(np.ma.getdata(img), occup)
 
     @pytest.mark.parametrize("name", ["link_mat", "mols"])
-    def test_non_dict_with_several_chroms_raises(self, tmp_path, name):
-        dataset = _make_two_chrom_dataset(tmp_path)
+    def test_non_dict_with_several_regions_raises(self, tmp_path, name):
+        dataset = _make_two_region_dataset(tmp_path)
         value = np.zeros((3, 4)) if name == "link_mat" else [0, 1]
         with pytest.raises(ValueError, match=f"{name} must be a dict"):
             SimPlot().plot_occup(
-                dataset, chroms=["chr1", "chr2"], show=False, **{name: value}
+                dataset, regions=["chr1", "chr2"], show=False, **{name: value}
             )
 
-    def test_empty_chroms_raises(self, tmp_path):
-        dataset = _make_two_chrom_dataset(tmp_path)
+    def test_empty_regions_raises(self, tmp_path):
+        dataset = _make_two_region_dataset(tmp_path)
         with pytest.raises(ValueError, match="regions must not be empty"):
-            SimPlot().plot_occup(dataset, chroms=[], show=False)
+            SimPlot().plot_occup(dataset, regions=[], show=False)
 
-    def test_many_chroms_warn(self, tmp_path, monkeypatch):
-        dataset = _make_two_chrom_dataset(tmp_path)
+    def test_many_regions_warn(self, tmp_path, monkeypatch):
+        dataset = _make_two_region_dataset(tmp_path)
         monkeypatch.setattr("catella._plotting._MAX_PANELS", 1)
-        with pytest.warns(UserWarning, match="2 chromosomes in one figure"):
+        with pytest.warns(UserWarning, match="2 regions in one figure"):
             SimPlot().plot_occup(
-                dataset, chroms=["chr1", "chr2"], show=False
+                dataset, regions=["chr1", "chr2"], show=False
             )
 
     def test_size_warning_counts_all_panels(self, tmp_path, monkeypatch):
-        dataset = _make_two_chrom_dataset(tmp_path)
+        dataset = _make_two_region_dataset(tmp_path)
         monkeypatch.setattr(
             "catella._plotting._RENDER_WARN_BYTES", 8 * 30 * 80
         )
         with pytest.warns(UserWarning, match="10 rows x 30 bp"):
             SimPlot().plot_occup(
-                dataset, chroms=["chr1", "chr2"], show=False
+                dataset, regions=["chr1", "chr2"], show=False
             )
 
 
@@ -460,9 +460,9 @@ def _mean_line(fig):
 )
 class TestPlotOccupMean:
     def test_mean_over_all_molecules(self, tmp_path):
-        dataset = _make_two_chrom_dataset(tmp_path)
+        dataset = _make_two_region_dataset(tmp_path)
         SimPlot().plot_occup(
-            dataset, chroms="chr1", xscale=1, plot_mean=True, show=False
+            dataset, regions="chr1", xscale=1, plot_mean=True, show=False
         )
         occup = dataset.analysis["chr1"]["occup"].to_numpy()
         np.testing.assert_allclose(_mean_line(plt.gcf()), occup.mean(0))
@@ -471,9 +471,9 @@ class TestPlotOccupMean:
         assert mean_ax.get_xlim() == (0, 20)
 
     def test_mean_over_mols_subset(self, tmp_path):
-        dataset = _make_two_chrom_dataset(tmp_path)
+        dataset = _make_two_region_dataset(tmp_path)
         SimPlot().plot_occup(
-            dataset, chroms="chr1", mols=[0, 2], plot_mean=True, show=False
+            dataset, regions="chr1", mols=[0, 2], plot_mean=True, show=False
         )
         occup = dataset.analysis["chr1"]["occup"].to_numpy()
         np.testing.assert_allclose(
@@ -481,16 +481,16 @@ class TestPlotOccupMean:
         )
 
     def test_mean_unchanged_by_link_mat(self, tmp_path):
-        dataset = _make_two_chrom_dataset(tmp_path)
+        dataset = _make_two_region_dataset(tmp_path)
         links = SimAnalysis().sort_by_linkage(dataset=dataset)
         SimPlot().plot_occup(
-            dataset, chroms="chr1", link_mat=links, plot_mean=True, show=False
+            dataset, regions="chr1", link_mat=links, plot_mean=True, show=False
         )
         occup = dataset.analysis["chr1"]["occup"].to_numpy()
         np.testing.assert_allclose(_mean_line(plt.gcf()), occup.mean(0))
 
     def test_nan_column_stays_nan(self, tmp_path):
-        dataset = _make_two_chrom_dataset(tmp_path)
+        dataset = _make_two_region_dataset(tmp_path)
         occup = dataset.analysis["chr1"]["occup"].to_numpy().copy()
         occup[:, 3] = np.nan
         occup[0, 5] = np.nan
@@ -498,17 +498,17 @@ class TestPlotOccupMean:
         with warnings.catch_warnings():
             warnings.simplefilter("error", category=RuntimeWarning)
             SimPlot().plot_occup(
-                dataset, chroms="chr1", plot_mean=True, show=False
+                dataset, regions="chr1", plot_mean=True, show=False
             )
         mean = _mean_line(plt.gcf())
         assert np.isnan(mean[3])
         assert mean[5] == pytest.approx(np.nanmean(occup[:, 5]))
 
     def test_mean_above_eseq(self, tmp_path):
-        dataset = _make_two_chrom_dataset(tmp_path)
+        dataset = _make_two_region_dataset(tmp_path)
         SimPlot().plot_occup(
             dataset,
-            chroms="chr1",
+            regions="chr1",
             plot_mean=True,
             plot_eseq=True,
             show=False,
@@ -526,19 +526,19 @@ class TestPlotOccupMean:
         assert seq_ax.get_xlabel().startswith("Position")
 
     def test_mean_is_bottom_row_without_eseq(self, tmp_path):
-        dataset = _make_two_chrom_dataset(tmp_path)
+        dataset = _make_two_region_dataset(tmp_path)
         SimPlot().plot_occup(
-            dataset, chroms="chr1", plot_mean=True, show=False
+            dataset, regions="chr1", plot_mean=True, show=False
         )
         fig = plt.gcf()
         assert not _heatmap_axes(fig)[0].get_xaxis().get_visible()
         assert _mean_axes(fig)[0].get_xlabel().startswith("Position")
 
-    def test_several_chroms(self, tmp_path):
-        dataset = _make_two_chrom_dataset(tmp_path)
+    def test_several_regions(self, tmp_path):
+        dataset = _make_two_region_dataset(tmp_path)
         SimPlot().plot_occup(
             dataset,
-            chroms=["chr1", "chr2"],
+            regions=["chr1", "chr2"],
             xscale=1,
             plot_mean=True,
             sharex=True,
@@ -562,21 +562,21 @@ class TestPositionalDatasetArg:
         ana = SimAnalysis()
         ana.compute_occup(dataset=dataset, batch_size=2)
 
-        SimPlot().plot_occup(dataset, chroms="chr1", show=False)
+        SimPlot().plot_occup(dataset, regions="chr1", show=False)
 
         assert plt.gcf().axes[0].images
 
     def test_plot_energy_accepts_dataset_positionally(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=2, nbp=20)
 
-        SimPlot().plot_energy(dataset, chrom="chr1", mol=0, run=0, show=False)
+        SimPlot().plot_energy(dataset, region="chr1", mol=0, run=0, show=False)
 
         assert plt.gcf().axes
 
     def test_plot_samples_accepts_dataset_positionally(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=2, nbp=20)
 
-        SimPlot().plot_samples(dataset, chrom="chr1", mol=0, show=False)
+        SimPlot().plot_samples(dataset, region="chr1", mol=0, show=False)
 
         assert plt.gcf().axes
 
@@ -591,7 +591,7 @@ class TestPlotSamplesCmapOverride:
 
         simplot = SimPlot()
         simplot.plot_samples(
-            dataset, chrom="chr1", mol=0, cmap="viridis", show=False
+            dataset, region="chr1", mol=0, cmap="viridis", show=False
         )
         assert simplot.cmap == "OrRd"
 
@@ -610,7 +610,7 @@ class TestPlotSamplesEseq:
         meth_prob[:, 5] = np.nan
         manager = SimManager(nworker=1, verbose=False)
         dataset = manager.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=2,
             settings=_make_settings(),
             meth_prob=meth_prob,
@@ -620,7 +620,7 @@ class TestPlotSamplesEseq:
         assert np.isnan(dataset.eseq["chr1"][:, 5]).all()
 
         SimPlot().plot_samples(
-            dataset, chrom="chr1", mol=0, plot_eseq=True, show=False
+            dataset, region="chr1", mol=0, plot_eseq=True, show=False
         )
 
     def test_no_data_molecule_raises_over_time(self, tmp_path):
@@ -629,7 +629,7 @@ class TestPlotSamplesEseq:
         meth_prob[0, :] = np.nan
         manager = SimManager(nworker=1, verbose=False)
         dataset = manager.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=2,
             settings=_make_settings(),
             meth_prob=meth_prob,
@@ -638,16 +638,16 @@ class TestPlotSamplesEseq:
         )
         assert dataset.no_data["chr1"][0]
 
-        with pytest.raises(ValueError, match="molecule 0 of chrom 'chr1'"):
+        with pytest.raises(ValueError, match="molecule 0 of region 'chr1'"):
             SimPlot().plot_samples(
-                dataset, chrom="chr1", mol=0, plot_eseq=True, show=False
+                dataset, region="chr1", mol=0, plot_eseq=True, show=False
             )
 
     def test_plot_eseq_ylim_matches_full_data_range(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=2, nbp=20)
 
         SimPlot().plot_samples(
-            dataset, chrom="chr1", mol=0, plot_eseq=True, show=False
+            dataset, region="chr1", mol=0, plot_eseq=True, show=False
         )
 
         seq_ax = plt.gcf().axes[2]
@@ -661,7 +661,7 @@ def _mcmc_dataset(tmp_path, nmol=2, nsim=3):
     meth_prob = np.random.default_rng(7).random((nmol, 400))
     meth_prob[1] = np.nan
     return SimManager(nworker=1, verbose=False).run(
-        chroms="chr1",
+        regions="chr1",
         nsim=nsim,
         settings=_make_settings(nsweep=4),
         meth_prob=meth_prob,
@@ -677,7 +677,7 @@ def _tm_dataset(tmp_path, nsim=4, name="tm"):
     meth_prob = np.random.default_rng(8).random((2, 20))
     meth_prob[1] = np.nan
     return SimManager(nworker=1, verbose=False).run(
-        chroms="chr1",
+        regions="chr1",
         nsim=nsim,
         method="tm",
         settings=settings,
@@ -706,7 +706,7 @@ class TestPlotSamples:
     def test_mcmc_over_time_rows_are_frames(self, tmp_path):
         dataset = _mcmc_dataset(tmp_path)
         SimPlot().plot_samples(
-            dataset, chrom="chr1", mol=0, runs=2, show=False
+            dataset, region="chr1", mol=0, runs=2, show=False
         )
         data = dataset.raw["chr1", 0, 2]
         img = _image()
@@ -717,21 +717,21 @@ class TestPlotSamples:
     def test_mcmc_over_runs_rows_are_runs(self, tmp_path):
         dataset = _mcmc_dataset(tmp_path)
         SimPlot().plot_samples(
-            dataset, chrom="chr1", mol=0, over="runs", show=False
+            dataset, region="chr1", mol=0, over="runs", show=False
         )
         img = _image()
         assert img.shape == (3, 400)
         ana = SimAnalysis()
         for r in range(3):
             starts = ana.extract_config(
-                dataset, chrom="chr1", run=r, mols=[0]
+                dataset, region="chr1", run=r, mols=[0]
             )[0]
             np.testing.assert_array_equal(img[r], _footprint(dataset, starts))
 
     def test_runs_order(self, tmp_path):
         dataset = _mcmc_dataset(tmp_path)
         SimPlot().plot_samples(
-            dataset, chrom="chr1", mol=0, over="runs", runs=[2, 0], show=False
+            dataset, region="chr1", mol=0, over="runs", runs=[2, 0], show=False
         )
         last = dataset.raw["chr1", 0, 2].position[-1]
         np.testing.assert_array_equal(_image()[0], _footprint(dataset, last))
@@ -740,7 +740,7 @@ class TestPlotSamples:
         dataset = _mcmc_dataset(tmp_path)
         dataset.mcmc_file("chr1", 0, 1).unlink()
         SimPlot().plot_samples(
-            dataset, chrom="chr1", mol=0, over="runs", show=False
+            dataset, region="chr1", mol=0, over="runs", show=False
         )
         img = _image()
         assert (img[1] == -1).all()
@@ -748,7 +748,7 @@ class TestPlotSamples:
 
     def test_tm_default_rows_are_samples(self, tmp_path):
         dataset = _tm_dataset(tmp_path)
-        SimPlot().plot_samples(dataset, chrom="chr1", mol=0, show=False)
+        SimPlot().plot_samples(dataset, region="chr1", mol=0, show=False)
         img = _image()
         assert img.shape == (4, 20)
         for r in range(4):
@@ -757,13 +757,13 @@ class TestPlotSamples:
 
     def test_tm_no_data_molecule_rows(self, tmp_path):
         dataset = _tm_dataset(tmp_path)
-        SimPlot().plot_samples(dataset, chrom="chr1", mol=1, show=False)
+        SimPlot().plot_samples(dataset, region="chr1", mol=1, show=False)
         assert (_image() == -1).all()
 
     def test_max_rows_stride_keeps_every_kth_run(self, tmp_path):
         dataset = _tm_dataset(tmp_path)
         SimPlot().plot_samples(
-            dataset, chrom="chr1", mol=0, max_rows=2, show=False
+            dataset, region="chr1", mol=0, max_rows=2, show=False
         )
         img = _image()
         assert img.shape == (2, 20)
@@ -775,7 +775,7 @@ class TestPlotSamples:
         dataset = _tm_dataset(tmp_path)
         SimPlot().plot_samples(
             dataset,
-            chrom="chr1",
+            region="chr1",
             mol=0,
             max_rows=2,
             downsample_how=how,
@@ -794,7 +794,7 @@ class TestPlotSamples:
         monkeypatch.setattr("catella._plotting._RENDER_WARN_BYTES", 1)
         dataset = _tm_dataset(tmp_path)
         with pytest.warns(UserWarning, match="max_rows"):
-            SimPlot().plot_samples(dataset, chrom="chr1", mol=0, show=False)
+            SimPlot().plot_samples(dataset, region="chr1", mol=0, show=False)
 
     @pytest.mark.parametrize(
         ("kwargs", "match"),
@@ -811,24 +811,24 @@ class TestPlotSamples:
         dataset = _mcmc_dataset(tmp_path)
         with pytest.raises(ValueError, match=match):
             SimPlot().plot_samples(
-                dataset, chrom="chr1", mol=0, show=False, **kwargs
+                dataset, region="chr1", mol=0, show=False, **kwargs
             )
 
     def test_tm_over_time_raises(self, tmp_path):
         dataset = _tm_dataset(tmp_path)
         with pytest.raises(ValueError, match="no time axis"):
             SimPlot().plot_samples(
-                dataset, chrom="chr1", mol=0, over="time", show=False
+                dataset, region="chr1", mol=0, over="time", show=False
             )
 
     def test_tm_without_samples_raises(self, tmp_path):
         dataset = _tm_dataset(tmp_path, nsim=0)
         with pytest.raises(ValueError, match="no samples stored"):
-            SimPlot().plot_samples(dataset, chrom="chr1", mol=0, show=False)
+            SimPlot().plot_samples(dataset, region="chr1", mol=0, show=False)
 
     def test_plot_eseq_without_stored_energy_raises(self, tmp_path):
         dataset = SimManager(nworker=1, verbose=False).run(
-            chroms="chr1",
+            regions="chr1",
             nsim=1,
             settings=_make_settings(),
             meth_prob=np.random.default_rng(1).random((1, 20)),
@@ -838,7 +838,7 @@ class TestPlotSamples:
         )
         with pytest.raises(ValueError, match="store_eseq=True"):
             SimPlot().plot_samples(
-                dataset, chrom="chr1", mol=0, plot_eseq=True, show=False
+                dataset, region="chr1", mol=0, plot_eseq=True, show=False
             )
 
 
@@ -849,7 +849,7 @@ def _tm_calls_dataset(tmp_path, nmol=5, nsim=0):
     meth_prob = np.random.default_rng(9).random((nmol, 20))
     meth_prob[1] = np.nan
     dataset = SimManager(nworker=1, verbose=False).run(
-        chroms="chr1",
+        regions="chr1",
         nsim=nsim,
         method="tm",
         settings=settings,
@@ -879,42 +879,42 @@ def _rows(dataset, configs):
 class TestPlotConfig:
     def test_stored_calls(self, tmp_path):
         dataset = _tm_calls_dataset(tmp_path)
-        SimPlot().plot_config(dataset, chroms="chr1", name="bm", show=False)
+        SimPlot().plot_config(dataset, regions="chr1", name="bm", show=False)
         configs = SimAnalysis().extract_config(
-            dataset, chrom="chr1", name="bm"
+            dataset, region="chr1", name="bm"
         )
         np.testing.assert_array_equal(_image(), _rows(dataset, configs))
         assert (_image()[1] == -1).all()
 
     def test_mcmc_raw_run(self, tmp_path):
         dataset = _mcmc_dataset(tmp_path)
-        SimPlot().plot_config(dataset, chroms="chr1", run=1, show=False)
-        configs = SimAnalysis().extract_config(dataset, chrom="chr1", run=1)
+        SimPlot().plot_config(dataset, regions="chr1", run=1, show=False)
+        configs = SimAnalysis().extract_config(dataset, region="chr1", run=1)
         np.testing.assert_array_equal(_image(), _rows(dataset, configs))
 
     def test_tm_sample(self, tmp_path):
         dataset = _tm_calls_dataset(tmp_path, nsim=3)
-        SimPlot().plot_config(dataset, chroms="chr1", run=2, show=False)
+        SimPlot().plot_config(dataset, regions="chr1", run=2, show=False)
         pos = dataset.raw["chr1", 0, 2].position
         np.testing.assert_array_equal(_image()[0], _footprint(dataset, pos))
 
     def test_mols_order(self, tmp_path):
         dataset = _tm_calls_dataset(tmp_path)
         SimPlot().plot_config(
-            dataset, chroms="chr1", name="bm", mols=[4, 0], show=False
+            dataset, regions="chr1", name="bm", mols=[4, 0], show=False
         )
         configs = SimAnalysis().extract_config(
-            dataset, chrom="chr1", name="bm", mols=[4, 0]
+            dataset, region="chr1", name="bm", mols=[4, 0]
         )
         np.testing.assert_array_equal(_image(), _rows(dataset, configs))
 
     def test_max_rows_stride_picks_molecules(self, tmp_path):
         dataset = _tm_calls_dataset(tmp_path)
         SimPlot().plot_config(
-            dataset, chroms="chr1", name="bm", max_rows=3, show=False
+            dataset, regions="chr1", name="bm", max_rows=3, show=False
         )
         configs = SimAnalysis().extract_config(
-            dataset, chrom="chr1", name="bm", mols=[0, 2, 4]
+            dataset, region="chr1", name="bm", mols=[0, 2, 4]
         )
         np.testing.assert_array_equal(_image(), _rows(dataset, configs))
 
@@ -922,14 +922,14 @@ class TestPlotConfig:
         dataset = _tm_calls_dataset(tmp_path, nmol=4)
         SimPlot().plot_config(
             dataset,
-            chroms="chr1",
+            regions="chr1",
             name="bm",
             max_rows=2,
             downsample_how="mean",
             show=False,
         )
         configs = SimAnalysis().extract_config(
-            dataset, chrom="chr1", name="bm"
+            dataset, region="chr1", name="bm"
         )
         rows = _rows(dataset, configs)
         np.testing.assert_allclose(_image()[0], rows[0])
@@ -939,14 +939,14 @@ class TestPlotConfig:
         dataset = _tm_calls_dataset(tmp_path, nmol=4)
         SimPlot().plot_config(
             dataset,
-            chroms="chr1",
+            regions="chr1",
             name="bm",
             max_rows=2,
             downsample_how="max",
             show=False,
         )
         configs = SimAnalysis().extract_config(
-            dataset, chrom="chr1", name="bm"
+            dataset, region="chr1", name="bm"
         )
         rows = _rows(dataset, configs)
         np.testing.assert_array_equal(_image()[1], rows[2:].max(axis=0))
@@ -955,7 +955,7 @@ class TestPlotConfig:
         dataset = _tm_calls_dataset(tmp_path)
         SimPlot().plot_config(
             dataset,
-            chroms="chr1",
+            regions="chr1",
             name="bm",
             mols=[0, 2],
             plot_eseq=True,
@@ -968,12 +968,12 @@ class TestPlotConfig:
         dataset = _tm_calls_dataset(tmp_path)
         with pytest.warns(UserWarning, match="'max_rows' or 'mols'"):
             SimPlot().plot_config(
-                dataset, chroms="chr1", name="bm", show=False
+                dataset, regions="chr1", name="bm", show=False
             )
 
     def test_binary_plot_has_legend(self, tmp_path):
         dataset = _tm_calls_dataset(tmp_path)
-        SimPlot().plot_config(dataset, chroms="chr1", name="bm", show=False)
+        SimPlot().plot_config(dataset, regions="chr1", name="bm", show=False)
         legend = plt.gcf().axes[1].get_legend()
         labels = [t.get_text() for t in legend.get_texts()]
         assert labels == ["Nucleosome", "Linker", "No data"]
@@ -981,7 +981,7 @@ class TestPlotConfig:
     def test_no_data_entry_only_if_present(self, tmp_path):
         dataset = _tm_calls_dataset(tmp_path)
         SimPlot().plot_config(
-            dataset, chroms="chr1", name="bm", mols=[0, 2], show=False
+            dataset, regions="chr1", name="bm", mols=[0, 2], show=False
         )
         legend = plt.gcf().axes[1].get_legend()
         assert "No data" not in [t.get_text() for t in legend.get_texts()]
@@ -990,7 +990,7 @@ class TestPlotConfig:
         dataset = _tm_calls_dataset(tmp_path, nmol=4)
         SimPlot().plot_config(
             dataset,
-            chroms="chr1",
+            regions="chr1",
             name="bm",
             max_rows=2,
             downsample_how="mean",
@@ -1002,7 +1002,7 @@ class TestPlotConfig:
 
     def test_rows_are_centered_with_integer_ticks(self, tmp_path):
         dataset = _tm_calls_dataset(tmp_path)
-        SimPlot().plot_config(dataset, chroms="chr1", name="bm", show=False)
+        SimPlot().plot_config(dataset, regions="chr1", name="bm", show=False)
         hm_ax = plt.gcf().axes[0]
         assert hm_ax.get_ylim() == (-0.5, 4.5)
         ticks = [t for t in hm_ax.get_yticks() if -0.5 <= t <= 4.5]
@@ -1014,20 +1014,20 @@ class TestPlotConfig:
     def test_ylabel(self, tmp_path, max_rows, label):
         dataset = _tm_calls_dataset(tmp_path)
         SimPlot().plot_config(
-            dataset, chroms="chr1", name="bm", max_rows=max_rows, show=False
+            dataset, regions="chr1", name="bm", max_rows=max_rows, show=False
         )
         assert plt.gcf().axes[0].get_ylabel() == label
 
     def test_link_mat_orders_rows(self, tmp_path):
         dataset = _tm_calls_dataset(tmp_path)
         configs = SimAnalysis().extract_config(
-            dataset, chrom="chr1", name="bm"
+            dataset, region="chr1", name="bm"
         )
         rows = _rows(dataset, configs)
         rows_float = np.where(rows < 0, 0, rows).astype(float)
         _, link_mat = utils.compute_linkage(rows_float)
         SimPlot().plot_config(
-            dataset, chroms="chr1", name="bm", link_mat=link_mat, show=False
+            dataset, regions="chr1", name="bm", link_mat=link_mat, show=False
         )
         order = sch.leaves_list(link_mat)
         np.testing.assert_array_equal(_image(), rows[order])
@@ -1037,7 +1037,7 @@ class TestPlotConfig:
     def test_link_mat_then_stride(self, tmp_path):
         dataset = _tm_calls_dataset(tmp_path)
         configs = SimAnalysis().extract_config(
-            dataset, chrom="chr1", name="bm"
+            dataset, region="chr1", name="bm"
         )
         rows = _rows(dataset, configs)
         _, link_mat = utils.compute_linkage(
@@ -1045,7 +1045,7 @@ class TestPlotConfig:
         )
         SimPlot().plot_config(
             dataset,
-            chroms="chr1",
+            regions="chr1",
             name="bm",
             link_mat=pd.DataFrame(link_mat),
             max_rows=3,
@@ -1060,7 +1060,7 @@ class TestPlotConfig:
         with pytest.raises(ValueError, match="mols cannot be combined"):
             SimPlot().plot_config(
                 dataset,
-                chroms="chr1",
+                regions="chr1",
                 name="bm",
                 mols=[0, 1],
                 link_mat=link_mat,
@@ -1073,7 +1073,7 @@ class TestPlotConfig:
         with pytest.raises(ValueError, match="4 leaves but the data has 5"):
             SimPlot().plot_config(
                 dataset,
-                chroms="chr1",
+                regions="chr1",
                 name="bm",
                 link_mat=link_mat,
                 show=False,
@@ -1083,7 +1083,7 @@ class TestPlotConfig:
         dataset = _tm_calls_dataset(tmp_path)
         with pytest.raises(KeyError, match="nope"):
             SimPlot().plot_config(
-                dataset, chroms="chr1", name="nope", show=False
+                dataset, regions="chr1", name="nope", show=False
             )
 
     def test_bad_downsample_how_raises(self, tmp_path):
@@ -1091,7 +1091,7 @@ class TestPlotConfig:
         with pytest.raises(ValueError, match="downsample_how must be"):
             SimPlot().plot_config(
                 dataset,
-                chroms="chr1",
+                regions="chr1",
                 name="bm",
                 max_rows=2,
                 downsample_how="sum",
@@ -1110,14 +1110,14 @@ def _expected_mean(rows):
 class TestPlotConfigMean:
     def _rows(self, dataset):
         configs = SimAnalysis().extract_config(
-            dataset, chrom="chr1", name="bm"
+            dataset, region="chr1", name="bm"
         )
         return _rows(dataset, configs)
 
     def test_mean_over_molecules_with_data(self, tmp_path):
         dataset = _tm_calls_dataset(tmp_path)
         SimPlot().plot_config(
-            dataset, chroms="chr1", name="bm", plot_mean=True, show=False
+            dataset, regions="chr1", name="bm", plot_mean=True, show=False
         )
         rows = self._rows(dataset)
         assert (rows[1] == -1).all()
@@ -1130,7 +1130,7 @@ class TestPlotConfigMean:
         dataset = _tm_calls_dataset(tmp_path)
         SimPlot().plot_config(
             dataset,
-            chroms="chr1",
+            regions="chr1",
             name="bm",
             max_rows=3,
             plot_mean=True,
@@ -1145,7 +1145,7 @@ class TestPlotConfigMean:
         dataset = _tm_calls_dataset(tmp_path)
         SimPlot().plot_config(
             dataset,
-            chroms="chr1",
+            regions="chr1",
             name="bm",
             max_rows=2,
             downsample_how="mean",
@@ -1160,7 +1160,7 @@ class TestPlotConfigMean:
         dataset = _tm_calls_dataset(tmp_path)
         SimPlot().plot_config(
             dataset,
-            chroms="chr1",
+            regions="chr1",
             name="bm",
             plot_mean=True,
             plot_eseq=True,
@@ -1178,11 +1178,11 @@ class TestPlotConfigMean:
         assert not mean_ax.get_xaxis().get_visible()
         assert seq_ax.get_xlabel().startswith("Position")
 
-    def test_several_chroms(self, tmp_path):
-        dataset = _tm_two_chrom_dataset(tmp_path)
+    def test_several_regions(self, tmp_path):
+        dataset = _tm_two_region_dataset(tmp_path)
         SimPlot().plot_config(
             dataset,
-            chroms=["chr1", "chr2"],
+            regions=["chr1", "chr2"],
             name="bm",
             xscale=1,
             plot_mean=True,
@@ -1194,7 +1194,7 @@ class TestPlotConfigMean:
         assert [ax.get_ylabel() for ax in mean_axes] == ["Mean", ""]
 
 
-def _tm_two_chrom_dataset(tmp_path):
+def _tm_two_region_dataset(tmp_path):
     settings = SimSettings(
         nucbp=3, llink=2, elink=1.0, mu=0.5, end_temp=1.0, emax=5.0
     )
@@ -1202,7 +1202,7 @@ def _tm_two_chrom_dataset(tmp_path):
     chr1 = rng.random((5, 20))
     chr1[1] = np.nan
     dataset = SimManager(nworker=1, verbose=False).run(
-        chroms=["chr1", "chr2"],
+        regions=["chr1", "chr2"],
         nsim=0,
         method="tm",
         settings=settings,
@@ -1218,14 +1218,14 @@ def _legend_labels(fig):
     return [t.get_text() for leg in fig.legends for t in leg.get_texts()]
 
 
-def _config_rows(dataset, chrom, mols=None):
+def _config_rows(dataset, region, mols=None):
     configs = SimAnalysis().extract_config(
-        dataset, chrom=chrom, name="bm", mols=mols
+        dataset, region=region, name="bm", mols=mols
     )
-    nuc_map = NucFiberMap(nbp=dataset.nbp[chrom], nucbp=3)
+    nuc_map = NucFiberMap(nbp=dataset.nbp[region], nucbp=3)
     return np.array(
         [
-            np.full(dataset.nbp[chrom], -1, dtype=np.int8)
+            np.full(dataset.nbp[region], -1, dtype=np.int8)
             if c is None
             else nuc_map.project(np.asarray(c))
             for c in configs
@@ -1237,24 +1237,24 @@ def _config_rows(dataset, chrom, mols=None):
     "ignore:__array__ implementation doesn't accept a copy keyword"
     ":DeprecationWarning"
 )
-class TestPlotConfigMultiChrom:
-    def test_one_panel_per_chrom(self, tmp_path):
-        dataset = _tm_two_chrom_dataset(tmp_path)
+class TestPlotConfigMultiRegion:
+    def test_one_panel_per_region(self, tmp_path):
+        dataset = _tm_two_region_dataset(tmp_path)
         SimPlot().plot_config(
-            dataset, chroms=["chr1", "chr2"], name="bm", show=False
+            dataset, regions=["chr1", "chr2"], name="bm", show=False
         )
         hm_axes = _heatmap_axes(plt.gcf())
-        for chrom, ax in zip(["chr1", "chr2"], hm_axes):
+        for region, ax in zip(["chr1", "chr2"], hm_axes):
             np.testing.assert_array_equal(
                 np.ma.getdata(ax.images[0].get_array()),
-                _config_rows(dataset, chrom),
+                _config_rows(dataset, region),
             )
-            assert ax.get_title() == chrom
+            assert ax.get_title() == region
 
     def test_binary_panels_share_one_legend(self, tmp_path):
-        dataset = _tm_two_chrom_dataset(tmp_path)
+        dataset = _tm_two_region_dataset(tmp_path)
         SimPlot().plot_config(
-            dataset, chroms=["chr1", "chr2"], name="bm", show=False
+            dataset, regions=["chr1", "chr2"], name="bm", show=False
         )
         fig = plt.gcf()
         legends = [ax.get_legend() for ax in fig.axes if ax.get_legend()]
@@ -1263,10 +1263,10 @@ class TestPlotConfigMultiChrom:
         assert labels == ["Nucleosome", "Linker", "No data"]
 
     def test_merged_panel_gives_shared_colorbar(self, tmp_path):
-        dataset = _tm_two_chrom_dataset(tmp_path)
+        dataset = _tm_two_region_dataset(tmp_path)
         SimPlot().plot_config(
             dataset,
-            chroms=["chr1", "chr2"],
+            regions=["chr1", "chr2"],
             name="bm",
             max_rows=4,
             downsample_how="mean",
@@ -1282,9 +1282,9 @@ class TestPlotConfigMultiChrom:
         assert _legend_labels(fig) == ["No data"]
 
     def test_panels_side_by_side(self, tmp_path):
-        dataset = _tm_two_chrom_dataset(tmp_path)
+        dataset = _tm_two_region_dataset(tmp_path)
         SimPlot().plot_config(
-            dataset, chroms=["chr1", "chr2"], name="bm", show=False
+            dataset, regions=["chr1", "chr2"], name="bm", show=False
         )
         boxes = _boxes(_heatmap_axes(plt.gcf()))
         assert boxes[0].y0 == pytest.approx(boxes[1].y0)
@@ -1293,11 +1293,11 @@ class TestPlotConfigMultiChrom:
         labels = [ax.get_ylabel() for ax in _heatmap_axes(plt.gcf())]
         assert labels == ["Molecule", ""]
 
-    def test_sharex_uses_longest_chrom(self, tmp_path):
-        dataset = _tm_two_chrom_dataset(tmp_path)
+    def test_sharex_uses_longest_region(self, tmp_path):
+        dataset = _tm_two_region_dataset(tmp_path)
         SimPlot().plot_config(
             dataset,
-            chroms=["chr1", "chr2"],
+            regions=["chr1", "chr2"],
             name="bm",
             xscale=1,
             sharex=True,
@@ -1306,8 +1306,8 @@ class TestPlotConfigMultiChrom:
         xlims = [ax.get_xlim() for ax in _heatmap_axes(plt.gcf())]
         assert xlims == [(0, 30), (0, 30)]
 
-    def test_link_mat_dict_sorts_each_chrom(self, tmp_path):
-        dataset = _tm_two_chrom_dataset(tmp_path)
+    def test_link_mat_dict_sorts_each_region(self, tmp_path):
+        dataset = _tm_two_region_dataset(tmp_path)
         rng = np.random.default_rng(1)
         links = {
             "chr1": utils.compute_linkage(rng.random((5, 3)))[1],
@@ -1315,39 +1315,39 @@ class TestPlotConfigMultiChrom:
         }
         SimPlot().plot_config(
             dataset,
-            chroms=["chr1", "chr2"],
+            regions=["chr1", "chr2"],
             name="bm",
             link_mat=links,
             show=False,
         )
-        for chrom, ax in zip(["chr1", "chr2"], _heatmap_axes(plt.gcf())):
-            order = sch.leaves_list(links[chrom])
+        for region, ax in zip(["chr1", "chr2"], _heatmap_axes(plt.gcf())):
+            order = sch.leaves_list(links[region])
             np.testing.assert_array_equal(
                 np.ma.getdata(ax.images[0].get_array()),
-                _config_rows(dataset, chrom)[order],
+                _config_rows(dataset, region)[order],
             )
 
     @pytest.mark.parametrize("name", ["link_mat", "mols"])
-    def test_non_dict_with_several_chroms_raises(self, tmp_path, name):
-        dataset = _tm_two_chrom_dataset(tmp_path)
+    def test_non_dict_with_several_regions_raises(self, tmp_path, name):
+        dataset = _tm_two_region_dataset(tmp_path)
         value = np.zeros((3, 4)) if name == "link_mat" else [0, 1]
         with pytest.raises(ValueError, match=f"{name} must be a dict"):
             SimPlot().plot_config(
                 dataset,
-                chroms=["chr1", "chr2"],
+                regions=["chr1", "chr2"],
                 name="bm",
                 show=False,
                 **{name: value},
             )
 
     def test_size_warning_counts_all_panels(self, tmp_path, monkeypatch):
-        dataset = _tm_two_chrom_dataset(tmp_path)
+        dataset = _tm_two_region_dataset(tmp_path)
         monkeypatch.setattr(
             "catella._plotting._RENDER_WARN_BYTES", 8 * 30 * 80
         )
         with pytest.warns(UserWarning, match="9 rows x 30 bp"):
             SimPlot().plot_config(
-                dataset, chroms=["chr1", "chr2"], name="bm", show=False
+                dataset, regions=["chr1", "chr2"], name="bm", show=False
             )
 
 
@@ -1361,19 +1361,19 @@ _LINKER_ROWS = np.array(
 )
 
 
-def _put_linker_hist(dataset, chrom, values, name="linker_hist"):
+def _put_linker_hist(dataset, region, values, name="linker_hist"):
     values = np.asarray(values, dtype=np.float64)
     columns = [*(str(i) for i in range(values.shape[1] - 1)), "tail"]
     arr = H5Array.create(values.shape, columns=columns)
     arr.write_batch(0, values.shape[0], values)
-    dataset.analysis[chrom][name] = arr
+    dataset.analysis[region][name] = arr
 
 
-def _linker_dataset(tmp_path, nchrom, scales=None):
-    dataset = _make_chrom_dataset(tmp_path, nchrom)
-    scales = scales or [1.0] * nchrom
-    for chrom, scale in zip(dataset.chroms, scales):
-        _put_linker_hist(dataset, chrom, scale * _LINKER_ROWS)
+def _linker_dataset(tmp_path, nregion, scales=None):
+    dataset = _make_region_dataset(tmp_path, nregion)
+    scales = scales or [1.0] * nregion
+    for region, scale in zip(dataset.regions, scales):
+        _put_linker_hist(dataset, region, scale * _LINKER_ROWS)
     return dataset
 
 
@@ -1382,10 +1382,10 @@ def _step_ydata(ax):
 
 
 class TestPlotLinkerHist:
-    def test_overlay_draws_one_filled_step_per_chrom(self, tmp_path):
+    def test_overlay_draws_one_filled_step_per_region(self, tmp_path):
         dataset = _linker_dataset(tmp_path, 2)
         SimPlot().plot_linker_hist(
-            dataset, chroms=["chr1", "chr2"], show=False
+            dataset, regions=["chr1", "chr2"], show=False
         )
         axes = plt.gcf().axes
         assert len(axes) == 1
@@ -1394,7 +1394,7 @@ class TestPlotLinkerHist:
 
     def test_density_is_fraction_of_linkers(self, tmp_path):
         dataset = _linker_dataset(tmp_path, 1)
-        SimPlot().plot_linker_hist(dataset, chroms="chr1", show=False)
+        SimPlot().plot_linker_hist(dataset, regions="chr1", show=False)
         (ydata,) = _step_ydata(plt.gca())
         counts = np.nansum(_LINKER_ROWS[:, :-1], axis=0)
         np.testing.assert_allclose(ydata, counts / counts.sum())
@@ -1403,7 +1403,7 @@ class TestPlotLinkerHist:
     def test_counts_per_molecule(self, tmp_path):
         dataset = _linker_dataset(tmp_path, 1)
         SimPlot().plot_linker_hist(
-            dataset, chroms="chr1", density=False, show=False
+            dataset, regions="chr1", density=False, show=False
         )
         (ydata,) = _step_ydata(plt.gca())
         expected = np.nanmean(_LINKER_ROWS[:, :-1], axis=0)
@@ -1413,7 +1413,7 @@ class TestPlotLinkerHist:
     def test_mols_subset(self, tmp_path):
         dataset = _linker_dataset(tmp_path, 1)
         SimPlot().plot_linker_hist(
-            dataset, chroms="chr1", mols=[3], density=False, show=False
+            dataset, regions="chr1", mols=[3], density=False, show=False
         )
         (ydata,) = _step_ydata(plt.gca())
         np.testing.assert_allclose(ydata, [0.0, 1.0, 1.0])
@@ -1421,7 +1421,7 @@ class TestPlotLinkerHist:
     def test_legend_shows_pooled_stats(self, tmp_path):
         dataset = _linker_dataset(tmp_path, 2)
         SimPlot().plot_linker_hist(
-            dataset, chroms=["chr1", "chr2"], show=False
+            dataset, regions=["chr1", "chr2"], show=False
         )
         stats = SimAnalysis().extract_linker_stats(dataset, pooled=True)
         texts = [t.get_text() for t in plt.gca().get_legend().get_texts()]
@@ -1433,15 +1433,15 @@ class TestPlotLinkerHist:
     def test_legend_without_stats(self, tmp_path):
         dataset = _linker_dataset(tmp_path, 2)
         SimPlot().plot_linker_hist(
-            dataset, chroms=["chr1", "chr2"], plot_stats=False, show=False
+            dataset, regions=["chr1", "chr2"], plot_stats=False, show=False
         )
         texts = [t.get_text() for t in plt.gca().get_legend().get_texts()]
         assert texts == ["chr1", "chr2"]
 
-    def test_panels_one_per_chrom(self, tmp_path):
+    def test_panels_one_per_region(self, tmp_path):
         dataset = _linker_dataset(tmp_path, 2)
         SimPlot().plot_linker_hist(
-            dataset, chroms=["chr1", "chr2"], panels=True, show=False
+            dataset, regions=["chr1", "chr2"], panels=True, show=False
         )
         axes = [ax for ax in plt.gcf().axes if ax.get_visible()]
         assert [ax.get_title() for ax in axes] == ["chr1", "chr2"]
@@ -1452,7 +1452,7 @@ class TestPlotLinkerHist:
     def test_five_panels_use_two_rows(self, tmp_path):
         dataset = _linker_dataset(tmp_path, 5)
         SimPlot().plot_linker_hist(
-            dataset, chroms=dataset.chroms, panels=True, show=False
+            dataset, regions=dataset.regions, panels=True, show=False
         )
         axes = plt.gcf().axes
         assert len(axes) == 8
@@ -1463,7 +1463,7 @@ class TestPlotLinkerHist:
         dataset = _linker_dataset(tmp_path, 2, scales=[1.0, 10.0])
         SimPlot().plot_linker_hist(
             dataset,
-            chroms=["chr1", "chr2"],
+            regions=["chr1", "chr2"],
             panels=True,
             sharey=sharey,
             density=False,
@@ -1475,16 +1475,16 @@ class TestPlotLinkerHist:
     def test_logy(self, tmp_path):
         dataset = _linker_dataset(tmp_path, 1)
         SimPlot().plot_linker_hist(
-            dataset, chroms="chr1", logy=True, show=False
+            dataset, regions="chr1", logy=True, show=False
         )
         assert plt.gca().get_yscale() == "log"
 
-    def test_chrom_without_linkers_is_skipped(self, tmp_path):
+    def test_region_without_linkers_is_skipped(self, tmp_path):
         dataset = _linker_dataset(tmp_path, 2)
         _put_linker_hist(dataset, "chr2", np.zeros((4, 4)))
         with pytest.warns(UserWarning, match="no linkers up to lmax"):
             SimPlot().plot_linker_hist(
-                dataset, chroms=["chr1", "chr2"], show=False
+                dataset, regions=["chr1", "chr2"], show=False
             )
         assert len(plt.gca().get_lines()) == 1
 
@@ -1492,27 +1492,27 @@ class TestPlotLinkerHist:
         dataset = _linker_dataset(tmp_path, 1)
         out_file = tmp_path / "plots" / "linker.png"
         SimPlot().plot_linker_hist(
-            dataset, chroms="chr1", out_file=out_file, show=False
+            dataset, regions="chr1", out_file=out_file, show=False
         )
         assert out_file.exists()
 
-    def test_empty_chroms_raises(self, tmp_path):
+    def test_empty_regions_raises(self, tmp_path):
         dataset = _linker_dataset(tmp_path, 1)
         with pytest.raises(ValueError, match="must not be empty"):
-            SimPlot().plot_linker_hist(dataset, chroms=[], show=False)
+            SimPlot().plot_linker_hist(dataset, regions=[], show=False)
 
-    def test_non_dict_mols_with_several_chroms_raises(self, tmp_path):
+    def test_non_dict_mols_with_several_regions_raises(self, tmp_path):
         dataset = _linker_dataset(tmp_path, 2)
         with pytest.raises(ValueError, match="dict keyed by region"):
             SimPlot().plot_linker_hist(
-                dataset, chroms=["chr1", "chr2"], mols=[0], show=False
+                dataset, regions=["chr1", "chr2"], mols=[0], show=False
             )
 
     def test_missing_name_raises(self, tmp_path):
         dataset = _linker_dataset(tmp_path, 1)
         with pytest.raises(KeyError, match="run compute_linker_hist first"):
             SimPlot().plot_linker_hist(
-                dataset, chroms="chr1", name="other", show=False
+                dataset, regions="chr1", name="other", show=False
             )
 
 

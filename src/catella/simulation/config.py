@@ -28,7 +28,7 @@ class SimSettings:
     llink: int | Mapping[str, int]
     """The soft minimum DNA linker length between nucleosomes, enforced by
     a repulsion of strength `elink` for shorter linkers. Either one value
-    for all chromosomes or a mapping of chromosome to value."""
+    for all regions or a mapping of region to value."""
 
     elink: float = 1.0
     """The energy scale (in $k_BT$) of the linker repulsion potential.
@@ -74,31 +74,31 @@ class SimSettings:
         "constant": NucPosMCMC.Cooling.Constant,
     }
 
-    def for_chrom(self, chrom: str) -> Self:
+    def for_region(self, region: str) -> Self:
         """
-        Settings of one chromosome, with an integer `llink`.
+        Settings of one region, with an integer `llink`.
 
         Parameters
         ----------
-        chrom : str
-            Chromosome identifier.
+        region : str
+            Region identifier.
 
         Returns
         -------
         SimSettings
-            These settings if `llink` is one value for all chromosomes;
-            otherwise a copy with the `llink` of `chrom`.
+            These settings if `llink` is one value for all regions;
+            otherwise a copy with the `llink` of `region`.
 
         Raises
         ------
         KeyError
-            If `llink` is a mapping without `chrom`.
+            If `llink` is a mapping without `region`.
         """
         if not isinstance(self.llink, Mapping):
             return self
-        if chrom not in self.llink:
-            raise KeyError(f"llink has no value for chromosome '{chrom}'")
-        return replace(self, llink=int(self.llink[chrom]))
+        if region not in self.llink:
+            raise KeyError(f"llink has no value for region '{region}'")
+        return replace(self, llink=int(self.llink[region]))
 
     @classmethod
     def load(cls, config_file: str | Path) -> Self:
@@ -134,7 +134,7 @@ class SimSettings:
            The input file must be a mapping where keys correspond exactly
            to the field names defined in this class (e.g., 'nucbp', 'mu').
            Values are scalars, except that `llink` can be a mapping of
-           chromosome to value. YAML support requires the `PyYAML` package
+           region to value. YAML support requires the `PyYAML` package
            to be installed.
         """
         config_file = Path(config_file)
@@ -151,7 +151,7 @@ class SimSettings:
                 raise ValueError(
                     f"unsupported file format: {config_file.suffix}"
                 )
-        # YAML reads a chromosome named 601 as an integer key
+        # YAML reads a region named 601 as an integer key
         if isinstance(data.get("llink"), Mapping):
             data["llink"] = {str(k): v for k, v in data["llink"].items()}
         return cls(**data)

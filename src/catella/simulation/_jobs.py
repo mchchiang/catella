@@ -21,15 +21,15 @@ class MCMCJob:
     spawned worker process.
     """
 
-    chrom: str
-    """The name or identifier of the chromosome being simulated."""
+    region: str
+    """The name or identifier of the region being simulated."""
 
     mol: int
     """The index or identifier of the specific molecule within the
-    chromosome."""
+    region."""
 
     run: int
-    """The iteration or replica index for this specific molecule-chromosome
+    """The iteration or replica index for this specific molecule-region
     pair."""
 
     seed: int
@@ -62,12 +62,12 @@ class TMJob:
     sent as-is to a freshly spawned worker process.
     """
 
-    chrom: str
-    """The name or identifier of the chromosome being simulated."""
+    region: str
+    """The name or identifier of the region being simulated."""
 
     mol: int
     """The index or identifier of the specific molecule within the
-    chromosome."""
+    region."""
 
     seeds: tuple[int, ...]
     """One seed per sample; sample `i` is drawn after re-seeding the
@@ -84,7 +84,7 @@ class TMJob:
     """The physical constants used for this molecule."""
 
 
-def _job_seed(master_seed, chrom_idx, mol, run):
+def _job_seed(master_seed, region_idx, mol, run):
     """
     Derive a deterministic, order-independent seed for a single run.
 
@@ -92,8 +92,8 @@ def _job_seed(master_seed, chrom_idx, mol, run):
     ----------
     master_seed : int
         The batch-level seed the whole dataset was generated from.
-    chrom_idx : int
-        The index of the chromosome within the dataset's chromosome list.
+    region_idx : int
+        The index of the region within the dataset's region list.
     mol : int
         The molecule index.
     run : int
@@ -106,7 +106,7 @@ def _job_seed(master_seed, chrom_idx, mol, run):
     """
     return int(
         np.random.SeedSequence(
-            entropy=master_seed, spawn_key=(chrom_idx, mol, run)
+            entropy=master_seed, spawn_key=(region_idx, mol, run)
         ).generate_state(1)[0]
     )
 
@@ -131,7 +131,7 @@ def _resolve_master_seed(seed):
     return seed
 
 
-def _seed_table(seed, chroms, nmol, nsim):
+def _seed_table(seed, regions, nmol, nsim):
     """
     Precompute the seed of every run of every molecule.
 
@@ -142,26 +142,26 @@ def _seed_table(seed, chroms, nmol, nsim):
     ----------
     seed : int
         The master seed.
-    chroms : sequence of str
-        The chromosomes, in dataset order.
+    regions : sequence of str
+        The regions, in dataset order.
     nmol : mapping of str to int
-        The number of molecules of each chromosome.
+        The number of molecules of each region.
     nsim : int
         The number of runs per molecule.
 
     Returns
     -------
     dict of str to np.ndarray
-        A uint32 array of shape `(nmol[chrom], nsim)` for each chromosome,
-        where entry `[mol, run]` is `_job_seed(seed, chrom_idx, mol, run)`.
+        A uint32 array of shape `(nmol[region], nsim)` for each region,
+        where entry `[mol, run]` is `_job_seed(seed, region_idx, mol, run)`.
     """
     table = {}
-    for chrom_idx, chrom in enumerate(chroms):
-        arr = np.empty((nmol[chrom], nsim), dtype=np.uint32)
-        for mol in range(nmol[chrom]):
+    for region_idx, region in enumerate(regions):
+        arr = np.empty((nmol[region], nsim), dtype=np.uint32)
+        for mol in range(nmol[region]):
             for run in range(nsim):
-                arr[mol, run] = _job_seed(seed, chrom_idx, mol, run)
-        table[chrom] = arr
+                arr[mol, run] = _job_seed(seed, region_idx, mol, run)
+        table[region] = arr
     return table
 
 
@@ -187,7 +187,7 @@ def _check_seed_source(dataset, seed):
         )
 
 
-def _run_seeds(dataset, chrom, mol, runs, seed=None):
+def _run_seeds(dataset, region, mol, runs, seed=None):
     """
     Return the seeds of the given runs of one molecule.
 
@@ -195,8 +195,8 @@ def _run_seeds(dataset, chrom, mol, runs, seed=None):
     ----------
     dataset : SimDataset
         The dataset the runs belong to.
-    chrom : str
-        The chromosome of the molecule.
+    region : str
+        The region of the molecule.
     mol : int
         The molecule index.
     runs : iterable of int
@@ -211,9 +211,9 @@ def _run_seeds(dataset, chrom, mol, runs, seed=None):
         One seed per entry of `runs`.
     """
     if seed is None:
-        return tuple(int(dataset.seed_table[chrom][mol, run]) for run in runs)
-    chrom_idx = dataset.chroms.index(chrom)
-    return tuple(_job_seed(seed, chrom_idx, mol, run) for run in runs)
+        return tuple(int(dataset.seed_table[region][mol, run]) for run in runs)
+    region_idx = dataset.regions.index(region)
+    return tuple(_job_seed(seed, region_idx, mol, run) for run in runs)
 
 
 def _eseq_bytes(meth_prob_row):
@@ -233,7 +233,7 @@ def _eseq_bytes(meth_prob_row):
     return np.asarray(logit(meth_prob_row), dtype=np.float64).tobytes()
 
 
-def _compute_eseq(settings, meth_prob, chroms):
+def _compute_eseq(settings, meth_prob, regions):
     """
     Compute the sequence-specific nucleosome binding energy of molecules.
 
@@ -243,31 +243,31 @@ def _compute_eseq(settings, meth_prob, chroms):
         The physical constants used to build the energy model.
     meth_prob : mapping of str to np.ndarray
         The 2D methylation probability (molecules by base pairs) of each
-        chromosome.
-    chroms : iterable of str
-        The chromosomes to process.
+        region.
+    regions : iterable of str
+        The regions to process.
 
     Returns
     -------
     dict of str to np.ndarray
         The energy of each molecule and base pair, with the same shape as
-        `meth_prob[chrom]`.
+        `meth_prob[region]`.
     """
     eseq = {}
-    for chrom in chroms:
-        prob = meth_prob[chrom]
+    for region in regions:
+        prob = meth_prob[region]
         model = NucPosMCMC(
             settings.nucbp,
             prob.shape[1],
-            settings.for_chrom(chrom).llink,
+            settings.for_region(region).llink,
             settings.elink,
             settings.mu,
             0,
         )
-        eseq[chrom] = np.empty(prob.shape)
+        eseq[region] = np.empty(prob.shape)
         for i in range(prob.shape[0]):
             model.setEnergy(logit(prob[i]), settings.emax)
-            eseq[chrom][i] = model.getSeqEnergy()
+            eseq[region][i] = model.getSeqEnergy()
     return eseq
 
 
@@ -278,38 +278,38 @@ def _median_eseq_mu(eseq):
     Parameters
     ----------
     eseq : mapping of str to np.ndarray
-        The binding energy of each chromosome.
+        The binding energy of each region.
 
     Returns
     -------
     float
-        The mean over chromosomes of each chromosome's median energy,
+        The mean over regions of each region's median energy,
         ignoring nan.
     """
     return float(np.mean([np.nanmedian(arr) for arr in eseq.values()]))
 
 
-def _iter_selected(chroms, nmol, mols):
+def _iter_selected(regions, nmol, mols):
     """
-    Yield the selected molecules of each chromosome.
+    Yield the selected molecules of each region.
 
     Parameters
     ----------
-    chroms : iterable of str
-        The chromosomes, in order.
+    regions : iterable of str
+        The regions, in order.
     nmol : mapping of str to int
-        The number of molecules of each chromosome.
+        The number of molecules of each region.
     mols : mapping of str to int, slice, or sequence of int
-        The molecule selection of each chromosome.
+        The molecule selection of each region.
 
     Yields
     ------
     tuple of (str, int)
-        The chromosome and index of each selected molecule.
+        The region and index of each selected molecule.
     """
-    for chrom in chroms:
-        for mol in np.arange(nmol[chrom])[mols[chrom]].ravel():
-            yield chrom, int(mol)
+    for region in regions:
+        for mol in np.arange(nmol[region])[mols[region]].ravel():
+            yield region, int(mol)
 
 
 def _iter_mcmc_jobs(
@@ -323,11 +323,11 @@ def _iter_mcmc_jobs(
     dataset : SimDataset
         The dataset the runs belong to; gives output files and seeds.
     settings : SimSettings
-        The settings of the runs, resolved per chromosome.
+        The settings of the runs, resolved per region.
     meth_prob : mapping of str to np.ndarray
-        The 2D methylation probability of each chromosome.
+        The 2D methylation probability of each region.
     targets : iterable of (str, int, int)
-        The `(chrom, mol, run)` of each run.
+        The `(region, mol, run)` of each run.
     out_type : Dump.OutputType
         The data to record.
     seed : int, optional
@@ -340,19 +340,19 @@ def _iter_mcmc_jobs(
         The job of each target, in order.
     """
     last_mol = eseq = None
-    for chrom, mol, run in targets:
-        if (chrom, mol) != last_mol:
-            eseq = _eseq_bytes(meth_prob[chrom][mol, :])
-            last_mol = (chrom, mol)
+    for region, mol, run in targets:
+        if (region, mol) != last_mol:
+            eseq = _eseq_bytes(meth_prob[region][mol, :])
+            last_mol = (region, mol)
         yield MCMCJob(
-            chrom=chrom,
+            region=region,
             mol=mol,
             run=run,
-            settings=settings.for_chrom(chrom),
-            seed=_run_seeds(dataset, chrom, mol, [run], seed)[0],
+            settings=settings.for_region(region),
+            seed=_run_seeds(dataset, region, mol, [run], seed)[0],
             seq_energy=eseq,
             out_type=out_type,
-            out_file=dataset.mcmc_file(chrom, mol, run),
+            out_file=dataset.mcmc_file(region, mol, run),
         )
 
 
@@ -365,11 +365,11 @@ def _iter_tm_jobs(dataset, settings, meth_prob, targets, seed=None):
     dataset : SimDataset
         The dataset the molecules belong to; gives output files and seeds.
     settings : SimSettings
-        The settings of the molecules, resolved per chromosome.
+        The settings of the molecules, resolved per region.
     meth_prob : mapping of str to np.ndarray
-        The 2D methylation probability of each chromosome.
+        The 2D methylation probability of each region.
     targets : iterable of (str, int)
-        The `(chrom, mol)` of each molecule.
+        The `(region, mol)` of each molecule.
     seed : int, optional
         A new master seed. If None (default), stored seeds are reused;
         see `_run_seeds`.
@@ -380,14 +380,14 @@ def _iter_tm_jobs(dataset, settings, meth_prob, targets, seed=None):
         The job of each target, in order.
     """
     runs = range(dataset.nsim)
-    for chrom, mol in targets:
+    for region, mol in targets:
         yield TMJob(
-            chrom=chrom,
+            region=region,
             mol=mol,
-            seeds=_run_seeds(dataset, chrom, mol, runs, seed),
-            seq_energy=_eseq_bytes(meth_prob[chrom][mol, :]),
-            out_file=dataset.tm_file(chrom, mol),
-            settings=settings.for_chrom(chrom),
+            seeds=_run_seeds(dataset, region, mol, runs, seed),
+            seq_energy=_eseq_bytes(meth_prob[region][mol, :]),
+            out_file=dataset.tm_file(region, mol),
+            settings=settings.for_region(region),
         )
 
 
@@ -406,7 +406,7 @@ def _mcmc_rerun_targets(dataset, only):
     Returns
     -------
     list of (str, int, int)
-        The `(chrom, mol, run)` of each run to rerun.
+        The `(region, mol, run)` of each run to rerun.
     """
     if only is not None:
         return list(only)
@@ -434,23 +434,23 @@ def _tm_rerun_targets(dataset, only):
     Returns
     -------
     list of (str, int)
-        The `(chrom, mol)` of each molecule to regenerate.
+        The `(region, mol)` of each molecule to regenerate.
 
     Raises
     ------
     ValueError
-        If `only` contains an entry that is not a `(chrom, mol)` pair.
+        If `only` contains an entry that is not a `(region, mol)` pair.
     """
     if only is None:
         incomplete = dataset.find_incomplete_runs()
         triplets = incomplete["missing"] + incomplete["corrupted"]
-        return sorted({(chrom, mol) for chrom, mol, _ in triplets})
+        return sorted({(region, mol) for region, mol, _ in triplets})
     targets = list(only)
     for target in targets:
         if len(target) != 2:
             raise ValueError(
-                "for a 'tm' dataset, 'only' must contain (chrom, mol) "
-                "pairs, not (chrom, mol, run) triplets; TM samples are "
+                "for a 'tm' dataset, 'only' must contain (region, mol) "
+                "pairs, not (region, mol, run) triplets; TM samples are "
                 "regenerated at molecule granularity"
             )
     return targets

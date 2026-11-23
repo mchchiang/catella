@@ -16,10 +16,10 @@ _RENDER_BYTES_PER_CELL = 80
 # Warn when rendering a heatmap is estimated to need more than this
 _RENDER_WARN_BYTES = 10**9
 
-# Warn when plotting more chromosome panels than this in one figure
+# Warn when plotting more region panels than this in one figure
 _MAX_PANELS = 10
 
-# Chromosome panels per row (as in MethPlot.plot_dropout_ecdf)
+# Region panels per row (as in MethPlot.plot_dropout_ecdf)
 _PANELS_PER_ROW = 4
 
 
@@ -112,7 +112,7 @@ def _leaf_order(link_mat, nrow, mols=None):
 
 
 def _panel_grid(
-    nchrom,
+    nregion,
     width_ratios,
     *,
     dendrogram,
@@ -121,7 +121,7 @@ def _panel_grid(
     scale_h=1.0,
 ):
     """
-    Create a figure with one heatmap panel per chromosome.
+    Create a figure with one heatmap panel per region.
 
     Panels are laid out left to right, at most 4 per row (as in
     `MethPlot.plot_dropout_ecdf`), in one grid so that panels in a row
@@ -132,7 +132,7 @@ def _panel_grid(
 
     Parameters
     ----------
-    nchrom : int
+    nregion : int
         The number of panels.
     width_ratios : list of float
         The relative widths of the columns of one panel (heatmap,
@@ -149,22 +149,22 @@ def _panel_grid(
     Returns
     -------
     fig : matplotlib.figure.Figure
-        The figure; it uses constrained layout if `nchrom` > 1.
+        The figure; it uses constrained layout if `nregion` > 1.
     panels : list of dict
         Per panel, the axes "hm_ax", "dend_ax" (None without a
         dendrogram), "side_ax" (the top-right cell of the last column,
         the same for all panels), "mean_ax" and "seq_ax" (None without
         that row), and its grid column "col".
     """
-    if nchrom > _MAX_PANELS:
+    if nregion > _MAX_PANELS:
         _warn(
-            f"plotting {nchrom} chromosomes in one figure; consider fewer "
-            "chroms, or one figure per chrom with out_file"
+            f"plotting {nregion} regions in one figure; consider fewer "
+            "regions, or one figure per region with out_file"
         )
     extra_rows = list(extra_rows)
     nsub = 1 + len(extra_rows)
-    ncols = min(nchrom, _PANELS_PER_ROW)
-    nrows = -(-nchrom // ncols)
+    ncols = min(nregion, _PANELS_PER_ROW)
+    nrows = -(-nregion // ncols)
     panel_ratios = list(width_ratios[:-1])
     width = len(panel_ratios)
     w, h = plt.rcParams["figure.figsize"]
@@ -179,7 +179,7 @@ def _panel_grid(
         },
         squeeze=False,
         figsize=(w * scale_w * ncols, h * scale_h * nrows),
-        layout="constrained" if nchrom > 1 else None,
+        layout="constrained" if nregion > 1 else None,
     )
     side_ax = ax[0, -1]
     for cell in ax[1:, -1]:
@@ -193,7 +193,7 @@ def _panel_grid(
             name: ax[r * nsub + 1 + k, cols]
             for k, name in enumerate(extra_rows)
         }
-        if i >= nchrom:
+        if i >= nregion:
             for cell in [*cells, *(x for row in extra.values() for x in row)]:
                 cell.set_visible(False)
             continue

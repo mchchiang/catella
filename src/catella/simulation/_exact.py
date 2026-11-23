@@ -27,14 +27,14 @@ class TMBatchJob:
     sent as-is to a freshly spawned worker process.
     """
 
-    chrom: str
-    """The chromosome of the molecules."""
+    region: str
+    """The region of the molecules."""
 
     start: int
     """The index of the first molecule of the batch."""
 
     settings: SimSettings
-    """The settings, resolved for `chrom`."""
+    """The settings, resolved for `region`."""
 
     nbp: int
     """The number of base pairs of each molecule."""
@@ -158,23 +158,23 @@ def _reject_time(time, record_time):
         )
 
 
-def _chrom_settings(dataset, chrom):
+def _region_settings(dataset, region):
     """
-    Return the settings of `dataset` resolved for one chromosome.
+    Return the settings of `dataset` resolved for one region.
 
     Parameters
     ----------
     dataset : SimDataset
         The dataset holding the settings.
-    chrom : str
-        The chromosome.
+    region : str
+        The region.
 
     Returns
     -------
     SimSettings
         The resolved settings.
     """
-    return SimSettings(**dict(dataset.settings)).for_chrom(chrom)
+    return SimSettings(**dict(dataset.settings)).for_region(region)
 
 
 def _build_tm(settings, nbp, eseq):
@@ -187,7 +187,7 @@ def _build_tm(settings, nbp, eseq):
     Parameters
     ----------
     settings : SimSettings
-        The settings, resolved for the chromosome of the molecule.
+        The settings, resolved for the region of the molecule.
     nbp : int
         The number of base pairs of the molecule.
     eseq : np.ndarray
@@ -211,7 +211,7 @@ def _build_tm(settings, nbp, eseq):
     return tm
 
 
-def _solved_tm(dataset, chrom, mol):
+def _solved_tm(dataset, region, mol):
     """
     Build and solve the transfer matrix of one molecule of a dataset.
 
@@ -219,8 +219,8 @@ def _solved_tm(dataset, chrom, mol):
     ----------
     dataset : SimDataset
         The dataset holding the settings and binding energy.
-    chrom : str
-        The chromosome of the molecule.
+    region : str
+        The region of the molecule.
     mol : int
         The molecule index.
 
@@ -230,9 +230,9 @@ def _solved_tm(dataset, chrom, mol):
         The solved model.
     """
     return _build_tm(
-        _chrom_settings(dataset, chrom),
-        dataset.nbp[chrom],
-        dataset.eseq[chrom][mol],
+        _region_settings(dataset, region),
+        dataset.nbp[region],
+        dataset.eseq[region][mol],
     )
 
 
@@ -292,16 +292,16 @@ def _lists_to_arrays(value):
     return value
 
 
-def _iter_tm_batches(dataset, chroms, getters, batch_size, nworker):
+def _iter_tm_batches(dataset, regions, getters, batch_size, nworker):
     """
-    Solve every molecule of `chroms` once, in batches, possibly in parallel.
+    Solve every molecule of `regions` once, in batches, possibly in parallel.
 
     Parameters
     ----------
     dataset : SimDataset
         The TM dataset holding the settings and binding energy.
-    chroms : iterable of str
-        The chromosomes to process.
+    regions : iterable of str
+        The regions to process.
     getters : sequence of (str, dict)
         The `(method_name, kwargs)` of each `NucPosTM` getter to call.
     batch_size : int
@@ -313,7 +313,7 @@ def _iter_tm_batches(dataset, chroms, getters, batch_size, nworker):
     Yields
     ------
     tuple
-        `(chrom, start, results)`, where `results` holds one tuple of
+        `(region, start, results)`, where `results` holds one tuple of
         getter results per molecule (None for a molecule with no data),
         starting at molecule `start`. Batches arrive in completion order
         when `nworker > 1`.
@@ -330,25 +330,25 @@ def _iter_tm_batches(dataset, chroms, getters, batch_size, nworker):
     getters = tuple((name, dict(kwargs)) for name, kwargs in getters)
 
     def jobs():
-        for chrom in chroms:
-            settings = _chrom_settings(dataset, chrom)
-            eseq = dataset.eseq[chrom]
-            for start in range(0, dataset.nmol[chrom], batch_size):
+        for region in regions:
+            settings = _region_settings(dataset, region)
+            eseq = dataset.eseq[region]
+            for start in range(0, dataset.nmol[region], batch_size):
                 yield TMBatchJob(
-                    chrom=chrom,
+                    region=region,
                     start=start,
                     settings=settings,
-                    nbp=dataset.nbp[chrom],
+                    nbp=dataset.nbp[region],
                     eseq=np.array(eseq[start : start + batch_size]),
                     getters=getters,
                 )
 
     for job, results in _process_map(_run_tm_batch, jobs(), nworker=nworker):
-        yield job.chrom, job.start, results
+        yield job.region, job.start, results
 
 
 def _tm_stats(
-    dataset, chroms, stats, *, batch_size=TM_BATCH_SIZE, nworker=1
+    dataset, regions, stats, *, batch_size=TM_BATCH_SIZE, nworker=1
 ):
     """
     Store several exact quantities, solving each molecule only once.
@@ -361,9 +361,9 @@ def _tm_stats(
     Parameters
     ----------
     dataset : SimDataset
-        The TM dataset; results go to `dataset.analysis[chrom][stat.name]`.
-    chroms : iterable of str
-        The chromosomes to process.
+        The TM dataset; results go to `dataset.analysis[region][stat.name]`.
+    regions : iterable of str
+        The regions to process.
     stats : sequence of TMStat
         The quantities to compute.
     batch_size : int, default TM_BATCH_SIZE
@@ -376,14 +376,14 @@ def _tm_stats(
     ValueError
         If `batch_size` or `nworker` is not positive.
     """
-    chroms = list(chroms)
+    regions = list(regions)
     stats = list(stats)
     vector = any(s.per_bp or s.ncol is not None for s in stats)
     tmp_dir = dataset.resolve_tmp_dir() if vector else None
     out = {}
-    for chrom in chroms:
-        nmol, nbp = dataset.nmol[chrom], dataset.nbp[chrom]
-        out[chrom] = [
+    for region in regions:
+        nmol, nbp = dataset.nmol[region], dataset.nbp[region]
+        out[region] = [
             np.empty(nmol, dtype=np.float64)
             if s.width(nbp) is None
             else H5Array.create(
@@ -395,11 +395,11 @@ def _tm_stats(
             for s in stats
         ]
     getters = [(s.getter, s.kwargs) for s in stats]
-    batches = _iter_tm_batches(dataset, chroms, getters, batch_size, nworker)
-    for chrom, start, results in batches:
+    batches = _iter_tm_batches(dataset, regions, getters, batch_size, nworker)
+    for region, start, results in batches:
         stop = start + len(results)
-        for i, (stat, arr) in enumerate(zip(stats, out[chrom])):
-            width = stat.width(dataset.nbp[chrom])
+        for i, (stat, arr) in enumerate(zip(stats, out[region])):
+            width = stat.width(dataset.nbp[region])
             fill = np.nan if width is None else np.full(width, np.nan)
             block = np.array(
                 [fill if r is None else r[i] for r in results],
@@ -409,22 +409,22 @@ def _tm_stats(
                 arr[start:stop] = block
             else:
                 arr.write_batch(start, stop, block)
-    for chrom in chroms:
-        for stat, arr in zip(stats, out[chrom]):
+    for region in regions:
+        for stat, arr in zip(stats, out[region]):
             value = arr if isinstance(arr, H5Array) else pd.DataFrame(arr)
-            dataset.analysis[chrom][stat.name] = value
+            dataset.analysis[region][stat.name] = value
 
 
-def _tm_per_mol(dataset, chroms, name, getter, *, nworker=1):
+def _tm_per_mol(dataset, regions, name, getter, *, nworker=1):
     """
     Store one exact value per molecule as a DataFrame.
 
     Parameters
     ----------
     dataset : SimDataset
-        The TM dataset; results go to `dataset.analysis[chrom][name]`.
-    chroms : iterable of str
-        The chromosomes to process.
+        The TM dataset; results go to `dataset.analysis[region][name]`.
+    regions : iterable of str
+        The regions to process.
     name : str
         The key of the result.
     getter : callable
@@ -434,19 +434,19 @@ def _tm_per_mol(dataset, chroms, name, getter, *, nworker=1):
         The number of worker processes.
     """
     stats = [TMStat(name, getter.__name__)]
-    _tm_stats(dataset, chroms, stats, nworker=nworker)
+    _tm_stats(dataset, regions, stats, nworker=nworker)
 
 
-def _tm_per_bp(dataset, chroms, name, batch_size, getter, *, nworker=1):
+def _tm_per_bp(dataset, regions, name, batch_size, getter, *, nworker=1):
     """
     Store one exact value per molecule and base pair as an H5Array.
 
     Parameters
     ----------
     dataset : SimDataset
-        The TM dataset; results go to `dataset.analysis[chrom][name]`.
-    chroms : iterable of str
-        The chromosomes to process.
+        The TM dataset; results go to `dataset.analysis[region][name]`.
+    regions : iterable of str
+        The regions to process.
     name : str
         The key of the result.
     batch_size : int
@@ -459,18 +459,18 @@ def _tm_per_bp(dataset, chroms, name, batch_size, getter, *, nworker=1):
     """
     _tm_stats(
         dataset,
-        chroms,
+        regions,
         [TMStat(name, getter.__name__, per_bp=True)],
         batch_size=batch_size,
         nworker=nworker,
     )
 
 
-def _tm_configs(dataset, chroms, name, get_config, *, kwargs=None, nworker=1):
+def _tm_configs(dataset, regions, name, get_config, *, kwargs=None, nworker=1):
     """
     Store one nucleosome configuration per molecule.
 
-    For each chromosome, writes `{name}_position_flat` and
+    For each region, writes `{name}_position_flat` and
     `{name}_position_offset` (the packed positions) and `{name}_energy`
     (the energy and log posterior probability of each configuration).
     Molecules with no data get no positions and nan energy.
@@ -478,9 +478,9 @@ def _tm_configs(dataset, chroms, name, get_config, *, kwargs=None, nworker=1):
     Parameters
     ----------
     dataset : SimDataset
-        The TM dataset; results go to `dataset.analysis[chrom]`.
-    chroms : iterable of str
-        The chromosomes to process.
+        The TM dataset; results go to `dataset.analysis[region]`.
+    regions : iterable of str
+        The regions to process.
     name : str
         The prefix of the result keys.
     get_config : callable
@@ -491,31 +491,31 @@ def _tm_configs(dataset, chroms, name, get_config, *, kwargs=None, nworker=1):
     nworker : int, default 1
         The number of worker processes.
     """
-    chroms = list(chroms)
+    regions = list(regions)
     end_temp = SimSettings(**dict(dataset.settings)).end_temp
     getters = [(get_config.__name__, kwargs or {}), ("getLogZ", {})]
-    positions = {chrom: [None] * dataset.nmol[chrom] for chrom in chroms}
-    energy = {chrom: np.empty(dataset.nmol[chrom]) for chrom in chroms}
-    log_z = {chrom: np.empty(dataset.nmol[chrom]) for chrom in chroms}
+    positions = {region: [None] * dataset.nmol[region] for region in regions}
+    energy = {region: np.empty(dataset.nmol[region]) for region in regions}
+    log_z = {region: np.empty(dataset.nmol[region]) for region in regions}
     batches = _iter_tm_batches(
-        dataset, chroms, getters, TM_BATCH_SIZE, nworker
+        dataset, regions, getters, TM_BATCH_SIZE, nworker
     )
-    for chrom, start, results in batches:
+    for region, start, results in batches:
         for mol, result in enumerate(results, start):
             if result is None:
-                positions[chrom][mol] = np.zeros(0, dtype=np.int32)
-                energy[chrom][mol] = log_z[chrom][mol] = np.nan
+                positions[region][mol] = np.zeros(0, dtype=np.int32)
+                energy[region][mol] = log_z[region][mol] = np.nan
                 continue
             (pos, e), lz = result
-            positions[chrom][mol] = np.asarray(pos, dtype=np.int32)
-            energy[chrom][mol] = e
-            log_z[chrom][mol] = lz
-    for chrom in chroms:
-        log_prob = -energy[chrom] / end_temp - log_z[chrom]
-        flat, offset = _pack_jagged(positions[chrom])
-        analysis = dataset.analysis[chrom]
+            positions[region][mol] = np.asarray(pos, dtype=np.int32)
+            energy[region][mol] = e
+            log_z[region][mol] = lz
+    for region in regions:
+        log_prob = -energy[region] / end_temp - log_z[region]
+        flat, offset = _pack_jagged(positions[region])
+        analysis = dataset.analysis[region]
         analysis[f"{name}_position_flat"] = pd.DataFrame({"position": flat})
         analysis[f"{name}_position_offset"] = pd.DataFrame({"offset": offset})
         analysis[f"{name}_energy"] = pd.DataFrame(
-            {"energy": energy[chrom], "log_prob": log_prob}
+            {"energy": energy[region], "log_prob": log_prob}
         )

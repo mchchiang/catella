@@ -37,7 +37,7 @@ def _make_tm_settings(**overrides):
 def _make_tm_dataset(tmp_path, *, nmol=3, nbp=12, **kwargs):
     rng = np.random.default_rng(4)
     return SimManager(nworker=1, verbose=False).run(
-        chroms="chr1",
+        regions="chr1",
         nsim=0,
         method="tm",
         settings=_make_tm_settings(),
@@ -50,7 +50,7 @@ def _make_tm_dataset(tmp_path, *, nmol=3, nbp=12, **kwargs):
 
 def _make_mcmc_dataset(tmp_path):
     return SimDataset.create(
-        chroms=["chr1"],
+        regions=["chr1"],
         nmol={"chr1": 1},
         nsim=1,
         nbp={"chr1": 12},
@@ -136,7 +136,7 @@ def _make_tm_dataset_with_gap(tmp_path):
     meth_prob = rng.uniform(0.05, 0.95, (3, 12))
     meth_prob[1] = np.nan
     return SimManager(nworker=1, verbose=False).run(
-        chroms="chr1",
+        regions="chr1",
         nsim=0,
         method="tm",
         settings=_make_tm_settings(),

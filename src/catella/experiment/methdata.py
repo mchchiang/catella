@@ -45,7 +45,7 @@ from catella.experiment._ingest import (
     _normalize_mtase,
     _read_chromsize,
 )
-from catella.experiment._qc import _check_percentiles, _chrom_qc_rows
+from catella.experiment._qc import _check_percentiles, _region_qc_rows
 from catella.h5_array import H5Array
 
 # Estimated peak memory of to_dense(as_h5array=False) per molecule and
@@ -61,13 +61,13 @@ _DENSE_WARN_BYTES = 10**9
 @dataclass(frozen=True, slots=True, init=False, eq=False)
 class MethPrintData:
     """
-    Container for MethPrint experimental data for a single chromosome.
+    Container for MethPrint experimental data for a single region.
 
     This class stores methylation signal data for test samples and optional
     control samples (unmethylated and fully methylated). Data are stored
     as Pandas DataFrames and retrieved via read-only properties that
     provide defensive copies. An optional reference nucleotide sequence
-    for the chromosome may also be stored, via `refseq`.
+    for the region may also be stored, via `refseq`.
 
     .. note::
        This class is intended for internal use within a
@@ -75,8 +75,8 @@ class MethPrintData:
        mechanisms rather than instantiating this class directly.
     """
 
-    chrom: str
-    """The chromosome identifier for this data block."""
+    region: str
+    """The region identifier for this data block."""
 
     nbp: int
     """The total number of base pairs in the chromatin fiber."""
@@ -84,7 +84,7 @@ class MethPrintData:
     _frozen_refseq: str | None = field(
         metadata={
             "doc": "str: The reference nucleotide sequence for this "
-            "chromosome, or None if not provided."
+            "region, or None if not provided."
         }
     )
 
@@ -224,13 +224,13 @@ class MethPrintData:
 
     def _save(self, group):
         dt = h5py.string_dtype(encoding="utf-8")  # For storing strings
-        gchrom = group.create_group(self.chrom)
-        gmeta = gchrom.create_group("metadata")
-        gmeta.attrs["chrom"] = self.chrom
+        gregion = group.create_group(self.region)
+        gmeta = gregion.create_group("metadata")
+        gmeta.attrs["chrom"] = self.region
         gmeta.attrs["nbp"] = self.nbp
         if self._frozen_refseq is not None:
             gmeta.create_dataset("refseq", data=self._frozen_refseq, dtype=dt)
-        gdata = gchrom.create_group("data")
+        gdata = gregion.create_group("data")
 
         for name in ("test", "unmeth", "meth"):
             mol_id = getattr(self, f"_frozen_{name}_mol_id")
@@ -245,12 +245,12 @@ class MethPrintData:
                     gdata.create_dataset(f"{name}_{key}", data=arr)
 
     @classmethod
-    def _load(cls, group, chrom) -> Self:
-        if chrom not in group:
-            raise ValueError(f"cannot find data for the chrom {chrom}")
-        gchrom = group[chrom]
-        gmeta = gchrom["metadata"]
-        chrom = gmeta.attrs["chrom"]
+    def _load(cls, group, region) -> Self:
+        if region not in group:
+            raise ValueError(f"cannot find data for the region {region}")
+        gregion = group[region]
+        gmeta = gregion["metadata"]
+        region = gmeta.attrs["chrom"]
         nbp = int(gmeta.attrs["nbp"])
         refseq = gmeta["refseq"].asstr()[()] if "refseq" in gmeta else None
 
@@ -263,7 +263,7 @@ class MethPrintData:
                 return mol_id, df
             return None, None
 
-        gdata = gchrom["data"]
+        gdata = gregion["data"]
         kwargs = {}
         for name in ("test", "unmeth", "meth"):
             mol_id, df = load_data(name, gdata)
@@ -273,7 +273,7 @@ class MethPrintData:
                 ds = f"{name}_{key}"
                 if mol_id is not None and ds in gdata:
                     kwargs[ds] = gdata[ds][()].astype(np.int64)
-        return cls._create(chrom=chrom, nbp=nbp, refseq=refseq, **kwargs)
+        return cls._create(region=region, nbp=nbp, refseq=refseq, **kwargs)
 
     @classmethod
     def _create(cls, **kwargs) -> Self:
@@ -299,40 +299,40 @@ class MethPrintData:
 
 class LazyRawDataMap(ABCMapping):
     """
-    Load per-chromosome MethPrintData from an HDF5 file on demand.
+    Load per-region MethPrintData from an HDF5 file on demand.
 
-    Chromosome data is read from disk the first time it is accessed and
+    Region data is read from disk the first time it is accessed and
     kept in a small least-recently-used cache. Accessing a different
-    chromosome once the cache is full evicts the least-recently-used
-    entry, bounding how many chromosomes' raw data can be resident in
-    memory at once, while repeated access to the same chromosome avoids
+    region once the cache is full evicts the least-recently-used
+    entry, bounding how many regions' raw data can be resident in
+    memory at once, while repeated access to the same region avoids
     re-reading it from disk.
     """
 
-    def __init__(self, path, chroms, *, max_cached=1):
+    def __init__(self, path, regions, *, max_cached=1):
         self._path = str(path)
-        self._chroms = tuple(chroms)
+        self._regions = tuple(regions)
         self._max_cached = max_cached
         self._cache = OrderedDict()
 
-    def __getitem__(self, chrom):
-        if chrom not in self._chroms:
-            raise KeyError(chrom)
-        if chrom in self._cache:
-            self._cache.move_to_end(chrom)
-            return self._cache[chrom]
+    def __getitem__(self, region):
+        if region not in self._regions:
+            raise KeyError(region)
+        if region in self._cache:
+            self._cache.move_to_end(region)
+            return self._cache[region]
         with h5py.File(self._path, "r") as h5stream:
-            data = MethPrintData._load(h5stream["raw_data"], chrom)
-        self._cache[chrom] = data
+            data = MethPrintData._load(h5stream["raw_data"], region)
+        self._cache[region] = data
         if len(self._cache) > self._max_cached:
             self._cache.popitem(last=False)
         return data
 
     def __iter__(self):
-        return iter(self._chroms)
+        return iter(self._regions)
 
     def __len__(self):
-        return len(self._chroms)
+        return len(self._regions)
 
 
 # Valid values for MethPrintExperiment.filter_dropout()'s
@@ -379,7 +379,7 @@ class MethPrintExperiment:
                 setattr(self, f.name, val)
 
         # Create the dicts for analysis
-        self._analysis = {chrom: DataFrameMap() for chrom in self._raw_data}
+        self._analysis = {region: DataFrameMap() for region in self._raw_data}
         self._global_analysis = DataFrameMap()
 
         self._finalizer = kwargs.get("_finalizer")
@@ -456,7 +456,7 @@ class MethPrintExperiment:
         meth_file: str | Path | None = None,
         fasta_file: str | Path | None = None,
         mtase: str | list[str] | None = None,
-        chroms: list[str] | None = None,
+        regions: list[str] | None = None,
         wrap: bool = False,
         ignore_strand: bool = False,
         colidx: list | None = None,
@@ -465,7 +465,7 @@ class MethPrintExperiment:
         seed: int | None = None,
         chunk_size: int = 1000000,
         tmp_dir: str | Path | None = None,
-        max_cached_chroms: int = 1,
+        max_cached_regions: int = 1,
         nworker: int = 1,
         min_gap: int | None = 20,
         gaps_bed: str | Path | Iterable | None = None,
@@ -473,9 +473,9 @@ class MethPrintExperiment:
         """
         Create an experiment by processing raw sequencing data files.
 
-        Reads chromosome sizes and experimental data (typically modkit
+        Reads region sizes and experimental data (typically modkit
         output), drops canonical calls (`mod_code` of '-'), re-orients
-        data if requested, and splits signals by chromosome into a
+        data if requested, and splits signals by region into a
         staging HDF5 file that the returned experiment lazily loads
         (see `load`). If more than one of `test_file`/`unmeth_file`/
         `meth_file` is given, each is read independently (see
@@ -484,7 +484,8 @@ class MethPrintExperiment:
         Parameters
         ----------
         chromsize : str or pathlib.Path
-            Tab-separated file of chromosome names and lengths (bp).
+            Tab-separated file of chromosome names and lengths (bp);
+            each chromosome is analyzed as one region.
         test_file : str or pathlib.Path
             Raw experimental (test) data file.
         unmeth_file : str or pathlib.Path, optional
@@ -492,7 +493,7 @@ class MethPrintExperiment:
         meth_file : str or pathlib.Path, optional
             Fully methylated control data file.
         fasta_file : str or pathlib.Path, optional
-            Multi-FASTA file of per-chromosome reference sequences
+            Multi-FASTA file of per-region reference sequences
             (record id matching `chromsize`); stored on
             `MethPrintData.refseq`.
         mtase : str or list of str, optional
@@ -500,9 +501,9 @@ class MethPrintExperiment:
             (any-context adenine, e.g., EcoGII), 'CG' (CpG, e.g.,
             M.SssI), 'GC' (GpC, e.g., M.CviPI). One label, a list of
             labels, or None (default) if unspecified.
-        chroms : list of str, optional
-            Restrict processing to these chromosomes. If None
-            (default), all chromosomes in `chromsize` are processed.
+        regions : list of str, optional
+            Restrict processing to these regions. If None
+            (default), all regions in `chromsize` are processed.
         wrap : bool, default False
             If True, calculates positions relative to the fiber center
             (useful for circular or symmetrical fibers). No read
@@ -515,14 +516,14 @@ class MethPrintExperiment:
         colidx : list of int, optional
             Explicit column indices if the input file has no header
             matching Modkit's column names, in canonical field order:
-            `read_id`, `ref_position`, `chrom`, `ref_strand`,
+            `read_id`, `ref_position`, `region`, `ref_strand`,
             `mod_qual`, `mod_code`, and optionally `alignment_start`,
             `alignment_end` (6 or 8 entries).
         max_nmol : int or None
-            Maximum number of molecules to extract for each chromosome.
+            Maximum number of molecules to extract for each region.
         balance_strand : bool, default False
             If True, keep an equal number of '+' and '-' strand
-            molecules per chromosome: at most `max_nmol`; fewer if
+            molecules per region: at most `max_nmol`; fewer if
             either strand has fewer than `max_nmol // 2` molecules
             (warns). Molecules with unmapped strand ('.') are dropped.
             Uses the recorded strand regardless of `ignore_strand`.
@@ -541,8 +542,8 @@ class MethPrintExperiment:
             A fresh `catella_<timestamp>_<hex>` subfolder is created
             under it (or under the system default temporary directory)
             and reused by later `smooth`/`meth_prob` calls.
-        max_cached_chroms : int, default 1
-            Maximum number of chromosomes' raw data kept in memory at
+        max_cached_regions : int, default 1
+            Maximum number of regions' raw data kept in memory at
             once by the returned experiment (forwarded to `load`).
         nworker : int, default 1
             Maximum number of threads used to read test/unmeth/meth
@@ -567,11 +568,11 @@ class MethPrintExperiment:
         Raises
         ------
         ValueError
-            If chromosome names are not unique, if control datasets
-            contain chromosomes not found in the test dataset, if
-            `chroms` contains a chromosome not found in `chromsize`,
+            If region names are not unique, if control datasets
+            contain regions not found in the test dataset, if
+            `regions` contains a region not found in `chromsize`,
             if a sequence in `fasta_file` does not match its
-            chromosome's length in `chromsize`, if `mtase`
+            region's length in `chromsize`, if `mtase`
             contains an unknown or duplicate label, or if
             `balance_strand` is True and `max_nmol` is None or less
             than 2, if `colidx` has neither 6 nor 8 entries, if
@@ -581,9 +582,9 @@ class MethPrintExperiment:
         Warns
         -----
         UserWarning
-            If `balance_strand` is True and a chromosome has fewer
+            If `balance_strand` is True and a region has fewer
             than `max_nmol // 2` molecules on either strand, or if
-            rows have a `ref_position` outside the chromosome or come
+            rows have a `ref_position` outside the region or come
             from secondary or supplementary alignments (per Modkit's
             `flag` column, present with `--allow-non-primary`); those
             rows are dropped. Also if some molecules' rows are not
@@ -627,8 +628,8 @@ class MethPrintExperiment:
                     f"True, got {max_nmol}"
                 )
         mtase = _normalize_mtase(mtase)
-        full_sizes, sizes = _read_chromsize(chromsize, wrap, chroms)
-        refseq_by_chrom = _load_refseqs(fasta_file, full_sizes)
+        full_sizes, sizes = _read_chromsize(chromsize, wrap, regions)
+        refseq_by_region = _load_refseqs(fasta_file, full_sizes)
 
         tmp_dir = h5_utils.fresh_tmp_dir(base_dir=tmp_dir)
         fd, tmp_file = tempfile.mkstemp(suffix=".h5", dir=tmp_dir)
@@ -647,7 +648,7 @@ class MethPrintExperiment:
             "sizes": sizes,
             "full_sizes": full_sizes,
             "wrap": wrap,
-            "refseq_by_chrom": refseq_by_chrom,
+            "refseq_by_chrom": refseq_by_region,
             "mtase": mtase,
             "ignore_strand": ignore_strand,
             "max_nmol": max_nmol,
@@ -683,7 +684,7 @@ class MethPrintExperiment:
             shutil.rmtree(tmp_dir, ignore_errors=True)
             raise
 
-        exp = cls.load(tmp_file, max_cached_chroms=max_cached_chroms)
+        exp = cls.load(tmp_file, max_cached_regions=max_cached_regions)
         # tmp_file is an internal staging file, not a real save target
         exp._exp_file = None
         exp._tmp_dir = tmp_dir
@@ -767,28 +768,28 @@ class MethPrintExperiment:
     def load(
         cls,
         exp_file: str | Path,
-        chroms: list[str] | None = None,
-        max_cached_chroms: int = 1,
+        regions: list[str] | None = None,
+        max_cached_regions: int = 1,
     ) -> Self:
         """
         Load an experiment from a persistent HDF5 file.
 
-        Raw per-chromosome data is loaded lazily: `MethPrintData` for a
-        chromosome is only read from disk when accessed via `raw`, and
-        is cached for at most `max_cached_chroms` chromosomes at a time
-        (least-recently-used eviction), so not all chromosomes need to
+        Raw per-region data is loaded lazily: `MethPrintData` for a
+        region is only read from disk when accessed via `raw`, and
+        is cached for at most `max_cached_regions` regions at a time
+        (least-recently-used eviction), so not all regions need to
         be resident in memory simultaneously.
 
         Parameters
         ----------
         exp_file : str or pathlib.Path
             HDF5 file containing the experiment.
-        chroms : list of str, optional
-            Restrict the loaded experiment to these chromosomes. If
-            None (default), all chromosomes in the file are exposed.
-        max_cached_chroms : int, default 1
-            Maximum number of chromosomes' raw data kept in memory at
-            once. Accessing more distinct chromosomes than this evicts
+        regions : list of str, optional
+            Restrict the loaded experiment to these regions. If
+            None (default), all regions in the file are exposed.
+        max_cached_regions : int, default 1
+            Maximum number of regions' raw data kept in memory at
+            once. Accessing more distinct regions than this evicts
             the least-recently-used one.
 
         Returns
@@ -799,23 +800,23 @@ class MethPrintExperiment:
         Raises
         ------
         ValueError
-            If `chroms` contains a chromosome not found in the file.
+            If `regions` contains a region not found in the file.
         """
         with h5py.File(exp_file, "r") as h5stream:
             # Set up lazy, memory-bounded access to the raw data
-            available_chroms = list(h5stream["raw_data"].keys())
-            if chroms is not None:
-                unknown = set(chroms) - set(available_chroms)
+            available_regions = list(h5stream["raw_data"].keys())
+            if regions is not None:
+                unknown = set(regions) - set(available_regions)
                 if unknown:
                     raise ValueError(
-                        f"chromosomes not found in {exp_file}: "
+                        f"regions not found in {exp_file}: "
                         f"{sorted(unknown)}"
                     )
-                selected = list(chroms)
+                selected = list(regions)
             else:
-                selected = available_chroms
+                selected = available_regions
             raw_data = LazyRawDataMap(
-                exp_file, selected, max_cached=max_cached_chroms
+                exp_file, selected, max_cached=max_cached_regions
             )
             mtase = (
                 tuple(h5stream.attrs["mtase"].split(","))
@@ -834,12 +835,12 @@ class MethPrintExperiment:
 
             # Load any analysis data
             gana = _analysis_group(h5stream, "analysis")
-            for chrom in gana:
-                if chrom not in selected:
+            for region in gana:
+                if region not in selected:
                     continue
-                entries = _read_entries(gana[chrom], exp_file)
+                entries = _read_entries(gana[region], exp_file)
                 for name, entry in entries.items():
-                    obj._analysis[chrom][name] = entry
+                    obj._analysis[region][name] = entry
             gglobal = _analysis_group(h5stream, "global_analysis")
             entries = _read_entries(gglobal, exp_file)
             for name, entry in entries.items():
@@ -851,14 +852,14 @@ class MethPrintExperiment:
         return cls(**kwargs, _internal=True)
 
     @property
-    def chroms(self) -> tuple[str, ...]:
+    def regions(self) -> tuple[str, ...]:
         """
-        Get the identifiers of all chromosomes in the experiment.
+        Get the identifiers of all regions in the experiment.
 
         Returns
         -------
         tuple of str
-            A sorted tuple of chromosome names.
+            A sorted tuple of region names.
         """
         return tuple(self._raw_data.keys())
 
@@ -906,12 +907,12 @@ class MethPrintExperiment:
         Returns
         -------
         MappingProxyType
-            A frozen mapping where keys are chromosome names and values
+            A frozen mapping where keys are region names and values
             are :class:`MethPrintData` objects.
         """
         return MappingProxyType(self._raw_data)
 
-    # Allow iterating over the raw data by chromosome
+    # Allow iterating over the raw data by region
     def __iter__(self):
         return iter(self._raw_data)
 
@@ -921,12 +922,12 @@ class MethPrintExperiment:
     @property
     def analysis(self) -> Mapping[str, DataFrameMap]:
         """
-        Access the analysis results for each chromosome.
+        Access the analysis results for each region.
 
         Returns
         -------
         FixedKeyMap
-            A mapping where chromosome keys are fixed, but the analysis
+            A mapping where region keys are fixed, but the analysis
             DataFrames remain mutable.
         """
         return FixedKeyMap(self._analysis)
@@ -945,7 +946,7 @@ class MethPrintExperiment:
 
     def to_dense(
         self,
-        chrom,
+        region,
         which="test",
         *,
         mols=None,
@@ -960,8 +961,8 @@ class MethPrintExperiment:
 
         Parameters
         ----------
-        chrom : str
-            Chromosome identifier.
+        region : str
+            Region identifier.
         which : {"test", "meth", "unmeth"}, default "test"
             Which raw table to convert.
         mols : int or sequence of int, optional
@@ -983,7 +984,7 @@ class MethPrintExperiment:
             If given, molecules flagged as dropout by a prior
             `filter_dropout(mask_name=mask_name)` call for this
             source are returned as all-NaN rows. Looked up as
-            `analysis[chrom][f"{which}_{mask_name}"]`.
+            `analysis[region][f"{which}_{mask_name}"]`.
 
         Returns
         -------
@@ -994,7 +995,7 @@ class MethPrintExperiment:
         Raises
         ------
         ValueError
-            If no data of the requested kind exists for `chrom`, or if
+            If no data of the requested kind exists for `region`, or if
             `dtype` is not a floating dtype.
 
         Warns
@@ -1019,19 +1020,19 @@ class MethPrintExperiment:
                 f"{dtype}"
             )
 
-        raw = self.raw[chrom]
+        raw = self.raw[region]
         df = getattr(raw, f"{which}_data")
         mol_id = getattr(raw, f"{which}_mol_id")
         if df is None or mol_id is None:
             raise ValueError(
-                f"no '{which}' data available for chrom '{chrom}'"
+                f"no '{which}' data available for region '{region}'"
             )
         nbp = raw.nbp
         all_pos = pd.Index(range(nbp))
 
         keep = None
         if mask_name is not None:
-            keep = self._analysis[chrom][f"{which}_{mask_name}"][
+            keep = self._analysis[region][f"{which}_{mask_name}"][
                 "keep"
             ].to_numpy()
 
@@ -1119,15 +1120,15 @@ class MethPrintExperiment:
             channels = list(self._mtase)
         return _resolve_channels(self, channels)
 
-    def _resolve_chroms_subset(self, chroms):
+    def _resolve_regions_subset(self, regions):
         """
-        Validate and resolve a `chroms` subset.
+        Validate and resolve a `regions` subset.
 
         Parameters
         ----------
-        chroms : list of str or None
-            Subset of `self.chroms` to use. None resolves to all of
-            `self.chroms`.
+        regions : list of str or None
+            Subset of `self.regions` to use. None resolves to all of
+            `self.regions`.
 
         Returns
         -------
@@ -1136,18 +1137,18 @@ class MethPrintExperiment:
         Raises
         ------
         ValueError
-            If `chroms` contains a chromosome not in `self.chroms`.
+            If `regions` contains a region not in `self.regions`.
         """
-        if chroms is None:
-            return self.chroms
-        unknown = set(chroms) - set(self.chroms)
+        if regions is None:
+            return self.regions
+        unknown = set(regions) - set(self.regions)
         if unknown:
             raise ValueError(
-                "'chroms' contains chromosome(s) not in this "
-                f"experiment's chroms {list(self.chroms)}: "
+                "'regions' contains region(s) not in this "
+                f"experiment's regions {list(self.regions)}: "
                 f"{sorted(unknown)}"
             )
-        return tuple(chroms)
+        return tuple(regions)
 
     def _channel_masks(self, raw, codes):
         """
@@ -1156,7 +1157,7 @@ class MethPrintExperiment:
         Parameters
         ----------
         raw : MethPrintData
-            Raw data block of one chromosome, with `refseq`.
+            Raw data block of one region, with `refseq`.
         codes : tuple of int
             Channel codes, as from `_resolve_dropout_channels`.
 
@@ -1176,7 +1177,7 @@ class MethPrintExperiment:
         *,
         which: str | None = None,
         channels: str | list | None = None,
-        chroms: list | None = None,
+        regions: list | None = None,
         thres_min: float = 0.0,
         thres_max: float = 1.0,
         unmapped_strand: str = "union",
@@ -1198,16 +1199,16 @@ class MethPrintExperiment:
         ----------
         which : {"test", "meth", "unmeth"} or None, default None
             Source(s) to evaluate. None evaluates every source present
-            for each chromosome.
+            for each region.
         channels : str, list of str, or None, default None
             Channels to evaluate, as in `qc`: among "A", "GCH", "HCG",
             "GCG", "GC" (GCH and GCG merged) and "CG" (HCG and GCG
             merged). None uses one channel per `self.mtase` label, or
             every assayed channel unmerged if both "GC" and "CG" are
             present, so GCG sites are counted once.
-        chroms : list of str, optional
-            Subset of `self.chroms` to evaluate. None (default)
-            evaluates every chromosome.
+        regions : list of str, optional
+            Subset of `self.regions` to evaluate. None (default)
+            evaluates every region.
         thres_min : float, default 0.0
             Min allowed no-signal fraction (per channel, or of the
             pooled total under `method="aggregate"`) to be kept.
@@ -1224,7 +1225,7 @@ class MethPrintExperiment:
             "aggregate": site counts pooled across channels into one
             fraction first. Irrelevant for a single channel.
         mask_name : str, default "dropout_mask"
-            Key for the mask in `analysis[chrom]`, as
+            Key for the mask in `analysis[region]`, as
             `f"{source}_{mask_name}"` -- a single-column DataFrame
             with a boolean `keep` column, indexed by `mol_index`.
 
@@ -1232,14 +1233,14 @@ class MethPrintExperiment:
         ------
         ValueError
             If `mtase` is unset on this experiment, `channels` is
-            invalid (see `qc`), `chroms` contains a chromosome
-            not in `self.chroms`, `thres_min` or `thres_max` is not
+            invalid (see `qc`), `regions` contains a region
+            not in `self.regions`, `thres_min` or `thres_max` is not
             in [0, 1], `thres_min` is greater than `thres_max`,
             `unmapped_strand`/`method` is invalid, a requested source
-            is missing for some chromosome, or `refseq` is missing.
+            is missing for some region, or `refseq` is missing.
         """
         codes = self._resolve_dropout_channels(channels)
-        chroms = self._resolve_chroms_subset(chroms)
+        regions = self._resolve_regions_subset(regions)
         if not (0.0 <= thres_min <= 1.0):
             raise ValueError(
                 f"'thres_min' must be in [0, 1], got {thres_min}"
@@ -1266,11 +1267,11 @@ class MethPrintExperiment:
                 f"{method!r}"
             )
 
-        for chrom in chroms:
-            raw = self.raw[chrom]
+        for region in regions:
+            raw = self.raw[region]
             if raw.refseq is None:
                 raise ValueError(
-                    f"no refseq available for chrom '{chrom}'; "
+                    f"no refseq available for region '{region}'; "
                     "required to determine methylatable positions"
                 )
             sources = _resolve_sources(raw, which)
@@ -1282,7 +1283,7 @@ class MethPrintExperiment:
                 mol_id = getattr(raw, f"{src}_mol_id")
                 if df is None or mol_id is None:
                     raise ValueError(
-                        f"no '{src}' data available for chrom '{chrom}'"
+                        f"no '{src}' data available for region '{region}'"
                     )
                 cov = _site_coverage(
                     df,
@@ -1308,13 +1309,13 @@ class MethPrintExperiment:
                 # through the string block as literal "True"/"False"
                 # text -- and casting that back to bool makes every
                 # non-empty string truthy, silently breaking the mask.
-                self._analysis[chrom][f"{src}_{mask_name}"] = pd.DataFrame(
+                self._analysis[region][f"{src}_{mask_name}"] = pd.DataFrame(
                     {"keep": keep.astype(np.int8)}
                 )
 
     def is_kept(
         self,
-        chrom: str,
+        region: str,
         *,
         which: str = "test",
         mask_name: str | None = "dropout_mask",
@@ -1323,13 +1324,13 @@ class MethPrintExperiment:
         Return whether each molecule is kept by a molecule filter.
 
         Reads the per-molecule flags that a filter stored in
-        `analysis[chrom]` under `f"{which}_{mask_name}"`, with a "keep"
+        `analysis[region]` under `f"{which}_{mask_name}"`, with a "keep"
         column; `filter_dropout` stores them this way.
 
         Parameters
         ----------
-        chrom : str
-            The chromosome.
+        region : str
+            The region.
         which : {"test", "meth", "unmeth"}, default "test"
             The source of the molecules.
         mask_name : str or None, default "dropout_mask"
@@ -1345,26 +1346,26 @@ class MethPrintExperiment:
         ------
         KeyError
             If no flags are stored under `mask_name` for `which` and
-            `chrom`.
+            `region`.
         """
         if mask_name is None:
-            nmol = len(getattr(self.raw[chrom], f"{which}_mol_id"))
+            nmol = len(getattr(self.raw[region], f"{which}_mol_id"))
             return np.ones(nmol, dtype=bool)
         key = f"{which}_{mask_name}"
-        if key not in self.analysis[chrom]:
+        if key not in self.analysis[region]:
             raise KeyError(
-                f"'{key}' not found in analysis['{chrom}']; run "
+                f"'{key}' not found in analysis['{region}']; run "
                 "filter_dropout() for this source first, matching "
                 "mask_name"
             )
-        return self.analysis[chrom][key]["keep"].to_numpy().astype(bool)
+        return self.analysis[region][key]["keep"].to_numpy().astype(bool)
 
     def dropout_fractions(
         self,
         *,
         which: str | None = None,
         channels: str | list | None = None,
-        chroms: list | None = None,
+        regions: list | None = None,
         unmapped_strand: str = "union",
     ) -> dict:
         """
@@ -1377,15 +1378,15 @@ class MethPrintExperiment:
         ----------
         which : {"test", "meth", "unmeth"} or None, default None
             Source(s) to evaluate. None evaluates every source
-            present for each chromosome.
+            present for each region.
         channels : str, list of str, or None, default None
             Channels to evaluate, as in `filter_dropout`.
-        chroms : list of str, optional
-            Subset of `self.chroms` to evaluate. None (default)
-            evaluates every chromosome. Restricting this avoids the
+        regions : list of str, optional
+            Subset of `self.regions` to evaluate. None (default)
+            evaluates every region. Restricting this avoids the
             cost (time and memory) of computing coverage for
-            chromosomes not needed by the caller, e.g. a single
-            chromosome about to be plotted.
+            regions not needed by the caller, e.g. a single
+            region about to be plotted.
         unmapped_strand : {"union", "drop", "+", "-"}, default
             "union"
             How to evaluate unmapped ('.') strand molecules.
@@ -1393,22 +1394,22 @@ class MethPrintExperiment:
         Returns
         -------
         dict of (str, str, str) to np.ndarray
-            Maps `(chrom, source, channel)` to that group's
+            Maps `(region, source, channel)` to that group's
             per-molecule dropout fraction array. Includes a
-            `channel="all"` entry per (chrom, source) pooling
+            `channel="all"` entry per (region, source) pooling
             all channels, if more than one channel is evaluated.
 
         Raises
         ------
         ValueError
             If `mtase` is unset on this experiment, `channels` is
-            invalid (see `qc`), `chroms` contains a
-            chromosome not in `self.chroms`, `unmapped_strand` is
+            invalid (see `qc`), `regions` contains a
+            region not in `self.regions`, `unmapped_strand` is
             invalid, a requested source is missing for some
-            chromosome, or `refseq` is missing.
+            region, or `refseq` is missing.
         """
         codes = self._resolve_dropout_channels(channels)
-        chroms = self._resolve_chroms_subset(chroms)
+        regions = self._resolve_regions_subset(regions)
         if unmapped_strand not in _VALID_UNMAPPED_STRAND:
             raise ValueError(
                 "'unmapped_strand' must be one of "
@@ -1417,11 +1418,11 @@ class MethPrintExperiment:
             )
 
         result = {}
-        for chrom in chroms:
-            raw = self.raw[chrom]
+        for region in regions:
+            raw = self.raw[region]
             if raw.refseq is None:
                 raise ValueError(
-                    f"no refseq available for chrom '{chrom}'; "
+                    f"no refseq available for region '{region}'; "
                     "required to determine methylatable positions"
                 )
             sources = _resolve_sources(raw, which)
@@ -1433,7 +1434,7 @@ class MethPrintExperiment:
                 mol_id = getattr(raw, f"{src}_mol_id")
                 if df is None or mol_id is None:
                     raise ValueError(
-                        f"no '{src}' data available for chrom '{chrom}'"
+                        f"no '{src}' data available for region '{region}'"
                     )
                 cov = _site_coverage(
                     df,
@@ -1445,9 +1446,9 @@ class MethPrintExperiment:
                 frac, pooled = _dropout_fracs(cov, names)
 
                 for i, name in enumerate(names):
-                    result[(chrom, src, name)] = frac[i]
+                    result[(region, src, name)] = frac[i]
                 if len(names) > 1:
-                    result[(chrom, src, "all")] = pooled
+                    result[(region, src, "all")] = pooled
 
         return result
 
@@ -1455,14 +1456,14 @@ class MethPrintExperiment:
         self,
         *,
         channels: str | list | None = None,
-        chroms: list | None = None,
+        regions: list | None = None,
         percentiles: float | list = (50,),
         mask_name: str | None = None,
         batch_size: int = 20000,
         overwrite: bool = False,
     ) -> pd.DataFrame:
         """
-        Summarize data quality per chromosome and channel.
+        Summarize data quality per region and channel.
 
         Model-free: computed from the raw data only. The table is
         returned and stored in `global_analysis["qc"]`.
@@ -1474,8 +1475,8 @@ class MethPrintExperiment:
             "GCH", "HCG", "GCG", "GC" (GCH and GCG merged) and "CG"
             (HCG and GCG merged). None uses every assayed channel,
             unmerged.
-        chroms : list of str, optional
-            Subset of `self.chroms`. None (default) uses all.
+        regions : list of str, optional
+            Subset of `self.regions`. None (default) uses all.
         percentiles : float or list of float, default (50,)
             Dropout percentiles to report, each in [0, 100].
         mask_name : str, optional
@@ -1490,8 +1491,8 @@ class MethPrintExperiment:
         Returns
         -------
         pd.DataFrame
-            One row per (chrom, channel), plus a `channel="all"` row
-            per chrom pooling the channels if there is more than one.
+            One row per (region, channel), plus a `channel="all"` row
+            per region pooling the channels if there is more than one.
             `<src>` is one of test, meth, unmeth. Columns:
 
             - `nsite_plus`, `nsite_minus`: reference sites of the
@@ -1539,9 +1540,9 @@ class MethPrintExperiment:
         Raises
         ------
         ValueError
-            If `channels` or `chroms` is invalid, `percentiles` is
+            If `channels` or `regions` is invalid, `percentiles` is
             empty or outside [0, 100], `global_analysis["qc"]`
-            exists and `overwrite` is False, or a chromosome has no
+            exists and `overwrite` is False, or a region has no
             `refseq` or no test data.
         KeyError
             If `mask_name` is not found for some source.
@@ -1552,12 +1553,12 @@ class MethPrintExperiment:
                 "to replace it"
             )
         codes = _resolve_channels(self, channels)
-        chroms = self._resolve_chroms_subset(chroms)
+        regions = self._resolve_regions_subset(regions)
         qs = _check_percentiles(percentiles)
         rows = []
-        for chrom in chroms:
-            rows += _chrom_qc_rows(
-                self, chrom, codes, qs, mask_name, batch_size
+        for region in regions:
+            rows += _region_qc_rows(
+                self, region, codes, qs, mask_name, batch_size
             )
         table = pd.DataFrame(rows)
         self._global_analysis["qc"] = table

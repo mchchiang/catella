@@ -31,7 +31,7 @@ needs_hiddenfoot = pytest.mark.skipif(
     reason="HiddenFoot executable not available",
 )
 few_molecules = pytest.mark.filterwarnings(
-    "ignore:chromosome .*llink estimated from:UserWarning"
+    "ignore:region .*llink estimated from:UserWarning"
 )
 
 FAKE_HF = """import os, sys

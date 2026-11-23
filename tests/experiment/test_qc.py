@@ -71,7 +71,7 @@ class TestColumns:
     def test_single_channel_has_no_all_row(self, exp):
         df = exp.qc()
         assert df["channel"].tolist() == ["A"]
-        assert df["chrom"].tolist() == ["chr1"]
+        assert df["region"].tolist() == ["chr1"]
 
     def test_site_and_molecule_counts(self, exp):
         row = exp.qc().iloc[0]
@@ -257,9 +257,9 @@ class TestValidation:
         with pytest.raises(ValueError):
             exp.qc(channels="GCH")
 
-    def test_unknown_chrom_raises(self, exp):
+    def test_unknown_region_raises(self, exp):
         with pytest.raises(ValueError):
-            exp.qc(chroms=["bogus"])
+            exp.qc(regions=["bogus"])
 
     def test_missing_refseq_raises(self, tmp_path):
         sizes = tmp_path / "sizes.tsv"

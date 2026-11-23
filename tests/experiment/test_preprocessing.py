@@ -58,7 +58,7 @@ def _make_experiment(
         meth_mol_id = meth_data = unmeth_mol_id = unmeth_data = None
 
     raw = MethPrintData._create(
-        chrom="chr1",
+        region="chr1",
         nbp=nbp,
         test_mol_id=test_mol_id,
         test_data=test_data,
@@ -101,7 +101,7 @@ def _make_comparability_experiment(*, test_values, nbp=1):
     )
 
     raw = MethPrintData._create(
-        chrom="chr1",
+        region="chr1",
         nbp=nbp,
         test_mol_id=test_mol_id,
         test_data=test_df,
@@ -122,7 +122,7 @@ def _make_single_mol_experiment(*, positions, values, nbp):
     )
     mol_id = np.array(["mol0"], dtype=object)
     raw = MethPrintData._create(
-        chrom="chr1",
+        region="chr1",
         nbp=nbp,
         test_mol_id=mol_id,
         test_data=df,
@@ -402,7 +402,7 @@ class TestEmpiricalProb:
         test_mol_id = np.array(["t0"], dtype=object)
 
         raw = MethPrintData._create(
-            chrom="chr1",
+            region="chr1",
             nbp=3,
             test_mol_id=test_mol_id,
             test_data=test_df,
@@ -663,7 +663,7 @@ class TestMaskName:
         test_mol_id = np.array(["t0"], dtype=object)
 
         raw_masked = MethPrintData._create(
-            chrom="chr1",
+            region="chr1",
             nbp=2,
             test_mol_id=test_mol_id,
             test_data=test_df,
@@ -687,7 +687,7 @@ class TestMaskName:
 
         # Reference: meth control physically only has the kept molecule.
         raw_ref = MethPrintData._create(
-            chrom="chr1",
+            region="chr1",
             nbp=2,
             test_mol_id=test_mol_id,
             test_data=test_df,
@@ -906,12 +906,12 @@ class TestSortByLinkage:
         )
         assert np.isfinite(link_mats["chr1"]).all()
 
-    def test_chroms_restricts_processing_to_selected_chromosomes(self):
+    def test_regions_restricts_processing_to_selected_regions(self):
         rng = np.random.default_rng(1)
         mol_id_1, data_1 = _make_mol_data(6, 10, rng)
         mol_id_2, data_2 = _make_mol_data(6, 10, rng)
         raw_1 = MethPrintData._create(
-            chrom="chr1",
+            region="chr1",
             nbp=10,
             test_mol_id=mol_id_1,
             test_data=data_1,
@@ -921,7 +921,7 @@ class TestSortByLinkage:
             unmeth_data=None,
         )
         raw_2 = MethPrintData._create(
-            chrom="chr2",
+            region="chr2",
             nbp=10,
             test_mol_id=mol_id_2,
             test_data=data_2,
@@ -935,7 +935,7 @@ class TestSortByLinkage:
         )
         ana = MethPrintAnalysis()
 
-        link_mats = ana.sort_by_linkage(exp=exp, chroms="chr1", batch_size=2)
+        link_mats = ana.sort_by_linkage(exp=exp, regions="chr1", batch_size=2)
 
         assert "test_linkage" in exp.analysis["chr1"]
         assert "test_linkage" not in exp.analysis["chr2"]
@@ -1102,7 +1102,7 @@ def _make_footprint_experiment(
         meth_df = unmeth_df = meth_mol_id = unmeth_mol_id = None
 
     raw = MethPrintData._create(
-        chrom="chr1",
+        region="chr1",
         nbp=L,
         refseq=seq,
         test_mol_id=test_mol_id,
@@ -1202,7 +1202,7 @@ class TestModelProb:
         # calibration path (_streamed_call_count/_streamed_window_count),
         # and the default eta calibration exercises
         # _accumulate_eta_source -- neither may leave scratch files
-        # behind, same as the main per-chromosome test_arr loop.
+        # behind, same as the main per-region test_arr loop.
         exp = _make_footprint_experiment(
             with_controls=False,
             nmol=120,
@@ -1216,9 +1216,9 @@ class TestModelProb:
         ana.model_prob(exp=exp, lnuc=30, batch_size=17)
 
         # Only the persisted meth_prob output (one H5Array per
-        # chromosome) should remain.
+        # region) should remain.
         new_files = set(tmp_dir.glob("*.h5")) - before
-        assert len(new_files) == len(exp.chroms)
+        assert len(new_files) == len(exp.regions)
 
     def test_closes_transient_scratch_file_on_early_raise(self):
         # CPython GC already cleans up transient arrays on the success
@@ -1506,7 +1506,7 @@ class TestModelProbWrap:
         meth_mol_id = np.array([f"m{m}" for m in range(10)], dtype=object)
         unmeth_mol_id = np.array([f"u{m}" for m in range(10)], dtype=object)
         raw = MethPrintData._create(
-            chrom="chr1",
+            region="chr1",
             nbp=nbp,
             refseq=seq,
             test_mol_id=test_mol_id,
@@ -1552,7 +1552,7 @@ class TestModelProbWrap:
             )
 
         raw = MethPrintData._create(
-            chrom="chr1",
+            region="chr1",
             nbp=nbp,
             refseq=seq,
             test_mol_id=np.array(["t0", "t1"], dtype=object),
@@ -1628,7 +1628,7 @@ class TestModelProbWrap:
 
         def make_exp(qual_at_disagree):
             raw = MethPrintData._create(
-                chrom="chr1",
+                region="chr1",
                 nbp=nbp,
                 refseq=seq,
                 test_mol_id=np.array(["t0"], dtype=object),
@@ -1684,7 +1684,7 @@ class TestModelProbWrap:
             )
 
         raw = MethPrintData._create(
-            chrom="chr1",
+            region="chr1",
             nbp=nbp,
             refseq=seq,
             test_mol_id=np.array(["t0", "t1"], dtype=object),
@@ -1841,7 +1841,7 @@ class TestModelProbCalib:
         calib = exp.global_analysis["meth_prob_calib"]
         assert len(calib) == 1
         row = calib.iloc[0]
-        assert row["chrom"] == "chr1"
+        assert row["region"] == "chr1"
         assert row["has_controls"] == False
         frac_cols = [
             c for c in calib.columns if c.startswith("frac_informative_")
@@ -1886,7 +1886,7 @@ class TestModelProbCalib:
         calib = exp.global_analysis["meth_prob_calib"]
         assert calib.iloc[0]["iters"] <= 1
 
-    def test_norm_by_strand_gives_two_rows_per_chrom(self):
+    def test_norm_by_strand_gives_two_rows_per_region(self):
         strand_of = lambda m: "+" if m % 2 == 0 else "-"
         exp = _make_footprint_experiment(
             with_controls=False,
@@ -2651,7 +2651,7 @@ class TestModelProbMissingCalls:
             kwargs[f"{src}_mol_start"] = start
             kwargs[f"{src}_mol_end"] = end
         new_raw = MethPrintData._create(
-            chrom="chr1", nbp=raw.nbp, refseq=raw.refseq, **kwargs
+            region="chr1", nbp=raw.nbp, refseq=raw.refseq, **kwargs
         )
         return MethPrintExperiment._create(_raw_data={"chr1": new_raw})
 
@@ -2704,7 +2704,7 @@ class TestModelProbMissingCalls:
         )
         raw = exp.raw["chr1"]
         new_raw = MethPrintData._create(
-            chrom="chr1",
+            region="chr1",
             nbp=raw.nbp,
             refseq=raw.refseq,
             test_mol_id=raw.test_mol_id,

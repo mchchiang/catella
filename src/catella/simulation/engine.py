@@ -58,7 +58,7 @@ from catella.simulation.results import SimDataset
 from catella.utils import IndexType
 
 
-def _prepare_meth_prob(meth_prob, chroms, nucbp, fill_nan=None):
+def _prepare_meth_prob(meth_prob, regions, nucbp, fill_nan=None):
     """
     Normalize `meth_prob`, find the molecules with no data, and fill
     the partly-nan ones.
@@ -67,8 +67,8 @@ def _prepare_meth_prob(meth_prob, chroms, nucbp, fill_nan=None):
     ----------
     meth_prob : np.ndarray or mapping of str to np.ndarray or pd.DataFrame
         The methylation probability, as passed to `SimManager.run`.
-    chroms : sequence of str
-        The chromosomes to select.
+    regions : sequence of str
+        The regions to select.
     nucbp : int
         The nucleosome footprint size.
     fill_nan : None, "mean", or float, default None
@@ -77,7 +77,7 @@ def _prepare_meth_prob(meth_prob, chroms, nucbp, fill_nan=None):
     Returns
     -------
     meth_prob : dict of str to np.ndarray
-        The 2D array of each chromosome; a filled copy where needed.
+        The 2D array of each region; a filled copy where needed.
     no_data : dict of str to np.ndarray
         bool, True for each molecule with no data.
 
@@ -87,11 +87,11 @@ def _prepare_meth_prob(meth_prob, chroms, nucbp, fill_nan=None):
         If `fill_nan` is invalid, or is None and a molecule is nan at
         some but not all nucleosome start positions.
     """
-    meth_prob = _normalize_meth_prob(meth_prob, chroms)
+    meth_prob = _normalize_meth_prob(meth_prob, regions)
     no_data = {}
-    for chrom in chroms:
-        meth_prob[chrom], no_data[chrom] = _prepare_rows(
-            meth_prob[chrom], nucbp, chrom, fill_nan
+    for region in regions:
+        meth_prob[region], no_data[region] = _prepare_rows(
+            meth_prob[region], nucbp, region, fill_nan
         )
     return meth_prob, no_data
 
@@ -110,7 +110,7 @@ def _rerun_meth_prob(dataset, meth_prob):
     Returns
     -------
     dict of str to np.ndarray
-        The 2D array of each chromosome.
+        The 2D array of each region.
 
     Raises
     ------
@@ -118,12 +118,12 @@ def _rerun_meth_prob(dataset, meth_prob):
         If the molecules with no data differ from `dataset.no_data`.
     """
     meth_prob, no_data = _prepare_meth_prob(
-        meth_prob, dataset.chroms, dataset.settings["nucbp"], dataset.nan_fill
+        meth_prob, dataset.regions, dataset.settings["nucbp"], dataset.nan_fill
     )
-    for chrom in dataset.chroms:
-        if not np.array_equal(no_data[chrom], dataset.no_data[chrom]):
+    for region in dataset.regions:
+        if not np.array_equal(no_data[region], dataset.no_data[region]):
             raise ValueError(
-                f"meth_prob does not match the dataset for chrom '{chrom}'; "
+                f"meth_prob does not match the dataset for region '{region}'; "
                 "its molecules with no data differ from dataset.no_data"
             )
     return meth_prob
@@ -138,17 +138,17 @@ def _check_rerun_targets(dataset, targets):
     dataset : SimDataset
         The dataset to rerun.
     targets : iterable of tuple
-        `(chrom, mol, ...)` of each target.
+        `(region, mol, ...)` of each target.
 
     Raises
     ------
     ValueError
         If a target is a molecule skipped for having no data.
     """
-    for chrom, mol, *_ in targets:
-        if dataset.no_data[chrom][mol]:
+    for region, mol, *_ in targets:
+        if dataset.no_data[region][mol]:
             raise ValueError(
-                f"molecule {mol} of chrom '{chrom}' has no data and cannot "
+                f"molecule {mol} of region '{region}' has no data and cannot "
                 "be rerun"
             )
 
@@ -158,7 +158,7 @@ class SimManager:
     Orchestrator for managing and executing nucleosome positioning simulations.
 
     The SimManager handles the setup, parallel execution, and data collection
-    of Monte Carlo simulations across multiple chromosomes and molecules.
+    of Monte Carlo simulations across multiple regions and molecules.
 
     Attributes
     ----------
@@ -184,7 +184,7 @@ class SimManager:
     def run(
         self,
         *,
-        chroms: str | Iterable[str],
+        regions: str | Iterable[str],
         nsim: int,
         settings: str | Path | SimSettings,
         meth_prob: np.ndarray | Mapping[str, np.ndarray | pd.DataFrame],
@@ -199,15 +199,15 @@ class SimManager:
         fill_nan: str | float | None = None,
     ) -> SimDataset:
         """
-        Execute simulations in parallel across chromosomes and molecules.
+        Execute simulations in parallel across regions and molecules.
 
         This method generates simulation parameters, spawns a process pool,
         and tracks progress as results are written to disk.
 
         Parameters
         ----------
-        chroms : str or iterable of str
-            The identifier(s) of chromosome(s) to include in the simulation.
+        regions : str or iterable of str
+            The identifier(s) of region(s) to include in the simulation.
         nsim : int
             Number of independent simulation runs per molecule
             (`method='mcmc'`), or exact samples per molecule
@@ -217,10 +217,10 @@ class SimManager:
             The physical constants and Monte Carlo protocol (e.g., nucbp,
             llink, mu) to apply to all runs in this batch. These can be
             read from a configuration file. `llink` can be a mapping of
-            chromosome to value, which must cover all of `chroms`.
+            region to value, which must cover all of `regions`.
         meth_prob : np.ndarray or dict
-            The probability of methylation. If multiple chromosomes are
-            provided, this must be a mapping of {chrom_name: data}. Data can
+            The probability of methylation. If multiple regions are
+            provided, this must be a mapping of {region_name: data}. Data can
             be NumPy arrays or Pandas DataFrames. Molecules that are nan at
             every nucleosome start position (the first `nbp - nucbp + 1`
             base pairs; e.g., molecules masked by `filter_dropout`) have
@@ -247,8 +247,8 @@ class SimManager:
             None, a random seed in [0, 2**63) is drawn from a freshly
             seeded NumPy default random generator.
         mols : IndexType or dict, default slice(None)
-            Indices of molecules to simulate for each chromosome. Can be a
-            single index/slice or a mapping of {chrom_name: indices}.
+            Indices of molecules to simulate for each region. Can be a
+            single index/slice or a mapping of {region_name: indices}.
         store_eseq : bool, default True
             Whether to store the sequence-specific nucleosome binding energy
             landscape derived from the methylation data to output dataset file.
@@ -273,7 +273,7 @@ class SimManager:
         Raises
         ------
         TypeError
-            If input types for `chroms`, `meth_prob`, or `mols` are
+            If input types for `regions`, `meth_prob`, or `mols` are
             inconsistent.
         ValueError
             If the requested `out_types` are not recognized, if an
@@ -282,7 +282,7 @@ class SimManager:
             of `meth_prob` is nan at some but not all nucleosome start
             positions.
         KeyError
-            If a mapping `llink` lacks a chromosome of `chroms`.
+            If a mapping `llink` lacks a region of `regions`.
         FileExistsError
             If the specified `out_dir` already contains an existing dataset.
         """
@@ -290,19 +290,19 @@ class SimManager:
         if method not in ("mcmc", "tm"):
             raise ValueError("'method' must be 'mcmc' or 'tm'")
 
-        chroms = _normalize_regions(chroms)
+        regions = _normalize_regions(regions)
         settings = _resolve_settings(settings)
         meth_prob, no_data = _prepare_meth_prob(
-            meth_prob, chroms, settings.nucbp, fill_nan
+            meth_prob, regions, settings.nucbp, fill_nan
         )
-        mols = _normalize_mols(mols, chroms)
-        nmol = {chrom: meth_prob[chrom].shape[0] for chrom in chroms}
-        nbp = {chrom: meth_prob[chrom].shape[1] for chrom in chroms}
+        mols = _normalize_mols(mols, regions)
+        nmol = {region: meth_prob[region].shape[0] for region in regions}
+        nbp = {region: meth_prob[region].shape[1] for region in regions}
         total_mol = _count_mols(mols, nmol) - sum(
-            int(np.count_nonzero(no_data[chrom][mols[chrom]]))
-            for chrom in chroms
+            int(np.count_nonzero(no_data[region][mols[region]]))
+            for region in regions
         )
-        _check_llink(settings, chroms)
+        _check_llink(settings, regions)
         if method == "mcmc":
             _check_mcmc_settings(settings)
             out_type = _parse_out_types(out_types)
@@ -311,7 +311,7 @@ class SimManager:
 
         eseq = None
         if store_eseq or use_median_eseq_mu:
-            eseq = _compute_eseq(settings, meth_prob, chroms)
+            eseq = _compute_eseq(settings, meth_prob, regions)
         if use_median_eseq_mu:
             mu = _median_eseq_mu(eseq)
             print(f"Using median eseq mu: {mu}")
@@ -320,7 +320,7 @@ class SimManager:
 
         # Save now so a loadable dataset exists even if the run is cut short
         dataset = SimDataset.create(
-            chroms=chroms,
+            regions=regions,
             nmol=nmol,
             nsim=nsim,
             nbp=nbp,
@@ -331,21 +331,21 @@ class SimManager:
             method=method,
             out_type=out_type,
             seed=seed,
-            seed_table=_seed_table(seed, chroms, nmol, nsim),
+            seed_table=_seed_table(seed, regions, nmol, nsim),
             no_data=no_data,
             nan_fill=fill_nan,
         )
         dataset.save()
 
         selected = (
-            (chrom, mol)
-            for chrom, mol in _iter_selected(chroms, nmol, mols)
-            if not no_data[chrom][mol]
+            (region, mol)
+            for region, mol in _iter_selected(regions, nmol, mols)
+            if not no_data[region][mol]
         )
         if method == "mcmc":
             targets = (
-                (chrom, mol, run)
-                for chrom, mol in selected
+                (region, mol, run)
+                for region, mol in selected
                 for run in range(nsim)
             )
             self._dispatch(
@@ -392,8 +392,8 @@ class SimManager:
             data must match `dataset.no_data`, and partly-nan molecules
             are filled as in the original run (`dataset.nan_fill`).
         only : iterable of (str, int, int) or (str, int), optional
-            For `dataset.method == 'mcmc'`: the specific `(chrom, mol,
-            run)` triplets to rerun. For `'tm'`: `(chrom, mol)` pairs --
+            For `dataset.method == 'mcmc'`: the specific `(region, mol,
+            run)` triplets to rerun. For `'tm'`: `(region, mol)` pairs --
             TM samples live in one combined file per molecule, so
             individual samples cannot be regenerated in isolation;
             passing a 3-tuple for a TM dataset raises `ValueError`. If
@@ -443,7 +443,7 @@ class SimManager:
         *,
         llinks: Iterable[int] = range(0, 65, 5),
         prob_name: str = "meth_prob",
-        chroms: str | Iterable[str] | None = None,
+        regions: str | Iterable[str] | None = None,
         max_nmol: int | None = None,
         seed: int | None = None,
         batch_size: int = 20000,
@@ -452,9 +452,9 @@ class SimManager:
         fill_nan: str | float | None = None,
     ) -> dict[str, int]:
         """
-        Estimate `SimSettings.llink` per chromosome by maximum likelihood.
+        Estimate `SimSettings.llink` per region by maximum likelihood.
 
-        For each chromosome, returns the candidate that maximizes the sum
+        For each region, returns the candidate that maximizes the sum
         over molecules of log Z(data, llink) - log Z(no data, llink), the
         marginal likelihood of the data, computed exactly with the
         transfer matrix at temperature 1. Molecules are split across
@@ -470,7 +470,7 @@ class SimManager:
         ----------
         exp : MethPrintExperiment
             The experiment to estimate from. `prob_name` must already be
-            in `exp.analysis[chrom]` for each chromosome.
+            in `exp.analysis[region]` for each region.
         settings : str or Path or SimSettings
             A settings object, or a path to a settings file. Provides
             `nucbp`, `elink`, `mu` and `emax`, which should match those
@@ -478,13 +478,13 @@ class SimManager:
         llinks : iterable of int, default range(0, 65, 5)
             Candidate linker lengths (bp).
         prob_name : str, default "meth_prob"
-            The key to read from `exp.analysis[chrom]`.
-        chroms : str or iterable of str, optional
-            Chromosome(s) to include. If None (default), all of
-            `exp.chroms` are used.
+            The key to read from `exp.analysis[region]`.
+        regions : str or iterable of str, optional
+            Region(s) to include. If None (default), all of
+            `exp.regions` are used.
         max_nmol : int, optional
             If given, use a random sample of at most this many molecules
-            per chromosome, to reduce run time. All molecules are used if
+            per region, to reduce run time. All molecules are used if
             None (default).
         seed : int, optional
             Seed for the random sample of `max_nmol`.
@@ -496,7 +496,7 @@ class SimManager:
             without modifying `exp`.
         llink_evid_name : str, optional
             If given, stores the evidence of each candidate in
-            `exp.analysis[chrom][llink_evid_name]`, a DataFrame with
+            `exp.analysis[region][llink_evid_name]`, a DataFrame with
             columns `llink`, `evidence` and `nmol`, e.g. for plotting.
             `exp` is not modified if None (default).
         fill_nan : {"mean"}, float, or None, default None
@@ -507,28 +507,28 @@ class SimManager:
         Returns
         -------
         dict of str to int
-            Chromosome -> estimated `llink`.
+            Region -> estimated `llink`.
 
         Raises
         ------
         ValueError
             If `llinks` is empty or holds a value that is not a
             non-negative integer, if `max_nmol` is not positive, if a
-            chromosome has no usable molecules, if `fill_nan` is invalid,
+            region has no usable molecules, if `fill_nan` is invalid,
             or if `fill_nan` is None and a molecule is nan at some but not
             all start positions.
         TypeError
             If `settings` is neither a path nor a SimSettings object.
         KeyError
             If `prob_name` or the mask of `mask_name` is missing for a
-            chromosome.
+            region.
 
         Warns
         -----
         UserWarning
             If `settings.end_temp` is not 1, if the estimate of a
-            chromosome is the largest candidate (the maximum may lie
-            beyond it), or if a chromosome uses fewer than 50 molecules.
+            region is the largest candidate (the maximum may lie
+            beyond it), or if a region uses fewer than 50 molecules.
 
         Notes
         -----
@@ -541,7 +541,7 @@ class SimManager:
             settings,
             llinks=llinks,
             prob_name=prob_name,
-            chroms=chroms,
+            regions=regions,
             max_nmol=max_nmol,
             seed=seed,
             batch_size=batch_size,
@@ -556,7 +556,7 @@ class SimManager:
         exp: MethPrintExperiment,
         *,
         prob_name: str = "meth_prob",
-        chroms: str | Iterable[str] | None = None,
+        regions: str | Iterable[str] | None = None,
         percentile: float = 90.0,
         batch_size: int = 20000,
         percentile_sample_size: int = 100000,
@@ -567,7 +567,7 @@ class SimManager:
         Estimate a data-driven `SimSettings.start_temp` value.
 
         Returns the `percentile`-th percentile of abs(logit(meth_prob))
-        across `chroms`, via batched random subsampling, so sequence-
+        across `regions`, via batched random subsampling, so sequence-
         energy barriers of that size are crossable early in the
         annealing schedule. Probabilities of exactly 0 or 1 (log odds
         beyond floating-point range) count as the largest finite log
@@ -577,12 +577,12 @@ class SimManager:
         ----------
         exp : MethPrintExperiment
             The experiment to estimate a temperature from. `prob_name`
-            must already be in `exp.analysis[chrom]` for each chromosome.
+            must already be in `exp.analysis[region]` for each region.
         prob_name : str, default "meth_prob"
-            The key to read from `exp.analysis[chrom]`.
-        chroms : str or iterable of str, optional
-            Chromosome(s) to include. If None (default), all of
-            `exp.chroms` are used.
+            The key to read from `exp.analysis[region]`.
+        regions : str or iterable of str, optional
+            Region(s) to include. If None (default), all of
+            `exp.regions` are used.
         percentile : float, default 90.0
             Percentile (0 to 100, exclusive of 100) of
             abs(logit(meth_prob)) to return.
@@ -590,7 +590,7 @@ class SimManager:
             Number of molecules read (and held in memory) per batch.
         percentile_sample_size : int, default 100000
             Approximate total number of molecules, split evenly across
-            `chroms`, used to estimate the percentile.
+            `regions`, used to estimate the percentile.
         seed : int, optional
             Seed for the random number generator used for subsampling.
         mask_name : str, optional
@@ -607,31 +607,31 @@ class SimManager:
         ------
         KeyError
             If `mask_name` is given but no matching mask is found for a
-            chromosome's "test" source.
+            region's "test" source.
         """
-        if isinstance(chroms, str):
-            resolved_chroms = (chroms,)
-        elif chroms is not None:
-            resolved_chroms = tuple(chroms)
+        if isinstance(regions, str):
+            resolved_regions = (regions,)
+        elif regions is not None:
+            resolved_regions = tuple(regions)
         else:
-            resolved_chroms = exp.chroms
+            resolved_regions = exp.regions
 
         rng = np.random.default_rng(seed)
-        target_per_chrom = max(
-            1, percentile_sample_size // len(resolved_chroms)
+        target_per_region = max(
+            1, percentile_sample_size // len(resolved_regions)
         )
         chunks = []
-        for chrom in resolved_chroms:
-            arr = exp.analysis[chrom][prob_name]
+        for region in resolved_regions:
+            arr = exp.analysis[region][prob_name]
             if isinstance(arr, pd.DataFrame):
                 arr = arr.to_numpy()
             keep = None
             if mask_name is not None:
-                keep = exp.is_kept(chrom, mask_name=mask_name)
+                keep = exp.is_kept(region, mask_name=mask_name)
             n_total = arr.shape[0]
             if n_total == 0:
                 continue
-            sample_frac = min(1.0, target_per_chrom / n_total)
+            sample_frac = min(1.0, target_per_region / n_total)
             for start, stop in _row_batches(0, n_total, batch_size):
                 batch = arr[start:stop, :]
                 if keep is not None:
@@ -741,7 +741,7 @@ class SimManager:
             progress bar.
         run_job : callable
             Executes one job (`SimManager._run_mcmc_job` or
-            `SimManager._run_tm_job`), returning `(chrom, mol, run,
+            `SimManager._run_tm_job`), returning `(region, mol, run,
             success, err_msg)`; `run` is None for per-molecule jobs.
         progress_desc : str, default "[cyan]Running simulations ..."
             The label shown next to the progress bar.
@@ -757,11 +757,11 @@ class SimManager:
                     progress.console, dataset, jobs
                 ),
             )
-            for _, (chrom, mol, run, success, err_msg) in results:
+            for _, (region, mol, run, success, err_msg) in results:
                 if not success:
                     progress.console.print(
                         "[red]Error[/red] Simulation failed "
-                        f"({_job_label(chrom, mol, run)}): {err_msg}"
+                        f"({_job_label(region, mol, run)}): {err_msg}"
                     )
                 progress.update(task, advance=1)
 
@@ -808,9 +808,9 @@ class SimManager:
                     cool_option,
                 )
                 _write_mcmc_data(f, dump.values())
-            return (p.chrom, p.mol, p.run, True, None)
+            return (p.region, p.mol, p.run, True, None)
         except Exception as e:  # noqa: BLE001
-            return (p.chrom, p.mol, p.run, False, str(e))
+            return (p.region, p.mol, p.run, False, str(e))
 
     # Solve one molecule once and draw all of its exact samples
     @staticmethod
@@ -849,6 +849,6 @@ class SimManager:
                 energies=energies,
                 seeds=p.seeds,
             )
-            return (p.chrom, p.mol, None, True, None)
+            return (p.region, p.mol, None, True, None)
         except Exception as e:  # noqa: BLE001
-            return (p.chrom, p.mol, None, False, str(e))
+            return (p.region, p.mol, None, False, str(e))

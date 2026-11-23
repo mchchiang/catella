@@ -59,7 +59,7 @@ def _raw_test_exp(nbp=5, nmol=30, seed=3):
     mol_id = np.array([f"mol{m}" for m in range(nmol)], dtype=object)
 
     raw = MethPrintData._create(
-        chrom="chr1",
+        region="chr1",
         nbp=nbp,
         test_mol_id=mol_id,
         test_data=df,
@@ -83,7 +83,11 @@ def test_plot_meth_prob_with_raw_which(tmp_path):
     exp = _raw_test_exp()
     out_file = tmp_path / "methmap_raw_which.png"
     MethPlot().plot_meth_prob(
-        exp=exp, chroms="chr1", raw_which="test", out_file=out_file, show=False
+        exp=exp,
+        regions="chr1",
+        raw_which="test",
+        out_file=out_file,
+        show=False,
     )
     assert out_file.exists()
 
@@ -98,7 +102,7 @@ def test_plot_meth_prob_raises_when_data_and_exp_combined(methplot):
     values = np.random.default_rng(1).random((5, 4))
     with pytest.raises(ValueError):
         methplot.plot_meth_prob(
-            values, exp=exp, chroms="chr1", raw_which="test", show=False
+            values, exp=exp, regions="chr1", raw_which="test", show=False
         )
 
 
@@ -112,7 +116,7 @@ def test_plot_meth_prob_mask_name_forwarded(tmp_path):
     out_file = tmp_path / "methmap_mask_name.png"
     MethPlot().plot_meth_prob(
         exp=exp,
-        chroms="chr1",
+        regions="chr1",
         raw_which="test",
         mask_name="qc",
         out_file=out_file,
@@ -145,7 +149,11 @@ def test_plot_meth_prob_raw_which_closes_scratch_file(tmp_path, monkeypatch):
 
     out_file = tmp_path / "methmap_scratch.png"
     MethPlot().plot_meth_prob(
-        exp=exp, chroms="chr1", raw_which="test", out_file=out_file, show=False
+        exp=exp,
+        regions="chr1",
+        raw_which="test",
+        out_file=out_file,
+        show=False,
     )
     assert out_file.exists()
     assert len(paths) == 1
@@ -190,7 +198,7 @@ def test_plot_meth_prob_end_to_end_with_sort_by_linkage(tmp_path):
     mol_id = np.array([f"mol{m}" for m in range(nmol)], dtype=object)
 
     raw = MethPrintData._create(
-        chrom="chr1",
+        region="chr1",
         nbp=nbp,
         test_mol_id=mol_id,
         test_data=df,
@@ -207,7 +215,7 @@ def test_plot_meth_prob_end_to_end_with_sort_by_linkage(tmp_path):
     out_file = tmp_path / "sorted_methmap.png"
     MethPlot().plot_meth_prob(
         exp=exp,
-        chroms="chr1",
+        regions="chr1",
         raw_which="test",
         link_mat=link_mats["chr1"],
         out_file=out_file,
@@ -384,20 +392,20 @@ def _write_chromsize(path, sizes):
 
 def _write_fasta(path, records):
     with open(path, "w") as f:
-        f.writelines(f">{chrom}\n{seq}\n" for chrom, seq in records.items())
+        f.writelines(f">{region}\n{seq}\n" for region, seq in records.items())
 
 
 def _dropout_fractions_exp(tmp_path):
     # refseq "AAAAAAAAAACG": 10 A-sites, 1 CG-site. Two molecules
     # with different coverage, so groups have >1 value to sort.
-    chrom, refseq = "chr1", "AAAAAAAAAACG"
+    region, refseq = "chr1", "AAAAAAAAAACG"
     chromsize = tmp_path / "sizes.tsv"
-    _write_chromsize(chromsize, {chrom: len(refseq)})
+    _write_chromsize(chromsize, {region: len(refseq)})
     fasta = tmp_path / "ref.fa"
-    _write_fasta(fasta, {chrom: refseq})
+    _write_fasta(fasta, {region: refseq})
     test_file = tmp_path / "test.tsv"
-    rows = [("m0", i, chrom, "+", 0.5, "a") for i in range(9)] + [
-        ("m1", i, chrom, "+", 0.5, "a") for i in range(5)
+    rows = [("m0", i, region, "+", 0.5, "a") for i in range(9)] + [
+        ("m1", i, region, "+", 0.5, "a") for i in range(5)
     ]
     _write_tsv(test_file, rows)
     return MethPrintExperiment.load_raw(
@@ -408,7 +416,7 @@ def _dropout_fractions_exp(tmp_path):
     )
 
 
-def _two_chrom_exp(tmp_path):
+def _two_region_exp(tmp_path):
     refseq = "AAAAAAAAAACG"
     chromsize = tmp_path / "sizes.tsv"
     _write_chromsize(chromsize, {"chr1": len(refseq), "chr2": len(refseq)})
@@ -454,7 +462,7 @@ class TestPlotDropoutEcdf:
         assert out_file.exists()
         exp.close()
 
-    def test_unknown_chrom_raises(self, tmp_path):
+    def test_unknown_region_raises(self, tmp_path):
         exp = _dropout_fractions_exp(tmp_path)
         fracs = exp.dropout_fractions()
 
@@ -472,8 +480,8 @@ class TestPlotDropoutEcdf:
             )
         exp.close()
 
-    def test_multi_chrom_legend_shows_varying_fields(self, tmp_path):
-        exp = _two_chrom_exp(tmp_path)
+    def test_multi_region_legend_shows_varying_fields(self, tmp_path):
+        exp = _two_region_exp(tmp_path)
         fracs = exp.dropout_fractions(channels=["A"])
 
         MethPlot().plot_dropout_ecdf(fracs, ["chr1", "chr2"], show=False)
@@ -482,9 +490,9 @@ class TestPlotDropoutEcdf:
         plt.close("all")
         exp.close()
 
-    def test_single_chrom_legend_unchanged_fields(self, tmp_path):
-        exp = _two_chrom_exp(tmp_path)
-        fracs = exp.dropout_fractions(chroms=["chr1"])
+    def test_single_region_legend_unchanged_fields(self, tmp_path):
+        exp = _two_region_exp(tmp_path)
+        fracs = exp.dropout_fractions(regions=["chr1"])
 
         MethPlot().plot_dropout_ecdf(fracs, "chr1", show=False)
         assert _legend_labels() == ["A", "CG", "all"]
@@ -492,8 +500,8 @@ class TestPlotDropoutEcdf:
         plt.close("all")
         exp.close()
 
-    def test_unknown_chrom_in_list_raises(self, tmp_path):
-        exp = _two_chrom_exp(tmp_path)
+    def test_unknown_region_in_list_raises(self, tmp_path):
+        exp = _two_region_exp(tmp_path)
         fracs = exp.dropout_fractions()
 
         with pytest.raises(ValueError):
@@ -502,8 +510,8 @@ class TestPlotDropoutEcdf:
             )
         exp.close()
 
-    def test_empty_chroms_raises(self, tmp_path):
-        exp = _two_chrom_exp(tmp_path)
+    def test_empty_regions_raises(self, tmp_path):
+        exp = _two_region_exp(tmp_path)
         fracs = exp.dropout_fractions()
 
         with pytest.raises(ValueError):
@@ -511,8 +519,8 @@ class TestPlotDropoutEcdf:
         exp.close()
 
     def test_pooled_false_omits_all(self, tmp_path):
-        exp = _two_chrom_exp(tmp_path)
-        fracs = exp.dropout_fractions(chroms=["chr1"])
+        exp = _two_region_exp(tmp_path)
+        fracs = exp.dropout_fractions(regions=["chr1"])
 
         MethPlot().plot_dropout_ecdf(fracs, "chr1", pooled=False, show=False)
         assert _legend_labels() == ["A", "CG"]
@@ -520,8 +528,8 @@ class TestPlotDropoutEcdf:
         exp.close()
 
     def test_pooled_false_single_channel_still_plots(self, tmp_path):
-        exp = _two_chrom_exp(tmp_path)
-        fracs = exp.dropout_fractions(chroms=["chr1"], channels=["A"])
+        exp = _two_region_exp(tmp_path)
+        fracs = exp.dropout_fractions(regions=["chr1"], channels=["A"])
 
         out_file = tmp_path / "single.png"
         MethPlot().plot_dropout_ecdf(
@@ -532,7 +540,7 @@ class TestPlotDropoutEcdf:
         exp.close()
 
     def test_split_by_channel_one_panel_per_channel(self, tmp_path):
-        exp = _two_chrom_exp(tmp_path)
+        exp = _two_region_exp(tmp_path)
         fracs = exp.dropout_fractions()
 
         MethPlot().plot_dropout_ecdf(
@@ -551,7 +559,7 @@ class TestPlotDropoutEcdf:
             for i in range(5)
         }
         MethPlot().plot_dropout_ecdf(
-            fracs, [k[0] for k in fracs], split_by="chrom", show=False
+            fracs, [k[0] for k in fracs], split_by="region", show=False
         )
         axes = plt.gcf().axes
         assert len([ax for ax in axes if ax.get_visible()]) == 5
@@ -581,7 +589,7 @@ class TestPlotDropoutEcdf:
             )
         plt.close("all")
 
-    def test_split_by_chrom_many_chroms_does_not_warn(self):
+    def test_split_by_region_many_regions_does_not_warn(self):
         fracs = {
             (f"chr{i}", "test", "A"): np.array([0.1, 0.2])
             for i in range(11)
@@ -589,12 +597,12 @@ class TestPlotDropoutEcdf:
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             MethPlot().plot_dropout_ecdf(
-                fracs, [k[0] for k in fracs], split_by="chrom", show=False
+                fracs, [k[0] for k in fracs], split_by="region", show=False
             )
         plt.close("all")
 
     def test_invalid_split_by_raises(self, tmp_path):
-        exp = _two_chrom_exp(tmp_path)
+        exp = _two_region_exp(tmp_path)
         fracs = exp.dropout_fractions()
 
         with pytest.raises(ValueError):

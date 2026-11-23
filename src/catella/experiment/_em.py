@@ -15,7 +15,7 @@ _START_QUANTILES = (0.25, 0.5, 0.75)
 
 def _streamed_window_count(
     exp,
-    chrom,
+    region,
     ctx,
     assay,
     lbin,
@@ -43,8 +43,8 @@ def _streamed_window_count(
     ----------
     exp : MethPrintExperiment
         The experiment object containing raw data and analysis maps.
-    chrom : str
-        Chromosome identifier.
+    region : str
+        Region identifier.
     ctx : np.ndarray
         int8, length L, context code per position.
     assay : dict of str to np.ndarray
@@ -112,7 +112,7 @@ def _streamed_window_count(
     parts = {key: {n: [] for n in names} for key in keys}
     batches = _iter_read_sites(
         exp,
-        chrom,
+        region,
         "test",
         ctx,
         assay,

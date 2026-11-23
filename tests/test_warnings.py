@@ -16,7 +16,7 @@ def _llink_exp(linker=10, nmol=50, nbp=200):
     energy[:, 0 : nbp - 4 : 5 + linker] = -20.0
     prob = 1.0 / (1.0 + np.exp(-energy))
     return SimpleNamespace(
-        chroms=("chr1",), analysis={"chr1": {"meth_prob": prob}}
+        regions=("chr1",), analysis={"chr1": {"meth_prob": prob}}
     )
 
 

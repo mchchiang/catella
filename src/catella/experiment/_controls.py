@@ -176,7 +176,7 @@ def _context_prior_rate(k, n, ctx, nu=10.0, eps=1e-4, channels=None):
 
 def _streamed_call_count(
     exp,
-    chrom,
+    region,
     which,
     ctx,
     assay,
@@ -198,8 +198,8 @@ def _streamed_call_count(
     ----------
     exp : MethPrintExperiment
         The experiment object containing raw data and analysis maps.
-    chrom : str
-        Chromosome identifier.
+    region : str
+        Region identifier.
     which : {"test", "meth", "unmeth"}
         Which raw table to read, forwarded to `exp.to_dense`.
     ctx : np.ndarray
@@ -244,7 +244,7 @@ def _streamed_call_count(
     acc = {key: [np.zeros(L), np.zeros(L)] for key in keys}
     batches = _iter_read_sites(
         exp,
-        chrom,
+        region,
         which,
         ctx,
         assay,

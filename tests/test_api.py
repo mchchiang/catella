@@ -38,7 +38,7 @@ def _make_dataset(tmp_path, nmol=6, nbp=10, seed=1):
     meth_prob = rng.random((nmol, nbp))
     manager = SimManager(nworker=1, verbose=False)
     return manager.run(
-        chroms="chr1",
+        regions="chr1",
         nsim=2,
         settings=_settings(),
         meth_prob=meth_prob,
@@ -59,7 +59,7 @@ def _make_experiment(nmol=6, nbp=10, seed=3, refseq=None, mtase=None):
     )
     mol_id = np.array([f"m{m}" for m in range(nmol)], dtype=object)
     raw = MethPrintData._create(
-        chrom="chr1",
+        region="chr1",
         nbp=nbp,
         refseq=refseq,
         test_mol_id=mol_id,
@@ -91,7 +91,7 @@ def _write_chromsize(path, sizes):
 
 def _write_fasta(path, records):
     with open(path, "w") as f:
-        f.writelines(f">{chrom}\n{seq}\n" for chrom, seq in records.items())
+        f.writelines(f">{region}\n{seq}\n" for region, seq in records.items())
 
 
 _MODEL_SEQ = "AATTGCGTTAAGCTTTAACGTTAAGCGCAATT" * 8
@@ -211,10 +211,10 @@ class TestLoadRaw:
 
         exp = catella.load_raw(chromsize=chromsize, test_file=test_file)
 
-        assert exp.chroms == ("chr1",)
+        assert exp.regions == ("chr1",)
         assert sorted(exp.raw["chr1"].test_mol_id) == ["m0", "m1"]
 
-    def test_chroms_forwarded(self, tmp_path):
+    def test_regions_forwarded(self, tmp_path):
         test_file = tmp_path / "test.tsv"
         _write_tsv(
             test_file,
@@ -227,14 +227,14 @@ class TestLoadRaw:
         _write_chromsize(chromsize, {"chr1": 5, "chr2": 5})
 
         exp = catella.load_raw(
-            chromsize=chromsize, test_file=test_file, chroms=["chr1"]
+            chromsize=chromsize, test_file=test_file, regions=["chr1"]
         )
 
-        assert exp.chroms == ("chr1",)
+        assert exp.regions == ("chr1",)
 
         with pytest.raises(ValueError):
             catella.load_raw(
-                chromsize=chromsize, test_file=test_file, chroms=["bogus"]
+                chromsize=chromsize, test_file=test_file, regions=["bogus"]
             )
 
 
@@ -256,13 +256,13 @@ class TestFilterDropout:
             expected.analysis["chr1"]["test_dropout_mask"]["keep"].to_numpy(),
         )
 
-    def test_chroms_forwarded(self):
+    def test_regions_forwarded(self):
         nbp = 10
         exp = _make_experiment(
             nmol=6, nbp=nbp, seed=3, refseq="A" * nbp, mtase=("A",)
         )
         with pytest.raises(ValueError):
-            catella.filter_dropout(exp=exp, chroms=["bogus"])
+            catella.filter_dropout(exp=exp, regions=["bogus"])
 
     def test_channels_forwarded(self):
         nbp = 10
@@ -291,7 +291,7 @@ class TestPlotDropoutEcdf:
     def test_which_writes_figure(self, tmp_path):
         out_file = tmp_path / "ecdf.png"
         catella.plot_dropout_ecdf(
-            self._make(), chroms="chr1", which="test", out_file=out_file,
+            self._make(), regions="chr1", which="test", out_file=out_file,
             show=False,
         )
         assert out_file.exists()
@@ -299,7 +299,7 @@ class TestPlotDropoutEcdf:
     def test_missing_which_source_raises(self):
         with pytest.raises(ValueError):
             catella.plot_dropout_ecdf(
-                self._make(), chroms="chr1", which="meth", show=False
+                self._make(), regions="chr1", which="meth", show=False
             )
 
 
@@ -327,9 +327,9 @@ class TestQC:
             catella.qc(exp=exp)
         catella.qc(exp=exp, overwrite=True)
 
-    def test_chroms_forwarded(self):
+    def test_regions_forwarded(self):
         with pytest.raises(ValueError):
-            catella.qc(exp=self._make(), chroms=["bogus"])
+            catella.qc(exp=self._make(), regions=["bogus"])
 
 
 class TestComputeEmpiricalProb:
@@ -622,9 +622,9 @@ class TestEstimateStartTemp:
         )
         assert got == pytest.approx(abs(logit(bound)))
 
-    def test_chroms_restricts_to_selected_chromosomes(self):
+    def test_regions_restricts_to_selected_regions(self):
         raw1 = MethPrintData._create(
-            chrom="chr1",
+            region="chr1",
             nbp=3,
             test_mol_id=np.array(["m0"], dtype=object),
             test_data=pd.DataFrame(
@@ -637,7 +637,7 @@ class TestEstimateStartTemp:
             unmeth_data=None,
         )
         raw2 = MethPrintData._create(
-            chrom="chr2",
+            region="chr2",
             nbp=3,
             test_mol_id=np.array(["m0"], dtype=object),
             test_data=pd.DataFrame(
@@ -656,7 +656,7 @@ class TestEstimateStartTemp:
         exp.analysis["chr2"]["meth_prob"] = pd.DataFrame(np.full((5, 3), 0.99))
 
         got = catella.estimate_start_temp(
-            exp, chroms="chr1", percentile_sample_size=100, seed=0
+            exp, regions="chr1", percentile_sample_size=100, seed=0
         )
         expected = np.nanpercentile(np.abs(logit(np.full((5, 3), 0.5))), 90.0)
         assert got == pytest.approx(expected)
@@ -673,7 +673,7 @@ def _make_tm_dataset(tmp_path, nmol=4, nbp=15, seed=2):
     meth_prob = rng.random((nmol, nbp))
     manager = SimManager(nworker=1, verbose=False)
     return manager.run(
-        chroms="chr1",
+        regions="chr1",
         nsim=0,
         method="tm",
         settings=_settings(),
@@ -701,7 +701,7 @@ class TestEstimateLlink:
     def test_is_exported(self):
         assert "estimate_llink" in catella.__all__
 
-    def test_returns_value_per_chromosome(self):
+    def test_returns_value_per_region(self):
         best = catella.estimate_llink(
             self._experiment(), self._settings(), llinks=[0, 10, 30]
         )
@@ -714,7 +714,7 @@ class TestEstimateLlink:
                 exp,
                 self._settings(),
                 llinks=[0, 10, 30],
-                chroms="chr1",
+                regions="chr1",
                 max_nmol=5,
                 seed=1,
             )
@@ -786,7 +786,7 @@ class TestEstimateLlink:
         settings = self._settings()
         best = catella.estimate_llink(exp, settings, llinks=[0, 10, 30])
         dataset = catella.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=1,
             method="tm",
             settings=replace(settings, llink=best["chr1"]),
@@ -803,7 +803,7 @@ class TestEstimateLlink:
         settings = self._settings()
         best = catella.estimate_llink(exp, settings, llinks=[0, 10, 30])
         dataset = catella.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=0,
             method="tm",
             settings=replace(settings, llink=best),
@@ -814,7 +814,7 @@ class TestEstimateLlink:
         )
         catella.compute_occup(dataset)
         direct = catella.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=0,
             method="tm",
             settings=replace(settings, llink=10),
@@ -836,8 +836,8 @@ class TestComputeConfig:
         catella.compute_config(dataset)
         ref = _make_tm_dataset(tmp_path / "ref")
         SimAnalysis().compute_best_match_config(dataset=ref, name="ref")
-        got = catella.extract_config(dataset, chrom="chr1", name="best_match")
-        want = catella.extract_config(ref, chrom="chr1", name="ref")
+        got = catella.extract_config(dataset, region="chr1", name="best_match")
+        want = catella.extract_config(ref, region="chr1", name="ref")
         for a, b in zip(got, want, strict=True):
             np.testing.assert_array_equal(a, b)
 
@@ -850,8 +850,8 @@ class TestComputeConfig:
         dataset = _make_tm_dataset(tmp_path)
         catella.compute_config(dataset, gamma=0.5, name="g05")
         catella.compute_config(dataset, gamma=4.0, name="g4")
-        low = catella.extract_config(dataset, chrom="chr1", name="g05")
-        high = catella.extract_config(dataset, chrom="chr1", name="g4")
+        low = catella.extract_config(dataset, region="chr1", name="g05")
+        high = catella.extract_config(dataset, region="chr1", name="g4")
         assert sum(len(c) for c in high) >= sum(len(c) for c in low)
 
     def test_unknown_method_raises(self, tmp_path):
@@ -877,7 +877,7 @@ class TestComputeLinkerHist:
     def test_matches_analysis_method(self, tmp_path):
         dataset = _make_tm_dataset(tmp_path)
         catella.compute_linker_hist(
-            dataset, lmax=3, trim=1, chroms="chr1", name="lh", nworker=1
+            dataset, lmax=3, trim=1, regions="chr1", name="lh", nworker=1
         )
         ref = _make_tm_dataset(tmp_path / "ref")
         SimAnalysis().compute_linker_hist(ref, lmax=3, trim=1, name="ref")
@@ -931,7 +931,7 @@ class TestPlotLinkerHist:
         out_file = tmp_path / "linker.png"
         catella.plot_linker_hist(
             dataset,
-            chroms="chr1",
+            regions="chr1",
             panels=True,
             density=False,
             out_file=out_file,
@@ -948,7 +948,7 @@ class TestPlotConfig:
         out_file = tmp_path / "configs.png"
         catella.plot_config(
             dataset,
-            chroms="chr1",
+            regions="chr1",
             name="best_match",
             max_rows=2,
             out_file=out_file,
@@ -962,10 +962,10 @@ class TestPlotOccup:
         "ignore:__array__ implementation doesn't accept a copy keyword"
         ":DeprecationWarning"
     )
-    def test_several_chroms_with_linkage_dict(self, tmp_path):
+    def test_several_regions_with_linkage_dict(self, tmp_path):
         rng = np.random.default_rng(4)
         dataset = SimManager(nworker=1, verbose=False).run(
-            chroms=["chr1", "chr2"],
+            regions=["chr1", "chr2"],
             nsim=2,
             settings=_settings(),
             meth_prob={
@@ -975,13 +975,13 @@ class TestPlotOccup:
             out_dir=tmp_path / "sim",
             seed=4,
         )
-        for chrom, shape in (("chr1", (4, 10)), ("chr2", (3, 12))):
-            dataset.analysis[chrom]["occup"] = pd.DataFrame(rng.random(shape))
+        for region, shape in (("chr1", (4, 10)), ("chr2", (3, 12))):
+            dataset.analysis[region]["occup"] = pd.DataFrame(rng.random(shape))
         link = catella.sort_by_linkage(dataset=dataset, data_name="occup")
         out_file = tmp_path / "occup.png"
         catella.plot_occup(
             dataset,
-            chroms=["chr1", "chr2"],
+            regions=["chr1", "chr2"],
             link_mat=link,
             sharex=True,
             out_file=out_file,
@@ -996,7 +996,7 @@ class TestPlotOccup:
     def test_plot_mean(self, tmp_path):
         dataset = _make_dataset(tmp_path)
         catella.compute_occup(dataset)
-        catella.plot_occup(dataset, chroms="chr1", plot_mean=True, show=False)
+        catella.plot_occup(dataset, regions="chr1", plot_mean=True, show=False)
         occup = dataset.analysis["chr1"]["occup"].to_numpy()
         mean_ax = next(
             ax for ax in plt.gcf().axes if ax.get_ylabel() == "Mean"
@@ -1035,22 +1035,22 @@ class TestPlotMeth:
         exp = _make_experiment(nmol=6, nbp=10, seed=3)
         out_file = tmp_path / "raw.png"
         catella.plot_meth(
-            exp=exp, chroms="chr1", raw_which="test", out_file=out_file,
+            exp=exp, regions="chr1", raw_which="test", out_file=out_file,
             show=False,
         )
         assert out_file.exists()
 
-    def _two_chrom_exp(self):
+    def _two_region_exp(self):
         rng = np.random.default_rng(5)
         raws = {}
-        for chrom, nmol, nbp in (("chr1", 6, 10), ("chr2", 4, 14)):
+        for region, nmol, nbp in (("chr1", 6, 10), ("chr2", 4, 14)):
             rows = [
                 (m, p, "+", float(rng.random()), 0)
                 for m in range(nmol)
                 for p in rng.choice(nbp, size=6, replace=False)
             ]
-            raws[chrom] = MethPrintData._create(
-                chrom=chrom,
+            raws[region] = MethPrintData._create(
+                region=region,
                 nbp=nbp,
                 test_mol_id=np.array(
                     [f"m{m}" for m in range(nmol)], dtype=object
@@ -1078,11 +1078,11 @@ class TestPlotMeth:
         return [ax.images[0] for ax in plt.gcf().axes if ax.images]
 
     @pytest.mark.parametrize("value", ["prob", "energy"])
-    def test_data_name_several_chroms(self, value):
-        exp = self._two_chrom_exp()
+    def test_data_name_several_regions(self, value):
+        exp = self._two_region_exp()
         catella.plot_meth(
             exp=exp,
-            chroms=["chr1", "chr2"],
+            regions=["chr1", "chr2"],
             data_name="prob",
             value=value,
             show=False,
@@ -1091,11 +1091,11 @@ class TestPlotMeth:
         assert [im.get_array().shape for im in images] == [(6, 10), (4, 14)]
         assert len(plt.gcf().axes) == 3
 
-    def test_raw_several_chroms_with_mols_dict(self):
-        exp = self._two_chrom_exp()
+    def test_raw_several_regions_with_mols_dict(self):
+        exp = self._two_region_exp()
         catella.plot_meth(
             exp=exp,
-            chroms=["chr1", "chr2"],
+            regions=["chr1", "chr2"],
             raw_which="test",
             mols={"chr2": [0, 1]},
             show=False,
@@ -1104,9 +1104,9 @@ class TestPlotMeth:
         assert shapes == [(6, 10), (2, 14)]
 
     def test_common_color_scale(self):
-        exp = self._two_chrom_exp()
+        exp = self._two_region_exp()
         catella.plot_meth(
-            exp=exp, chroms=["chr1", "chr2"], data_name="prob", show=False
+            exp=exp, regions=["chr1", "chr2"], data_name="prob", show=False
         )
         data = [exp.analysis[c]["prob"].to_numpy() for c in ("chr1", "chr2")]
         for im in self._images():
@@ -1114,10 +1114,10 @@ class TestPlotMeth:
             assert im.norm.vmax == pytest.approx(max(d.max() for d in data))
 
     def test_energy_common_symmetric_scale(self):
-        exp = self._two_chrom_exp()
+        exp = self._two_region_exp()
         catella.plot_meth(
             exp=exp,
-            chroms=["chr1", "chr2"],
+            regions=["chr1", "chr2"],
             data_name="prob",
             value="energy",
             show=False,
@@ -1130,28 +1130,28 @@ class TestPlotMeth:
             assert im.norm.vmin == pytest.approx(-halfrange)
             assert im.norm.vmax == pytest.approx(halfrange)
 
-    def test_link_mat_dict_sorts_each_chrom(self):
-        exp = self._two_chrom_exp()
+    def test_link_mat_dict_sorts_each_region(self):
+        exp = self._two_region_exp()
         link = catella.sort_by_linkage(exp=exp, data_name="prob")
         catella.plot_meth(
             exp=exp,
-            chroms=["chr1", "chr2"],
+            regions=["chr1", "chr2"],
             data_name="prob",
             link_mat=link,
             show=False,
         )
-        for chrom, im in zip(("chr1", "chr2"), self._images()):
-            order = sch.leaves_list(link[chrom])
+        for region, im in zip(("chr1", "chr2"), self._images()):
+            order = sch.leaves_list(link[region])
             np.testing.assert_allclose(
                 np.ma.getdata(im.get_array()),
-                exp.analysis[chrom]["prob"].to_numpy()[order],
+                exp.analysis[region]["prob"].to_numpy()[order],
             )
 
-    def test_sharex_uses_widest_chrom(self):
-        exp = self._two_chrom_exp()
+    def test_sharex_uses_widest_region(self):
+        exp = self._two_region_exp()
         catella.plot_meth(
             exp=exp,
-            chroms=["chr1", "chr2"],
+            regions=["chr1", "chr2"],
             data_name="prob",
             xscale=1,
             sharex=True,
@@ -1180,29 +1180,29 @@ class TestPlotMeth:
                 self._data(), value=value, xscale=3, show=False
             )
 
-    def test_data_with_chroms_raises(self):
-        exp = self._two_chrom_exp()
+    def test_data_with_regions_raises(self):
+        exp = self._two_region_exp()
         with pytest.raises(ValueError, match="cannot be combined"):
             catella.plot_meth(
-                self._data(), exp=exp, chroms="chr1", show=False
+                self._data(), exp=exp, regions="chr1", show=False
             )
 
     def test_raw_which_and_data_name_raises(self):
-        exp = self._two_chrom_exp()
+        exp = self._two_region_exp()
         with pytest.raises(ValueError, match="exactly one of"):
             catella.plot_meth(
                 exp=exp,
-                chroms="chr1",
+                regions="chr1",
                 raw_which="test",
                 data_name="prob",
                 show=False,
             )
 
     def test_mols_with_data_name_raises(self):
-        exp = self._two_chrom_exp()
+        exp = self._two_region_exp()
         with pytest.raises(ValueError, match="require 'raw_which'"):
             catella.plot_meth(
-                exp=exp, chroms="chr1", data_name="prob", mols=[0],
+                exp=exp, regions="chr1", data_name="prob", mols=[0],
                 show=False,
             )
 
@@ -1238,7 +1238,7 @@ class TestPlotMeth:
         exp = _make_experiment(nmol=6, nbp=10, seed=3)
         with pytest.raises(ValueError, match="does not support raw_which"):
             catella.plot_meth(
-                exp=exp, chroms="chr1", raw_which="test", value="energy",
+                exp=exp, regions="chr1", raw_which="test", value="energy",
                 show=False,
             )
 
@@ -1251,9 +1251,9 @@ class TestExtractConfig:
     def test_matches_simanalysis(self, tmp_path):
         dataset = _make_tm_dataset(tmp_path)
         catella.compute_config(dataset)
-        got = catella.extract_config(dataset, chrom="chr1", name="best_match")
+        got = catella.extract_config(dataset, region="chr1", name="best_match")
         want = SimAnalysis().extract_config(
-            dataset, chrom="chr1", name="best_match"
+            dataset, region="chr1", name="best_match"
         )
         assert len(got) == 4
         for a, b in zip(got, want, strict=True):
@@ -1261,7 +1261,7 @@ class TestExtractConfig:
 
     def test_mcmc_raw_run(self, tmp_path):
         dataset = _make_dataset(tmp_path)
-        got = catella.extract_config(dataset, chrom="chr1", run=1, mols=[3])
+        got = catella.extract_config(dataset, region="chr1", run=1, mols=[3])
         np.testing.assert_array_equal(
             got[0], dataset.raw["chr1", 3, 1].position[-1]
         )

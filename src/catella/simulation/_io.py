@@ -287,23 +287,24 @@ class SimFileMapper:
         shard_name = f"mol_{start:0{z}d}-{end:0{z}d}"
         return shard_name, f"mol_{int(molidx):0{z}d}"
 
-    def params_to_mcmc_file(self, chrom: str, molidx: int, run: int) -> Path:
+    def params_to_mcmc_file(self, region: str, molidx: int, run: int) -> Path:
         shard_name, mol_name = self._shard_and_mol(molidx)
         run_name = f"run_{int(run):0{self.run_pad}d}"
-        sim_h5 = f"{chrom}_{mol_name}_{run_name}.h5"
-        return self.root_dir / chrom / shard_name / mol_name / sim_h5
+        sim_h5 = f"{region}_{mol_name}_{run_name}.h5"
+        return self.root_dir / region / shard_name / mol_name / sim_h5
 
-    def params_to_tm_file(self, chrom: str, molidx: int) -> Path:
+    def params_to_tm_file(self, region: str, molidx: int) -> Path:
         # All TM samples of a molecule share one file in the shard directory
         shard_name, mol_name = self._shard_and_mol(molidx)
-        return self.root_dir / chrom / shard_name / f"{chrom}_{mol_name}_tm.h5"
+        tm_h5 = f"{region}_{mol_name}_tm.h5"
+        return self.root_dir / region / shard_name / tm_h5
 
     def file_to_params(self, sim_file: str | Path):
         sim_file = Path(sim_file)
-        chrom = sim_file.parts[-4]
+        region = sim_file.parts[-4]
         match = re.search(r"mol_(\d+)_run_(\d+)\.h5$", sim_file.name)
         if match:
-            return chrom, int(match.group(1)), int(match.group(2))
+            return region, int(match.group(1)), int(match.group(2))
         raise ValueError(f"could not parse parameters from file: {sim_file}")
 
 
@@ -312,7 +313,7 @@ def _write_settings(group, settings):
     Write SimSettings fields as attrs of `group`.
 
     None values are skipped (h5py cannot store them), and a mapping
-    (per-chromosome `llink`) is stored as a JSON string.
+    (per-region `llink`) is stored as a JSON string.
 
     Parameters
     ----------
@@ -355,7 +356,7 @@ def _write_metadata(
     raw_dir,
     nsim,
     method,
-    chroms,
+    regions,
     nmol,
     nbp,
     settings,
@@ -383,14 +384,14 @@ def _write_metadata(
         The number of runs per molecule.
     method : str
         The simulation method, "mcmc" or "tm".
-    chroms : sequence of str
-        The chromosomes.
+    regions : sequence of str
+        The regions.
     nmol, nbp : mapping of str to int
-        The number of molecules and base pairs of each chromosome.
+        The number of molecules and base pairs of each region.
     settings : SimSettings
         The simulation settings.
     eseq : mapping of str to np.ndarray, optional
-        The binding energy of each chromosome; not written if None.
+        The binding energy of each region; not written if None.
     out_type : Dump.OutputType, optional
         The recorded MCMC data; not written if None.
     seed : int, optional
@@ -413,14 +414,14 @@ def _write_metadata(
     gmeta.attrs["nsim"] = nsim
     gmeta.attrs["method"] = method
     dt = h5py.string_dtype(encoding="utf-8")
-    gmeta.create_dataset("chroms", data=chroms, dtype=dt)
-    gmeta.create_dataset("nmol", data=np.asarray([nmol[c] for c in chroms]))
-    gmeta.create_dataset("nbp", data=np.asarray([nbp[c] for c in chroms]))
+    gmeta.create_dataset("chroms", data=regions, dtype=dt)
+    gmeta.create_dataset("nmol", data=np.asarray([nmol[c] for c in regions]))
+    gmeta.create_dataset("nbp", data=np.asarray([nbp[c] for c in regions]))
     _write_settings(gmeta.create_group("settings"), settings)
     if eseq is not None:
         geseq = gmeta.create_group("eseq")
-        for chrom in chroms:
-            geseq.create_dataset(chrom, data=eseq[chrom], compression="gzip")
+        for region in regions:
+            geseq.create_dataset(region, data=eseq[region], compression="gzip")
     if out_type is not None:
         gmeta.attrs["out_type"] = int(out_type)
     if seed is not None:
@@ -429,12 +430,12 @@ def _write_metadata(
         gmeta.attrs["nan_fill"] = nan_fill
     if seed_table is not None:
         gseeds = gmeta.create_group("seed_table")
-        for chrom in chroms:
-            gseeds.create_dataset(chrom, data=seed_table[chrom])
+        for region in regions:
+            gseeds.create_dataset(region, data=seed_table[region])
     if no_data is not None:
         gno = gmeta.create_group("no_data")
-        for chrom in chroms:
-            gno.create_dataset(chrom, data=np.asarray(no_data[chrom], bool))
+        for region in regions:
+            gno.create_dataset(region, data=np.asarray(no_data[region], bool))
 
 
 def _read_metadata(h5file):
@@ -449,7 +450,7 @@ def _read_metadata(h5file):
     Returns
     -------
     dict of str to Any
-        'raw_dir' (Path, as stored), 'nsim', 'method', 'chroms', 'nmol',
+        'raw_dir' (Path, as stored), 'nsim', 'method', 'regions', 'nmol',
         'nbp', 'settings', 'eseq', 'out_type', 'seed', 'seed_table',
         'no_data', and 'nan_fill'.
         Optional fields that were not written are None; 'method' defaults
@@ -457,12 +458,12 @@ def _read_metadata(h5file):
     """
     gmeta = h5file["metadata"]
     attrs = gmeta.attrs
-    chroms = list(gmeta["chroms"].asstr()[()])
+    regions = list(gmeta["chroms"].asstr()[()])
 
-    def per_chrom(name):
+    def per_region(name):
         if name not in gmeta:
             return None
-        return {chrom: gmeta[name][chrom][()] for chrom in chroms}
+        return {region: gmeta[name][region][()] for region in regions}
 
     # Old datasets stored the raw directory as 'raw_path'
     raw_dir = attrs["raw_path"] if "raw_path" in attrs else attrs["raw_dir"]
@@ -470,19 +471,19 @@ def _read_metadata(h5file):
         "raw_dir": Path(raw_dir),
         "nsim": attrs["nsim"],
         "method": attrs.get("method", "mcmc"),
-        "chroms": chroms,
-        "nmol": dict(zip(chroms, gmeta["nmol"][()], strict=True)),
-        "nbp": dict(zip(chroms, gmeta["nbp"][()], strict=True)),
+        "regions": regions,
+        "nmol": dict(zip(regions, gmeta["nmol"][()], strict=True)),
+        "nbp": dict(zip(regions, gmeta["nbp"][()], strict=True)),
         "settings": _read_settings(gmeta["settings"]),
-        "eseq": per_chrom("eseq"),
+        "eseq": per_region("eseq"),
         "out_type": (
             Dump.OutputType(int(attrs["out_type"]))
             if "out_type" in attrs
             else None
         ),
         "seed": int(attrs["seed"]) if "seed" in attrs else None,
-        "seed_table": per_chrom("seed_table"),
-        "no_data": per_chrom("no_data"),
+        "seed_table": per_region("seed_table"),
+        "no_data": per_region("no_data"),
         "nan_fill": _read_nan_fill(attrs),
     }
 

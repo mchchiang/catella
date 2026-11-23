@@ -43,18 +43,18 @@ def _make_settings(**overrides):
 
 
 def _make_dataset(tmp_path, *, nmol=3, nsim=2, method="mcmc", seed=7):
-    chroms = ["chr1", "chr2"]
-    nmol_map = {chrom: nmol for chrom in chroms}
+    regions = ["chr1", "chr2"]
+    nmol_map = {region: nmol for region in regions}
     return SimDataset.create(
-        chroms=chroms,
+        regions=regions,
         nmol=nmol_map,
         nsim=nsim,
-        nbp={chrom: 30 for chrom in chroms},
+        nbp={region: 30 for region in regions},
         settings=_make_settings(),
         out_dir=tmp_path / "ds",
         method=method,
         seed=seed,
-        seed_table=_seed_table(seed, chroms, nmol_map, nsim),
+        seed_table=_seed_table(seed, regions, nmol_map, nsim),
     )
 
 
@@ -95,13 +95,13 @@ class TestSeedTable:
         nmol = {"a": 2, "b": 3}
         table = _seed_table(9, ["a", "b"], nmol, 4)
         assert list(table) == ["a", "b"]
-        for chrom_idx, chrom in enumerate(["a", "b"]):
-            arr = table[chrom]
-            assert arr.shape == (nmol[chrom], 4)
+        for region_idx, region in enumerate(["a", "b"]):
+            arr = table[region]
+            assert arr.shape == (nmol[region], 4)
             assert arr.dtype == np.uint32
-            for mol in range(nmol[chrom]):
+            for mol in range(nmol[region]):
                 for run in range(4):
-                    assert arr[mol, run] == _job_seed(9, chrom_idx, mol, run)
+                    assert arr[mol, run] == _job_seed(9, region_idx, mol, run)
 
     def test_zero_runs(self):
         table = _seed_table(9, ["a"], {"a": 2}, 0)
@@ -114,7 +114,7 @@ class TestCheckSeedSource:
 
     def test_passes_with_new_seed(self, tmp_path):
         dataset = SimDataset.create(
-            chroms=["chr1"],
+            regions=["chr1"],
             nmol={"chr1": 1},
             nsim=1,
             nbp={"chr1": 30},
@@ -125,7 +125,7 @@ class TestCheckSeedSource:
 
     def test_raises_without_seed_table(self, tmp_path):
         dataset = SimDataset.create(
-            chroms=["chr1"],
+            regions=["chr1"],
             nmol={"chr1": 1},
             nsim=1,
             nbp={"chr1": 30},
@@ -169,7 +169,7 @@ class TestComputeEseq:
 
 
 class TestMedianEseqMu:
-    def test_mean_of_chrom_medians(self):
+    def test_mean_of_region_medians(self):
         eseq = {
             "a": np.array([[1.0, 2.0, 9.0]]),
             "b": np.array([[np.nan, 4.0, 6.0]]),
@@ -178,7 +178,7 @@ class TestMedianEseqMu:
 
 
 class TestIterSelected:
-    def test_selections_per_chrom(self):
+    def test_selections_per_region(self):
         out = list(
             _iter_selected(
                 ["a", "b"],
@@ -208,14 +208,14 @@ class TestIterMCMCJobs:
                 dataset, settings, meth_prob, targets, Dump.OutputType.All
             )
         )
-        assert [(j.chrom, j.mol, j.run) for j in jobs] == targets
-        for job, (chrom, mol, run) in zip(jobs, targets, strict=True):
+        assert [(j.region, j.mol, j.run) for j in jobs] == targets
+        for job, (region, mol, run) in zip(jobs, targets, strict=True):
             assert isinstance(job, MCMCJob)
-            assert job.seed == int(dataset.seed_table[chrom][mol, run])
-            assert job.settings == settings.for_chrom(chrom)
+            assert job.seed == int(dataset.seed_table[region][mol, run])
+            assert job.settings == settings.for_region(region)
             assert job.out_type == Dump.OutputType.All
-            assert job.out_file == dataset.mcmc_file(chrom, mol, run)
-            assert job.seq_energy == _eseq_bytes(meth_prob[chrom][mol, :])
+            assert job.out_file == dataset.mcmc_file(region, mol, run)
+            assert job.seq_energy == _eseq_bytes(meth_prob[region][mol, :])
 
     def test_new_master_seed(self, tmp_path):
         dataset = _make_dataset(tmp_path)
@@ -256,11 +256,11 @@ class TestIterTMJobs:
         assert len(jobs) == 1
         job = jobs[0]
         assert isinstance(job, TMJob)
-        assert (job.chrom, job.mol) == ("chr2", 1)
+        assert (job.region, job.mol) == ("chr2", 1)
         expected = tuple(int(s) for s in dataset.seed_table["chr2"][1, :])
         assert job.seeds == expected
         assert job.out_file == dataset.tm_file("chr2", 1)
-        assert job.settings == settings.for_chrom("chr2")
+        assert job.settings == settings.for_region("chr2")
         assert job.seq_energy == _eseq_bytes(meth_prob["chr2"][1, :])
 
     def test_new_master_seed(self, tmp_path):
@@ -283,8 +283,8 @@ class TestMCMCRerunTargets:
         dataset = _make_dataset(tmp_path, nmol=2, nsim=2)
         targets = _mcmc_rerun_targets(dataset, None)
         expected = {
-            (chrom, mol, run)
-            for chrom in ("chr1", "chr2")
+            (region, mol, run)
+            for region in ("chr1", "chr2")
             for mol in range(2)
             for run in range(2)
         }

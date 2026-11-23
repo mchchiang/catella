@@ -51,7 +51,7 @@ def _write_chromsize(path, sizes):
 
 def _write_fasta(path, records):
     with open(path, "w") as f:
-        f.writelines(f">{chrom}\n{seq}\n" for chrom, seq in records.items())
+        f.writelines(f">{region}\n{seq}\n" for region, seq in records.items())
 
 
 def _settings_dict(**overrides):
@@ -90,7 +90,7 @@ def _make_dataset(tmp_path, *, nmol=4, nbp=20, nsim=2, seed=1, name="results"):
     meth_prob = rng.random((nmol, nbp))
     manager = SimManager(nworker=1, verbose=False)
     return manager.run(
-        chroms="chr1",
+        regions="chr1",
         nsim=nsim,
         settings=SimSettings(**_settings_dict()),
         meth_prob=meth_prob,
@@ -222,7 +222,7 @@ class TestLoadRaw:
         assert sum(int(m[1:]) % 2 for m in mol_ids) == 2
         assert sorted(mol_ids) == sorted(expected.raw["chr1"].test_mol_id)
 
-    def test_chroms_restricts_loaded_chromosomes(self, tmp_path):
+    def test_regions_restricts_loaded_regions(self, tmp_path):
         rows = _make_test_rows(nmol=5, nbp=30)
         test_file = tmp_path / "test.tsv"
         _write_tsv(test_file, rows)
@@ -237,14 +237,14 @@ class TestLoadRaw:
                 str(chromsize),
                 str(test_file),
                 str(cli_out),
-                "--chroms",
+                "--regions",
                 "chr1",
             ],
         )
         assert result.exit_code == 0, result.output
 
         got = MethPrintExperiment.load(cli_out)
-        assert got.chroms == ("chr1",)
+        assert got.regions == ("chr1",)
 
 
 def _load_raw_a_mtase(tmp_path, *, nmol=5, nbp=30, step=1):
@@ -400,10 +400,10 @@ class TestPlotDropoutEcdf:
         assert result.exit_code == 0, result.output
         assert out_file.exists()
 
-    def test_skips_chromosomes_missing_refseq(self, tmp_path):
+    def test_skips_regions_missing_refseq(self, tmp_path):
         # chr2 has no refseq; plotting chr1 must not touch it (before
-        # the chroms= restriction, dropout_fractions() always looped
-        # over every chromosome and would raise here).
+        # the regions= restriction, dropout_fractions() always looped
+        # over every region and would raise here).
         rows = [("m0", i, "chr1", "+", 0.5, "a") for i in range(4)] + [
             ("m0", 0, "chr2", "+", 0.5, "a")
         ]
@@ -445,7 +445,7 @@ class TestPlotDropoutEcdf:
         assert result.exit_code == 0, result.output
         assert out_file.exists()
 
-    def test_multi_chroms_no_pooled_and_split_by(self, tmp_path):
+    def test_multi_regions_no_pooled_and_split_by(self, tmp_path):
         rows = [("m0", i, "chr1", "+", 0.5, "a") for i in range(4)] + [
             ("m1", i, "chr2", "+", 0.5, "a") for i in range(2)
         ]
@@ -1131,7 +1131,7 @@ class TestRun:
             app,
             [
                 "run",
-                "--chroms",
+                "--regions",
                 "chr1",
                 "--nsim",
                 "2",
@@ -1154,7 +1154,7 @@ class TestRun:
         )
         assert result.exit_code == 0, result.output
         cli_dataset = SimDataset.load(out_dir / "myrun.h5")
-        assert list(cli_dataset.chroms) == ["chr1"]
+        assert list(cli_dataset.regions) == ["chr1"]
         # nmol is the full molecule-index space, not the simulated
         # count; confirm --mols restricted simulation to mols 0 and 1.
         with pytest.raises(ValueError):
@@ -1163,7 +1163,7 @@ class TestRun:
         exp_data = MethPrintExperiment.load(exp_file)
         meth_prob = exp_data.analysis["chr1"]["meth_prob"].to_numpy()
         expected = catella.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=2,
             settings=SimSettings(**_settings_dict()),
             meth_prob={"chr1": meth_prob},
@@ -1203,7 +1203,7 @@ class TestRun:
             app,
             [
                 "run",
-                "--chroms",
+                "--regions",
                 "chr1",
                 "--nsim",
                 "0",
@@ -1249,7 +1249,7 @@ class TestRun:
             app,
             [
                 "run",
-                "--chroms",
+                "--regions",
                 "chr1",
                 "--nsim",
                 "0",
@@ -1309,7 +1309,7 @@ class TestComputeOccup:
         meth_prob = rng.random((3, 15))
         manager = SimManager(nworker=1, verbose=False)
         dataset = manager.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=0,
             method="tm",
             settings=SimSettings(**_settings_dict()),
@@ -1333,10 +1333,10 @@ class TestComputeOccup:
         assert "var_nnuc" in reloaded.analysis["chr1"]
         assert "var_occup" in reloaded.analysis["chr1"]
 
-    def test_chroms_and_nworker_on_tm_dataset(self, tmp_path):
+    def test_regions_and_nworker_on_tm_dataset(self, tmp_path):
         rng = np.random.default_rng(4)
         dataset = SimManager(nworker=1, verbose=False).run(
-            chroms=["chr1", "chr2"],
+            regions=["chr1", "chr2"],
             nsim=0,
             method="tm",
             settings=SimSettings(**_settings_dict()),
@@ -1354,7 +1354,7 @@ class TestComputeOccup:
             [
                 "compute_occup",
                 str(dataset._dataset_file),
-                "--chroms",
+                "--regions",
                 "chr2",
                 "--nworker",
                 "2",
@@ -1362,7 +1362,7 @@ class TestComputeOccup:
         )
         assert result.exit_code == 0, result.output
 
-        catella.compute_occup(direct, chroms="chr2")
+        catella.compute_occup(direct, regions="chr2")
         reloaded = SimDataset.load(dataset._dataset_file)
         assert "occup" not in reloaded.analysis["chr1"]
         np.testing.assert_allclose(
@@ -1376,7 +1376,7 @@ class TestComputeConfig:
         meth_prob = np.random.default_rng(5).random((3, 15))
         meth_prob[1] = np.nan
         return SimManager(nworker=1, verbose=False).run(
-            chroms="chr1",
+            regions="chr1",
             nsim=0,
             method="tm",
             settings=SimSettings(**_settings_dict()),
@@ -1406,9 +1406,9 @@ class TestComputeConfig:
         assert result.exit_code == 0, result.output
 
         catella.compute_config(direct, gamma=2.0, name="bm2")
-        want = catella.extract_config(direct, chrom="chr1", name="bm2")
+        want = catella.extract_config(direct, region="chr1", name="bm2")
         reloaded = SimDataset.load(dataset._dataset_file)
-        got = catella.extract_config(reloaded, chrom="chr1", name="bm2")
+        got = catella.extract_config(reloaded, region="chr1", name="bm2")
         assert got[1] is None
         for mol in (0, 2):
             np.testing.assert_array_equal(got[mol], want[mol])
@@ -1416,7 +1416,7 @@ class TestComputeConfig:
         table = pd.read_csv(
             tsv_file, sep="\t", keep_default_na=False, dtype=str
         )
-        assert list(table.columns) == ["chrom", "mol", "starts"]
+        assert list(table.columns) == ["region", "mol", "starts"]
         assert list(table["mol"]) == ["0", "1", "2"]
         assert table["starts"].iloc[1] == "NA"
         assert table["starts"].iloc[0] == ",".join(str(s) for s in want[0])
@@ -1577,15 +1577,15 @@ class TestSortByLinkage:
         reloaded = MethPrintExperiment.load(exp_file)
         assert set(reloaded.analysis["chr1"]) == before
 
-    def test_dataset_chroms_restricts_processing(self, tmp_path):
+    def test_dataset_regions_restricts_processing(self, tmp_path):
         rng = np.random.default_rng(3)
         nmol, nbp = 4, 20
         meth_prob = {
-            chrom: rng.random((nmol, nbp)) for chrom in ("chr1", "chr2")
+            region: rng.random((nmol, nbp)) for region in ("chr1", "chr2")
         }
         manager = SimManager(nworker=1, verbose=False)
         dataset = manager.run(
-            chroms=["chr1", "chr2"],
+            regions=["chr1", "chr2"],
             nsim=2,
             settings=SimSettings(**_settings_dict()),
             meth_prob=meth_prob,
@@ -1603,7 +1603,7 @@ class TestSortByLinkage:
                 str(dataset._dataset_file),
                 "--kind",
                 "dataset",
-                "--chroms",
+                "--regions",
                 "chr1",
             ],
         )
@@ -1613,11 +1613,11 @@ class TestSortByLinkage:
         assert "occup_linkage" in reloaded.analysis["chr1"]
         assert "occup_linkage" not in reloaded.analysis["chr2"]
 
-    def test_experiment_chroms_restricts_processing(self, tmp_path):
+    def test_experiment_regions_restricts_processing(self, tmp_path):
         rng = np.random.default_rng(2)
         rows = [
-            (f"m{m}", pos, chrom, "+", round(float(rng.random()), 3), "a")
-            for chrom in ("chr1", "chr2")
+            (f"m{m}", pos, region, "+", round(float(rng.random()), 3), "a")
+            for region in ("chr1", "chr2")
             for m in range(6)
             for pos in range(0, 20, 5)
         ]
@@ -1638,7 +1638,7 @@ class TestSortByLinkage:
                 "experiment",
                 "--data-name",
                 "meth_prob",
-                "--chroms",
+                "--regions",
                 "chr1",
             ],
         )
@@ -1650,7 +1650,7 @@ class TestSortByLinkage:
 
     def test_dataset_config_name(self, tmp_path):
         dataset = SimManager(nworker=1, verbose=False).run(
-            chroms="chr1",
+            regions="chr1",
             nsim=0,
             method="tm",
             settings=SimSettings(**_settings_dict()),
@@ -1742,7 +1742,7 @@ class TestSortByLinkage:
 class TestPlotConfig:
     def test_writes_figure_file(self, tmp_path):
         dataset = SimManager(nworker=1, verbose=False).run(
-            chroms="chr1",
+            regions="chr1",
             nsim=0,
             method="tm",
             settings=SimSettings(**_settings_dict()),
@@ -1778,10 +1778,10 @@ class TestPlotConfig:
         assert result.exit_code == 0, result.output
         assert out_file.exists()
 
-    def _two_chrom_file(self, tmp_path):
+    def _two_region_file(self, tmp_path):
         rng = np.random.default_rng(2)
         dataset = SimManager(nworker=1, verbose=False).run(
-            chroms=["chr1", "chr2"],
+            regions=["chr1", "chr2"],
             nsim=0,
             method="tm",
             settings=SimSettings(**_settings_dict()),
@@ -1796,8 +1796,8 @@ class TestPlotConfig:
         dataset.save()
         return dataset._dataset_file
 
-    def test_several_chroms(self, tmp_path):
-        dataset_file = self._two_chrom_file(tmp_path)
+    def test_several_regions(self, tmp_path):
+        dataset_file = self._two_region_file(tmp_path)
         out_file = tmp_path / "configs_two.png"
 
         result = runner.invoke(
@@ -1818,7 +1818,7 @@ class TestPlotConfig:
         assert out_file.exists()
 
     def test_plot_mean_and_eseq(self, tmp_path):
-        dataset_file = self._two_chrom_file(tmp_path)
+        dataset_file = self._two_region_file(tmp_path)
         out_file = tmp_path / "configs_mean.png"
 
         result = runner.invoke(
@@ -1839,8 +1839,8 @@ class TestPlotConfig:
         assert result.exit_code == 0, result.output
         assert out_file.exists()
 
-    def test_mols_with_several_chroms_fails(self, tmp_path):
-        dataset_file = self._two_chrom_file(tmp_path)
+    def test_mols_with_several_regions_fails(self, tmp_path):
+        dataset_file = self._two_region_file(tmp_path)
 
         result = runner.invoke(
             app,
@@ -1854,7 +1854,7 @@ class TestPlotConfig:
             ],
         )
         assert result.exit_code != 0
-        assert "single chromosome" in result.output
+        assert "single region" in result.output
 
 
 class TestPlotOccup:
@@ -1970,10 +1970,10 @@ class TestPlotOccup:
         assert result.exit_code == 0, result.output
         assert out_file.exists()
 
-    def _two_chrom_file(self, tmp_path):
+    def _two_region_file(self, tmp_path):
         rng = np.random.default_rng(2)
         dataset = SimManager(nworker=1, verbose=False).run(
-            chroms=["chr1", "chr2"],
+            regions=["chr1", "chr2"],
             nsim=2,
             settings=SimSettings(**_settings_dict()),
             meth_prob={
@@ -1983,8 +1983,8 @@ class TestPlotOccup:
             out_dir=tmp_path / "sim_out",
             seed=2,
         )
-        for chrom, shape in (("chr1", (4, 20)), ("chr2", (3, 30))):
-            dataset.analysis[chrom]["occup"] = pd.DataFrame(rng.random(shape))
+        for region, shape in (("chr1", (4, 20)), ("chr2", (3, 30))):
+            dataset.analysis[region]["occup"] = pd.DataFrame(rng.random(shape))
         SimAnalysis().sort_by_linkage(dataset=dataset)
         dataset.save()
         return dataset._dataset_file
@@ -1993,8 +1993,8 @@ class TestPlotOccup:
         "ignore:__array__ implementation doesn't accept a copy keyword"
         ":DeprecationWarning"
     )
-    def test_several_chroms(self, tmp_path):
-        dataset_file = self._two_chrom_file(tmp_path)
+    def test_several_regions(self, tmp_path):
+        dataset_file = self._two_region_file(tmp_path)
         out_file = tmp_path / "occup_two.png"
 
         result = runner.invoke(
@@ -2014,8 +2014,8 @@ class TestPlotOccup:
         assert result.exit_code == 0, result.output
         assert out_file.exists()
 
-    def test_mols_with_several_chroms_fails(self, tmp_path):
-        dataset_file = self._two_chrom_file(tmp_path)
+    def test_mols_with_several_regions_fails(self, tmp_path):
+        dataset_file = self._two_region_file(tmp_path)
 
         result = runner.invoke(
             app,
@@ -2029,7 +2029,7 @@ class TestPlotOccup:
             ],
         )
         assert result.exit_code != 0
-        assert "single chromosome" in result.output
+        assert "single region" in result.output
 
 
 class TestPlotMeth:
@@ -2180,7 +2180,7 @@ class TestPlotMeth:
         )
         assert result.exit_code != 0
 
-    def _two_chrom_exp_file(self, tmp_path):
+    def _two_region_exp_file(self, tmp_path):
         rng = np.random.default_rng(7)
         rows = _make_test_rows(nmol=6, nbp=20) + [
             (f"n{m}", pos, "chr2", "+", round(float(rng.random()), 3), "a")
@@ -2202,8 +2202,8 @@ class TestPlotMeth:
         return exp_file
 
     @pytest.mark.parametrize("value", ["prob", "energy"])
-    def test_several_chroms_with_key(self, tmp_path, value):
-        exp_file = self._two_chrom_exp_file(tmp_path)
+    def test_several_regions_with_key(self, tmp_path, value):
+        exp_file = self._two_region_exp_file(tmp_path)
         out_file = tmp_path / f"methmap_two_{value}.png"
 
         result = runner.invoke(
@@ -2227,8 +2227,8 @@ class TestPlotMeth:
         assert result.exit_code == 0, result.output
         assert out_file.exists()
 
-    def test_several_chroms_with_raw_which(self, tmp_path):
-        exp_file = self._two_chrom_exp_file(tmp_path)
+    def test_several_regions_with_raw_which(self, tmp_path):
+        exp_file = self._two_region_exp_file(tmp_path)
         out_file = tmp_path / "methmap_two_raw.png"
 
         result = runner.invoke(

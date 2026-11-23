@@ -15,7 +15,7 @@ from catella.experiment.methdata import (
 from catella.h5_array import H5Array
 
 
-def _make_raw(chrom, nmol, nbp, seed, refseq=None):
+def _make_raw(region, nmol, nbp, seed, refseq=None):
     rng = np.random.default_rng(seed)
     rows = []
     for m in range(nmol):
@@ -28,7 +28,7 @@ def _make_raw(chrom, nmol, nbp, seed, refseq=None):
     )
     mol_id = np.array([f"mol{m}" for m in range(nmol)], dtype=object)
     return MethPrintData._create(
-        chrom=chrom,
+        region=region,
         nbp=nbp,
         refseq=refseq,
         test_mol_id=mol_id,
@@ -40,8 +40,8 @@ def _make_raw(chrom, nmol, nbp, seed, refseq=None):
     )
 
 
-def _make_multi_chrom_experiment_file(tmp_path, chroms, nmol=3, nbp=6):
-    raw = {c: _make_raw(c, nmol, nbp, seed=i) for i, c in enumerate(chroms)}
+def _make_multi_region_experiment_file(tmp_path, regions, nmol=3, nbp=6):
+    raw = {c: _make_raw(c, nmol, nbp, seed=i) for i, c in enumerate(regions)}
     exp = MethPrintExperiment._create(_raw_data=raw)
     path = tmp_path / "experiment.h5"
     exp.save(path)
@@ -49,8 +49,8 @@ def _make_multi_chrom_experiment_file(tmp_path, chroms, nmol=3, nbp=6):
 
 
 class TestLazyRawDataMap:
-    def test_load_does_not_read_any_chromosome_eagerly(self, tmp_path):
-        path = _make_multi_chrom_experiment_file(
+    def test_load_does_not_read_any_region_eagerly(self, tmp_path):
+        path = _make_multi_region_experiment_file(
             tmp_path, ["chr1", "chr2", "chr3"]
         )
         with patch.object(
@@ -58,19 +58,19 @@ class TestLazyRawDataMap:
         ) as spy:
             exp = MethPrintExperiment.load(path)
             assert spy.call_count == 0
-            assert set(exp.chroms) == {"chr1", "chr2", "chr3"}
+            assert set(exp.regions) == {"chr1", "chr2", "chr3"}
             assert spy.call_count == 0
 
-    def test_access_triggers_exactly_one_load_per_chromosome(self, tmp_path):
-        path = _make_multi_chrom_experiment_file(tmp_path, ["chr1", "chr2"])
+    def test_access_triggers_exactly_one_load_per_region(self, tmp_path):
+        path = _make_multi_region_experiment_file(tmp_path, ["chr1", "chr2"])
         with patch.object(
             MethPrintData, "_load", wraps=MethPrintData._load
         ) as spy:
-            exp = MethPrintExperiment.load(path, max_cached_chroms=2)
+            exp = MethPrintExperiment.load(path, max_cached_regions=2)
             raw1 = exp.raw["chr1"]
             assert spy.call_count == 1
 
-            # Repeated access to the same chromosome is a cache hit
+            # Repeated access to the same region is a cache hit
             raw1_again = exp.raw["chr1"]
             assert spy.call_count == 1
             assert raw1_again is raw1
@@ -78,24 +78,24 @@ class TestLazyRawDataMap:
             exp.raw["chr2"]
             assert spy.call_count == 2
 
-    def test_lru_eviction_bounds_cached_chromosomes(self, tmp_path):
-        path = _make_multi_chrom_experiment_file(
+    def test_lru_eviction_bounds_cached_regions(self, tmp_path):
+        path = _make_multi_region_experiment_file(
             tmp_path, ["chr1", "chr2", "chr3"]
         )
         with patch.object(
             MethPrintData, "_load", wraps=MethPrintData._load
         ) as spy:
-            exp = MethPrintExperiment.load(path, max_cached_chroms=1)
+            exp = MethPrintExperiment.load(path, max_cached_regions=1)
             exp.raw["chr1"]
             exp.raw["chr2"]
             assert spy.call_count == 2
 
-            # chr1 was evicted when chr2 was loaded (max_cached_chroms=1)
+            # chr1 was evicted when chr2 was loaded (max_cached_regions=1)
             exp.raw["chr1"]
             assert spy.call_count == 3
 
     def test_default_max_cached_is_one(self, tmp_path):
-        path = _make_multi_chrom_experiment_file(tmp_path, ["chr1", "chr2"])
+        path = _make_multi_region_experiment_file(tmp_path, ["chr1", "chr2"])
         exp = MethPrintExperiment.load(path)
         raw_map = exp._raw_data
         assert isinstance(raw_map, LazyRawDataMap)
@@ -105,26 +105,26 @@ class TestLazyRawDataMap:
         assert len(raw_map._cache) == 1
 
 
-class TestChromSelection:
-    def test_selects_subset_of_chromosomes(self, tmp_path):
-        chroms = ["chr1", "chr2", "chr3"]
+class TestRegionSelection:
+    def test_selects_subset_of_regions(self, tmp_path):
+        regions = ["chr1", "chr2", "chr3"]
         raw = {
             c: _make_raw(c, nmol=2, nbp=6, seed=i)
-            for i, c in enumerate(chroms)
+            for i, c in enumerate(regions)
         }
         exp = MethPrintExperiment._create(_raw_data=raw)
         exp.analysis["chr2"]["stat"] = pd.DataFrame({"x": [1, 2]})
         path = tmp_path / "experiment.h5"
         exp.save(path)
 
-        loaded = MethPrintExperiment.load(path, chroms=["chr1", "chr3"])
-        assert set(loaded.chroms) == {"chr1", "chr3"}
+        loaded = MethPrintExperiment.load(path, regions=["chr1", "chr3"])
+        assert set(loaded.regions) == {"chr1", "chr3"}
         assert set(loaded.analysis.keys()) == {"chr1", "chr3"}
 
-    def test_unknown_chromosome_raises(self, tmp_path):
-        path = _make_multi_chrom_experiment_file(tmp_path, ["chr1", "chr2"])
+    def test_unknown_region_raises(self, tmp_path):
+        path = _make_multi_region_experiment_file(tmp_path, ["chr1", "chr2"])
         with pytest.raises(ValueError):
-            MethPrintExperiment.load(path, chroms=["chrX"])
+            MethPrintExperiment.load(path, regions=["chrX"])
 
 
 class TestSaveToExistingFile:
@@ -219,13 +219,13 @@ class TestSaveInPlace:
         loaded = MethPrintExperiment.load(path)
         loaded.save(other)
         reloaded = MethPrintExperiment.load(other)
-        assert reloaded.chroms == ("chr1",)
+        assert reloaded.regions == ("chr1",)
         np.testing.assert_array_equal(
             reloaded.analysis["chr1"]["sig"].to_numpy(),
             np.arange(6.0).reshape(2, 3),
         )
 
-    def test_subset_load_keeps_other_chroms_analysis(self, tmp_path):
+    def test_subset_load_keeps_other_regions_analysis(self, tmp_path):
         raw = {
             c: _make_raw(c, nmol=2, nbp=6, seed=i)
             for i, c in enumerate(["chr1", "chr2"])
@@ -235,7 +235,7 @@ class TestSaveInPlace:
         path = tmp_path / "multi.h5"
         exp.save(path)
 
-        subset = MethPrintExperiment.load(path, chroms=["chr1"])
+        subset = MethPrintExperiment.load(path, regions=["chr1"])
         subset._analysis["chr1"]["df1"] = pd.DataFrame({"v": [1.0]})
         subset.save()
 
@@ -245,7 +245,7 @@ class TestSaveInPlace:
             full.analysis["chr2"]["df2"], pd.DataFrame({"v": [2.0]})
         )
 
-    def test_save_to_other_file_drops_its_chroms(self, path, tmp_path):
+    def test_save_to_other_file_drops_its_regions(self, path, tmp_path):
         other = tmp_path / "other.h5"
         exp = MethPrintExperiment._create(
             _raw_data={"chr2": _make_raw("chr2", nmol=2, nbp=6, seed=1)}
@@ -281,7 +281,7 @@ class TestLabeledAnalysisLoad:
         exp.save(path)
         return path
 
-    def test_chrom_labels_not_loaded_as_entries(self, path):
+    def test_region_labels_not_loaded_as_entries(self, path):
         loaded = MethPrintExperiment.load(path)
         assert set(loaded._analysis["chr1"]) == {"sig"}
         assert list(loaded._analysis["chr1"]["sig"].index) == ["m0", "m1"]
@@ -319,7 +319,7 @@ class TestRefseq:
         assert loaded.raw["chr1"].refseq is None
 
 
-def _make_raw_exact(chrom, nbp, nmol, rows, which="test"):
+def _make_raw_exact(region, nbp, nmol, rows, which="test"):
     """Build a MethPrintData with an exact, deterministic long-format
     table for `which` ("test", "meth", or "unmeth"), leaving the other
     two kinds as None. `rows` is a list of (mol_index, pos, mod_qual)."""
@@ -328,7 +328,7 @@ def _make_raw_exact(chrom, nbp, nmol, rows, which="test"):
     df["mod_code"] = 0
     mol_id = np.array([f"mol{m}" for m in range(nmol)], dtype=object)
     kwargs = {
-        "chrom": chrom,
+        "region": region,
         "nbp": nbp,
         "test_mol_id": None,
         "test_data": None,

@@ -568,7 +568,7 @@ def run_catella(
         tmp_dir=workdir,
     )
     exp = catella.compute_model_prob(exp=exp)
-    chrom = exp.chroms[0]
+    region = exp.regions[0]
     fit = llink == "ml"
     if isinstance(llink, str) and not fit:
         raise ValueError(f"llink must be an integer or 'ml', got {llink!r}")
@@ -585,14 +585,14 @@ def run_catella(
         best = catella.estimate_llink(
             exp, settings, seed=seed, nworker=nworker
         )
-        settings = replace(settings, llink=best[chrom])
+        settings = replace(settings, llink=best[region])
     fit_time = time.perf_counter() - start if fit else 0.0
     sim_dir = Path(tempfile.mkdtemp(dir=workdir)) / "sim"
     sim = catella.run(
-        chroms=chrom,
+        regions=region,
         nsim=0,
         settings=settings,
-        meth_prob={chrom: exp.analysis[chrom]["meth_prob"]},
+        meth_prob={region: exp.analysis[region]["meth_prob"]},
         out_dir=sim_dir,
         method="tm",
         seed=seed,
@@ -600,9 +600,9 @@ def run_catella(
         verbose=False,
     )
     catella.compute_occup(sim)
-    occ = np.asarray(sim.analysis[chrom]["occup"][:], dtype=np.float32)
-    count = np.asarray(sim.analysis[chrom]["mean_nnuc"][:]).ravel()
-    mol_ids = np.asarray(exp.raw[chrom].test_mol_id)
+    occ = np.asarray(sim.analysis[region]["occup"][:], dtype=np.float32)
+    count = np.asarray(sim.analysis[region]["mean_nnuc"][:]).ravel()
+    mol_ids = np.asarray(exp.raw[region].test_mol_id)
     return Calls(
         mol_ids, occ, count, llink=settings.llink, fit_time=fit_time
     )

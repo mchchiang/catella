@@ -149,7 +149,7 @@ def _call_frac_info(call_stats, channels):
     }
 
 
-def _warn_call_frac_mismatch(chrom, info, channels):
+def _warn_call_frac_mismatch(region, info, channels):
     """
     Warn when the test call fraction of a channel lies outside the
     range spanned by the controls, for channels whose controls look
@@ -167,8 +167,8 @@ def _warn_call_frac_mismatch(chrom, info, channels):
 
     Parameters
     ----------
-    chrom : str
-        Chromosome identifier, for the message.
+    region : str
+        Region identifier, for the message.
     info : dict
         Holds `call_frac_{test,meth,unmeth}_{channel}` entries (see
         `_call_frac_info`).
@@ -188,7 +188,7 @@ def _warn_call_frac_mismatch(chrom, info, channels):
             continue
         bias = "protection" if test < lo else "accessibility"
         _warn(
-            f"channel {name} on chrom '{chrom}': the fraction of read "
+            f"channel {name} on region '{region}': the fraction of read "
             f"sites with a call is {test:.2f} in the test sample, outside "
             f"the range {lo:.2f}-{hi:.2f} of the meth/unmeth controls; "
             "missing calls are treated as unmethylated, so the test "
@@ -226,9 +226,9 @@ def _frac_informative_by_context(ctx, informative, channels=None):
     }
 
 
-def _fold_contexts(exp, chrom, channels=None):
+def _fold_contexts(exp, region, channels=None):
     """
-    Context code per position of `chrom`, folded to `nbp` if `exp.wrap`.
+    Context code per position of `region`, folded to `nbp` if `exp.wrap`.
 
     Merged channels in `channels` are applied before folding, and
     wrap-mirrored positions that disagree on context are set to NONE.
@@ -237,8 +237,8 @@ def _fold_contexts(exp, chrom, channels=None):
     ----------
     exp : MethPrintExperiment
         The experiment object containing raw data and analysis maps.
-    chrom : str
-        Chromosome identifier.
+    region : str
+        Region identifier.
     channels : iterable of int, optional
         Selected channel codes, as from `_resolve_channels`; see
         `_merge_contexts`. None (default) merges nothing.
@@ -251,7 +251,7 @@ def _fold_contexts(exp, chrom, channels=None):
     Raises
     ------
     ValueError
-        If `chrom` has no reference sequence.
+        If `region` has no reference sequence.
 
     Warns
     -----
@@ -259,10 +259,10 @@ def _fold_contexts(exp, chrom, channels=None):
         If more than `_WRAP_CTX_DISAGREE_WARN_FRAC` of the mirrored
         position pairs disagree.
     """
-    raw = exp.raw[chrom]
+    raw = exp.raw[region]
     if raw.refseq is None:
         raise ValueError(
-            f"no reference sequence for chrom '{chrom}'; "
+            f"no reference sequence for region '{region}'; "
             "model_prob needs 'fasta_file' at load_raw"
         )
     full_ctx = _merge_contexts(_reference_contexts(raw.refseq), channels)
@@ -276,7 +276,7 @@ def _fold_contexts(exp, chrom, channels=None):
     frac_disagree = 1.0 - agree.mean()
     if frac_disagree > _WRAP_CTX_DISAGREE_WARN_FRAC:
         _warn(
-            f"refseq for chrom '{chrom}' disagrees on "
+            f"refseq for region '{region}' disagrees on "
             f"context at {(~agree).sum()}/{nbp} "
             f"({frac_disagree:.1%}) wrap-mirrored position "
             "pairs (folded to NONE there); this may "
@@ -287,20 +287,20 @@ def _fold_contexts(exp, chrom, channels=None):
     return np.where(agree, lower, NONE).astype(lower.dtype)
 
 
-def _warn_boundary_fit(chrom, stratum, em_diag):
+def _warn_boundary_fit(region, stratum, em_diag):
     """
     Warn if a controls fit of tau ended at a boundary.
 
     Parameters
     ----------
-    chrom : str
-        Chromosome identifier.
+    region : str
+        Region identifier.
     stratum : str or None
         Strand, or None if pooled.
     em_diag : dict
         From `_calibrate_from_profiles`.
     """
-    where = chrom if stratum is None else f"{chrom} (strand {stratum!r})"
+    where = region if stratum is None else f"{region} (strand {stratum!r})"
     hint = "consider a fixed rho_leak"
     at_max = em_diag["tau"] >= em_diag["tau_max"] - 1e-6
     names = [CONTEXT_NAMES[c] for c, m in zip(em_diag["codes"], at_max) if m]
@@ -322,7 +322,7 @@ def _warn_boundary_fit(chrom, stratum, em_diag):
 
 def _controls_calibration(
     exp,
-    chrom,
+    region,
     ctx,
     assay,
     strata,
@@ -351,8 +351,8 @@ def _controls_calibration(
     ----------
     exp : MethPrintExperiment
         The experiment object containing raw data and analysis maps.
-    chrom : str
-        Chromosome identifier.
+    region : str
+        Region identifier.
     ctx : np.ndarray
         int8, length L, context code per position.
     assay : dict of str to np.ndarray
@@ -361,7 +361,7 @@ def _controls_calibration(
         `("+", "-")` to calibrate each strand, or `(None,)` to pool.
     nu, rho_leak, lbin, max_iters, tol, min_rel_contrast, batch_size,
     mask_name, channels, span, q_thres
-        As in `_chrom_calibration`.
+        As in `_region_calibration`.
 
     Returns
     -------
@@ -385,7 +385,7 @@ def _controls_calibration(
     for src in ("meth", "unmeth"):
         c = _streamed_call_count(
             exp,
-            chrom,
+            region,
             src,
             ctx,
             assay,
@@ -413,7 +413,7 @@ def _controls_calibration(
         try:
             windows = _streamed_window_count(
                 exp,
-                chrom,
+                region,
                 ctx,
                 assay,
                 lbin,
@@ -457,7 +457,7 @@ def _controls_calibration(
                     min_rel_contrast=min_rel_contrast,
                 )
             )
-            _warn_boundary_fit(chrom, s, em_diag)
+            _warn_boundary_fit(region, s, em_diag)
         else:
             theta_prot = _leak_interpolated_rate(acc, fpr, rho_leak=rho_leak)
             theta_acc = acc
@@ -476,7 +476,7 @@ def _controls_calibration(
 
 def _em_calibration(
     exp,
-    chrom,
+    region,
     ctx,
     assay,
     strata,
@@ -498,8 +498,8 @@ def _em_calibration(
     ----------
     exp : MethPrintExperiment
         The experiment object containing raw data and analysis maps.
-    chrom : str
-        Chromosome identifier.
+    region : str
+        Region identifier.
     ctx : np.ndarray
         int8, length L, context code per position.
     assay : dict of str to np.ndarray
@@ -508,7 +508,7 @@ def _em_calibration(
         `("+", "-")` to calibrate each strand, or `(None,)` to pool.
     lbin, max_iters, tol, min_rel_contrast,
     batch_size, mask_name, channels, span, q_thres
-        As in `_chrom_calibration`.
+        As in `_region_calibration`.
 
     Returns
     -------
@@ -518,7 +518,7 @@ def _em_calibration(
     by_strand = strata != (None,)
     counts = _streamed_window_count(
         exp,
-        chrom,
+        region,
         ctx,
         assay,
         lbin,
@@ -555,9 +555,9 @@ def _em_calibration(
     return results
 
 
-def _chrom_calibration(
+def _region_calibration(
     exp,
-    chrom,
+    region,
     *,
     nu,
     rho_leak,
@@ -573,7 +573,7 @@ def _chrom_calibration(
     q_thres=None,
 ):
     """
-    Classify `chrom`'s reference into contexts and calibrate
+    Classify `region`'s reference into contexts and calibrate
     theta_prot/theta_acc/informative, from meth/unmeth controls when
     available or by expectation-maximization on the test sample
     otherwise.
@@ -582,8 +582,8 @@ def _chrom_calibration(
     ----------
     exp : MethPrintExperiment
         The experiment object containing raw data and analysis maps.
-    chrom : str
-        Chromosome identifier.
+    region : str
+        Region identifier.
     nu, rho_leak, lbin, max_iters, tol
         As in `model_prob`.
     min_rel_contrast : float, default 0.2
@@ -633,7 +633,7 @@ def _chrom_calibration(
     Raises
     ------
     ValueError
-        If `chrom` has no reference sequence, if an
+        If `region` has no reference sequence, if an
         expectation-maximization fit cannot find enough bins with
         context-eligible read sites, or if `norm_by_strand` is True
         but molecules with unmapped strands ('.') exist.
@@ -647,9 +647,9 @@ def _chrom_calibration(
     """
     if channels is None:
         channels = _ALL_CHANNELS
-    raw = exp.raw[chrom]
-    ctx = _fold_contexts(exp, chrom, channels)
-    assay = _strand_assay_masks(exp, chrom, ctx)
+    raw = exp.raw[region]
+    ctx = _fold_contexts(exp, region, channels)
+    assay = _strand_assay_masks(exp, region, ctx)
     has_controls = raw.meth_data is not None and raw.unmeth_data is not None
     if norm_by_strand:
         _check_mapped_strands(raw, has_controls)
@@ -669,7 +669,7 @@ def _chrom_calibration(
     if has_controls:
         results = _controls_calibration(
             exp,
-            chrom,
+            region,
             ctx,
             assay,
             strata,
@@ -678,7 +678,7 @@ def _chrom_calibration(
             **common,
         )
     else:
-        results = _em_calibration(exp, chrom, ctx, assay, strata, **common)
+        results = _em_calibration(exp, region, ctx, assay, strata, **common)
 
     fields = [dict(zip(strata, f)) for f in zip(*results.values())]
     if not norm_by_strand:
@@ -695,16 +695,16 @@ def _chrom_calibration(
     )
 
 
-def _calib_rows(chrom, info, norm_by_strand):
+def _calib_rows(region, info, norm_by_strand):
     """
-    Flatten `_chrom_calibration`'s `calib_info` into table rows.
+    Flatten `_region_calibration`'s `calib_info` into table rows.
 
     Parameters
     ----------
-    chrom : str
-        Chromosome identifier.
+    region : str
+        Region identifier.
     info : dict
-        `calib_info` from `_chrom_calibration`; per-strand dicts if
+        `calib_info` from `_region_calibration`; per-strand dicts if
         `norm_by_strand`.
     norm_by_strand : bool
         Whether `info` is keyed by strand.
@@ -712,7 +712,7 @@ def _calib_rows(chrom, info, norm_by_strand):
     Returns
     -------
     list of dict
-        One row per stratum, with `chrom`, `has_controls`, the
+        One row per stratum, with `region`, `has_controls`, the
         `frac_informative_*`/`call_frac_*` entries, `strand` (only if
         `norm_by_strand`), and, for an expectation-maximization fit,
         `iters`, `log_likelihood`, `frac_protected`, and per context
@@ -726,7 +726,7 @@ def _calib_rows(chrom, info, norm_by_strand):
     strata = info.items() if norm_by_strand else [(None, info)]
     rows = []
     for strand, sub in strata:
-        row = {"chrom": chrom, "has_controls": sub["has_controls"]}
+        row = {"region": region, "has_controls": sub["has_controls"]}
         row.update(
             {
                 k: v
@@ -780,7 +780,7 @@ def _theta_frame(ctx, theta_prot, theta_acc, informative, norm_by_strand):
     ctx : np.ndarray
         int8, length L, context code per position.
     theta_prot, theta_acc, informative : np.ndarray or dict
-        From `_chrom_calibration`; per-strand dicts if `norm_by_strand`.
+        From `_region_calibration`; per-strand dicts if `norm_by_strand`.
     norm_by_strand : bool
         Whether the inputs are keyed by strand.
 

@@ -405,7 +405,7 @@ def _read_tm_sample(combined_file: str | Path, run: int) -> SimTMData:
 class SimDataset:
     """
     A collection of simulation results and analyses across multiple
-    chromosomes.
+    regions.
 
     This class acts as a central hub for managing simulation metadata,
     performing parallel data extraction, and storing analysis results. It
@@ -421,7 +421,7 @@ class SimDataset:
     Accessing raw simulation data using tuple-based indexing:
 
     >>> dataset = SimDataset.load("results/dataset.h5")
-    >>> sim_data = dataset.raw["chr1", 0, 9]  # [chrom, molecule, run]
+    >>> sim_data = dataset.raw["chr1", 0, 9]  # [region, molecule, run]
     """
 
     class SimDataAccessor:
@@ -430,32 +430,32 @@ class SimDataset:
 
         Enables access using:
 
-        >>> dataset.raw[chrom, mol, run]
+        >>> dataset.raw[region, mol, run]
         """
 
         def __init__(self, parent):
             self._parent = parent
 
         def __getitem__(self, keys):
-            chrom, mol, run = keys
+            region, mol, run = keys
             if self._parent._method == "tm":
                 combined_file = self._parent._file_map.params_to_tm_file(
-                    chrom, mol
+                    region, mol
                 )
                 if not combined_file.exists():
                     raise ValueError(
-                        "cannot find the simulation for chrom "
-                        f"{chrom}, molecule {mol}, run {run}"
+                        "cannot find the simulation for region "
+                        f"{region}, molecule {mol}, run {run}"
                     )
                 arrays = self._load_tm_combined(str(combined_file))
                 return self._slice_tm_sample(arrays, run)
-            sim_file = self._parent.mcmc_file(chrom, mol, run)
+            sim_file = self._parent.mcmc_file(region, mol, run)
             if sim_file.exists():
                 return self._load_sim_data(str(sim_file))
             else:
                 raise ValueError(
-                    "cannot find the simulation for chrom "
-                    f"{chrom}, molecule {mol}, run {run}"
+                    "cannot find the simulation for region "
+                    f"{region}, molecule {mol}, run {run}"
                 )
 
         @staticmethod
@@ -472,7 +472,7 @@ class SimDataset:
         def _slice_tm_sample(arrays, run: int) -> "SimTMData":
             return SimTMData._create(**_tm_sample_fields(arrays, run))
 
-    _chroms: Iterable[str]
+    _regions: Iterable[str]
     _nmol: Mapping[str, int]
     _nsim: int
     _nbp: Mapping[str, int]
@@ -503,7 +503,7 @@ class SimDataset:
     def _create(
         cls,
         *,
-        chroms: Iterable[str],
+        regions: Iterable[str],
         nmol: Mapping[str, int],
         nsim: int,
         nbp: Mapping[str, int],
@@ -530,18 +530,18 @@ class SimDataset:
                 "'mcmc'; only 'tm' datasets can start with nsim=0 "
                 "(exact quantities do not require any samples)"
             )
-        # Check the keys in nmol match up with chroms
-        if set(nmol.keys()) != set(chroms):
-            raise ValueError("chromosomes in nmol do not match with chroms")
-        # Check the number of molcules in each chromosome is valid
-        for chrom in chroms:
-            if nmol[chrom] <= 0:
+        # Check the keys in nmol match up with regions
+        if set(nmol.keys()) != set(regions):
+            raise ValueError("regions in nmol do not match with regions")
+        # Check the number of molcules in each region is valid
+        for region in regions:
+            if nmol[region] <= 0:
                 raise ValueError(
-                    f"chromosome {chrom} must have at least one molecule"
+                    f"region {region} must have at least one molecule"
                 )
 
         obj = cls.__new__(cls)
-        obj._chroms = tuple(chroms)
+        obj._regions = tuple(regions)
         obj._nmol = dict(nmol)
         obj._nsim = int(nsim)
         obj._nbp = dict(nbp)
@@ -550,33 +550,33 @@ class SimDataset:
         obj._raw_dir = raw_dir
         obj._dataset_file = dataset_file
         obj._file_map = file_map
-        obj._analysis = {chrom: DataFrameMap() for chrom in obj._chroms}
+        obj._analysis = {region: DataFrameMap() for region in obj._regions}
         obj._global_analysis = DataFrameMap()
         obj._raw_accessor = cls.SimDataAccessor(obj)
         obj._eseq = eseq
         if obj._eseq is None:
-            obj._view_eseq = {chrom: np.nan for chrom in chroms}
+            obj._view_eseq = {region: np.nan for region in regions}
         else:
-            obj._view_eseq = {chrom: obj._eseq[chrom] for chrom in chroms}
-            for chrom in chroms:
-                obj._view_eseq[chrom].flags.writeable = False
+            obj._view_eseq = {region: obj._eseq[region] for region in regions}
+            for region in regions:
+                obj._view_eseq[region].flags.writeable = False
         obj._out_type = out_type
         obj._seed = seed
         obj._seed_table = seed_table
         obj._no_data = {}
-        for chrom in obj._chroms:
+        for region in obj._regions:
             arr = (
-                np.zeros(obj._nmol[chrom], dtype=bool)
+                np.zeros(obj._nmol[region], dtype=bool)
                 if no_data is None
-                else np.array(no_data[chrom], dtype=bool)
+                else np.array(no_data[region], dtype=bool)
             )
-            if arr.shape != (obj._nmol[chrom],):
+            if arr.shape != (obj._nmol[region],):
                 raise ValueError(
-                    f"no_data of chromosome {chrom} must have "
-                    f"{obj._nmol[chrom]} entries, got {arr.size}"
+                    f"no_data of region {region} must have "
+                    f"{obj._nmol[region]} entries, got {arr.size}"
                 )
             arr.flags.writeable = False
-            obj._no_data[chrom] = arr
+            obj._no_data[region] = arr
         _check_fill_nan(nan_fill)
         obj._nan_fill = nan_fill
         obj._tmp_dir = None
@@ -587,7 +587,7 @@ class SimDataset:
     def create(
         cls,
         *,
-        chroms: str | Iterable[str],
+        regions: str | Iterable[str],
         nmol: int | Mapping[str, int],
         nsim: int,
         nbp: int | Mapping[str, int],
@@ -606,24 +606,24 @@ class SimDataset:
         Create a new simulation dataset with the specified parameters.
 
         This factory method initializes the dataset structure, sets up the
-        internal mapping for molecules per chromosome, and defines the
+        internal mapping for molecules per region, and defines the
         total number of simulations per molecule.
 
         Parameters
         ----------
-        chroms : str or iterable of str
-            The chromosome identifier(s) to include in the dataset.
+        regions : str or iterable of str
+            The region identifier(s) to include in the dataset.
         nmol : int or dict of {str: int}
-            The number of molecules per chromosome. If an integer is provided,
-            the same count is applied to all chromosomes. If a mapping is
-            provided, it must specify the count for each chromosome name.
+            The number of molecules per region. If an integer is provided,
+            the same count is applied to all regions. If a mapping is
+            provided, it must specify the count for each region name.
         nsim : int
             The number of simulation runs (or, for `method='tm'`, exact
             samples) per molecule. May be 0 for `method='tm'`, since the
             exact occupancy/mean-N/variance quantities require no
             samples at all; `method='mcmc'` requires a positive value.
         nbp : int or dict of {str: int}
-            The number of base-pair for each chromsome segment.
+            The number of base pairs of each region.
         settings : SimSettings
             The physical constants and Monte Carlo protocol (e.g., mu, temp,
             sweeps) that apply to all simulations in the dataset.
@@ -646,12 +646,12 @@ class SimDataset:
             The batch-level master seed the dataset's simulations were
             generated from.
         seed_table : Mapping[str, np.ndarray], optional
-            The per-`(chrom, mol, run)` seed used for each simulation, one
-            array per chromosome with shape `(nmol[chrom], nsim)`. Enables
+            The per-`(region, mol, run)` seed used for each simulation, one
+            array per region with shape `(nmol[region], nsim)`. Enables
             exact reproduction of any individual run later, even ones
             whose raw output file is missing or corrupted.
         no_data : Mapping[str, np.ndarray], optional
-            One bool array per chromosome with `nmol[chrom]` entries,
+            One bool array per region with `nmol[region]` entries,
             True for each molecule that is not simulated because its
             methylation data is missing. If None (default), no molecule
             is skipped.
@@ -672,23 +672,23 @@ class SimDataset:
         TypeError
             If `nmol` is neither an int nor a mapping.
         ValueError
-            If the chromosome keys in `nmol` do not match `chroms`.
+            If the region keys in `nmol` do not match `regions`.
         """
-        chroms = _normalize_regions(chroms)
+        regions = _normalize_regions(regions)
         if isinstance(nmol, int):
-            nmol = {chrom: nmol for chrom in chroms}
+            nmol = {region: nmol for region in regions}
         elif not isinstance(nmol, Mapping):
             raise TypeError("nmol must either be an int or a mapping")
-        elif set(nmol.keys()) != set(chroms):
+        elif set(nmol.keys()) != set(regions):
             raise ValueError(
-                "nmol must have the same set of chromosome "
-                "identifiers as chroms"
+                "nmol must have the same set of region "
+                "identifiers as regions"
             )
 
         # Find the maximum number of molecules
         max_nmol = 0
-        for chrom in chroms:
-            max_nmol = max(max_nmol, nmol[chrom])
+        for region in regions:
+            max_nmol = max(max_nmol, nmol[region])
 
         # Check validity of the output directory
         out_dir = Path(out_dir).resolve()
@@ -700,7 +700,7 @@ class SimDataset:
         dataset_file = out_dir / (dataset_name + ".h5")
         file_map = SimFileMapper(raw_dir, max_nmol)
         return cls._create(
-            chroms=chroms,
+            regions=regions,
             nmol=nmol,
             nsim=nsim,
             nbp=nbp,
@@ -764,10 +764,10 @@ class SimDataset:
                 dataset_file=dataset_file,
             )
             gana = _analysis_group(h5stream, "analysis")
-            for chrom in gana:
-                entries = _read_entries(gana[chrom], dataset_file)
+            for region in gana:
+                entries = _read_entries(gana[region], dataset_file)
                 for name, entry in entries.items():
-                    obj._analysis[chrom][name] = entry
+                    obj._analysis[region][name] = entry
             gglobal = _analysis_group(h5stream, "global_analysis")
             entries = _read_entries(gglobal, dataset_file)
             for name, entry in entries.items():
@@ -778,7 +778,7 @@ class SimDataset:
         """
         Save the dataset metadata and analysis results to an HDF5 file.
 
-        Serialize the current state of all chromosome-specific and global
+        Serialize the current state of all region-specific and global
         analysis :class:`DataFrameMap` objects into a persistent HDF5 format.
         Saving to an existing file updates it in place. Analysis arrays
         already stored in the file are relinked rather than copied, so
@@ -813,7 +813,7 @@ class SimDataset:
                 raw_dir=self._raw_dir,
                 nsim=self._nsim,
                 method=self._method,
-                chroms=self._chroms,
+                regions=self._regions,
                 nmol=self._nmol,
                 nbp=self._nbp,
                 settings=self._settings,
@@ -873,31 +873,31 @@ class SimDataset:
 
     def iter_runs(
         self,
-        chroms: str | Iterable[str] | None = None,
+        regions: str | Iterable[str] | None = None,
         mols: Iterable[int] | None = None,
     ) -> Iterator[tuple[str, int, int]]:
         """
-        Yield simulation identifiers across specified chromosomes and
+        Yield simulation identifiers across specified regions and
         molecules.
 
         This generator traverses the dataset raw data hierarchy, filtering by
-        chromosome and verifying the existence of simulation files before
+        region and verifying the existence of simulation files before
         yielding.
 
         Parameters
         ----------
-        chroms : str or iterable of str, optional
-            The chromosome(s) to iterate over. If None, all available
-            chromosomes in the dataset are processed.
+        regions : str or iterable of str, optional
+            The region(s) to iterate over. If None, all available
+            regions in the dataset are processed.
         mols : iterable of int, optional
             Molecule indices to restrict iteration to, applied to every
-            chromosome in `chroms`. If None (default), all molecules of
-            each chromosome are iterated.
+            region in `regions`. If None (default), all molecules of
+            each region are iterated.
 
         Yields
         ------
-        chrom : str
-            The chromosome identifier.
+        region : str
+            The region identifier.
         mol : int
             The molecule index.
         run : int
@@ -905,21 +905,21 @@ class SimDataset:
 
         Notes
         -----
-        Only triplets (chrom, mol, run) that have an existing simulation
+        Only triplets (region, mol, run) that have an existing simulation
         file on disk according to the internal file map are yielded.
         """
-        chroms = _normalize_regions(chroms, default_regions=self._chroms)
-        for chrom in chroms:
-            if chrom not in self._chroms:
+        regions = _normalize_regions(regions, default_regions=self._regions)
+        for region in regions:
+            if region not in self._regions:
                 continue
-            mol_range = range(self._nmol[chrom]) if mols is None else mols
+            mol_range = range(self._nmol[region]) if mols is None else mols
             for mol in mol_range:
                 for run in range(self._nsim):
                     sim_file = self._file_map.params_to_mcmc_file(
-                        chrom, mol, run
+                        region, mol, run
                     )
                     if sim_file.exists():
-                        yield (chrom, mol, run)
+                        yield (region, mol, run)
 
     def extract(
         self,
@@ -928,7 +928,7 @@ class SimDataset:
         obs: str,
         nworker: int = 1,
         batch_size: int = 1000,
-        chroms: str | Iterable[str] | None = None,
+        regions: str | Iterable[str] | None = None,
         mols: Iterable[int] | None = None,
         agg_func: Callable[..., Any] | None = None,
         **agg_kwargs: Any,
@@ -938,7 +938,7 @@ class SimDataset:
         dataset.
 
         Use :class:`ThreadPoolExecutor` to extract data from simulation HDF5
-        files in parallel. Results are organized by chromosome and can be
+        files in parallel. Results are organized by region and can be
         processed via a custom aggregation function as they complete.
 
         Parameters
@@ -953,19 +953,19 @@ class SimDataset:
         batch_size : int, default 1000
             The number of simulation files to queue in a single processing
             batch to manage memory and thread overhead.
-        chroms : str or iterable of str, optional
-            Specific chromosome(s) to process. If None (default), all
-            chromosomes in the dataset are included.
+        regions : str or iterable of str, optional
+            Specific region(s) to process. If None (default), all
+            regions in the dataset are included.
         mols : iterable of int, optional
             Molecule indices to restrict extraction to, applied to every
-            chromosome in `chroms`. If None (default), all molecules of
-            each chromosome are processed. Use this to extract in
+            region in `regions`. If None (default), all molecules of
+            each region are processed. Use this to extract in
             molecule batches and bound peak memory when `agg_func`
             condenses each molecule's data.
         agg_func : callable, optional
             A function used to aggregate results once all runs for a specific
             molecule are finished. If provided, it is called as:
-            ``agg_func(chrom, mol, raw_data, **agg_kwargs)``, where
+            ``agg_func(region, mol, raw_data, **agg_kwargs)``, where
             `raw_data` holds only the runs with a simulation file on disk.
         **agg_kwargs : Any
             Additional keyword arguments passed directly to `agg_func`.
@@ -973,7 +973,7 @@ class SimDataset:
         Returns
         -------
         dict
-            A dictionary keyed by chromosome name. If `agg_func` is None,
+            A dictionary keyed by region name. If `agg_func` is None,
             values are :class:`numpy.ndarray` (or lists for 'position'). If
             `agg_func` is provided, values are the output of the aggregation
             function, except for molecules with no simulation files on
@@ -982,7 +982,7 @@ class SimDataset:
         Notes
         -----
         When `obs` is not 'position' and no `agg_func` is provided, the data
-        for each chromosome is automatically converted into a NumPy array with
+        for each region is automatically converted into a NumPy array with
         shape ``(n_molecules, n_simulations, ...)``.
         """
 
@@ -995,33 +995,33 @@ class SimDataset:
                 "'agg_func' is provided"
             )
 
-        chroms = _normalize_regions(chroms, default_regions=self._chroms)
+        regions = _normalize_regions(regions, default_regions=self._regions)
 
         results = {}
-        for chrom in chroms:
-            results[chrom] = [
+        for region in regions:
+            results[region] = [
                 [None for _ in range(self._nsim)]
-                for _ in range(self._nmol[chrom])
+                for _ in range(self._nmol[region])
             ]
 
         # Get the expected number of simulations per molecule
         finished_counts = Counter()
         expected_counts = Counter()
-        for sim_id in self.iter_runs(chroms, mols):
-            chrom, mol, _ = sim_id
-            expected_counts[(chrom, mol)] += 1
+        for sim_id in self.iter_runs(regions, mols):
+            region, mol, _ = sim_id
+            expected_counts[(region, mol)] += 1
 
-        def store(chrom, mol, run, data):
+        def store(region, mol, run, data):
             # Aggregate the runs on disk once all of them are extracted
-            results[chrom][mol][run] = data
-            key = (chrom, mol)
+            results[region][mol][run] = data
+            key = (region, mol)
             finished_counts[key] += 1
             if agg_func and finished_counts[key] == expected_counts[key]:
-                raw_data = [x for x in results[chrom][mol] if x is not None]
+                raw_data = [x for x in results[region][mol] if x is not None]
                 if obs != "position":
                     raw_data = np.asarray(raw_data)
-                results[chrom][mol] = agg_func(
-                    chrom, mol, raw_data, **agg_kwargs
+                results[region][mol] = agg_func(
+                    region, mol, raw_data, **agg_kwargs
                 )
 
         def extract_one(sim_id):
@@ -1030,35 +1030,35 @@ class SimDataset:
 
         extracted = _threaded_map(
             extract_one,
-            self.iter_runs(chroms, mols),
+            self.iter_runs(regions, mols),
             nworker=nworker,
             batch_size=batch_size,
         )
-        for (chrom, mol, run), data in extracted:
-            store(chrom, mol, run, data)
+        for (region, mol, run), data in extracted:
+            store(region, mol, run, data)
 
         # Mark molecules with no simulation files on disk as missing
         if agg_func is not None:
-            for chrom in chroms:
-                mol_range = range(self._nmol[chrom]) if mols is None else mols
+            for region in regions:
+                mol_range = range(self._nmol[region]) if mols is None else mols
                 for mol in mol_range:
-                    if expected_counts[(chrom, mol)] == 0:
-                        results[chrom][mol] = None
+                    if expected_counts[(region, mol)] == 0:
+                        results[region][mol] = None
 
-        # Tidy up results and return a numpy array for each chromosome data
+        # Tidy up results and return a numpy array for each region data
         if agg_func is None and obs != "position":
-            for chrom in chroms:
-                results[chrom] = np.asarray(results[chrom])
+            for region in regions:
+                results[region] = np.asarray(results[region])
         return results
 
-    def _classify_run(self, chrom: str, mol: int, run: int) -> str | None:
+    def _classify_run(self, region: str, mol: int, run: int) -> str | None:
         """
         Classify the on-disk status of a single simulation run.
 
         Parameters
         ----------
-        chrom : str
-            The chromosome identifier.
+        region : str
+            The region identifier.
         mol : int
             The molecule index.
         run : int
@@ -1075,7 +1075,7 @@ class SimDataset:
             run is complete.
         """
         if self._method == "tm":
-            combined_file = self._file_map.params_to_tm_file(chrom, mol)
+            combined_file = self._file_map.params_to_tm_file(region, mol)
             if not combined_file.exists():
                 return "missing"
             try:
@@ -1086,7 +1086,7 @@ class SimDataset:
             if run >= n_samples:
                 return "missing"
             return None
-        sim_file = self._file_map.params_to_mcmc_file(chrom, mol, run)
+        sim_file = self._file_map.params_to_mcmc_file(region, mol, run)
         if not sim_file.exists():
             return "missing"
         try:
@@ -1102,14 +1102,14 @@ class SimDataset:
     def find_incomplete_runs(
         self,
         *,
-        chroms: str | Iterable[str] | None = None,
+        regions: str | Iterable[str] | None = None,
         nworker: int = 1,
         batch_size: int = 1000,
     ) -> dict[str, list[tuple[str, int, int]]]:
         """
         Find simulation runs that are missing, corrupted, or truncated.
 
-        Scans every `(chrom, mol, run)` combination expected for this
+        Scans every `(region, mol, run)` combination expected for this
         dataset -- not just ones with an existing raw file -- and checks
         whether each one completed successfully. Molecules skipped for
         having no data (see `no_data`) are not expected and never
@@ -1117,9 +1117,9 @@ class SimDataset:
 
         Parameters
         ----------
-        chroms : str or iterable of str, optional
-            Specific chromosome(s) to check. If None (default), all
-            chromosomes in the dataset are included.
+        regions : str or iterable of str, optional
+            Specific region(s) to check. If None (default), all
+            regions in the dataset are included.
         nworker : int, default 1
             The maximum number of threads to use for parallel scanning.
         batch_size : int, default 1000
@@ -1130,7 +1130,7 @@ class SimDataset:
         -------
         dict
             A dictionary with keys 'missing', 'corrupted', and 'truncated',
-            each mapping to a list of `(chrom, mol, run)` triplets. Runs
+            each mapping to a list of `(region, mol, run)` triplets. Runs
             that completed successfully are not included.
 
         Notes
@@ -1139,13 +1139,13 @@ class SimDataset:
         so cost scales with the size of the dataset. Use `nworker > 1` to
         speed up scanning of large datasets.
         """
-        chroms = _normalize_regions(chroms, default_regions=self._chroms)
+        regions = _normalize_regions(regions, default_regions=self._regions)
 
         def all_triplets():
-            for chrom in chroms:
-                for mol in np.flatnonzero(~self._no_data[chrom]):
+            for region in regions:
+                for mol in np.flatnonzero(~self._no_data[region]):
                     for run in range(self._nsim):
-                        yield (chrom, int(mol), run)
+                        yield (region, int(mol), run)
 
         incomplete = {"missing": [], "corrupted": [], "truncated": []}
         statuses = _threaded_map(
@@ -1159,14 +1159,14 @@ class SimDataset:
                 incomplete[status].append(sim_id)
         return incomplete
 
-    def mcmc_file(self, chrom: str, mol: int, run: int) -> Path:
+    def mcmc_file(self, region: str, mol: int, run: int) -> Path:
         """
         Retrieve the file directory for a specific simulation run.
 
         Parameters
         ----------
-        chrom : str
-            The identifier of the simulated chromosome.
+        region : str
+            The identifier of the simulated region.
         mol : int
             The index of the simulated molecule.
         run : int
@@ -1183,17 +1183,17 @@ class SimDataset:
         mapping structure, regardless of whether the file actually exists on
         disk.
         """
-        return self._file_map.params_to_mcmc_file(chrom, mol, run)
+        return self._file_map.params_to_mcmc_file(region, mol, run)
 
-    def tm_file(self, chrom: str, mol: int) -> Path:
+    def tm_file(self, region: str, mol: int) -> Path:
         """
         Retrieve the file directory for a molecule's combined
         transfer-matrix samples.
 
         Parameters
         ----------
-        chrom : str
-            The identifier of the simulated chromosome.
+        region : str
+            The identifier of the simulated region.
         mol : int
             The index of the simulated molecule.
 
@@ -1204,7 +1204,7 @@ class SimDataset:
             molecule's exact samples, regardless of whether the file
             actually exists on disk.
         """
-        return self._file_map.params_to_tm_file(chrom, mol)
+        return self._file_map.params_to_tm_file(region, mol)
 
     @property
     def method(self) -> str:
@@ -1231,8 +1231,8 @@ class SimDataset:
         >>> dataset = SimDataset.load("results/dataset.h5")
         >>> dataset.settings['llink']
 
-        This is an integer, or a mapping of chromosome to value if `llink`
-        was set per chromosome.
+        This is an integer, or a mapping of region to value if `llink`
+        was set per region.
 
         Returns
         -------
@@ -1242,26 +1242,26 @@ class SimDataset:
         return DataclassPublicProxy(self._settings)
 
     @property
-    def chroms(self) -> Iterable[str]:
+    def regions(self) -> Iterable[str]:
         """
-        List the identifiers of all chromosomes in the dataset.
+        List the identifiers of all regions in the dataset.
 
         Returns
         -------
         Iterable of str
-            The chromosome names [e.g., ('chr1', 'chr2')].
+            The region names [e.g., ('chr1', 'chr2')].
         """
-        return tuple(self._chroms)
+        return tuple(self._regions)
 
     @property
     def nmol(self) -> Mapping[str, int]:
         """
-        The number of molecules simulated for each chromosome.
+        The number of molecules simulated for each region.
 
         Returns
         -------
         types.MappingProxyType
-            A read-only mapping of chromosome names to their molecule
+            A read-only mapping of region names to their molecule
             counts. This view is immutable; neither keys nor counts
             can be modified.
         """
@@ -1277,19 +1277,19 @@ class SimDataset:
         -------
         int
             The count of independent simulation trajectories, or exact
-            samples, for each molecule-chromosome pair.
+            samples, for each molecule-region pair.
         """
         return self._nsim
 
     @property
     def nbp(self) -> Mapping[str, int]:
         """
-        The number of base pairs simulated for each chromosome.
+        The number of base pairs simulated for each region.
 
         Returns
         -------
         types.MappingProxyType
-            A read-only mapping of chromosome names to their length in base
+            A read-only mapping of region names to their length in base
             pairs. This view is immutable; neither keys nor counts
             can be modified.
         """
@@ -1299,13 +1299,13 @@ class SimDataset:
     def eseq(self) -> Mapping[str, np.ndarray]:
         """
         The seqeunce-specific energy landscape derived from the methylation
-        data for each molecule in each chromosome.
+        data for each molecule in each region.
 
         Returns
         -------
         types.MappingProxyType
-            A read-only mapping of chromosome names to the energy landscapes of
-            the methylation data for those chromosome molecules. This view is
+            A read-only mapping of region names to the energy landscapes of
+            the methylation data for those region molecules. This view is
             immutable; neither keys nor counts can be modified.
         """
         return MappingProxyType(self._view_eseq)
@@ -1355,13 +1355,13 @@ class SimDataset:
     @property
     def seed_table(self) -> Mapping[str, np.ndarray] | None:
         """
-        The per-`(chrom, mol, run)` seed used for each simulation.
+        The per-`(region, mol, run)` seed used for each simulation.
 
         Returns
         -------
         types.MappingProxyType
-            A read-only mapping of chromosome names to an array of shape
-            `(nmol[chrom], nsim)` holding the seed used for each molecule
+            A read-only mapping of region names to an array of shape
+            `(nmol[region], nsim)` holding the seed used for each molecule
             and run, or None if the dataset predates this being
             persisted. Enables exact reproduction of any individual run,
             even ones whose raw output file is missing or corrupted.
@@ -1383,7 +1383,7 @@ class SimDataset:
         Returns
         -------
         types.MappingProxyType
-            A read-only mapping of chromosome names to a read-only bool
+            A read-only mapping of region names to a read-only bool
             array with one entry per molecule, True if the molecule was
             skipped. All False for datasets that predate this being
             persisted.
@@ -1417,20 +1417,20 @@ class SimDataset:
         Returns
         -------
         SimDataAccessor
-            A coordinate-based accessor. Use ``dataset.raw[chrom, mol, run]``
+            A coordinate-based accessor. Use ``dataset.raw[region, mol, run]``
         """
         return self._raw_accessor
 
     @property
     def analysis(self) -> Mapping[str, DataFrameMap]:
         """
-        Access the analysis results for each simulated chromosome.
+        Access the analysis results for each simulated region.
 
         Returns
         -------
         FixedKeyMap
-            A mapping of chromosome names to :class:`DataFrameMap` objects.
-            The chromosome keys are fixed, but the data within each
+            A mapping of region names to :class:`DataFrameMap` objects.
+            The region keys are fixed, but the data within each
             map remains mutable.
         """
         return FixedKeyMap(self._analysis)

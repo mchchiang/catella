@@ -194,7 +194,7 @@ def _merge_contexts(ctx, channels):
     return out
 
 
-def _strand_assay_masks(exp, chrom, ctx):
+def _strand_assay_masks(exp, region, ctx):
     """
     Positions a molecule can read, per strand label.
 
@@ -206,8 +206,8 @@ def _strand_assay_masks(exp, chrom, ctx):
     ----------
     exp : MethPrintExperiment
         The experiment object containing raw data and analysis maps.
-    chrom : str
-        Chromosome identifier.
+    region : str
+        Region identifier.
     ctx : np.ndarray
         int8, length L, context code per position (folded if
         `exp.wrap`).
@@ -219,7 +219,7 @@ def _strand_assay_masks(exp, chrom, ctx):
         all False, since the sites of a molecule of unknown strand
         cannot be told; such a molecule reads only its called sites.
     """
-    seq = exp.raw[chrom].refseq
+    seq = exp.raw[region].refseq
     labels = exp.mtase if exp.mtase is not None else tuple(_MTASE_CHANNELS)
     full = {}
     for s in ("+", "-"):

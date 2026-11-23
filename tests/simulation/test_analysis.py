@@ -37,7 +37,7 @@ def _make_dataset(tmp_path, *, nmol=6, nbp=40, nsim=2, seed=1):
     meth_prob = rng.random((nmol, nbp))
     manager = SimManager(nworker=1, verbose=False)
     return manager.run(
-        chroms="chr1",
+        regions="chr1",
         nsim=nsim,
         settings=_make_settings(),
         meth_prob=meth_prob,
@@ -158,11 +158,11 @@ class TestComputeMeanNnuc:
         with pytest.raises(ValueError):
             SimAnalysis().compute_mean_nnuc(dataset)
 
-    def test_only_requested_chroms_extracted(self, tmp_path):
+    def test_only_requested_regions_extracted(self, tmp_path):
         rng = np.random.default_rng(0)
         meth_prob = {c: rng.random((2, 20)) for c in ("chr1", "chr2")}
         dataset = SimManager(nworker=1, verbose=False).run(
-            chroms=["chr1", "chr2"],
+            regions=["chr1", "chr2"],
             nsim=2,
             settings=_make_settings(),
             meth_prob=meth_prob,
@@ -176,10 +176,10 @@ class TestComputeMeanNnuc:
             autospec=True,
             side_effect=SimDataset.extract,
         ) as spy:
-            ana.compute_mean_nnuc(dataset, chroms="chr1")
+            ana.compute_mean_nnuc(dataset, regions="chr1")
 
         for call in spy.call_args_list:
-            assert list(call.kwargs["chroms"]) == ["chr1"]
+            assert list(call.kwargs["regions"]) == ["chr1"]
         assert "mean_nnuc" in dataset.analysis["chr1"]
         assert "mean_nnuc" not in dataset.analysis["chr2"]
 
@@ -262,12 +262,12 @@ class TestSortByLinkage:
         )
         assert "my_link" in dataset.analysis["chr1"]
 
-    def test_chroms_filter_only_processes_selected_chromosome(self, tmp_path):
+    def test_regions_filter_only_processes_selected_region(self, tmp_path):
         rng = np.random.default_rng(2)
         meth_prob = {"chr1": rng.random((4, 10)), "chr2": rng.random((4, 10))}
         manager = SimManager(nworker=1, verbose=False)
         dataset = manager.run(
-            chroms=["chr1", "chr2"],
+            regions=["chr1", "chr2"],
             nsim=2,
             settings=_make_settings(),
             meth_prob=meth_prob,
@@ -277,7 +277,7 @@ class TestSortByLinkage:
         ana = SimAnalysis()
         ana.compute_occup(dataset=dataset, batch_size=2)
 
-        ana.sort_by_linkage(dataset=dataset, chroms="chr1", batch_size=2)
+        ana.sort_by_linkage(dataset=dataset, regions="chr1", batch_size=2)
         assert "occup_linkage" in dataset.analysis["chr1"]
         assert "occup_linkage" not in dataset.analysis["chr2"]
 
@@ -327,7 +327,7 @@ def _calls_dataset(tmp_path, nmol=8, nbp=30):
     meth_prob = np.random.default_rng(6).random((nmol, nbp))
     meth_prob[2] = np.nan
     dataset = SimManager(nworker=1, verbose=False).run(
-        chroms="chr1",
+        regions="chr1",
         nsim=0,
         method="tm",
         settings=_make_tm_settings(),
@@ -342,7 +342,7 @@ def _calls_dataset(tmp_path, nmol=8, nbp=30):
 def _footprint_matrix(dataset, name):
     nbp = dataset.nbp["chr1"]
     nuc_map = NucFiberMap(nbp=nbp, nucbp=dataset.settings["nucbp"])
-    configs = SimAnalysis().extract_config(dataset, chrom="chr1", name=name)
+    configs = SimAnalysis().extract_config(dataset, region="chr1", name=name)
     return np.array(
         [
             np.full(nbp, np.nan) if c is None else nuc_map.project(c)
@@ -421,7 +421,7 @@ class TestSortByConfig:
         )
         SimPlot().plot_config(
             dataset,
-            chroms="chr1",
+            regions="chr1",
             name="bm",
             link_mat=link_mats["chr1"],
             show=False,
@@ -451,7 +451,7 @@ def _make_tm_dataset(tmp_path, *, nmol=3, nbp=20, seed=1, nsim=0, **kwargs):
     meth_prob = rng.random((nmol, nbp))
     manager = SimManager(nworker=1, verbose=False)
     return manager.run(
-        chroms="chr1",
+        regions="chr1",
         nsim=nsim,
         method="tm",
         settings=_make_tm_settings(),
@@ -510,7 +510,7 @@ def _brute_force_occup_meann(nucbp, llink, elink, mu, eseq, temp=1.0):
 def _make_mcmc_dataset(tmp_path, nmol=3, nsim=2):
     rng = np.random.default_rng(2)
     return SimManager(nworker=1, verbose=False).run(
-        chroms="chr1",
+        regions="chr1",
         nsim=nsim,
         settings=_make_settings(nsweep=4),
         meth_prob=rng.random((nmol, 400)),
@@ -522,7 +522,7 @@ def _make_mcmc_dataset(tmp_path, nmol=3, nsim=2):
 class TestExtractConfigRaw:
     def test_mcmc_defaults_to_run_zero_final_frame(self, tmp_path):
         dataset = _make_mcmc_dataset(tmp_path)
-        got = SimAnalysis().extract_config(dataset, chrom="chr1")
+        got = SimAnalysis().extract_config(dataset, region="chr1")
         for mol in range(3):
             np.testing.assert_array_equal(
                 got[mol], dataset.raw["chr1", mol, 0].position[-1]
@@ -533,46 +533,46 @@ class TestExtractConfigRaw:
         data = dataset.raw["chr1", 2, 1]
         time = int(data.time[1])
         got = SimAnalysis().extract_config(
-            dataset, chrom="chr1", run=1, time=time, mols=[2]
+            dataset, region="chr1", run=1, time=time, mols=[2]
         )
         np.testing.assert_array_equal(got[0], data.position[1])
 
     def test_mols_order(self, tmp_path):
         dataset = _make_mcmc_dataset(tmp_path)
         ana = SimAnalysis()
-        full = ana.extract_config(dataset, chrom="chr1")
-        got = ana.extract_config(dataset, chrom="chr1", mols=[2, 0])
+        full = ana.extract_config(dataset, region="chr1")
+        got = ana.extract_config(dataset, region="chr1", mols=[2, 0])
         np.testing.assert_array_equal(got[0], full[2])
         np.testing.assert_array_equal(got[1], full[0])
 
     def test_missing_file_is_none(self, tmp_path):
         dataset = _make_mcmc_dataset(tmp_path)
         dataset.mcmc_file("chr1", 1, 0).unlink()
-        got = SimAnalysis().extract_config(dataset, chrom="chr1")
+        got = SimAnalysis().extract_config(dataset, region="chr1")
         assert got[1] is None
         assert got[0] is not None
 
     def test_threads_match_serial(self, tmp_path):
         dataset = _make_mcmc_dataset(tmp_path)
         ana = SimAnalysis()
-        serial = ana.extract_config(dataset, chrom="chr1")
-        threaded = ana.extract_config(dataset, chrom="chr1", nworker=2)
+        serial = ana.extract_config(dataset, region="chr1")
+        threaded = ana.extract_config(dataset, region="chr1", nworker=2)
         for a, b in zip(serial, threaded, strict=True):
             np.testing.assert_array_equal(a, b)
 
     def test_unrecorded_time_raises(self, tmp_path):
         dataset = _make_mcmc_dataset(tmp_path)
         with pytest.raises(ValueError, match="time 12345 is not recorded"):
-            SimAnalysis().extract_config(dataset, chrom="chr1", time=12345)
+            SimAnalysis().extract_config(dataset, region="chr1", time=12345)
 
     def test_run_out_of_range_raises(self, tmp_path):
         dataset = _make_mcmc_dataset(tmp_path)
         with pytest.raises(IndexError, match="run must be in"):
-            SimAnalysis().extract_config(dataset, chrom="chr1", run=2)
+            SimAnalysis().extract_config(dataset, region="chr1", run=2)
 
     def test_tm_samples(self, tmp_path):
         dataset = _make_tm_dataset(tmp_path, nmol=2, nbp=20, nsim=3)
-        got = SimAnalysis().extract_config(dataset, chrom="chr1", run=2)
+        got = SimAnalysis().extract_config(dataset, region="chr1", run=2)
         for mol in range(2):
             np.testing.assert_array_equal(
                 got[mol], dataset.raw["chr1", mol, 2].position
@@ -581,12 +581,12 @@ class TestExtractConfigRaw:
     def test_tm_without_samples_raises(self, tmp_path):
         dataset = _make_tm_dataset(tmp_path, nmol=2, nbp=20)
         with pytest.raises(ValueError, match="no samples stored"):
-            SimAnalysis().extract_config(dataset, chrom="chr1")
+            SimAnalysis().extract_config(dataset, region="chr1")
 
     def test_tm_time_raises(self, tmp_path):
         dataset = _make_tm_dataset(tmp_path, nmol=2, nbp=20, nsim=1)
         with pytest.raises(ValueError, match="time is not meaningful"):
-            SimAnalysis().extract_config(dataset, chrom="chr1", time=0)
+            SimAnalysis().extract_config(dataset, region="chr1", time=0)
 
 
 class TestComputeOccupTM:
@@ -621,7 +621,7 @@ class TestComputeOccupTM:
         meth_prob = rng.random((2, 16))
         manager = SimManager(nworker=1, verbose=False)
         dataset = manager.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=0,
             method="tm",
             settings=_make_tm_settings(),
@@ -833,7 +833,7 @@ class TestComputeConfigs:
         ana = SimAnalysis()
         getattr(ana, method)(dataset=dataset)
         energy_df = dataset.analysis["chr1"][f"{name}_energy"]
-        configs = ana.extract_config(dataset, chrom="chr1", name=name)
+        configs = ana.extract_config(dataset, region="chr1", name=name)
         for mol in range(3):
             tm = _direct_tm(dataset, mol, settings)
             positions, energy = call(tm)
@@ -863,7 +863,7 @@ class TestComputeConfigs:
         tm = _direct_tm(dataset, 1, settings)
         np.testing.assert_array_equal(
             ana.extract_config(
-                dataset, chrom="chr1", name="calls", mols=[1]
+                dataset, region="chr1", name="calls", mols=[1]
             )[0],
             tm.getBestMatchConfig(3.0)[0],
         )
@@ -872,10 +872,12 @@ class TestComputeConfigs:
         dataset = _make_tm_dataset(tmp_path, nmol=3, nbp=20, seed=5)
         ana = SimAnalysis()
         ana.compute_best_match_config(dataset=dataset)
-        expected = ana.extract_config(dataset, chrom="chr1", name="best_match")
+        expected = ana.extract_config(
+            dataset, region="chr1", name="best_match"
+        )
         dataset.save()
         loaded = SimDataset.load(dataset._dataset_file)
-        got = ana.extract_config(loaded, chrom="chr1", name="best_match")
+        got = ana.extract_config(loaded, region="chr1", name="best_match")
         for mol in range(3):
             np.testing.assert_array_equal(got[mol], expected[mol])
 
@@ -885,14 +887,14 @@ class TestComputeConfigs:
         ana.compute_most_likely_config(dataset=dataset)
         with pytest.raises(IndexError):
             ana.extract_config(
-                dataset, chrom="chr1", name="most_likely", mols=[2]
+                dataset, region="chr1", name="most_likely", mols=[2]
             )
 
     def test_extract_config_missing_name_raises(self, tmp_path):
         dataset = _make_tm_dataset(tmp_path, nmol=2, nbp=20, seed=5)
         ana = SimAnalysis()
         with pytest.raises(KeyError, match="most_likely"):
-            ana.extract_config(dataset, chrom="chr1", name="most_likely")
+            ana.extract_config(dataset, region="chr1", name="most_likely")
 
     def test_extract_config_run_with_name_raises(self, tmp_path):
         dataset = _make_tm_dataset(tmp_path, nmol=2, nbp=20, seed=5)
@@ -900,7 +902,7 @@ class TestComputeConfigs:
         ana.compute_most_likely_config(dataset=dataset)
         with pytest.raises(ValueError, match="cannot be given with name"):
             ana.extract_config(
-                dataset, chrom="chr1", name="most_likely", run=0
+                dataset, region="chr1", name="most_likely", run=0
             )
 
     @pytest.mark.parametrize("gamma", [0.0, -1.0])
@@ -926,7 +928,7 @@ class TestComputeConfigs:
         rng = np.random.default_rng(1)
         manager = SimManager(nworker=1, verbose=False)
         dataset = manager.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=0,
             method="tm",
             settings=_make_tm_settings(),
@@ -940,11 +942,11 @@ class TestComputeConfigs:
             getattr(ana, method)(dataset=dataset)
 
 
-def _make_multi_chrom_tm_dataset(tmp_path):
+def _make_multi_region_tm_dataset(tmp_path):
     rng = np.random.default_rng(7)
     manager = SimManager(nworker=1, verbose=False)
     return manager.run(
-        chroms=["chr1", "chr2"],
+        regions=["chr1", "chr2"],
         nsim=0,
         method="tm",
         settings=_make_tm_settings(),
@@ -979,31 +981,31 @@ TM_CONFIG_METHODS = [
 class TestParallelTM:
     @pytest.mark.parametrize("method", TM_STAT_METHODS)
     def test_stat_matches_serial(self, tmp_path, method):
-        dataset = _make_multi_chrom_tm_dataset(tmp_path)
+        dataset = _make_multi_region_tm_dataset(tmp_path)
         ana = SimAnalysis()
         getattr(ana, method)(dataset=dataset, name="serial", nworker=1)
         getattr(ana, method)(dataset=dataset, name="par", nworker=2)
-        for chrom in ["chr1", "chr2"]:
-            analysis = dataset.analysis[chrom]
+        for region in ["chr1", "chr2"]:
+            analysis = dataset.analysis[region]
             np.testing.assert_array_equal(
                 _as_array(analysis["par"]), _as_array(analysis["serial"])
             )
 
     @pytest.mark.parametrize("method", TM_CONFIG_METHODS)
     def test_config_matches_serial(self, tmp_path, method):
-        dataset = _make_multi_chrom_tm_dataset(tmp_path)
+        dataset = _make_multi_region_tm_dataset(tmp_path)
         ana = SimAnalysis()
         getattr(ana, method)(dataset=dataset, name="serial", nworker=1)
         getattr(ana, method)(dataset=dataset, name="par", nworker=2)
-        for chrom in ["chr1", "chr2"]:
-            analysis = dataset.analysis[chrom]
+        for region in ["chr1", "chr2"]:
+            analysis = dataset.analysis[region]
             for suffix in ["position_flat", "position_offset", "energy"]:
                 pd.testing.assert_frame_equal(
                     analysis[f"par_{suffix}"], analysis[f"serial_{suffix}"]
                 )
 
     def test_best_match_gamma_reaches_workers(self, tmp_path):
-        dataset = _make_multi_chrom_tm_dataset(tmp_path)
+        dataset = _make_multi_region_tm_dataset(tmp_path)
         ana = SimAnalysis()
         ana.compute_best_match_config(
             dataset=dataset, name="serial", gamma=3.0, nworker=1
@@ -1011,22 +1013,22 @@ class TestParallelTM:
         ana.compute_best_match_config(
             dataset=dataset, name="par", gamma=3.0, nworker=2
         )
-        for chrom in ["chr1", "chr2"]:
+        for region in ["chr1", "chr2"]:
             pd.testing.assert_frame_equal(
-                dataset.analysis[chrom]["par_energy"],
-                dataset.analysis[chrom]["serial_energy"],
+                dataset.analysis[region]["par_energy"],
+                dataset.analysis[region]["serial_energy"],
             )
 
     @pytest.mark.parametrize("method", ["compute_occup", "compute_var_occup"])
     def test_small_batch_size_matches_default(self, tmp_path, method):
-        dataset = _make_multi_chrom_tm_dataset(tmp_path)
+        dataset = _make_multi_region_tm_dataset(tmp_path)
         ana = SimAnalysis()
         getattr(ana, method)(dataset=dataset, name="default")
         getattr(ana, method)(
             dataset=dataset, name="small", batch_size=2, nworker=2
         )
-        for chrom in ["chr1", "chr2"]:
-            analysis = dataset.analysis[chrom]
+        for region in ["chr1", "chr2"]:
+            analysis = dataset.analysis[region]
             np.testing.assert_array_equal(
                 analysis["small"][:], analysis["default"][:]
             )
@@ -1058,7 +1060,7 @@ def _linker_dataset_with_gap(tmp_path):
     meth_prob = rng.random((3, 20))
     meth_prob[1] = np.nan
     return SimManager(nworker=1, verbose=False).run(
-        chroms="chr1",
+        regions="chr1",
         nsim=0,
         method="tm",
         settings=_make_tm_settings(),
@@ -1123,8 +1125,8 @@ class TestComputeLinkerHist:
         settings = dataset.analysis["chr1"]["linker_hist_settings"]
         assert (settings["xlo"].iloc[0], settings["xhi"].iloc[0]) == (2, 18)
 
-    def test_window_dict_by_chrom(self, tmp_path):
-        dataset = _make_multi_chrom_tm_dataset(tmp_path)
+    def test_window_dict_by_region(self, tmp_path):
+        dataset = _make_multi_region_tm_dataset(tmp_path)
         SimAnalysis().compute_linker_hist(
             dataset, lmax=3, window={"chr1": (2, 18), "chrX": (0, 5)}
         )
@@ -1203,12 +1205,12 @@ class TestComputeLinkerHist:
         assert not [w for w in recwarn if "fill_nan" in str(w.message)]
 
 
-def _put_hist(dataset, chrom, values, name="h"):
+def _put_hist(dataset, region, values, name="h"):
     values = np.asarray(values, dtype=np.float64)
     columns = [*(str(i) for i in range(values.shape[1] - 1)), "tail"]
     arr = H5Array.create(values.shape, columns=columns)
     arr.write_batch(0, values.shape[0], values)
-    dataset.analysis[chrom][name] = arr
+    dataset.analysis[region][name] = arr
     return values
 
 
@@ -1261,8 +1263,8 @@ class TestPoolLinkerHist:
         np.testing.assert_allclose(total["chr1"], 0.0)
         assert mean["chr1"].isna().all()
 
-    def test_dict_mols_by_chrom(self, tmp_path):
-        dataset = _make_multi_chrom_tm_dataset(tmp_path)
+    def test_dict_mols_by_region(self, tmp_path):
+        dataset = _make_multi_region_tm_dataset(tmp_path)
         v1 = _put_hist(dataset, "chr1", np.arange(15).reshape(5, 3))
         v2 = _put_hist(dataset, "chr2", np.ones((3, 3)))
         got = SimAnalysis().pool_linker_hist(
@@ -1271,15 +1273,15 @@ class TestPoolLinkerHist:
         np.testing.assert_allclose(got["chr1"], v1[[0, 4]].sum(axis=0))
         np.testing.assert_allclose(got["chr2"], v2.sum(axis=0))
 
-    def test_non_dict_mols_with_several_chroms_raises(self, tmp_path):
-        dataset = _make_multi_chrom_tm_dataset(tmp_path)
+    def test_non_dict_mols_with_several_regions_raises(self, tmp_path):
+        dataset = _make_multi_region_tm_dataset(tmp_path)
         _put_hist(dataset, "chr1", np.ones((5, 3)))
         _put_hist(dataset, "chr2", np.ones((3, 3)))
         with pytest.raises(ValueError, match="dict keyed by region"):
             SimAnalysis().pool_linker_hist(dataset, name="h", mols=[0])
 
     def test_different_bins_raise(self, tmp_path):
-        dataset = _make_multi_chrom_tm_dataset(tmp_path)
+        dataset = _make_multi_region_tm_dataset(tmp_path)
         _put_hist(dataset, "chr1", np.ones((5, 3)))
         _put_hist(dataset, "chr2", np.ones((3, 4)))
         with pytest.raises(ValueError, match="different bins"):
@@ -1318,7 +1320,7 @@ class TestExtractLinkerStats:
         _put_hist(dataset, "chr1", _HIST)
         got = SimAnalysis().extract_linker_stats(dataset, name="h")
         assert list(got.columns) == ["mean", "sd", "nlink"]
-        assert got.index.names == ["chrom", "mol"]
+        assert got.index.names == ["region", "mol"]
         assert list(got.index) == [("chr1", 0), ("chr1", 1), ("chr1", 2)]
         np.testing.assert_allclose(
             got.loc[("chr1", 0)], [2 / 3, np.sqrt(2 / 9), 3.0]
@@ -1332,7 +1334,7 @@ class TestExtractLinkerStats:
         got = SimAnalysis().extract_linker_stats(
             dataset, name="h", pooled=True
         )
-        assert got.index.name == "chrom"
+        assert got.index.name == "region"
         np.testing.assert_allclose(
             got.loc["chr1"], [1 / 3, np.sqrt(2 / 9), 6.0]
         )
@@ -1385,8 +1387,8 @@ class TestExtractLinkerStats:
             ana.extract_linker_stats(dataset, name="h", batch_size=1),
         )
 
-    def test_several_chroms_with_different_bins(self, tmp_path):
-        dataset = _make_multi_chrom_tm_dataset(tmp_path)
+    def test_several_regions_with_different_bins(self, tmp_path):
+        dataset = _make_multi_region_tm_dataset(tmp_path)
         _put_hist(dataset, "chr1", np.ones((5, 3)))
         _put_hist(dataset, "chr2", np.ones((3, 4)))
         ana = SimAnalysis()
@@ -1396,8 +1398,8 @@ class TestExtractLinkerStats:
         assert list(pooled.index) == ["chr1", "chr2"]
         np.testing.assert_allclose(pooled["mean"], [0.5, 1.0])
 
-    def test_dict_mols_by_chrom(self, tmp_path):
-        dataset = _make_multi_chrom_tm_dataset(tmp_path)
+    def test_dict_mols_by_region(self, tmp_path):
+        dataset = _make_multi_region_tm_dataset(tmp_path)
         _put_hist(dataset, "chr1", np.ones((5, 3)))
         _put_hist(dataset, "chr2", np.ones((3, 3)))
         got = SimAnalysis().extract_linker_stats(
@@ -1413,8 +1415,8 @@ class TestExtractLinkerStats:
         assert got.empty
         assert list(got.columns) == ["mean", "sd", "nlink"]
 
-    def test_non_dict_mols_with_several_chroms_raises(self, tmp_path):
-        dataset = _make_multi_chrom_tm_dataset(tmp_path)
+    def test_non_dict_mols_with_several_regions_raises(self, tmp_path):
+        dataset = _make_multi_region_tm_dataset(tmp_path)
         _put_hist(dataset, "chr1", np.ones((5, 3)))
         _put_hist(dataset, "chr2", np.ones((3, 3)))
         with pytest.raises(ValueError, match="dict keyed by region"):

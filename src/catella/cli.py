@@ -140,10 +140,10 @@ def load_raw(
             callback=csv_parser(str), help="Methyltransferase(s): A, CG, GC"
         ),
     ] = None,
-    chroms: Annotated[
+    regions: Annotated[
         str | None,
         typer.Option(
-            callback=csv_parser(str), help="Subset of chromosomes to load"
+            callback=csv_parser(str), help="Subset of regions to load"
         ),
     ] = None,
     wrap: Annotated[
@@ -163,7 +163,7 @@ def load_raw(
         ),
     ] = None,
     max_nmol: Annotated[
-        int | None, typer.Option(help="Max molecules per chromosome")
+        int | None, typer.Option(help="Max molecules per region")
     ] = None,
     balance_strand: Annotated[
         bool,
@@ -184,8 +184,8 @@ def load_raw(
     chunk_size: Annotated[
         int, typer.Option(help="Rows read per streamed chunk")
     ] = 1000000,
-    max_cached_chroms: Annotated[
-        int, typer.Option(help="Max chromosomes' raw data kept in memory")
+    max_cached_regions: Annotated[
+        int, typer.Option(help="Max regions' raw data kept in memory")
     ] = 1,
     nworker: Annotated[
         int, typer.Option(help="Threads for parallel file reading")
@@ -214,7 +214,7 @@ def load_raw(
         meth_file=meth_file,
         fasta_file=fasta_file,
         mtase=mtase,
-        chroms=chroms,
+        regions=regions,
         wrap=wrap,
         ignore_strand=ignore_strand,
         colidx=colidx,
@@ -223,7 +223,7 @@ def load_raw(
         seed=seed,
         chunk_size=chunk_size,
         tmp_dir=tmp_dir,
-        max_cached_chroms=max_cached_chroms,
+        max_cached_regions=max_cached_regions,
         nworker=nworker,
         min_gap=min_gap or None,
         gaps_bed=gaps_bed,
@@ -256,10 +256,10 @@ def filter_dropout(
             help="Channels as in qc, e.g. A,GC or GCH,GCG",
         ),
     ] = None,
-    chroms: Annotated[
+    regions: Annotated[
         str | None,
         typer.Option(
-            callback=csv_parser(str), help="Subset of chromosomes to evaluate"
+            callback=csv_parser(str), help="Subset of regions to evaluate"
         ),
     ] = None,
     thres_min: Annotated[
@@ -294,7 +294,7 @@ def filter_dropout(
         exp=exp,
         which=which,
         channels=channels,
-        chroms=chroms,
+        regions=regions,
         thres_min=thres_min,
         thres_max=thres_max,
         unmapped_strand=unmapped_strand,
@@ -323,10 +323,10 @@ def qc(
             help="Channels as in compute_model_prob, e.g. GCH,GCG or GC",
         ),
     ] = None,
-    chroms: Annotated[
+    regions: Annotated[
         str | None,
         typer.Option(
-            callback=csv_parser(str), help="Subset of chromosomes to check"
+            callback=csv_parser(str), help="Subset of regions to check"
         ),
     ] = None,
     percentiles: Annotated[
@@ -368,13 +368,13 @@ def qc(
     ] = False,
 ):
     """
-    Summarize data quality per chromosome and channel (model-free).
+    Summarize data quality per region and channel (model-free).
     """
     exp = MethPrintExperiment.load(source_file)
     df = catella.qc(
         exp=exp,
         channels=channels,
-        chroms=chroms,
+        regions=regions,
         percentiles=percentiles,
         mask_name=mask_name,
         batch_size=batch_size,
@@ -398,11 +398,11 @@ def plot_dropout_ecdf(
             readable=True,
         ),
     ],
-    chroms: Annotated[
+    regions: Annotated[
         str,
         typer.Argument(
             callback=csv_parser(str),
-            help="Chromosome(s) to plot (comma-separated)",
+            help="Region(s) to plot (comma-separated)",
         ),
     ],
     which: Annotated[
@@ -423,7 +423,7 @@ def plot_dropout_ecdf(
     ] = True,
     split_by: Annotated[
         str | None,
-        typer.Option(help="Split into panels by chrom, source, or channel"),
+        typer.Option(help="Split into panels by region, source, or channel"),
     ] = None,
     out_file: Annotated[
         Path | None,
@@ -439,7 +439,7 @@ def plot_dropout_ecdf(
     exp = MethPrintExperiment.load(source_file)
     catella.plot_dropout_ecdf(
         exp=exp,
-        chroms=chroms,
+        regions=regions,
         which=which,
         channels=channels,
         unmapped_strand=unmapped_strand,
@@ -668,8 +668,8 @@ def compute_model_prob(
 
 @app.command()
 def run(
-    chroms: Annotated[
-        str, typer.Option(callback=csv_parser(str), help="Chromosome names")
+    regions: Annotated[
+        str, typer.Option(callback=csv_parser(str), help="Region names")
     ],
     nsim: Annotated[int, typer.Option(help="Simulations per molecule")],
     settings: Annotated[
@@ -749,11 +749,11 @@ def run(
     """
     exp_data = MethPrintExperiment.load(exp_file)
     meth_prob = {
-        chrom: exp_data.analysis[chrom]["meth_prob"]
-        for chrom in exp_data.chroms
+        region: exp_data.analysis[region]["meth_prob"]
+        for region in exp_data.regions
     }
     return catella.run(
-        chroms=chroms,
+        regions=regions,
         nsim=nsim,
         settings=settings,
         meth_prob=meth_prob,
@@ -786,10 +786,10 @@ def compute_occup(
     time: Annotated[
         int | None, typer.Option(help="Simulation time point")
     ] = None,
-    chroms: Annotated[
+    regions: Annotated[
         str | None,
         typer.Option(
-            callback=csv_parser(str), help="Chromosomes (all if omitted)"
+            callback=csv_parser(str), help="Regions (all if omitted)"
         ),
     ] = None,
     occup_name: Annotated[
@@ -827,7 +827,7 @@ def compute_occup(
     catella.compute_occup(
         dataset=dataset,
         time=time,
-        chroms=chroms,
+        regions=regions,
         occup_name=occup_name,
         mean_nnuc_name=mean_nnuc_name,
         compute_var=compute_var,
@@ -857,10 +857,10 @@ def compute_config(
         float | None,
         typer.Option(help="best_match weight of occupied sites (default 1)"),
     ] = None,
-    chroms: Annotated[
+    regions: Annotated[
         str | None,
         typer.Option(
-            callback=csv_parser(str), help="Chromosomes (all if omitted)"
+            callback=csv_parser(str), help="Regions (all if omitted)"
         ),
     ] = None,
     name: Annotated[
@@ -871,7 +871,7 @@ def compute_config(
     tsv_file: Annotated[
         Path | None,
         typer.Option(
-            help="Write the calls as TSV: chrom, mol, starts "
+            help="Write the calls as TSV: region, mol, starts "
             "(comma-joined; empty if none, NA if no data)",
             file_okay=True,
             dir_okay=False,
@@ -894,16 +894,16 @@ def compute_config(
         dataset,
         method=method,
         gamma=gamma,
-        chroms=chroms,
+        regions=regions,
         name=name,
         nworker=nworker,
     )
     if tsv_file is not None:
         key = method if name is None else name
         rows = []
-        for chrom in chroms or dataset.chroms:
+        for region in regions or dataset.regions:
             configs = catella.extract_config(
-                dataset, chrom=chrom, name=key
+                dataset, region=region, name=key
             )
             for mol, starts in enumerate(configs):
                 text = (
@@ -911,8 +911,8 @@ def compute_config(
                     if starts is None
                     else ",".join(str(int(s)) for s in starts)
                 )
-                rows.append({"chrom": chrom, "mol": mol, "starts": text})
-        pd.DataFrame(rows, columns=["chrom", "mol", "starts"]).to_csv(
+                rows.append({"region": region, "mol": mol, "starts": text})
+        pd.DataFrame(rows, columns=["region", "mol", "starts"]).to_csv(
             tsv_file, sep="\t", index=False
         )
     dataset.save(out_file)
@@ -930,7 +930,7 @@ def downsample(
             readable=True,
         ),
     ],
-    chrom: Annotated[str, typer.Argument(help="Chromosome name")],
+    region: Annotated[str, typer.Argument(help="Region name")],
     key: Annotated[str, typer.Argument(help="Analysis key to downsample")],
     max_rows: Annotated[int, typer.Argument(help="Target number of rows")],
     kind: Annotated[
@@ -965,12 +965,12 @@ def downsample(
     Downsample an analysis array and store the result under a new key.
     """
     obj = _load_source(source_file, kind)
-    data = obj.analysis[chrom][key]
+    data = obj.analysis[region][key]
     result = catella.downsample(
         data=data, max_rows=max_rows, how=how, batch_size=batch_size
     )
     name = out_key if out_key is not None else f"{key}_downsampled"
-    obj.analysis[chrom][name] = pd.DataFrame(result)
+    obj.analysis[region][name] = pd.DataFrame(result)
     obj.save(out_file)
 
 
@@ -993,10 +993,10 @@ def sort_by_linkage(
             "MethPrintExperiment or a SimDataset"
         ),
     ],
-    chroms: Annotated[
+    regions: Annotated[
         str | None,
         typer.Option(
-            callback=csv_parser(str), help="Chromosome(s) to process"
+            callback=csv_parser(str), help="Region(s) to process"
         ),
     ] = None,
     data_name: Annotated[
@@ -1060,7 +1060,7 @@ def sort_by_linkage(
     if kind == SourceKind.experiment:
         catella.sort_by_linkage(
             exp=obj,
-            chroms=chroms,
+            regions=regions,
             data_name=data_name,
             config_name=config_name,
             raw_which=raw_which,
@@ -1075,7 +1075,7 @@ def sort_by_linkage(
     else:
         catella.sort_by_linkage(
             dataset=obj,
-            chroms=chroms,
+            regions=regions,
             data_name=data_name,
             config_name=config_name,
             store_link_mat=store_link_mat,
@@ -1090,11 +1090,11 @@ def sort_by_linkage(
 
 @app.command(name="plot_config")
 def plot_config(
-    chroms: Annotated[
+    regions: Annotated[
         str,
         typer.Argument(
             callback=csv_parser(str),
-            help="Chromosome(s) to plot (comma-separated)",
+            help="Region(s) to plot (comma-separated)",
         ),
     ],
     dataset_file: Annotated[
@@ -1159,25 +1159,25 @@ def plot_config(
     ] = None,
     sharex: Annotated[
         bool,
-        typer.Option(help="Put all panels on the longest chromosome's scale"),
+        typer.Option(help="Put all panels on the longest region's scale"),
     ] = False,
     show: Annotated[bool, typer.Option(help="Display the figure")] = True,
 ):
     """
     Plot one nucleosome configuration per molecule, for one or more
-    chromosomes.
+    regions.
     """
-    if mols and len(chroms) > 1:
-        raise typer.BadParameter("--mols requires a single chromosome")
+    if mols and len(regions) > 1:
+        raise typer.BadParameter("--mols requires a single region")
     dataset = SimDataset.load(dataset_file)
     link_mat = (
-        {c: dataset.analysis[c][link_mat_name] for c in chroms}
+        {c: dataset.analysis[c][link_mat_name] for c in regions}
         if link_mat_name is not None
         else None
     )
     catella.plot_config(
         dataset,
-        chroms=chroms,
+        regions=regions,
         name=name,
         mols=mols,
         run=run,
@@ -1197,11 +1197,11 @@ def plot_config(
 
 @app.command(name="plot_occup")
 def plot_occup(
-    chroms: Annotated[
+    regions: Annotated[
         str,
         typer.Argument(
             callback=csv_parser(str),
-            help="Chromosome(s) to plot (comma-separated)",
+            help="Region(s) to plot (comma-separated)",
         ),
     ],
     dataset_file: Annotated[
@@ -1256,26 +1256,26 @@ def plot_occup(
     ] = None,
     sharex: Annotated[
         bool,
-        typer.Option(help="Put all panels on the longest chromosome's scale"),
+        typer.Option(help="Put all panels on the longest region's scale"),
     ] = False,
     show: Annotated[bool, typer.Option(help="Display the figure")] = True,
 ):
     """
-    Visualize nucleosome occupancy for one or more chromosomes.
+    Visualize nucleosome occupancy for one or more regions.
     """
-    if mols and len(chroms) > 1:
-        raise typer.BadParameter("--mols requires a single chromosome")
+    if mols and len(regions) > 1:
+        raise typer.BadParameter("--mols requires a single region")
     dataset = SimDataset.load(dataset_file)
     link_mat = (
         {
             c: dataset.analysis[c][link_mat_name].to_numpy()
-            for c in chroms
+            for c in regions
         }
         if link_mat_name is not None
         else None
     )
     catella.plot_occup(
-        chroms=chroms,
+        regions=regions,
         dataset=dataset,
         time=time,
         out_file=out_file,
@@ -1303,11 +1303,11 @@ def plot_meth(
             readable=True,
         ),
     ],
-    chroms: Annotated[
+    regions: Annotated[
         str,
         typer.Argument(
             callback=csv_parser(str),
-            help="Chromosome(s) to plot (comma-separated)",
+            help="Region(s) to plot (comma-separated)",
         ),
     ],
     key: Annotated[
@@ -1393,13 +1393,13 @@ def plot_meth(
     ] = 1000,
     sharex: Annotated[
         bool,
-        typer.Option(help="Put all panels on the widest chromosome's scale"),
+        typer.Option(help="Put all panels on the widest region's scale"),
     ] = False,
     show: Annotated[bool, typer.Option(help="Display the figure")] = True,
 ):
     """
     Plot a methylation heatmap, as probability or energy, for one or
-    more chromosomes.
+    more regions.
     """
     if (key is None) == (raw_which is None):
         raise typer.BadParameter("specify exactly one of --key or --raw-which")
@@ -1407,14 +1407,14 @@ def plot_meth(
         raise typer.BadParameter("--value energy requires --key")
     exp = MethPrintExperiment.load(exp_file)
     link_mat = (
-        {c: exp.analysis[c][link_mat_name].to_numpy() for c in chroms}
+        {c: exp.analysis[c][link_mat_name].to_numpy() for c in regions}
         if link_mat_name is not None
         else None
     )
     catella.plot_meth(
         value=value,
         exp=exp,
-        chroms=chroms,
+        regions=regions,
         raw_which=raw_which,
         data_name=key,
         mask_name=mask_name if raw_which is not None else None,

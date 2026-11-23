@@ -40,12 +40,12 @@ def _strand_of_mol(df, nmol):
 
 def _resolve_sources(raw, which):
     """
-    Source name(s) to evaluate for dropout, on one chromosome.
+    Source name(s) to evaluate for dropout, on one region.
 
     Parameters
     ----------
     raw : MethPrintData
-        Raw data block for one chromosome.
+        Raw data block for one region.
     which : {"test", "meth", "unmeth"} or None
         Single source, or None for every source present.
 
@@ -69,7 +69,7 @@ def _channel_site_masks(refseq, channels):
     Parameters
     ----------
     refseq : str
-        Reference sequence for this chromosome.
+        Reference sequence for this region.
     channels : iterable of int
         Channel codes, as from `_resolve_channels`; merged channels
         (GC, CG) pool the sites of their parts.

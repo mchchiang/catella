@@ -32,7 +32,7 @@ def _settings(**overrides):
 
 def _exp(arrays):
     exp = SimpleNamespace(
-        chroms=tuple(arrays),
+        regions=tuple(arrays),
         analysis={c: {"meth_prob": a} for c, a in arrays.items()},
     )
     exp.is_kept = partial(MethPrintExperiment.is_kept, exp)
@@ -83,9 +83,9 @@ class TestEvidence:
             _settings(),
             llinks=[0, 5, 10],
         )
-        assert list(table.columns) == ["chrom", "llink", "evidence", "nmol"]
+        assert list(table.columns) == ["region", "llink", "evidence", "nmol"]
         assert len(table) == 6
-        assert set(table["chrom"]) == {"a", "b"}
+        assert set(table["region"]) == {"a", "b"}
         assert (table["nmol"] == 8).all()
 
     def test_ignores_settings_llink(self):
@@ -103,13 +103,13 @@ class TestEvidence:
         ).set_index("llink")
         assert table.loc[30, "evidence"] > table.loc[60, "evidence"]
 
-    def test_chroms_selects(self):
+    def test_regions_selects(self):
         exp = _exp({"a": _random_probs(), "b": _random_probs(seed=2)})
-        for chroms in ("b", ["b"]):
+        for regions in ("b", ["b"]):
             table = _llink_evidence(
-                exp, _settings(), llinks=[0], chroms=chroms
+                exp, _settings(), llinks=[0], regions=regions
             )
-            assert list(table["chrom"]) == ["b"]
+            assert list(table["region"]) == ["b"]
 
     def test_all_nan_rows_are_skipped(self):
         probs = _random_probs()
@@ -260,14 +260,14 @@ class TestMaxNmol:
             _exp({"c": probs}), _settings(), llinks=[5], **kwargs
         )
 
-    def test_caps_per_chromosome(self):
+    def test_caps_per_region(self):
         table = _llink_evidence(
             _exp({"a": _random_probs(nmol=20), "b": _random_probs(nmol=3)}),
             _settings(),
             llinks=[5],
             max_nmol=5,
             seed=1,
-        ).set_index("chrom")
+        ).set_index("region")
         assert table.loc["a", "nmol"] == 5
         assert table.loc["b", "nmol"] == 3
 
@@ -354,7 +354,7 @@ class TestNworker:
 
 
 class TestEstimate:
-    def test_each_chromosome_gets_its_own_maximizer(self):
+    def test_each_region_gets_its_own_maximizer(self):
         exp = _exp(
             {
                 "short": _planted(50, linker=10, seed=1),
@@ -364,9 +364,9 @@ class TestEstimate:
         best = _estimate_llink(exp, _settings(), llinks=[0, 10, 40, 60])
         table = _llink_evidence(exp, _settings(), llinks=[0, 10, 40, 60])
         assert best == {"short": 10, "long": 40}
-        for chrom, sub in table.groupby("chrom"):
+        for region, sub in table.groupby("region"):
             top = sub.loc[sub["evidence"].idxmax(), "llink"]
-            assert best[chrom] == top
+            assert best[region] == top
 
     def test_no_warning_for_a_clear_estimate(self):
         exp = _exp({"c": _planted(50, linker=30)})

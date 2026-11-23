@@ -98,31 +98,31 @@ class TestProgressBar:
 
 class TestJobLabel:
     def test_with_run(self):
-        assert _job_label("chr1", 3, 0) == "chrom=chr1, mol=3, run=0"
+        assert _job_label("chr1", 3, 0) == "region=chr1, mol=3, run=0"
 
     def test_without_run(self):
-        assert _job_label("chr1", 3) == "chrom=chr1, mol=3"
+        assert _job_label("chr1", 3) == "region=chr1, mol=3"
 
 
 class TestReportCrash:
     def test_prints_status_of_each_job(self):
         statuses = {("a", 0, 1): "missing", ("a", 1, 0): None}
 
-        def classify(chrom, mol, run):
-            if (chrom, mol, run) == ("b", 0, 0):
+        def classify(region, mol, run):
+            if (region, mol, run) == ("b", 0, 0):
                 raise OSError("unreadable")
-            return statuses[(chrom, mol, run)]
+            return statuses[(region, mol, run)]
 
         dataset = SimpleNamespace(_classify_run=classify)
         jobs = [
-            SimpleNamespace(chrom="a", mol=0, run=1),
-            SimpleNamespace(chrom="a", mol=1, run=0),
-            SimpleNamespace(chrom="b", mol=0),
+            SimpleNamespace(region="a", mol=0, run=1),
+            SimpleNamespace(region="a", mol=1, run=0),
+            SimpleNamespace(region="b", mol=0),
         ]
         console = Console(record=True, width=120)
         _report_crash(console, dataset, jobs)
         text = console.export_text()
         assert "Worker pool crashed" in text
-        assert "chrom=a, mol=0, run=1: missing" in text
-        assert "chrom=a, mol=1, run=0: ok" in text
-        assert "chrom=b, mol=0: unknown" in text
+        assert "region=a, mol=0, run=1: missing" in text
+        assert "region=a, mol=1, run=0: ok" in text
+        assert "region=b, mol=0: unknown" in text

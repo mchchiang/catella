@@ -21,7 +21,7 @@ def _write_chromsize(path, sizes):
 
 def _write_fasta(path, records):
     with open(path, "w") as f:
-        f.writelines(f">{chrom}\n{seq}\n" for chrom, seq in records.items())
+        f.writelines(f">{region}\n{seq}\n" for region, seq in records.items())
 
 
 def _load(
@@ -30,14 +30,14 @@ def _load(
     rows,
     *,
     mtase,
-    chrom="chr1",
+    region="chr1",
     ignore_strand=False,
     wrap=False,
 ):
     chromsize = tmp_path / "sizes.tsv"
-    _write_chromsize(chromsize, {chrom: len(refseq)})
+    _write_chromsize(chromsize, {region: len(refseq)})
     fasta = tmp_path / "ref.fa"
-    _write_fasta(fasta, {chrom: refseq})
+    _write_fasta(fasta, {region: refseq})
     test_file = tmp_path / "test.tsv"
     _write_tsv(test_file, rows)
     return MethPrintExperiment.load_raw(
@@ -450,10 +450,10 @@ class TestChannelSubset:
         exp.close()
 
 
-class TestChromsSubset:
+class TestRegionsSubset:
     # chr1 refseq "AAAA" (4 A-sites, fully covered by m0); chr2 has no
     # refseq at all, so touching it raises -- proves a restricted
-    # `chroms` never evaluates the excluded chromosome.
+    # `regions` never evaluates the excluded region.
     def _make(self, tmp_path):
         rows = [("m0", i, "chr1", "+", 0.5, "a") for i in range(4)] + [
             ("m0", 0, "chr2", "+", 0.5, "a")
@@ -471,28 +471,28 @@ class TestChromsSubset:
             mtase="A",
         )
 
-    def test_unknown_chrom_raises(self, tmp_path):
+    def test_unknown_region_raises(self, tmp_path):
         exp = self._make(tmp_path)
         with pytest.raises(ValueError):
-            exp.filter_dropout(chroms=["bogus"])
+            exp.filter_dropout(regions=["bogus"])
         exp.close()
 
-    def test_default_none_touches_every_chrom_and_raises(self, tmp_path):
+    def test_default_none_touches_every_region_and_raises(self, tmp_path):
         exp = self._make(tmp_path)
         with pytest.raises(ValueError):
             exp.filter_dropout()
         exp.close()
 
-    def test_filter_dropout_restricts_to_given_chroms(self, tmp_path):
+    def test_filter_dropout_restricts_to_given_regions(self, tmp_path):
         exp = self._make(tmp_path)
-        exp.filter_dropout(chroms=["chr1"], thres_max=0.0)
+        exp.filter_dropout(regions=["chr1"], thres_max=0.0)
         assert "test_dropout_mask" in exp.analysis["chr1"]
         assert "test_dropout_mask" not in exp.analysis["chr2"]
         exp.close()
 
-    def test_dropout_fractions_restricts_to_given_chroms(self, tmp_path):
+    def test_dropout_fractions_restricts_to_given_regions(self, tmp_path):
         exp = self._make(tmp_path)
-        fractions = exp.dropout_fractions(chroms=["chr1"])
+        fractions = exp.dropout_fractions(regions=["chr1"])
         assert {key[0] for key in fractions} == {"chr1"}
         exp.close()
 

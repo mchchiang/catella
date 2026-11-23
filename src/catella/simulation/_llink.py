@@ -49,16 +49,18 @@ def _log_z(settings, llink, energy, nbp):
     return model.getLogZ()
 
 
-def _chrom_rows(arr, keep, max_nmol, rng, batch_size, nucbp, chrom, fill_nan):
+def _region_rows(
+    arr, keep, max_nmol, rng, batch_size, nucbp, region, fill_nan
+):
     """
-    Rows of one chromosome to use: kept, with data at the nucleosome
+    Rows of one region to use: kept, with data at the nucleosome
     start positions, and at most `max_nmol` of them, drawn at random.
     Partly-nan rows raise unless `fill_nan` is given.
     """
     usable = []
     for start, stop in _row_batches(0, arr.shape[0], batch_size):
         block = np.asarray(arr[start:stop, :], dtype=np.float64)
-        _, no_data = _prepare_rows(block, nucbp, chrom, fill_nan)
+        _, no_data = _prepare_rows(block, nucbp, region, fill_nan)
         has_data = ~no_data
         if keep is not None:
             has_data &= keep[start:stop]
@@ -69,9 +71,9 @@ def _chrom_rows(arr, keep, max_nmol, rng, batch_size, nucbp, chrom, fill_nan):
     return rows
 
 
-def _chrom_array(exp, chrom, prob_name):
-    """Array of `prob_name` for one chromosome, as an array or H5Array."""
-    arr = exp.analysis[chrom][prob_name]
+def _region_array(exp, region, prob_name):
+    """Array of `prob_name` for one region, as an array or H5Array."""
+    arr = exp.analysis[region][prob_name]
     if isinstance(arr, pd.DataFrame):
         arr = arr.to_numpy()
     return arr
@@ -92,39 +94,39 @@ def _chunk_evidence(settings, candidates, block, log_z0):
 
 
 def _chunk_jobs(exp, settings, candidates, prob_name, selected, fill_nan):
-    """Yield `(chrom, block, log_z0)` for each chunk of selected rows."""
-    for chrom, rows in selected.items():
-        arr = _chrom_array(exp, chrom, prob_name)
+    """Yield `(region, block, log_z0)` for each chunk of selected rows."""
+    for region, rows in selected.items():
+        arr = _region_array(exp, region, prob_name)
         nbp = arr.shape[1]
         zero = [0.0] * nbp
         log_z0 = [_log_z(settings, ll, zero, nbp) for ll in candidates]
         for start in range(0, len(rows), _CHUNK_NMOL):
             chunk = rows[start : start + _CHUNK_NMOL]
             block = np.asarray(arr[chunk, :], dtype=np.float64)
-            block, _ = _prepare_rows(block, settings.nucbp, chrom, fill_nan)
-            yield chrom, block, log_z0
+            block, _ = _prepare_rows(block, settings.nucbp, region, fill_nan)
+            yield region, block, log_z0
 
 
 def _run_chunks(jobs, settings, candidates, nworker):
-    """Yield `(chrom, totals)` for each job, in submission order."""
+    """Yield `(region, totals)` for each job, in submission order."""
     if nworker == 1:
-        for chrom, block, log_z0 in jobs:
-            yield chrom, _chunk_evidence(settings, candidates, block, log_z0)
+        for region, block, log_z0 in jobs:
+            yield region, _chunk_evidence(settings, candidates, block, log_z0)
         return
     ctx = mp.get_context("spawn")
     with ProcessPoolExecutor(max_workers=nworker, mp_context=ctx) as pool:
         pending = deque()
-        for chrom, block, log_z0 in jobs:
+        for region, block, log_z0 in jobs:
             future = pool.submit(
                 _chunk_evidence, settings, candidates, block, log_z0
             )
-            pending.append((chrom, future))
+            pending.append((region, future))
             if len(pending) >= 2 * nworker:
-                done_chrom, done = pending.popleft()
-                yield done_chrom, done.result()
+                done_region, done = pending.popleft()
+                yield done_region, done.result()
         while pending:
-            done_chrom, done = pending.popleft()
-            yield done_chrom, done.result()
+            done_region, done = pending.popleft()
+            yield done_region, done.result()
 
 
 def _llink_evidence(
@@ -133,7 +135,7 @@ def _llink_evidence(
     *,
     llinks=range(0, 65, 5),
     prob_name="meth_prob",
-    chroms=None,
+    regions=None,
     max_nmol=None,
     seed=None,
     batch_size=20000,
@@ -142,9 +144,9 @@ def _llink_evidence(
     fill_nan=None,
 ):
     """
-    Marginal likelihood of each candidate `llink`, per chromosome.
+    Marginal likelihood of each candidate `llink`, per region.
 
-    The evidence of a chromosome is the sum over its molecules of
+    The evidence of a region is the sum over its molecules of
     log Z(data, llink) - log Z(no data, llink), at temperature 1. The
     second term is the normalization of the prior, which depends on
     `llink` and must not be dropped.
@@ -152,18 +154,18 @@ def _llink_evidence(
     Parameters
     ----------
     exp : MethPrintExperiment
-        The experiment; `prob_name` must be in `exp.analysis[chrom]`.
+        The experiment; `prob_name` must be in `exp.analysis[region]`.
     settings : str or Path or SimSettings
         Provides `nucbp`, `elink`, `mu` and `emax`. `llink` is ignored.
     llinks : iterable of int, default range(0, 65, 5)
         Candidate linker lengths (bp).
     prob_name : str, default "meth_prob"
-        The key to read from `exp.analysis[chrom]`.
-    chroms : str or iterable of str, optional
-        Chromosome(s) to include; all of `exp.chroms` if None.
+        The key to read from `exp.analysis[region]`.
+    regions : str or iterable of str, optional
+        Region(s) to include; all of `exp.regions` if None.
     max_nmol : int, optional
         If given, use a random sample of at most this many molecules per
-        chromosome.
+        region.
     seed : int, optional
         Seed for the random sample of `max_nmol`.
     batch_size : int, default 20000
@@ -181,15 +183,15 @@ def _llink_evidence(
     Returns
     -------
     pandas.DataFrame
-        Columns `chrom`, `llink`, `evidence` and `nmol` (the number of
-        molecules used), one row per chromosome and candidate.
+        Columns `region`, `llink`, `evidence` and `nmol` (the number of
+        molecules used), one row per region and candidate.
 
     Raises
     ------
     ValueError
         If `llinks` is empty or holds a value that is not a non-negative
         integer, if `max_nmol` is not positive, if `nworker` is not a
-        positive integer, if a chromosome has no usable molecules, if
+        positive integer, if a region has no usable molecules, if
         `fill_nan` is invalid, or if `fill_nan` is None and a molecule is
         nan at some but not all start positions.
     TypeError
@@ -210,46 +212,46 @@ def _llink_evidence(
         raise ValueError(
             f"nworker must be a positive integer, got {nworker!r}"
         )
-    if chroms is None:
-        chroms = exp.chroms
-    elif isinstance(chroms, str):
-        chroms = (chroms,)
+    if regions is None:
+        regions = exp.regions
+    elif isinstance(regions, str):
+        regions = (regions,)
 
     rng = np.random.default_rng(seed)
     selected = {}
-    for chrom in chroms:
-        arr = _chrom_array(exp, chrom, prob_name)
+    for region in regions:
+        arr = _region_array(exp, region, prob_name)
         keep = None
         if mask_name is not None:
-            keep = exp.is_kept(chrom, mask_name=mask_name)
-        rows = _chrom_rows(
+            keep = exp.is_kept(region, mask_name=mask_name)
+        rows = _region_rows(
             arr,
             keep,
             max_nmol,
             rng,
             batch_size,
             settings.nucbp,
-            chrom,
+            region,
             fill_nan,
         )
         if len(rows) == 0:
-            raise ValueError(f"chromosome {chrom} has no usable molecules")
-        selected[chrom] = rows
+            raise ValueError(f"region {region} has no usable molecules")
+        selected[region] = rows
 
     jobs = _chunk_jobs(
         exp, settings, candidates, prob_name, selected, fill_nan
     )
-    totals = {chrom: np.zeros(len(candidates)) for chrom in selected}
-    for chrom, part in _run_chunks(jobs, settings, candidates, nworker):
-        totals[chrom] += part
+    totals = {region: np.zeros(len(candidates)) for region in selected}
+    for region, part in _run_chunks(jobs, settings, candidates, nworker):
+        totals[region] += part
     records = [
         {
-            "chrom": chrom,
+            "region": region,
             "llink": ll,
-            "evidence": float(totals[chrom][i]),
+            "evidence": float(totals[region][i]),
             "nmol": len(rows),
         }
-        for chrom, rows in selected.items()
+        for region, rows in selected.items()
         for i, ll in enumerate(candidates)
     ]
     return pd.DataFrame(records)
@@ -257,7 +259,7 @@ def _llink_evidence(
 
 def _estimate_llink(exp, settings, *, llink_evid_name=None, **kwargs):
     """
-    Maximize `_llink_evidence` per chromosome; see `api.estimate_llink`.
+    Maximize `_llink_evidence` per region; see `api.estimate_llink`.
     """
     settings = _resolve_settings(settings)
     if settings.end_temp != 1:
@@ -267,22 +269,22 @@ def _estimate_llink(exp, settings, *, llink_evid_name=None, **kwargs):
     table = _llink_evidence(exp, settings, **kwargs)
     largest = table["llink"].max()
     best = {}
-    for chrom, sub in table.groupby("chrom", sort=False):
+    for region, sub in table.groupby("region", sort=False):
         pick = int(sub.loc[sub["evidence"].idxmax(), "llink"])
-        best[chrom] = pick
+        best[region] = pick
         if llink_evid_name is not None:
-            exp.analysis[chrom][llink_evid_name] = sub[
+            exp.analysis[region][llink_evid_name] = sub[
                 ["llink", "evidence", "nmol"]
             ].reset_index(drop=True)
         if pick == largest and sub["llink"].nunique() > 1:
             _warn(
-                f"chromosome {chrom}: best llink {pick} is the largest "
+                f"region {region}: best llink {pick} is the largest "
                 "candidate; extend llinks"
             )
         nmol = int(sub["nmol"].iloc[0])
         if nmol < _MIN_NMOL:
             _warn(
-                f"chromosome {chrom}: llink estimated from {nmol} molecules; "
+                f"region {region}: llink estimated from {nmol} molecules; "
                 "the estimate may be unreliable"
             )
     return best

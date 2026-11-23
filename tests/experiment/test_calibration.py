@@ -220,7 +220,7 @@ class TestCalibRows:
         rows = _calib_rows("c", _controls_info(), False)
         assert rows == [
             {
-                "chrom": "c",
+                "region": "c",
                 "has_controls": True,
                 "frac_informative_A": 0.5,
                 "call_frac_meth_A": 0.9,

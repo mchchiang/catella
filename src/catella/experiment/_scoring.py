@@ -27,7 +27,7 @@ def _strand_log_odds(
     labels : np.ndarray
         Strand label per molecule. Only read if `norm_by_strand`.
     theta_prot, theta_acc, informative : np.ndarray or dict
-        From `_chrom_calibration`; per-strand dicts if `norm_by_strand`.
+        From `_region_calibration`; per-strand dicts if `norm_by_strand`.
     norm_by_strand : bool
         Whether the calibration is keyed by strand.
     eta :float or np.ndarray
@@ -58,7 +58,7 @@ def _strand_log_odds(
 
 def _score_test_reads(
     exp,
-    chrom,
+    region,
     ctx,
     assay,
     theta_prot,
@@ -84,10 +84,10 @@ def _score_test_reads(
     ----------
     exp : MethPrintExperiment
         The experiment object containing raw data and analysis maps.
-    chrom : str
-        Chromosome identifier.
+    region : str
+        Region identifier.
     ctx, assay, theta_prot, theta_acc, informative
-        From `_chrom_calibration`.
+        From `_region_calibration`.
     channel_eta : dict of int to float
         Eta per channel code; positions outside `channels` use 1.0.
     channels : iterable of int
@@ -113,13 +113,13 @@ def _score_test_reads(
         eta_by_pos[ctx == c] = channel_eta[c]
     log_odds_fill = -logit(fill_edge)
 
-    raw = exp.raw[chrom]
+    raw = exp.raw[region]
     out = H5Array.create(
         (len(raw.test_mol_id), raw.nbp), dtype=np.float64, dir=tmp_dir
     )
     batches = _iter_read_sites(
         exp,
-        chrom,
+        region,
         "test",
         ctx,
         assay,

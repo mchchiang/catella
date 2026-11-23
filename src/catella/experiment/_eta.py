@@ -6,8 +6,8 @@ import numpy as np
 
 from catella.experiment._calibration import (
     _calib_rows,
-    _chrom_calibration,
     _per_base_log_odds,
+    _region_calibration,
 )
 from catella.experiment._contexts import _CHANNEL_NAME_TO_CODE
 from catella.experiment._reads import _iter_read_sites
@@ -82,7 +82,7 @@ def _accumulate_autocorr_stats(
 
     Accumulates raw (uncentered) sums rather than pre-centering by
     the channel mean, since that mean is only known once every batch
-    (across every chromosome) has been seen; `_finalize_channel_eta`
+    (across every region) has been seen; `_finalize_channel_eta`
     does the centering afterward.
 
     Parameters
@@ -190,7 +190,7 @@ def _finalize_channel_eta(stats, max_lag, n_min=None):
 
 def _accumulate_eta_source(
     exp,
-    chrom,
+    region,
     which,
     ctx,
     assay,
@@ -215,19 +215,19 @@ def _accumulate_eta_source(
     ----------
     exp : MethPrintExperiment
         The experiment object containing raw data and analysis maps.
-    chrom : str
-        Chromosome identifier.
+    region : str
+        Region identifier.
     which : {"test", "meth"}
         Which raw table to read: the methylated control when
         available (isolates the crosstalk artifact from genuine,
         occupancy-driven correlation), otherwise the test data
         itself as a fallback.
     ctx, theta_prot, theta_acc, informative : np.ndarray or dict
-        From `_chrom_calibration`; plain arrays, or (if
+        From `_region_calibration`; plain arrays, or (if
         `norm_by_strand`) `{"+": ..., "-": ...}` dicts of such
         arrays.
     assay : dict of str to np.ndarray
-        From `_chrom_calibration` (see `_strand_assay_masks`).
+        From `_region_calibration` (see `_strand_assay_masks`).
     batch_size : int
         Number of molecules processed per batch.
     mask_name : str or None
@@ -250,7 +250,7 @@ def _accumulate_eta_source(
     """
     batches = _iter_read_sites(
         exp,
-        chrom,
+        region,
         which,
         ctx,
         assay,
@@ -284,8 +284,8 @@ def _accumulate_eta_source(
 
 def _estimate_channel_eta(exp, calib_kwargs, channels, *, max_lag):
     """
-    Calibrate every chromosome and estimate eta for `channels` from the
-    autocorrelation of the log-odds, pooled across chromosomes.
+    Calibrate every region and estimate eta for `channels` from the
+    autocorrelation of the log-odds, pooled across regions.
 
     The methylated control is used when available, since it isolates
     the crosstalk artifact from genuine, occupancy-driven correlation;
@@ -296,7 +296,7 @@ def _estimate_channel_eta(exp, calib_kwargs, channels, *, max_lag):
     exp : MethPrintExperiment
         The experiment object containing raw data and analysis maps.
     calib_kwargs : dict
-        Keyword arguments of `_chrom_calibration`.
+        Keyword arguments of `_region_calibration`.
     channels : set of int
         Channel codes to estimate.
     max_lag : int
@@ -307,24 +307,24 @@ def _estimate_channel_eta(exp, calib_kwargs, channels, *, max_lag):
     eta, rho : dict
         From `_finalize_channel_eta`.
     calib_cache : dict of str to tuple
-        Chromosome -> `(ctx, assay, theta_prot, theta_acc,
+        Region -> `(ctx, assay, theta_prot, theta_acc,
         informative)`, for reuse in scoring.
     calib_records : list of dict
-        Calibration rows from `_calib_rows`, over all chromosomes.
+        Calibration rows from `_calib_rows`, over all regions.
     """
     norm_by_strand = calib_kwargs["norm_by_strand"]
     stats = _init_autocorr_stats(max_lag, channels)
     calib_cache = {}
     calib_records = []
-    for chrom in exp.chroms:
-        *calib, has_controls, calib_info = _chrom_calibration(
-            exp, chrom, **calib_kwargs
+    for region in exp.regions:
+        *calib, has_controls, calib_info = _region_calibration(
+            exp, region, **calib_kwargs
         )
-        calib_cache[chrom] = tuple(calib)
-        calib_records.extend(_calib_rows(chrom, calib_info, norm_by_strand))
+        calib_cache[region] = tuple(calib)
+        calib_records.extend(_calib_rows(region, calib_info, norm_by_strand))
         _accumulate_eta_source(
             exp,
-            chrom,
+            region,
             "meth" if has_controls else "test",
             *calib,
             calib_kwargs["batch_size"],

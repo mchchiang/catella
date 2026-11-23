@@ -16,7 +16,7 @@ from catella.h5_array import H5Array
 from catella.simulation._exact import (
     TM_BATCH_SIZE,
     TMStat,
-    _chrom_settings,
+    _region_settings,
     _reject_time,
     _require_eseq,
     _require_tm,
@@ -31,7 +31,7 @@ from catella.simulation.results import SimDataset, SimMCMCData
 MCMC_BATCH_SIZE = 20000
 
 
-def _stored_configs(dataset, chrom, name, mol_ids):
+def _stored_configs(dataset, region, name, mol_ids):
     """
     Read the configurations stored under `name` for some molecules.
 
@@ -39,8 +39,8 @@ def _stored_configs(dataset, chrom, name, mol_ids):
     ----------
     dataset : SimDataset
         The dataset holding the configurations.
-    chrom : str
-        The chromosome of the molecules.
+    region : str
+        The region of the molecules.
     name : str
         The prefix of the stored keys.
     mol_ids : iterable of int
@@ -55,12 +55,12 @@ def _stored_configs(dataset, chrom, name, mol_ids):
     Raises
     ------
     KeyError
-        If no configurations are stored under `name` for `chrom`.
+        If no configurations are stored under `name` for `region`.
     """
-    analysis = dataset.analysis[chrom]
+    analysis = dataset.analysis[region]
     if f"{name}_position_flat" not in analysis:
         raise KeyError(
-            f"no configurations stored under '{name}' for chrom '{chrom}'"
+            f"no configurations stored under '{name}' for region '{region}'"
         )
     flat = analysis[f"{name}_position_flat"]["position"].to_numpy()
     offset = analysis[f"{name}_position_offset"]["offset"].to_numpy()
@@ -163,7 +163,7 @@ def _check_window(window):
     Parameters
     ----------
     window : object
-        None, a pair of integers, or a mapping from chromosome to a pair
+        None, a pair of integers, or a mapping from region to a pair
         of integers.
 
     Raises
@@ -178,24 +178,24 @@ def _check_window(window):
     ):
         return
     raise ValueError(
-        "window must be a pair of integers or a dict of them by chrom, "
+        "window must be a pair of integers or a dict of them by region, "
         f"got {window!r}"
     )
 
 
-def _linker_window(window, chrom, nbp, nucbp, trim):
+def _linker_window(window, region, nbp, nucbp, trim):
     """
-    Return the window of a chromosome in which linkers are counted.
+    Return the window of a region in which linkers are counted.
 
     Parameters
     ----------
     window : None, tuple of int, or mapping of str to tuple of int
-        A checked `window` argument; chromosomes missing from a mapping
+        A checked `window` argument; regions missing from a mapping
         use the full fiber.
-    chrom : str
-        The chromosome.
+    region : str
+        The region.
     nbp : int
-        The number of base pairs of the chromosome.
+        The number of base pairs of the region.
     nucbp : int
         The nucleosome footprint size.
     trim : int
@@ -213,32 +213,32 @@ def _linker_window(window, chrom, nbp, nucbp, trim):
         nucleosomes after trimming.
     """
     if isinstance(window, Mapping):
-        window = window.get(chrom)
+        window = window.get(region)
     xlo, xhi = (0, nbp) if window is None else tuple(window)
     if not 0 <= xlo <= xhi <= nbp:
         raise ValueError(
-            f"window must satisfy 0 <= xlo <= xhi <= {nbp} for chrom "
-            f"'{chrom}', got ({xlo}, {xhi})"
+            f"window must satisfy 0 <= xlo <= xhi <= {nbp} for region "
+            f"'{region}', got ({xlo}, {xhi})"
         )
     xlo, xhi = xlo + trim, xhi - trim
     if xhi - xlo < 2 * nucbp:
         raise ValueError(
-            "window after trim must hold two nucleosomes for chrom "
-            f"'{chrom}', got ({xlo}, {xhi})"
+            "window after trim must hold two nucleosomes for region "
+            f"'{region}', got ({xlo}, {xhi})"
         )
     return xlo, xhi
 
 
-def _stored_linker_hist(dataset, chrom, name):
+def _stored_linker_hist(dataset, region, name):
     """
-    Return the linker histogram stored under `name` for a chromosome.
+    Return the linker histogram stored under `name` for a region.
 
     Parameters
     ----------
     dataset : SimDataset
         The dataset holding the histogram.
-    chrom : str
-        The chromosome.
+    region : str
+        The region.
     name : str
         The key of the histogram.
 
@@ -250,20 +250,20 @@ def _stored_linker_hist(dataset, chrom, name):
     Raises
     ------
     KeyError
-        If no histogram is stored under `name` for `chrom`.
+        If no histogram is stored under `name` for `region`.
     """
-    analysis = dataset.analysis[chrom]
+    analysis = dataset.analysis[region]
     if name not in analysis:
         raise KeyError(
-            f"no linker histogram stored under '{name}' for chrom "
-            f"'{chrom}'; run compute_linker_hist first"
+            f"no linker histogram stored under '{name}' for region "
+            f"'{region}'; run compute_linker_hist first"
         )
     return analysis[name]
 
 
-def _mol_mask(mols, nmol, chrom):
+def _mol_mask(mols, nmol, region):
     """
-    Return a boolean mask of the selected molecules of a chromosome.
+    Return a boolean mask of the selected molecules of a region.
 
     Parameters
     ----------
@@ -271,9 +271,9 @@ def _mol_mask(mols, nmol, chrom):
         The selected molecules (duplicates are counted once), or None
         for all.
     nmol : int
-        The number of molecules of the chromosome.
-    chrom : str
-        The chromosome, for the error message.
+        The number of molecules of the region.
+    region : str
+        The region, for the error message.
 
     Returns
     -------
@@ -290,7 +290,7 @@ def _mol_mask(mols, nmol, chrom):
     idx = np.asarray(list(mols), dtype=np.int64)
     if idx.size and (idx.min() < 0 or idx.max() >= nmol):
         raise ValueError(
-            f"mols must be in [0, {nmol}) for chrom '{chrom}', got "
+            f"mols must be in [0, {nmol}) for region '{region}', got "
             f"{idx.min()} to {idx.max()}"
         )
     mask = np.zeros(nmol, dtype=bool)
@@ -487,12 +487,12 @@ class SimAnalysis:
     stored directly in the provided dataset's analysis map.
     """
 
-    def _final_time(self, dataset: SimDataset, chroms) -> int:
+    def _final_time(self, dataset: SimDataset, regions) -> int:
         """Return the final time of the first simulation run on disk."""
-        run_id = next(dataset.iter_runs(chroms), None)
+        run_id = next(dataset.iter_runs(regions), None)
         if run_id is None:
             raise ValueError(
-                f"no simulation files found for chroms {list(chroms)}"
+                f"no simulation files found for regions {list(regions)}"
             )
         return dataset.raw[run_id].time[-1]
 
@@ -501,7 +501,7 @@ class SimAnalysis:
         dataset: SimDataset,
         *,
         time: int | None = None,
-        chroms: str | Iterable[str] | None = None,
+        regions: str | Iterable[str] | None = None,
         name: str = "occup",
         mean_nnuc_name: str | None = "mean_nnuc",
         compute_var: bool = False,
@@ -532,8 +532,8 @@ class SimAnalysis:
             The simulation time point (snapshot) to analyze. If None, the
             final time frame will be used. `mcmc` only; must be None for
             `dataset.method == "tm"`.
-        chroms : str or iterable of str, optional
-            The chromosome(s) to process. If None (default), all chromosomes
+        regions : str or iterable of str, optional
+            The region(s) to process. If None (default), all regions
             in the dataset are analyzed.
         name : str, default "occup"
             The key used to store the occupancy `H5Array` in
@@ -569,13 +569,13 @@ class SimAnalysis:
             `compute_var` is True for a non-`"tm"` dataset, or (for
             `"tm"`) if the dataset has no stored energy landscape, or
             (for `"mcmc"`) if `time` is None and no simulation files
-            exist for `chroms`, or `nworker` is invalid.
+            exist for `regions`, or `nworker` is invalid.
         """
         _check_nworker(dataset, nworker)
         if compute_var:
             _require_tm(dataset, "compute_var=True")
         batch_size = _resolve_batch_size(dataset, batch_size)
-        chroms = _normalize_regions(chroms, default_regions=dataset.chroms)
+        regions = _normalize_regions(regions, default_regions=dataset.regions)
         if dataset.method == "tm":
             _reject_time(time, record_time)
             _require_eseq(dataset)
@@ -588,13 +588,13 @@ class SimAnalysis:
                     TMStat(var_occup_name, "getVarOccup", per_bp=True),
                 ]
             _tm_stats(
-                dataset, chroms, stats, batch_size=batch_size, nworker=nworker
+                dataset, regions, stats, batch_size=batch_size, nworker=nworker
             )
             return
         self._compute_occup_mcmc(
             dataset,
             time=time,
-            chroms=chroms,
+            regions=regions,
             name=name,
             record_time=record_time,
             batch_size=batch_size,
@@ -603,43 +603,43 @@ class SimAnalysis:
             self._compute_mean_nnuc_mcmc(
                 dataset,
                 time=time,
-                chroms=chroms,
+                regions=regions,
                 name=mean_nnuc_name,
                 record_time=record_time,
             )
 
     def _compute_occup_mcmc(
-        self, dataset, *, time, chroms, name, record_time, batch_size
+        self, dataset, *, time, regions, name, record_time, batch_size
     ):
         nuc_map = {
-            chrom: NucFiberMap(dataset.settings["nucbp"], dataset.nbp[chrom])
-            for chrom in chroms
+            region: NucFiberMap(dataset.settings["nucbp"], dataset.nbp[region])
+            for region in regions
         }
         if time is None:
-            time = self._final_time(dataset, chroms)
+            time = self._final_time(dataset, regions)
 
-        def occup_agg(chrom, mol, nucpos):
-            return nuc_map[chrom].aggregate(nucpos, norm=True)
+        def occup_agg(region, mol, nucpos):
+            return nuc_map[region].aggregate(nucpos, norm=True)
 
         if record_time:
             name = f"{name}_t_{time}"
         tmp_dir = dataset.resolve_tmp_dir()
-        for chrom in chroms:
-            nmol = dataset.nmol[chrom]
-            nbp = dataset.nbp[chrom]
+        for region in regions:
+            nmol = dataset.nmol[region]
+            nbp = dataset.nbp[region]
             out = H5Array.create((nmol, nbp), dtype=np.float64, dir=tmp_dir)
             n_missing = 0
             for start, stop in _row_batches(0, nmol, batch_size):
                 batch = dataset.extract(
                     time=time,
                     obs="position",
-                    chroms=[chrom],
+                    regions=[region],
                     mols=range(start, stop),
                     agg_func=occup_agg,
                 )
-                rows = batch[chrom][start:stop]
+                rows = batch[region][start:stop]
                 block = np.full((stop - start, nbp), np.nan, dtype=np.float64)
-                skipped = dataset.no_data[chrom][start:stop]
+                skipped = dataset.no_data[region][start:stop]
                 for i, row in enumerate(rows):
                     if row is not None:
                         block[i] = row
@@ -649,16 +649,16 @@ class SimAnalysis:
             if n_missing:
                 print(
                     f"{n_missing} molecule(s) with no simulation data "
-                    f"for chrom {chrom!r}; occupancy filled with NaN."
+                    f"for region {region!r}; occupancy filled with NaN."
                 )
-            dataset.analysis[chrom][name] = out
+            dataset.analysis[region][name] = out
 
     def compute_mean_nnuc(
         self,
         dataset: SimDataset,
         *,
         time: int | None = None,
-        chroms: str | Iterable[str] | None = None,
+        regions: str | Iterable[str] | None = None,
         name: str = "mean_nnuc",
         record_time: bool = False,
         nworker: int = 1,
@@ -679,8 +679,8 @@ class SimAnalysis:
             The simulation time point (snapshot) to analyze. If None, the
             final time frame will be used. `mcmc` only; must be None for
             `dataset.method == "tm"`.
-        chroms : str or iterable of str, optional
-            The chromosome(s) to process. If None (default), all chromosomes
+        regions : str or iterable of str, optional
+            The region(s) to process. If None (default), all regions
             in the dataset are analyzed.
         name : str, default "mean_nnuc"
             The key name used to store the resulting DataFrame in
@@ -698,32 +698,32 @@ class SimAnalysis:
             If `time` or `record_time` is given for a `"tm"` dataset, or
             (for `"tm"`) if the dataset has no stored energy landscape,
             or (for `"mcmc"`) if `time` is None and no simulation files
-            exist for `chroms`, or `nworker` is invalid.
+            exist for `regions`, or `nworker` is invalid.
         """
         _check_nworker(dataset, nworker)
-        chroms = _normalize_regions(chroms, default_regions=dataset.chroms)
+        regions = _normalize_regions(regions, default_regions=dataset.regions)
         if dataset.method == "tm":
             _reject_time(time, record_time)
             _require_eseq(dataset)
             _tm_per_mol(
-                dataset, chroms, name, NucPosTM.getMeanN, nworker=nworker
+                dataset, regions, name, NucPosTM.getMeanN, nworker=nworker
             )
             return
         self._compute_mean_nnuc_mcmc(
             dataset,
             time=time,
-            chroms=chroms,
+            regions=regions,
             name=name,
             record_time=record_time,
         )
 
     def _compute_mean_nnuc_mcmc(
-        self, dataset, *, time, chroms, name, record_time
+        self, dataset, *, time, regions, name, record_time
     ):
         if time is None:
-            time = self._final_time(dataset, chroms)
+            time = self._final_time(dataset, regions)
 
-        def mean_nnuc_agg(chrom, mol, nucpos):
+        def mean_nnuc_agg(region, mol, nucpos):
             mean_nnuc = 0.0
             for x in nucpos:
                 mean_nnuc += len(x)
@@ -731,19 +731,19 @@ class SimAnalysis:
             return mean_nnuc
 
         mean_nnuc = dataset.extract(
-            time=time, obs="position", chroms=chroms, agg_func=mean_nnuc_agg
+            time=time, obs="position", regions=regions, agg_func=mean_nnuc_agg
         )
         # Store the results
         if record_time:
             name = f"{name}_t_{time}"
-        for chrom in chroms:
-            dataset.analysis[chrom][name] = pd.DataFrame(mean_nnuc[chrom])
+        for region in regions:
+            dataset.analysis[region][name] = pd.DataFrame(mean_nnuc[region])
 
     def compute_var_nnuc(
         self,
         dataset: SimDataset,
         *,
-        chroms: str | Iterable[str] | None = None,
+        regions: str | Iterable[str] | None = None,
         name: str = "var_nnuc",
         nworker: int = 1,
     ):
@@ -757,8 +757,8 @@ class SimAnalysis:
         ----------
         dataset : SimDataset
             The dataset containing the stored energy landscape.
-        chroms : str or iterable of str, optional
-            The chromosome(s) to process. If None (default), all chromosomes
+        regions : str or iterable of str, optional
+            The region(s) to process. If None (default), all regions
             in the dataset are analyzed.
         name : str, default "var_nnuc"
             The key name used to store the resulting DataFrame in
@@ -774,14 +774,14 @@ class SimAnalysis:
         """
         _require_tm(dataset, "compute_var_nnuc")
         _check_nworker(dataset, nworker)
-        chroms = _normalize_regions(chroms, default_regions=dataset.chroms)
-        _tm_per_mol(dataset, chroms, name, NucPosTM.getVarN, nworker=nworker)
+        regions = _normalize_regions(regions, default_regions=dataset.regions)
+        _tm_per_mol(dataset, regions, name, NucPosTM.getVarN, nworker=nworker)
 
     def compute_var_occup(
         self,
         dataset: SimDataset,
         *,
-        chroms: str | Iterable[str] | None = None,
+        regions: str | Iterable[str] | None = None,
         name: str = "var_occup",
         batch_size: int | None = None,
         nworker: int = 1,
@@ -798,8 +798,8 @@ class SimAnalysis:
         ----------
         dataset : SimDataset
             The dataset containing the stored energy landscape.
-        chroms : str or iterable of str, optional
-            The chromosome(s) to process. If None (default), all chromosomes
+        regions : str or iterable of str, optional
+            The region(s) to process. If None (default), all regions
             in the dataset are analyzed.
         name : str, default "var_occup"
             The key name used to store the resulting `H5Array` in
@@ -819,10 +819,10 @@ class SimAnalysis:
         _require_tm(dataset, "compute_var_occup")
         _check_nworker(dataset, nworker)
         batch_size = _resolve_batch_size(dataset, batch_size)
-        chroms = _normalize_regions(chroms, default_regions=dataset.chroms)
+        regions = _normalize_regions(regions, default_regions=dataset.regions)
         _tm_per_bp(
             dataset,
-            chroms,
+            regions,
             name,
             batch_size,
             NucPosTM.getVarOccup,
@@ -833,7 +833,7 @@ class SimAnalysis:
         self,
         dataset: SimDataset,
         *,
-        chroms: str | Iterable[str] | None = None,
+        regions: str | Iterable[str] | None = None,
         name: str = "most_likely",
         nworker: int = 1,
     ):
@@ -858,8 +858,8 @@ class SimAnalysis:
         ----------
         dataset : SimDataset
             The dataset containing the stored energy landscape.
-        chroms : str or iterable of str, optional
-            The chromosome(s) to process. If None (default), all chromosomes
+        regions : str or iterable of str, optional
+            The region(s) to process. If None (default), all regions
             in the dataset are analyzed.
         name : str, default "most_likely"
             Prefix of the keys used to store the results in
@@ -875,10 +875,10 @@ class SimAnalysis:
         """
         _require_tm(dataset, "compute_most_likely_config")
         _check_nworker(dataset, nworker)
-        chroms = _normalize_regions(chroms, default_regions=dataset.chroms)
+        regions = _normalize_regions(regions, default_regions=dataset.regions)
         _tm_configs(
             dataset,
-            chroms,
+            regions,
             name,
             NucPosTM.getMostLikelyConfig,
             nworker=nworker,
@@ -888,7 +888,7 @@ class SimAnalysis:
         self,
         dataset: SimDataset,
         *,
-        chroms: str | Iterable[str] | None = None,
+        regions: str | Iterable[str] | None = None,
         name: str = "best_match",
         gamma: float = 1.0,
         nworker: int = 1,
@@ -912,8 +912,8 @@ class SimAnalysis:
         ----------
         dataset : SimDataset
             The dataset containing the stored energy landscape.
-        chroms : str or iterable of str, optional
-            The chromosome(s) to process. If None (default), all chromosomes
+        regions : str or iterable of str, optional
+            The region(s) to process. If None (default), all regions
             in the dataset are analyzed.
         name : str, default "best_match"
             Prefix of the keys used to store the results in
@@ -937,10 +937,10 @@ class SimAnalysis:
             raise ValueError(f"gamma must be positive, got {gamma}")
         _require_tm(dataset, "compute_best_match_config")
         _check_nworker(dataset, nworker)
-        chroms = _normalize_regions(chroms, default_regions=dataset.chroms)
+        regions = _normalize_regions(regions, default_regions=dataset.regions)
         _tm_configs(
             dataset,
-            chroms,
+            regions,
             name,
             NucPosTM.getBestMatchConfig,
             kwargs={"gamma": gamma},
@@ -954,7 +954,7 @@ class SimAnalysis:
         lmax: int = 200,
         window: tuple[int, int] | Mapping | None = None,
         trim: int = 0,
-        chroms: str | Iterable[str] | None = None,
+        regions: str | Iterable[str] | None = None,
         name: str = "linker_hist",
         batch_size: int | None = None,
         nworker: int = 1,
@@ -990,14 +990,14 @@ class SimAnalysis:
         window : tuple of int or dict, optional
             The region `(xlo, xhi)` (bp, half-open, in the coordinates of
             the stored start positions) in which linkers are counted. A
-            dict keyed by chrom gives one window per chrom (chroms not in
+            dict keyed by region gives one window per region (regions not in
             it use the whole fiber; extra keys are ignored). If None
             (default), the whole fiber.
         trim : int, default 0
             Number of base pairs removed from each end of the window,
             e.g., to drop nucleosomes near the fiber ends.
-        chroms : str or iterable of str, optional
-            The chromosome(s) to process. If None (default), all chromosomes
+        regions : str or iterable of str, optional
+            The region(s) to process. If None (default), all regions
             in the dataset are analyzed.
         name : str, default "linker_hist"
             The key of the histogram in `dataset.analysis`: an `H5Array`
@@ -1033,13 +1033,13 @@ class SimAnalysis:
         _require_tm(dataset, "compute_linker_hist")
         _check_nworker(dataset, nworker)
         batch_size = _resolve_batch_size(dataset, batch_size)
-        chroms = _normalize_regions(chroms, default_regions=dataset.chroms)
+        regions = _normalize_regions(regions, default_regions=dataset.regions)
         nucbp = dataset.settings["nucbp"]
         windows = {
-            chrom: _linker_window(
-                window, chrom, dataset.nbp[chrom], nucbp, trim
+            region: _linker_window(
+                window, region, dataset.nbp[region], nucbp, trim
             )
-            for chrom in chroms
+            for region in regions
         }
         if dataset.nan_fill is not None:
             _warn(
@@ -1047,8 +1047,8 @@ class SimAnalysis:
                 "linkers in filled regions, if any, are counted"
             )
         columns = (*(str(i) for i in range(lmax + 1)), "tail")
-        for chrom in chroms:
-            xlo, xhi = windows[chrom]
+        for region in regions:
+            xlo, xhi = windows[region]
             stat = TMStat(
                 name,
                 "getLinkerHist",
@@ -1058,17 +1058,17 @@ class SimAnalysis:
             )
             _tm_stats(
                 dataset,
-                [chrom],
+                [region],
                 [stat],
                 batch_size=batch_size,
                 nworker=nworker,
             )
-            dataset.analysis[chrom][f"{name}_settings"] = pd.DataFrame(
+            dataset.analysis[region][f"{name}_settings"] = pd.DataFrame(
                 {
                     "lmax": [lmax],
                     "xlo": [xlo],
                     "xhi": [xhi],
-                    "llink": [_chrom_settings(dataset, chrom).llink],
+                    "llink": [_region_settings(dataset, region).llink],
                 }
             )
 
@@ -1076,14 +1076,14 @@ class SimAnalysis:
         self,
         dataset: SimDataset,
         *,
-        chroms: str | Iterable[str] | None = None,
+        regions: str | Iterable[str] | None = None,
         name: str = "linker_hist",
         mols: Iterable[int] | dict | None = None,
         how: str = "sum",
         batch_size: int = 20000,
     ) -> pd.DataFrame:
         """
-        Pool the linker histograms of molecules, per chromosome.
+        Pool the linker histograms of molecules, per region.
 
         Reads the per-molecule histograms stored by `compute_linker_hist`
         in batches, so memory does not scale with the number of
@@ -1093,15 +1093,15 @@ class SimAnalysis:
         ----------
         dataset : SimDataset
             The dataset holding the histograms.
-        chroms : str or iterable of str, optional
-            The chromosome(s) to pool. If None (default), all chromosomes
+        regions : str or iterable of str, optional
+            The region(s) to pool. If None (default), all regions
             in the dataset.
         name : str, default "linker_hist"
             The key of the histograms, as passed to `compute_linker_hist`.
         mols : iterable of int or dict, optional
             The molecules to pool (duplicates are counted once). If None
-            (default), all molecules. With several chroms, a dict keyed
-            by chrom (chroms not in it use all molecules; extra keys are
+            (default), all molecules. With several regions, a dict keyed
+            by region (regions not in it use all molecules; extra keys are
             ignored).
         how : {"sum", "mean"}, default "sum"
             "sum" adds the expected counts of the molecules, so that each
@@ -1115,35 +1115,35 @@ class SimAnalysis:
         -------
         pd.DataFrame
             One row per linker-length bin (labeled "0" to str(lmax), then
-            "tail") and one column per chromosome; nan for a chromosome
+            "tail") and one column per region; nan for a region
             with no molecules with data under "mean".
 
         Raises
         ------
         KeyError
-            If no histogram is stored under `name` for a chromosome.
+            If no histogram is stored under `name` for a region.
         ValueError
-            If `how` is invalid, `mols` is not a dict with several chroms
-            or is out of range, or the chromosomes have histograms with
+            If `how` is invalid, `mols` is not a dict with several regions
+            or is out of range, or the regions have histograms with
             different bins.
         """
         if how not in ("sum", "mean"):
             raise ValueError(f"how must be 'sum' or 'mean', got {how!r}")
-        chroms = _normalize_regions(chroms, default_regions=dataset.chroms)
-        mols = _per_region(mols, chroms, "mols")
+        regions = _normalize_regions(regions, default_regions=dataset.regions)
+        mols = _per_region(mols, regions, "mols")
         pooled = {}
         columns = None
-        for chrom in chroms:
-            arr = _stored_linker_hist(dataset, chrom, name)
+        for region in regions:
+            arr = _stored_linker_hist(dataset, region, name)
             if columns is None:
                 columns = list(arr.columns)
             elif list(arr.columns) != columns:
                 raise ValueError(
                     f"linker histograms under '{name}' have different "
-                    "bins across chroms; pool them one chrom at a time"
+                    "bins across regions; pool them one region at a time"
                 )
-            mask = _mol_mask(mols[chrom], arr.shape[0], chrom)
-            pooled[chrom] = getattr(arr, how)(
+            mask = _mol_mask(mols[region], arr.shape[0], region)
+            pooled[region] = getattr(arr, how)(
                 axis=0, batch_size=batch_size, row_mask=mask
             )
         return pd.DataFrame(pooled, index=pd.Index(columns))
@@ -1152,7 +1152,7 @@ class SimAnalysis:
         self,
         dataset: SimDataset,
         *,
-        chroms: str | Iterable[str] | None = None,
+        regions: str | Iterable[str] | None = None,
         name: str = "linker_hist",
         mols: Iterable[int] | dict | None = None,
         pooled: bool = False,
@@ -1173,19 +1173,19 @@ class SimAnalysis:
         ----------
         dataset : SimDataset
             The dataset holding the histograms.
-        chroms : str or iterable of str, optional
-            The chromosome(s) to use. If None (default), all chromosomes
+        regions : str or iterable of str, optional
+            The region(s) to use. If None (default), all regions
             in the dataset.
         name : str, default "linker_hist"
             The key of the histograms, as passed to `compute_linker_hist`.
         mols : iterable of int or dict, optional
             The molecules to use (duplicates are counted once). If None
-            (default), all molecules. With several chroms, a dict keyed
-            by chrom (chroms not in it use all molecules; extra keys are
+            (default), all molecules. With several regions, a dict keyed
+            by region (regions not in it use all molecules; extra keys are
             ignored).
         pooled : bool, default False
             If False, one row per molecule. If True, one row per
-            chromosome, from the linkers of all selected molecules pooled
+            region, from the linkers of all selected molecules pooled
             together, so that each linker counts equally. The pooled
             standard deviation also includes the differences between the
             mean linker lengths of the molecules, so it is not the mean
@@ -1197,44 +1197,44 @@ class SimAnalysis:
         -------
         pd.DataFrame
             Columns "mean" and "sd" (bp) and "nlink", the expected number
-            of linkers up to `lmax`. Indexed by (chrom, mol) if `pooled`
-            is False, otherwise by chrom. Molecules with no data get nan;
-            molecules or chromosomes with no linkers get nan mean and sd.
+            of linkers up to `lmax`. Indexed by (region, mol) if `pooled`
+            is False, otherwise by region. Molecules with no data get nan;
+            molecules or regions with no linkers get nan mean and sd.
 
         Raises
         ------
         KeyError
-            If no histogram is stored under `name` for a chromosome.
+            If no histogram is stored under `name` for a region.
         ValueError
-            If `mols` is not a dict with several chroms or is out of
+            If `mols` is not a dict with several regions or is out of
             range.
         """
-        chroms = _normalize_regions(chroms, default_regions=dataset.chroms)
-        mols = _per_region(mols, chroms, "mols")
+        regions = _normalize_regions(regions, default_regions=dataset.regions)
+        mols = _per_region(mols, regions, "mols")
         columns = ["mean", "sd", "nlink"]
         if pooled:
             rows = []
-            for chrom in chroms:
+            for region in regions:
                 counts = self.pool_linker_hist(
                     dataset,
-                    chroms=chrom,
+                    regions=region,
                     name=name,
-                    mols=mols[chrom],
+                    mols=mols[region],
                     batch_size=batch_size,
-                )[chrom].to_numpy()
+                )[region].to_numpy()
                 mean, sd, nlink = _linker_moments(counts[None, :-1])
                 rows.append([mean[0], sd[0], nlink[0]])
             return pd.DataFrame(
-                rows, index=pd.Index(chroms, name="chrom"), columns=columns
+                rows, index=pd.Index(regions, name="region"), columns=columns
             )
         frames = []
-        for chrom in chroms:
-            arr = _stored_linker_hist(dataset, chrom, name)
-            mask = _mol_mask(mols[chrom], arr.shape[0], chrom)
+        for region in regions:
+            arr = _stored_linker_hist(dataset, region, name)
+            mask = _mol_mask(mols[region], arr.shape[0], region)
             for mol_ids, rows in _iter_hist_rows(arr, mask, batch_size):
                 mean, sd, nlink = _linker_moments(rows[:, :-1])
                 index = pd.MultiIndex.from_arrays(
-                    [[chrom] * len(mol_ids), mol_ids], names=["chrom", "mol"]
+                    [[region] * len(mol_ids), mol_ids], names=["region", "mol"]
                 )
                 frames.append(
                     pd.DataFrame(
@@ -1242,7 +1242,9 @@ class SimAnalysis:
                     )
                 )
         if not frames:
-            index = pd.MultiIndex.from_arrays([[], []], names=["chrom", "mol"])
+            index = pd.MultiIndex.from_arrays(
+                [[], []], names=["region", "mol"]
+            )
             return pd.DataFrame(columns=columns, index=index, dtype=float)
         return pd.concat(frames)
 
@@ -1250,7 +1252,7 @@ class SimAnalysis:
         self,
         dataset: SimDataset,
         *,
-        chrom: str,
+        region: str,
         name: str | None = None,
         run: int | None = None,
         time: int | None = None,
@@ -1270,8 +1272,8 @@ class SimAnalysis:
         ----------
         dataset : SimDataset
             The dataset holding the configurations.
-        chrom : str
-            The chromosome of the molecules.
+        region : str
+            The region of the molecules.
         name : str, optional
             The prefix the configurations were stored under (e.g.,
             "most_likely" or "best_match"). If None (default), raw
@@ -1284,7 +1286,7 @@ class SimAnalysis:
             used for MCMC datasets with `name` None.
         mols : iterable of int, optional
             The molecules to read, in this order. If None (default), all
-            molecules of `chrom`.
+            molecules of `region`.
         nworker : int, default 1
             Number of threads used to read raw MCMC files.
 
@@ -1304,11 +1306,11 @@ class SimAnalysis:
             (`nsim` is 0) and `name` is None, or if `time` is not a
             recorded time point of a run.
         KeyError
-            If no configurations are stored under `name` for `chrom`.
+            If no configurations are stored under `name` for `region`.
         IndexError
             If a molecule or `run` is out of range.
         """
-        nmol = dataset.nmol[chrom]
+        nmol = dataset.nmol[region]
         mol_ids = range(nmol) if mols is None else [int(m) for m in mols]
         for mol in mol_ids:
             if not 0 <= mol < nmol:
@@ -1316,7 +1318,7 @@ class SimAnalysis:
         if name is not None:
             if run is not None or time is not None:
                 raise ValueError("run and time cannot be given with name")
-            return _stored_configs(dataset, chrom, name, mol_ids)
+            return _stored_configs(dataset, region, name, mol_ids)
         run = 0 if run is None else int(run)
         if dataset.method == "tm":
             if time is not None:
@@ -1334,16 +1336,16 @@ class SimAnalysis:
         if dataset.method == "tm":
             return [
                 None
-                if dataset.no_data[chrom][mol]
-                or not dataset.tm_file(chrom, mol).exists()
-                else np.asarray(dataset.raw[chrom, mol, run].position)
+                if dataset.no_data[region][mol]
+                or not dataset.tm_file(region, mol).exists()
+                else np.asarray(dataset.raw[region, mol, run].position)
                 for mol in mol_ids
             ]
         if time is None:
-            time = self._final_time(dataset, [chrom])
+            time = self._final_time(dataset, [region])
 
         def read(mol):
-            sim_file = dataset.mcmc_file(chrom, mol, run)
+            sim_file = dataset.mcmc_file(region, mol, run)
             if not sim_file.exists():
                 return None
             try:
@@ -1353,7 +1355,7 @@ class SimAnalysis:
             except KeyError:
                 raise ValueError(
                     f"time {time} is not recorded in run {run} of molecule "
-                    f"{mol} of chrom '{chrom}'"
+                    f"{mol} of region '{region}'"
                 ) from None
 
         out = dict(_threaded_map(read, mol_ids, nworker=nworker))
@@ -1363,7 +1365,7 @@ class SimAnalysis:
         self,
         dataset: SimDataset,
         *,
-        chroms: str | Iterable[str] | None = None,
+        regions: str | Iterable[str] | None = None,
         data_name: str | None = None,
         config_name: str | None = None,
         store_link_mat: bool = True,
@@ -1388,12 +1390,12 @@ class SimAnalysis:
         ----------
         dataset : SimDataset
             The dataset containing the data to cluster.
-        chroms : str or iterable of str, optional
-            The chromosome(s) to process. If None (default), all
-            chromosomes in the dataset are processed.
+        regions : str or iterable of str, optional
+            The region(s) to process. If None (default), all
+            regions in the dataset are processed.
         data_name : str, optional
             The key of the analysis array to cluster, looked up in
-            `dataset.analysis[chrom]`; "occup" if neither `data_name` nor
+            `dataset.analysis[region]`; "occup" if neither `data_name` nor
             `config_name` is given.
         config_name : str, optional
             The `name` of configurations stored by `compute_config`.
@@ -1405,7 +1407,7 @@ class SimAnalysis:
             temporary float32 file in batches of `batch_size`.
         store_link_mat : bool, default True
             Whether to also persist the linkage matrix into
-            `dataset.analysis[chrom][link_mat_name]`. If False, the
+            `dataset.analysis[region][link_mat_name]`. If False, the
             linkage matrix is only returned, not stored.
         link_mat_name : str, optional
             The key used to store the linkage matrix if
@@ -1426,17 +1428,17 @@ class SimAnalysis:
         Returns
         -------
         dict of str to np.ndarray
-            A mapping from chromosome name to that chromosome's
+            A mapping from region name to that region's
             linkage matrix, to pass as `link_mat` to `SimPlot.plot_occup`
             or `SimPlot.plot_config`. Also stored in
-            `dataset.analysis[chrom][link_mat_name]` if `store_link_mat`
+            `dataset.analysis[region][link_mat_name]` if `store_link_mat`
             is True.
 
         Raises
         ------
         KeyError
             If `data_name` (or the configurations of `config_name`) is not
-            found for any of the selected chromosomes.
+            found for any of the selected regions.
         ValueError
             If both `data_name` and `config_name` are given, or if some
             molecule has no data and `fill_nan` is None.
@@ -1453,15 +1455,15 @@ class SimAnalysis:
         if config_name is None and data_name is None:
             data_name = "occup"
         base_name = data_name if config_name is None else config_name
-        chroms = _normalize_regions(chroms, default_regions=dataset.chroms)
+        regions = _normalize_regions(regions, default_regions=dataset.regions)
         tmp_dir = dataset.resolve_tmp_dir()
         link_mats = {}
-        for chrom in chroms:
+        for region in regions:
             if config_name is None:
-                data = dataset.analysis[chrom][data_name]
+                data = dataset.analysis[region][data_name]
             else:
                 data = self._config_footprints(
-                    dataset, chrom, config_name, batch_size, tmp_dir
+                    dataset, region, config_name, batch_size, tmp_dir
                 )
             try:
                 _, link_mat = utils.compute_linkage(
@@ -1481,11 +1483,11 @@ class SimAnalysis:
                     if link_mat_name is not None
                     else f"{base_name}_linkage"
                 )
-                dataset.analysis[chrom][lname] = pd.DataFrame(link_mat)
-            link_mats[chrom] = link_mat
+                dataset.analysis[region][lname] = pd.DataFrame(link_mat)
+            link_mats[region] = link_mat
         return link_mats
 
-    def _config_footprints(self, dataset, chrom, name, batch_size, tmp_dir):
+    def _config_footprints(self, dataset, region, name, batch_size, tmp_dir):
         """
         Write the stored configurations of `name` as a temporary footprint
         array (float32: 1 covered, 0 linker, nan no data).
@@ -1494,8 +1496,8 @@ class SimAnalysis:
         ----------
         dataset : SimDataset
             The dataset holding the configurations.
-        chrom : str
-            The chromosome.
+        region : str
+            The region.
         name : str
             The `name` of the configurations.
         batch_size : int
@@ -1508,8 +1510,8 @@ class SimAnalysis:
         H5Array
             The footprints, molecules by base pairs; close it when done.
         """
-        configs = self.extract_config(dataset, chrom=chrom, name=name)
-        nbp = dataset.nbp[chrom]
+        configs = self.extract_config(dataset, region=region, name=name)
+        nbp = dataset.nbp[region]
         nuc_map = NucFiberMap(nbp=nbp, nucbp=dataset.settings["nucbp"])
         out = H5Array.create(
             (len(configs), nbp), dtype=np.float32, dir=tmp_dir

@@ -36,7 +36,7 @@ def _table(rows):
 
 def _experiment(rows=_ROWS, nmol=_NMOL, nbp=_NBP):
     raw = MethPrintData._create(
-        chrom="chr1",
+        region="chr1",
         nbp=nbp,
         test_mol_id=np.array([f"mol{m}" for m in range(nmol)], dtype=object),
         test_data=_table(rows),
@@ -139,7 +139,7 @@ class TestGapMask:
 
 def _gapped_experiment():
     raw = MethPrintData._create(
-        chrom="chr1",
+        region="chr1",
         nbp=_NBP,
         test_mol_id=np.array([f"mol{m}" for m in range(_NMOL)], dtype=object),
         test_data=_table(_ROWS),

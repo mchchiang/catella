@@ -13,9 +13,9 @@ _UNMAPPED_STRAND_MSG = (
 )
 
 
-def _mol_strand(exp, chrom, which):
+def _mol_strand(exp, region, which):
     """Per-molecule strand labels ('+'/'-'/'.') of `which`."""
-    raw = exp.raw[chrom]
+    raw = exp.raw[region]
     return _strand_of_mol(
         getattr(raw, f"{which}_data"), len(getattr(raw, f"{which}_mol_id"))
     )
@@ -226,7 +226,7 @@ def _dense_batches(df, nmol, nbp, batch_size):
 
 def _iter_read_sites(
     exp,
-    chrom,
+    region,
     which,
     ctx,
     assay,
@@ -249,8 +249,8 @@ def _iter_read_sites(
     ----------
     exp : MethPrintExperiment
         The experiment object containing raw data and analysis maps.
-    chrom : str
-        Chromosome identifier.
+    region : str
+        Region identifier.
     which : {"test", "meth", "unmeth"}
         Which raw table to read.
     ctx : np.ndarray
@@ -288,7 +288,7 @@ def _iter_read_sites(
     ValueError
         If `span` is "read" and `which` has no stored read extents.
     """
-    raw = exp.raw[chrom]
+    raw = exp.raw[region]
     extent = None
     if span == "read":
         extent = (
@@ -298,11 +298,11 @@ def _iter_read_sites(
         if extent[0] is None or extent[1] is None:
             raise ValueError(
                 f"span='read' requires read extents, but '{which}' on "
-                f"chrom '{chrom}' has none; reload the raw data with "
+                f"region '{region}' has none; reload the raw data with "
                 "load_raw and wrap=False"
             )
-    keep_all = exp.is_kept(chrom, which=which, mask_name=mask_name)
-    labels_all = _mol_strand(exp, chrom, which)
+    keep_all = exp.is_kept(region, which=which, mask_name=mask_name)
+    labels_all = _mol_strand(exp, region, which)
     n_strand = {s: (keep_all & (labels_all == s)).sum() for s in "+-"}
     total = n_strand["+"] + n_strand["-"]
     frac = {s: n_strand[s] / total if total else 0.5 for s in "+-"}

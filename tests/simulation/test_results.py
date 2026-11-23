@@ -52,7 +52,7 @@ def _make_dataset(
     manager = SimManager(nworker=1, verbose=False)
     settings = _make_settings(**(settings_overrides or {}))
     return manager.run(
-        chroms="chr1",
+        regions="chr1",
         nsim=nsim,
         settings=settings,
         meth_prob=meth_prob,
@@ -86,7 +86,7 @@ class TestOutTypeSeedPersistence:
 
     def test_legacy_dataset_defaults_to_none(self, tmp_path):
         dataset = SimDataset.create(
-            chroms=["chr1"],
+            regions=["chr1"],
             nmol={"chr1": 1},
             nsim=1,
             nbp={"chr1": 50},
@@ -104,7 +104,7 @@ class TestOutTypeSeedPersistence:
 class TestNoData:
     def _create(self, tmp_path, **kwargs):
         return SimDataset.create(
-            chroms=["chr1"],
+            regions=["chr1"],
             nmol={"chr1": 3},
             nsim=1,
             nbp={"chr1": 50},
@@ -134,7 +134,7 @@ class TestSaveInPlace:
     @pytest.fixture
     def path(self, tmp_path):
         dataset = SimDataset.create(
-            chroms=["chr1"],
+            regions=["chr1"],
             nmol={"chr1": 1},
             nsim=1,
             nbp={"chr1": 50},
@@ -195,7 +195,7 @@ class TestExtractMissingMolecules:
         for run in range(dataset.nsim):
             dataset.mcmc_file("chr1", 1, run).unlink()
 
-        def count_agg(chrom, mol, raw_data):
+        def count_agg(region, mol, raw_data):
             return sum(len(x) for x in raw_data)
 
         time = dataset.raw["chr1", 0, 0].time[-1]
@@ -210,7 +210,7 @@ class TestExtractMissingMolecules:
     def test_no_missing_molecules_when_all_files_present(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=3, nsim=1)
 
-        def count_agg(chrom, mol, raw_data):
+        def count_agg(region, mol, raw_data):
             return sum(len(x) for x in raw_data)
 
         time = dataset.raw["chr1", 0, 0].time[-1]
@@ -227,7 +227,7 @@ class TestExtractMissingMolecules:
         dataset = _make_dataset(tmp_path, nmol=2, nsim=3)
         dataset.mcmc_file("chr1", 0, 1).unlink()
 
-        def nrun_agg(chrom, mol, raw_data):
+        def nrun_agg(region, mol, raw_data):
             return len(raw_data)
 
         time = dataset.raw["chr1", 0, 0].time[-1]
@@ -252,7 +252,7 @@ class TestExtractParallel:
         dataset = _make_dataset(tmp_path, nmol=3, nsim=2)
         time = dataset.raw["chr1", 0, 0].time[-1]
 
-        def count_agg(chrom, mol, raw_data):
+        def count_agg(region, mol, raw_data):
             return sum(len(x) for x in raw_data)
 
         serial = dataset.extract(time=time, obs="position", agg_func=count_agg)
@@ -270,7 +270,7 @@ class TestExtractParallel:
         dataset = _make_dataset(tmp_path, nmol=2, nsim=1)
         time = dataset.raw["chr1", 0, 0].time[-1]
 
-        def bad_agg(chrom, mol, raw_data):
+        def bad_agg(region, mol, raw_data):
             raise RuntimeError("agg failed")
 
         with pytest.raises(RuntimeError, match="agg failed"):
@@ -333,8 +333,8 @@ class TestFindIncompleteRuns:
 
     def test_nworker_parallel_matches_serial(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=4, nsim=2)
-        for chrom, mol, run in [("chr1", 0, 0), ("chr1", 2, 1)]:
-            dataset.mcmc_file(chrom, mol, run).unlink()
+        for region, mol, run in [("chr1", 0, 0), ("chr1", 2, 1)]:
+            dataset.mcmc_file(region, mol, run).unlink()
 
         serial = dataset.find_incomplete_runs(nworker=1)
         parallel = dataset.find_incomplete_runs(nworker=4)
@@ -618,7 +618,7 @@ class TestWriteMCMCData:
 class TestTMDataset:
     def test_create_with_zero_nsim(self, tmp_path):
         dataset = SimDataset.create(
-            chroms="chr1",
+            regions="chr1",
             nmol=2,
             nsim=0,
             nbp={"chr1": 50},
@@ -634,7 +634,7 @@ class TestTMDataset:
     def test_mcmc_requires_positive_nsim(self, tmp_path):
         with pytest.raises(ValueError):
             SimDataset.create(
-                chroms="chr1",
+                regions="chr1",
                 nmol=2,
                 nsim=0,
                 nbp={"chr1": 50},
@@ -646,7 +646,7 @@ class TestTMDataset:
     def test_invalid_method_rejected(self, tmp_path):
         with pytest.raises(ValueError):
             SimDataset.create(
-                chroms="chr1",
+                regions="chr1",
                 nmol=1,
                 nsim=1,
                 nbp={"chr1": 50},
@@ -655,13 +655,13 @@ class TestTMDataset:
                 method="not_a_method",
             )
 
-    def _generate_tm_samples(self, dataset, chrom, mol, positions):
-        combined = dataset.tm_file(chrom, mol)
+    def _generate_tm_samples(self, dataset, region, mol, positions):
+        combined = dataset.tm_file(region, mol)
         combined.parent.mkdir(parents=True, exist_ok=True)
         _write_tm_samples(
             combined,
             nucbp=dataset.settings["nucbp"],
-            nbp=dataset.nbp[chrom],
+            nbp=dataset.nbp[region],
             llink=dataset.settings["llink"],
             elink=dataset.settings["elink"],
             mu=dataset.settings["mu"],
@@ -673,7 +673,7 @@ class TestTMDataset:
 
     def test_raw_access_after_generating_samples(self, tmp_path):
         dataset = SimDataset.create(
-            chroms="chr1",
+            regions="chr1",
             nmol=2,
             nsim=3,
             nbp={"chr1": 50},
@@ -695,7 +695,7 @@ class TestTMDataset:
 
     def test_classify_run_tm(self, tmp_path):
         dataset = SimDataset.create(
-            chroms="chr1",
+            regions="chr1",
             nmol=1,
             nsim=2,
             nbp={"chr1": 50},
@@ -715,7 +715,7 @@ class TestTMDataset:
 
     def test_corrupted_combined_file(self, tmp_path):
         dataset = SimDataset.create(
-            chroms="chr1",
+            regions="chr1",
             nmol=1,
             nsim=1,
             nbp={"chr1": 50},
@@ -732,7 +732,7 @@ class TestTMDataset:
 
     def test_method_and_nsim_persist_through_save_load(self, tmp_path):
         dataset = SimDataset.create(
-            chroms="chr1",
+            regions="chr1",
             nmol=1,
             nsim=0,
             nbp={"chr1": 50},

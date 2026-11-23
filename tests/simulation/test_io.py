@@ -46,7 +46,7 @@ def _metadata_kwargs(tmp_path, **overrides):
         "raw_dir": tmp_path / "raw",
         "nsim": 2,
         "method": "mcmc",
-        "chroms": ["c1", "c2"],
+        "regions": ["c1", "c2"],
         "nmol": {"c1": 3, "c2": 1},
         "nbp": {"c1": 40, "c2": 50},
         "settings": _make_settings(),
@@ -208,7 +208,7 @@ class TestMetadata:
         assert meta["raw_dir"] == tmp_path / "raw"
         assert meta["nsim"] == 2
         assert meta["method"] == "mcmc"
-        assert meta["chroms"] == ["c1", "c2"]
+        assert meta["regions"] == ["c1", "c2"]
         assert meta["nmol"] == {"c1": 3, "c2": 1}
         assert meta["nbp"] == {"c1": 40, "c2": 50}
         assert meta["settings"] == kwargs["settings"]

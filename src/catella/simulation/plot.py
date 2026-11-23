@@ -244,7 +244,7 @@ class SimPlot:
         self,
         dataset: SimDataset,
         *,
-        chrom: str,
+        region: str,
         mol: int,
         run: int,
         tstart: int | None = None,
@@ -263,8 +263,8 @@ class SimPlot:
         ----------
         dataset : SimDataset
             The dataset object containing raw simulation results.
-        chrom : str
-            Chromosome identifier.
+        region : str
+            Region identifier.
         mol : int
             Molecule index within the dataset.
         run : int
@@ -294,7 +294,7 @@ class SimPlot:
         tpow = int(self._log10(tscale, "tscale"))
 
         # Retrieve the data
-        data = dataset.raw[chrom, mol, run]
+        data = dataset.raw[region, mol, run]
 
         # Normalize time indices and validate time values
         nframes = len(data.time)
@@ -331,7 +331,7 @@ class SimPlot:
         self,
         dataset: SimDataset,
         *,
-        chrom: str,
+        region: str,
         mol: int,
         over: str | None = None,
         runs: int | Iterable[int] | None = None,
@@ -367,10 +367,10 @@ class SimPlot:
         ----------
         dataset : SimDataset
             The dataset holding the raw configurations.
-        chrom : str
-            Chromosome identifier.
+        region : str
+            Region identifier.
         mol : int
-            Molecule index within `chrom`.
+            Molecule index within `region`.
         over : {"time", "runs"}, optional
             What the rows run over. If None (default), "time" for MCMC
             datasets and "runs" for TM datasets.
@@ -440,7 +440,7 @@ class SimPlot:
             over = "time" if dataset.method == "mcmc" else "runs"
         if over not in ("time", "runs"):
             raise ValueError(f"over must be 'time' or 'runs', got {over!r}")
-        nbp = dataset.nbp[chrom]
+        nbp = dataset.nbp[region]
         hint = "consider passing 'max_rows'"
         if over == "time":
             if dataset.method != "mcmc":
@@ -456,12 +456,12 @@ class SimPlot:
             run = _one_run(runs)
             if tstart is not None and tend is not None and tend < tstart:
                 raise ValueError("'tend' must be greater than 'tstart'")
-            if dataset.no_data[chrom][mol]:
+            if dataset.no_data[region][mol]:
                 raise ValueError(
-                    f"molecule {mol} of chrom '{chrom}' has no data"
+                    f"molecule {mol} of region '{region}' has no data"
                 )
             tpow = int(self._log10(tscale, "tscale"))
-            data = dataset.raw[chrom, mol, run]
+            data = dataset.raw[region, mol, run]
             nframes = len(data.time)
             start_idx = 0 if tstart is None else data.time_index(tstart)
             end_idx = (
@@ -498,7 +498,7 @@ class SimPlot:
             ana = SimAnalysis()
             configs = [
                 ana.extract_config(
-                    dataset, chrom=chrom, run=r, time=time, mols=[mol]
+                    dataset, region=region, run=r, time=time, mols=[mol]
                 )[0]
                 for r in run_ids
             ]
@@ -509,7 +509,7 @@ class SimPlot:
             ylabel = _rows_label(unit, ntotal, matrix.shape[0])
             invert_y = False
 
-        eseq = dataset.eseq[chrom][mol, :] if plot_eseq else None
+        eseq = dataset.eseq[region][mol, :] if plot_eseq else None
         fig, (panel,) = self._footprint_grid(
             1,
             binary=matrix.dtype == np.int8,
@@ -530,7 +530,7 @@ class SimPlot:
             eseq_label=r"$E_{\text{seq}}$ [$k_BT$]",
         )
         self._footprint_side(fig, [panel], im, [matrix], cmap)
-        panel["hm_ax"].set_title(chrom, pad=12)
+        panel["hm_ax"].set_title(region, pad=12)
         _finish(fig, show, out_file)
 
     @_apply_style
@@ -538,7 +538,7 @@ class SimPlot:
         self,
         dataset: SimDataset,
         *,
-        chroms: str | Iterable[str],
+        regions: str | Iterable[str],
         name: str | None = None,
         mols: Iterable[int] | dict | None = None,
         run: int | None = None,
@@ -563,7 +563,7 @@ class SimPlot:
         by `compute_config`), or the raw configuration of run `run` at
         time `time` (MCMC) or of exact sample `run` (TM). Molecules
         without data are drawn in `nan_color`. Use `plot_samples` for
-        many configurations of one molecule. Each chromosome gets its
+        many configurations of one molecule. Each region gets its
         own panel; several panels are laid out side by side (at most 4
         per row) in one figure, aligned and sharing one legend or
         colorbar.
@@ -572,15 +572,15 @@ class SimPlot:
         ----------
         dataset : SimDataset
             The dataset holding the configurations.
-        chroms : str or iterable of str
-            Chromosome(s) to plot, one panel each, in reading order.
+        regions : str or iterable of str
+            Region(s) to plot, one panel each, in reading order.
         name : str, optional
             The prefix the calls were stored under. If None (default),
             raw configurations are shown.
         mols : iterable of int or dict, optional
             Molecules to show, in this order (all if None). The y-axis
-            counts rows, not molecule indices. With several chroms, a
-            dict keyed by chrom (chroms not in it show all molecules).
+            counts rows, not molecule indices. With several regions, a
+            dict keyed by region (regions not in it show all molecules).
         run : int, optional
             MCMC run or TM sample to show; 0 if None. Only used if
             `name` is None.
@@ -617,28 +617,28 @@ class SimPlot:
             `sort_by_linkage`). If given, the molecules are put in its
             leaf order before `max_rows` downsampling, and its dendrogram
             is drawn alongside. Cannot be combined with `mols`. With
-            several chroms, a dict keyed by chrom, e.g. the result of
-            `sort_by_linkage` (chroms not in it are not sorted; extra
+            several regions, a dict keyed by region, e.g. the result of
+            `sort_by_linkage` (regions not in it are not sorted; extra
             keys are ignored).
         sharex : bool, default False
-            If True, all panels span the length of the longest chrom,
+            If True, all panels span the length of the longest region,
             so they share one bp scale. If False, each panel spans its
-            own chrom.
+            own region.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
         Raises
         ------
         ValueError
-            If `chroms` is empty, if `max_rows` or `downsample_how` is
+            If `regions` is empty, if `max_rows` or `downsample_how` is
             invalid, if `xscale` is not a power of 10, if `plot_eseq` is
             True and the dataset stores no energies, if `mols` or
-            `link_mat` is not a dict with several chroms, if `link_mat`
+            `link_mat` is not a dict with several regions, if `link_mat`
             is combined with `mols` or does not match the number of
             molecules, or for invalid arguments of
             `SimAnalysis.extract_config`.
         KeyError
-            If no calls are stored under `name` for a chrom.
+            If no calls are stored under `name` for a region.
         IndexError
             If a molecule or `run` is out of range.
 
@@ -647,57 +647,57 @@ class SimPlot:
         UserWarning
             If rendering the plot is estimated to need more than 1 GB of
             memory (pass `max_rows` or `mols` to reduce it), or if more
-            than 10 chroms are plotted in one figure.
+            than 10 regions are plotted in one figure.
 
         Notes
         -----
         The footprints are held as an int8 matrix (1 byte per molecule
-        and base pair) before downsampling. With several chroms, a
+        and base pair) before downsampling. With several regions, a
         colorbar of the covered share is shown if any panel is merged
         with "mean"; 0/1 panels then use its ends.
         """
-        chroms = _region_list(chroms)
+        regions = _region_list(regions)
         mols = {
             c: None if m is None else [int(i) for i in m]
-            for c, m in _per_region(mols, chroms, "mols").items()
+            for c, m in _per_region(mols, regions, "mols").items()
         }
-        link_mat = _per_region(link_mat, chroms, "link_mat")
+        link_mat = _per_region(link_mat, regions, "link_mat")
         xpow = int(self._log10(xscale, "xscale"))
         _check_downsample(max_rows, downsample_how)
         _check_eseq(dataset, plot_eseq)
 
-        def shown_rows(chrom):
-            nrow = dataset.nmol[chrom] if mols[chrom] is None else len(
-                mols[chrom]
+        def shown_rows(region):
+            nrow = dataset.nmol[region] if mols[region] is None else len(
+                mols[region]
             )
             if downsample_how == "stride":
                 nrow = len(range(0, nrow, _stride_step(nrow, max_rows)))
             return _shown_rows(nrow, max_rows)
 
         _warn_if_large(
-            sum(shown_rows(c) for c in chroms),
-            max(dataset.nbp[c] for c in chroms),
+            sum(shown_rows(c) for c in regions),
+            max(dataset.nbp[c] for c in regions),
             "consider passing 'max_rows' or 'mols'",
         )
         data = [
             self._config_panel(
                 dataset,
-                chrom,
+                region,
                 name=name,
-                mols=mols[chrom],
+                mols=mols[region],
                 run=run,
                 time=time,
                 max_rows=max_rows,
                 downsample_how=downsample_how,
                 plot_mean=plot_mean,
                 plot_eseq=plot_eseq,
-                link_mat=link_mat[chrom],
+                link_mat=link_mat[region],
             )
-            for chrom in chroms
+            for region in regions
         ]
         matrices = [d["matrix"] for d in data]
         fig, panels = self._footprint_grid(
-            len(chroms),
+            len(regions),
             binary=all(m.dtype == np.int8 for m in matrices),
             dendrogram=any(d["link_mat"] is not None for d in data),
             extra_rows=[
@@ -706,7 +706,7 @@ class SimPlot:
                 if on
             ],
         )
-        for chrom, d, panel in zip(chroms, data, panels):
+        for region, d, panel in zip(regions, data, panels):
             im = self._draw_footprints(
                 panel,
                 dataset,
@@ -722,17 +722,17 @@ class SimPlot:
                 link_mat=d["link_mat"],
                 mean=d["mean"],
             )
-            panel["hm_ax"].set_title(chrom, pad=12)
+            panel["hm_ax"].set_title(region, pad=12)
         self._footprint_side(fig, panels, im, matrices, cmap)
         _left_ylabels(panels)
         if sharex:
-            _share_xlim(panels, max(dataset.nbp[c] for c in chroms) / xscale)
+            _share_xlim(panels, max(dataset.nbp[c] for c in regions) / xscale)
         _finish(fig, show, out_file)
 
     def _config_panel(
         self,
         dataset,
-        chrom,
+        region,
         *,
         name,
         mols,
@@ -745,7 +745,7 @@ class SimPlot:
         link_mat,
     ):
         """
-        Read the footprints of one chromosome for `plot_config`.
+        Read the footprints of one region for `plot_config`.
 
         Returns
         -------
@@ -757,7 +757,7 @@ class SimPlot:
             "ylabel", and "link_mat" (as a float array, or None).
         """
         mol_ids = (
-            list(range(dataset.nmol[chrom]))
+            list(range(dataset.nmol[region]))
             if mols is None
             else [int(m) for m in mols]
         )
@@ -767,9 +767,9 @@ class SimPlot:
         ntotal = len(mol_ids)
         if downsample_how == "stride":
             mol_ids = mol_ids[:: _stride_step(len(mol_ids), max_rows)]
-        nbp = dataset.nbp[chrom]
+        nbp = dataset.nbp[region]
         configs = SimAnalysis().extract_config(
-            dataset, chrom=chrom, name=name, run=run, time=time, mols=mol_ids
+            dataset, region=region, name=name, run=run, time=time, mols=mol_ids
         )
         matrix = _footprints(configs, nbp, dataset.settings["nucbp"])
         mean = None
@@ -784,7 +784,7 @@ class SimPlot:
         if plot_eseq:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", category=RuntimeWarning)
-                eseq = np.nanmean(np.asarray(dataset.eseq[chrom])[mol_ids], 0)
+                eseq = np.nanmean(np.asarray(dataset.eseq[region])[mol_ids], 0)
         ylabel = (
             _rows_label("molecule", ntotal, matrix.shape[0])
             if link_mat is None
@@ -798,7 +798,7 @@ class SimPlot:
             "link_mat": link_mat,
         }
 
-    def _footprint_grid(self, nchrom, *, binary, dendrogram, extra_rows):
+    def _footprint_grid(self, nregion, *, binary, dendrogram, extra_rows):
         """
         Create the figure for footprint panels (see `_panel_grid`).
 
@@ -809,7 +809,7 @@ class SimPlot:
         else:
             width_ratios = [4, 0.8, 1] if binary else [5, 1, 0.25]
         return _panel_grid(
-            nchrom,
+            nregion,
             width_ratios,
             dendrogram=dendrogram,
             extra_rows=extra_rows,
@@ -952,7 +952,7 @@ class SimPlot:
         self,
         dataset: SimDataset,
         *,
-        chroms: str | Iterable[str],
+        regions: str | Iterable[str],
         time: int | None = None,
         occup_name: str = "occup",
         mols: Iterable[int] | dict | None = None,
@@ -967,9 +967,9 @@ class SimPlot:
     ):
         """
         Plot the nucleosome occupancy across all molecules of one or
-        more chromosomes.
+        more regions.
 
-        Each chromosome gets its own panel; several panels are laid out
+        Each region gets its own panel; several panels are laid out
         side by side (at most 4 per row) in one figure, aligned and
         sharing one colorbar. If
         the occupancy data is not found in the dataset analysis, it
@@ -979,8 +979,8 @@ class SimPlot:
         ----------
         dataset : SimDataset
             The dataset object containing analysis results or raw data.
-        chroms : str or iterable of str
-            Chromosome(s) to plot, one panel each, in reading order.
+        regions : str or iterable of str
+            Region(s) to plot, one panel each, in reading order.
         time : int, optional
             The time step of interest if occupancy needs to be computed.
         occup_name : str, default "occup"
@@ -991,8 +991,8 @@ class SimPlot:
             if `plot_eseq` is True, the sequence-energy average) to
             this subset. If None (default), all molecules are shown.
             The y-axis reflects positions within this subset (0..n),
-            not the original molecule indices. With several chroms, a
-            dict keyed by chrom (chroms not in it show all molecules).
+            not the original molecule indices. With several regions, a
+            dict keyed by region (regions not in it show all molecules).
         xscale : int, default 1000
             Spatial scaling factor (must be a power of 10) for the x-axis
             labels.
@@ -1014,22 +1014,22 @@ class SimPlot:
             Linkage matrix of these molecules (as returned or stored by
             `SimAnalysis.sort_by_linkage`). If given, the rows are put in
             its leaf order and its dendrogram is drawn alongside. Cannot
-            be combined with `mols`. With several chroms, a dict keyed by
-            chrom, e.g. the result of `sort_by_linkage` (chroms not in it
+            be combined with `mols`. With several regions, a dict keyed by
+            region, e.g. the result of `sort_by_linkage` (regions not in it
             are not sorted; extra keys are ignored).
         sharex : bool, default False
-            If True, all panels span the length of the longest chrom,
+            If True, all panels span the length of the longest region,
             so they share one bp scale. If False, each panel spans its
-            own chrom.
+            own region.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
         Raises
         ------
         ValueError
-            If `chroms` is empty, if the occupancy is missing and no
+            If `regions` is empty, if the occupancy is missing and no
             `time` is provided for computation, if `mols` or `link_mat`
-            is not a dict with several chroms, or if `link_mat` is
+            is not a dict with several regions, or if `link_mat` is
             combined with `mols` or does not match the number of
             molecules.
 
@@ -1038,24 +1038,24 @@ class SimPlot:
         UserWarning
             If rendering the plot is estimated to need more than 1 GB of
             memory (pass `mols` to plot a subset), or if more than 10
-            chroms are plotted in one figure.
+            regions are plotted in one figure.
         """
-        chroms = _region_list(chroms)
+        regions = _region_list(regions)
         mols = {
             c: None if m is None else list(m)
-            for c, m in _per_region(mols, chroms, "mols").items()
+            for c, m in _per_region(mols, regions, "mols").items()
         }
-        link_mat = _per_region(link_mat, chroms, "link_mat")
+        link_mat = _per_region(link_mat, regions, "link_mat")
         xpow = int(self._log10(xscale, "xscale"))
         _warn_if_large(
             sum(
                 dataset.nmol[c] if mols[c] is None else len(mols[c])
-                for c in chroms
+                for c in regions
             ),
-            max(dataset.nbp[c] for c in chroms),
+            max(dataset.nbp[c] for c in regions),
             "consider passing 'mols' to plot a subset",
         )
-        sort_data = any(link_mat[c] is not None for c in chroms)
+        sort_data = any(link_mat[c] is not None for c in regions)
         extra_rows = [
             name
             for name, on in (("mean", plot_mean), ("eseq", plot_eseq))
@@ -1065,38 +1065,38 @@ class SimPlot:
         # colorbar, so it appears to the right of the dendrogram (when
         # shown) instead of shrinking hm_ax.
         fig, panels = _panel_grid(
-            len(chroms),
+            len(regions),
             [5, 1, 0.25] if sort_data else [20, 1],
             dendrogram=sort_data,
             extra_rows=extra_rows,
             scale_w=1.25 if extra_rows else 1.0,
             scale_h=1 + 0.25 * len(extra_rows),
         )
-        for chrom, panel in zip(chroms, panels):
+        for region, panel in zip(regions, panels):
             im = self._draw_occup(
                 panel,
                 dataset,
-                chrom,
+                region,
                 time=time,
                 occup_name=occup_name,
-                mols=mols[chrom],
+                mols=mols[region],
                 xscale=xscale,
                 xpow=xpow,
                 cmap=cmap,
                 plot_eseq=plot_eseq,
-                link_mat=link_mat[chrom],
+                link_mat=link_mat[region],
             )
         _colorbar(fig, panels, im, "Occupancy")
         _left_ylabels(panels)
         if sharex:
-            _share_xlim(panels, max(dataset.nbp[c] for c in chroms) / xscale)
+            _share_xlim(panels, max(dataset.nbp[c] for c in regions) / xscale)
         _finish(fig, show, out_file)
 
     def _draw_occup(
         self,
         panel,
         dataset,
-        chrom,
+        region,
         *,
         time,
         occup_name,
@@ -1108,7 +1108,7 @@ class SimPlot:
         link_mat,
     ):
         """
-        Draw the occupancy of one chromosome into the axes of `panel`
+        Draw the occupancy of one region into the axes of `panel`
         (from `_panel_grid`), computing it first if missing, with the
         mean across the shown molecules in "mean_ax" if present.
 
@@ -1122,17 +1122,17 @@ class SimPlot:
         mean_ax = panel["mean_ax"]
 
         # Retrieve the occupancy data
-        if occup_name not in dataset.analysis[chrom]:
+        if occup_name not in dataset.analysis[region]:
             # Compute occupancy on-the-fly if the analysis cannot be found
             ana = SimAnalysis()
             ana.compute_occup(
                 dataset=dataset,
                 time=time,
-                chroms=chrom,
+                regions=region,
                 name=occup_name,
                 mean_nnuc_name=None,
             )
-        occup = dataset.analysis[chrom][occup_name]
+        occup = dataset.analysis[region][occup_name]
         if mols is not None:
             mols = list(mols)
         order = None
@@ -1145,7 +1145,7 @@ class SimPlot:
         sort_data = link_mat is not None
 
         # Plot the nucleosome position as a heat map
-        nbp = dataset.nbp[chrom]
+        nbp = dataset.nbp[region]
         norm = Normalize(vmin=0, vmax=1)
         cmap_obj = plt.get_cmap(cmap if cmap is not None else self.cmap)
         cmap_obj = cmap_obj.with_extremes(bad=self.nan_color)
@@ -1185,7 +1185,7 @@ class SimPlot:
 
         # Plot the sequence energy if needed
         if plot_eseq:
-            eseq_src = dataset.eseq[chrom]
+            eseq_src = dataset.eseq[region]
             if mols is not None:
                 eseq_src = np.asarray(eseq_src)[list(mols)]
             with warnings.catch_warnings():
@@ -1208,7 +1208,7 @@ class SimPlot:
         btm_ax = _row_axes(panel)[-1]
         btm_ax.set_xlabel(rf"Position $x$ [{xpow_str} bp]")
 
-        hm_ax.set_title(chrom, pad=12)
+        hm_ax.set_title(region, pad=12)
         return im
 
     @_apply_style
@@ -1216,7 +1216,7 @@ class SimPlot:
         self,
         dataset: SimDataset,
         *,
-        chroms: str | Iterable[str],
+        regions: str | Iterable[str],
         name: str = "linker_hist",
         mols: Iterable[int] | dict | None = None,
         panels: bool = False,
@@ -1228,35 +1228,35 @@ class SimPlot:
         show: bool = True,
     ):
         """
-        Plot the pooled linker-length histogram of one or more chromosomes.
+        Plot the pooled linker-length histogram of one or more regions.
 
         Uses the histograms stored by `compute_linker_hist`, pooled over
-        the selected molecules of each chromosome. Only linkers up to
+        the selected molecules of each region. Only linkers up to
         `lmax` are shown (the tail bin is left out). By default, all
-        chromosomes are drawn as filled steps on one axis, which suits a
-        few chromosomes; with `panels`, each gets its own panel, laid
+        regions are drawn as filled steps on one axis, which suits a
+        few regions; with `panels`, each gets its own panel, laid
         out side by side (at most 4 per row).
 
         Parameters
         ----------
         dataset : SimDataset
             The dataset holding the histograms.
-        chroms : str or iterable of str
-            The chromosome(s) to plot, in order.
+        regions : str or iterable of str
+            The region(s) to plot, in order.
         name : str, default "linker_hist"
             The key of the histograms, as passed to `compute_linker_hist`.
         mols : iterable of int or dict, optional
             The molecules to pool. If None (default), all molecules. With
-            several chroms, a dict keyed by chrom (chroms not in it use
+            several regions, a dict keyed by region (regions not in it use
             all molecules; extra keys are ignored).
         panels : bool, default False
-            If True, one panel per chromosome; otherwise all on one axis.
+            If True, one panel per region; otherwise all on one axis.
         sharey : bool, default True
             Whether the panels share the y-axis. Only used if `panels` is
             True.
         density : bool, default True
             If True, plot the fraction of linkers (up to `lmax`) of each
-            length, so that chromosomes with different numbers of
+            length, so that regions with different numbers of
             molecules can be compared. If False, plot the expected number
             of linkers of each length per molecule with data.
         plot_stats : bool, default True
@@ -1274,46 +1274,46 @@ class SimPlot:
         Raises
         ------
         KeyError
-            If no histogram is stored under `name` for a chromosome.
+            If no histogram is stored under `name` for a region.
         ValueError
-            If `chroms` is empty, or `mols` is not a dict with several
-            chroms or is out of range.
+            If `regions` is empty, or `mols` is not a dict with several
+            regions or is out of range.
 
         Warns
         -----
         UserWarning
-            If more than 10 chroms are plotted in one figure, or a
-            chromosome has no linkers up to `lmax` (it is then not
+            If more than 10 regions are plotted in one figure, or a
+            region has no linkers up to `lmax` (it is then not
             plotted).
         """
-        chroms = _region_list(chroms)
-        mols = _per_region(mols, chroms, "mols")
-        if len(chroms) > _MAX_PANELS:
+        regions = _region_list(regions)
+        mols = _per_region(mols, regions, "mols")
+        if len(regions) > _MAX_PANELS:
             _warn(
-                f"plotting {len(chroms)} chromosomes in one figure; "
-                "consider fewer chroms, or one figure per chrom with "
+                f"plotting {len(regions)} regions in one figure; "
+                "consider fewer regions, or one figure per region with "
                 "out_file"
             )
         ana = SimAnalysis()
         how = "sum" if density else "mean"
         curves = {}
-        for chrom in chroms:
+        for region in regions:
             pooled = ana.pool_linker_hist(
-                dataset, chroms=chrom, name=name, mols=mols[chrom], how=how
+                dataset, regions=region, name=name, mols=mols[region], how=how
             )
-            values = pooled[chrom].to_numpy()[:-1]
+            values = pooled[region].to_numpy()[:-1]
             total = np.nansum(values)
             if not total > 0:
                 _warn(
-                    f"no linkers up to lmax for chrom '{chrom}'; not plotted"
+                    f"no linkers up to lmax for region '{region}'; not plotted"
                 )
                 continue
-            curves[chrom] = values / total if density else values
+            curves[region] = values / total if density else values
         stats = None
         if plot_stats and curves:
             stats = ana.extract_linker_stats(
                 dataset,
-                chroms=list(curves),
+                regions=list(curves),
                 name=name,
                 mols={c: mols[c] for c in curves},
                 pooled=True,
@@ -1321,22 +1321,22 @@ class SimPlot:
 
         ylabel = "Fraction of linkers" if density else "Linkers per molecule"
         if panels:
-            fig, axes = self._linker_panels(len(chroms), sharey)
-            for ax, chrom in zip(axes, chroms):
-                ax.set_title(chrom)
-                if chrom not in curves:
+            fig, axes = self._linker_panels(len(regions), sharey)
+            for ax, region in zip(axes, regions):
+                ax.set_title(region)
+                if region not in curves:
                     continue
-                self._draw_linker_curve(ax, curves[chrom], "C0", None)
+                self._draw_linker_curve(ax, curves[region], "C0", None)
                 if stats is not None:
                     ax.text(
                         0.97,
                         0.95,
-                        _linker_stats_text(stats.loc[chrom], "\n"),
+                        _linker_stats_text(stats.loc[region], "\n"),
                         transform=ax.transAxes,
                         ha="right",
                         va="top",
                     )
-            if len(chroms) > 1:
+            if len(regions) > 1:
                 fig.supxlabel("Linker length [bp]")
                 fig.supylabel(ylabel)
             else:
@@ -1345,15 +1345,15 @@ class SimPlot:
         else:
             fig, ax = plt.subplots()
             axes = [ax]
-            for i, chrom in enumerate(chroms):
-                if chrom not in curves:
+            for i, region in enumerate(regions):
+                if region not in curves:
                     continue
-                label = chrom
+                label = region
                 if stats is not None:
-                    text = _linker_stats_text(stats.loc[chrom], ", ")
-                    label = f"{chrom} ({text})"
+                    text = _linker_stats_text(stats.loc[region], ", ")
+                    label = f"{region} ({text})"
                 color = f"C{i % 10}"
-                self._draw_linker_curve(ax, curves[chrom], color, label)
+                self._draw_linker_curve(ax, curves[region], color, label)
             ax.set_xlabel("Linker length [bp]")
             ax.set_ylabel(ylabel)
             if curves:
@@ -1365,7 +1365,7 @@ class SimPlot:
 
     def _linker_panels(self, npanel, sharey):
         """
-        Create one panel per chromosome, at most 4 per row.
+        Create one panel per region, at most 4 per row.
 
         Parameters
         ----------

@@ -31,47 +31,47 @@ def _is_valid_llink(value) -> bool:
     )
 
 
-def _normalize_meth_prob(meth_prob, chroms):
+def _normalize_meth_prob(meth_prob, regions):
     """
-    Return the methylation probability of each chromosome as a 2D array.
+    Return the methylation probability of each region as a 2D array.
 
     Parameters
     ----------
     meth_prob : np.ndarray or mapping of str to np.ndarray or pd.DataFrame
-        A single array, allowed only if `chroms` has one chromosome, or a
-        mapping from chromosome to data.
-    chroms : sequence of str
-        The chromosomes to select.
+        A single array, allowed only if `regions` has one region, or a
+        mapping from region to data.
+    regions : sequence of str
+        The regions to select.
 
     Returns
     -------
     dict of str to np.ndarray
-        The 2D array (molecules by base pairs) of each chromosome in
-        `chroms`.
+        The 2D array (molecules by base pairs) of each region in
+        `regions`.
 
     Raises
     ------
     TypeError
-        If `meth_prob` is an array and `chroms` has more than one
-        chromosome, or `meth_prob` is neither an array nor a mapping.
+        If `meth_prob` is an array and `regions` has more than one
+        region, or `meth_prob` is neither an array nor a mapping.
     KeyError
-        If a mapping `meth_prob` lacks a chromosome of `chroms`.
+        If a mapping `meth_prob` lacks a region of `regions`.
     """
     if isinstance(meth_prob, np.ndarray):
-        if len(chroms) != 1:
+        if len(regions) != 1:
             raise TypeError(
-                "a single 'meth_prob' array requires exactly one chrom, "
-                f"got {len(chroms)}"
+                "a single 'meth_prob' array requires exactly one region, "
+                f"got {len(regions)}"
             )
-        meth_prob = {chroms[0]: meth_prob}
+        meth_prob = {regions[0]: meth_prob}
     elif not isinstance(meth_prob, Mapping):
         raise TypeError("'meth_prob' must be a numpy array or a mapping")
     out = {}
-    for chrom in chroms:
-        data = meth_prob[chrom]
+    for region in regions:
+        data = meth_prob[region]
         if isinstance(data, pd.DataFrame):
             data = data.to_numpy()
-        out[chrom] = np.atleast_2d(data)
+        out[region] = np.atleast_2d(data)
     return out
 
 
@@ -123,7 +123,7 @@ def _check_fill_nan(fill_nan):
         )
 
 
-def _prepare_rows(block, nucbp, chrom, fill_nan=None):
+def _prepare_rows(block, nucbp, region, fill_nan=None):
     """
     Find the molecules of `block` with no data and fill the others.
 
@@ -138,8 +138,8 @@ def _prepare_rows(block, nucbp, chrom, fill_nan=None):
         2D methylation probability, molecules by base pairs.
     nucbp : int
         The nucleosome footprint size.
-    chrom : str
-        The chromosome of `block`, for error messages.
+    region : str
+        The region of `block`, for error messages.
     fill_nan : None, "mean", or float, default None
         How to treat a molecule that is nan at some but not all start
         positions: None raises, "mean" fills the nan with the mean of
@@ -169,7 +169,7 @@ def _prepare_rows(block, nucbp, chrom, fill_nan=None):
         return block, no_data
     if fill_nan is None:
         raise ValueError(
-            f"meth_prob of chrom '{chrom}' has nan at nucleosome start "
+            f"meth_prob of region '{region}' has nan at nucleosome start "
             f"positions in {partial.size} molecule(s) (first: "
             f"{partial[0]}); pass fill_nan, or fill them upstream (e.g., "
             "fill_edge or nan_method)"
@@ -187,34 +187,34 @@ def _prepare_rows(block, nucbp, chrom, fill_nan=None):
     return block, no_data
 
 
-def _normalize_mols(mols, chroms):
+def _normalize_mols(mols, regions):
     """
-    Return the molecule selection of each chromosome.
+    Return the molecule selection of each region.
 
     Parameters
     ----------
     mols : int, slice, sequence of int, or mapping
-        One selection applied to every chromosome, or a mapping from
-        chromosome to selection.
-    chroms : sequence of str
-        The chromosomes to select.
+        One selection applied to every region, or a mapping from
+        region to selection.
+    regions : sequence of str
+        The regions to select.
 
     Returns
     -------
     dict
-        The selection of each chromosome in `chroms`.
+        The selection of each region in `regions`.
 
     Raises
     ------
     TypeError
         If `mols` is neither a selection nor a mapping.
     KeyError
-        If a mapping `mols` lacks a chromosome of `chroms`.
+        If a mapping `mols` lacks a region of `regions`.
     """
     if isinstance(mols, (int, slice, Sequence)):
-        return {chrom: mols for chrom in chroms}
+        return {region: mols for region in regions}
     if isinstance(mols, Mapping):
-        return {chrom: mols[chrom] for chrom in chroms}
+        return {region: mols[region] for region in regions}
     raise TypeError("'mols' must be an IndexType or a mapping")
 
 
@@ -225,14 +225,14 @@ def _count_mols(mols, nmol):
     Parameters
     ----------
     mols : mapping of str to int, slice, or sequence of int
-        The selection of each chromosome.
+        The selection of each region.
     nmol : mapping of str to int
-        The number of molecules of each chromosome.
+        The number of molecules of each region.
 
     Returns
     -------
     int
-        The total number of selected molecules over all chromosomes.
+        The total number of selected molecules over all regions.
 
     Raises
     ------
@@ -242,17 +242,17 @@ def _count_mols(mols, nmol):
         If a selection is empty.
     """
     total = 0
-    for chrom, size in nmol.items():
+    for region, size in nmol.items():
         try:
             # Index a small dummy array instead of building the index list
-            count = np.empty(size, dtype=np.int8)[mols[chrom]].size
+            count = np.empty(size, dtype=np.int8)[mols[region]].size
         except IndexError as e:
             raise IndexError(
-                f"mols index for chromosome '{chrom}': {e}"
+                f"mols index for region '{region}': {e}"
             ) from None
         if count == 0:
             raise ValueError(
-                f"selection 'mols' for chromosome '{chrom}' is empty"
+                f"selection 'mols' for region '{region}' is empty"
             )
         total += count
     return total
@@ -287,24 +287,24 @@ def _resolve_settings(settings):
     return settings
 
 
-def _check_llink(settings, chroms):
+def _check_llink(settings, regions):
     """
-    Check that `settings.llink` is valid for `chroms`.
+    Check that `settings.llink` is valid for `regions`.
 
     A scalar `settings.llink` must be a non-negative integer. A mapping
-    must cover `chroms` with non-negative integer values.
+    must cover `regions` with non-negative integer values.
 
     Parameters
     ----------
     settings : SimSettings
         The settings to check.
-    chroms : iterable of str
-        The chromosomes that must be covered.
+    regions : iterable of str
+        The regions that must be covered.
 
     Raises
     ------
     KeyError
-        If the mapping lacks a chromosome of `chroms`.
+        If the mapping lacks a region of `regions`.
     ValueError
         If the scalar or a value of the mapping is not a non-negative
         integer.
@@ -316,14 +316,14 @@ def _check_llink(settings, chroms):
                 f"got {settings.llink!r}"
             )
         return
-    for chrom in chroms:
-        if chrom not in settings.llink:
-            raise KeyError(f"llink has no value for chromosome '{chrom}'")
-        value = settings.llink[chrom]
+    for region in regions:
+        if region not in settings.llink:
+            raise KeyError(f"llink has no value for region '{region}'")
+        value = settings.llink[region]
         if not _is_valid_llink(value):
             raise ValueError(
-                "llink must be a non-negative integer for chromosome "
-                f"'{chrom}', got {value!r}"
+                "llink must be a non-negative integer for region "
+                f"'{region}', got {value!r}"
             )
 
 

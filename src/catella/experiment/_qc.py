@@ -48,7 +48,7 @@ def _ratio(num, den):
     return float(num / den) if den else float("nan")
 
 
-def _source_stats(exp, chrom, src, site_masks, percentiles, mask_name):
+def _source_stats(exp, region, src, site_masks, percentiles, mask_name):
     """
     Molecule, strand and dropout statistics of one source.
 
@@ -56,8 +56,8 @@ def _source_stats(exp, chrom, src, site_masks, percentiles, mask_name):
     ----------
     exp : MethPrintExperiment
         The experiment.
-    chrom : str
-        Chromosome identifier.
+    region : str
+        Region identifier.
     src : {"test", "meth", "unmeth"}
         Source to summarize.
     site_masks : dict of str to (np.ndarray, np.ndarray)
@@ -75,10 +75,10 @@ def _source_stats(exp, chrom, src, site_masks, percentiles, mask_name):
         `exp.ignore_strand`), `frac_masked`, and `dropout` (percentiles
         per channel name, plus "all" pooled).
     """
-    raw = exp.raw[chrom]
+    raw = exp.raw[region]
     df = getattr(raw, f"{src}_data")
     nmol_all = len(getattr(raw, f"{src}_mol_id"))
-    keep = exp.is_kept(chrom, which=src, mask_name=mask_name)
+    keep = exp.is_kept(region, which=src, mask_name=mask_name)
     strand = _strand_of_mol(df, nmol_all)
     kept = strand[keep]
 
@@ -113,7 +113,7 @@ def _source_stats(exp, chrom, src, site_masks, percentiles, mask_name):
     }
 
 
-def _channel_rates(exp, chrom, codes, sources, mask_name, batch_size):
+def _channel_rates(exp, region, codes, sources, mask_name, batch_size):
     """
     Pooled methylation rate per channel and source.
 
@@ -121,12 +121,12 @@ def _channel_rates(exp, chrom, codes, sources, mask_name, batch_size):
     ----------
     exp : MethPrintExperiment
         The experiment.
-    chrom : str
-        Chromosome identifier.
+    region : str
+        Region identifier.
     codes : tuple of int
         Channel codes, as from `_resolve_channels`.
     sources : list of str
-        Sources present for `chrom`.
+        Sources present for `region`.
     mask_name : str or None
         Dropout mask; masked molecules are left out.
     batch_size : int
@@ -137,12 +137,12 @@ def _channel_rates(exp, chrom, codes, sources, mask_name, batch_size):
     dict of str to dict of str to float
         Maps each source to `{channel name: rate}`.
     """
-    ctx = _fold_contexts(exp, chrom, codes)
-    assay = _strand_assay_masks(exp, chrom, ctx)
+    ctx = _fold_contexts(exp, region, codes)
+    assay = _strand_assay_masks(exp, region, ctx)
     rates = {}
     for src in sources:
         k, n = _streamed_call_count(
-            exp, chrom, src, ctx, assay, batch_size, mask_name
+            exp, region, src, ctx, assay, batch_size, mask_name
         )
         rates[src] = {
             CONTEXT_NAMES[c]: _ratio(k[ctx == c].sum(), n[ctx == c].sum())
@@ -181,16 +181,16 @@ def _site_cols(site_masks, parts, ignore_strand):
     }
 
 
-def _chrom_qc_rows(exp, chrom, codes, percentiles, mask_name, batch_size):
+def _region_qc_rows(exp, region, codes, percentiles, mask_name, batch_size):
     """
-    QC table rows of one chromosome.
+    QC table rows of one region.
 
     Parameters
     ----------
     exp : MethPrintExperiment
         The experiment.
-    chrom : str
-        Chromosome identifier.
+    region : str
+        Region identifier.
     codes : tuple of int
         Channel codes, as from `_resolve_channels`.
     percentiles : tuple of float
@@ -210,26 +210,26 @@ def _chrom_qc_rows(exp, chrom, codes, percentiles, mask_name, batch_size):
     Raises
     ------
     ValueError
-        If `chrom` has no reference sequence or no test data.
+        If `region` has no reference sequence or no test data.
     """
-    raw = exp.raw[chrom]
+    raw = exp.raw[region]
     if raw.refseq is None:
         raise ValueError(
-            f"no refseq available for chrom '{chrom}'; "
+            f"no refseq available for region '{region}'; "
             "required to determine methylatable positions"
         )
     if raw.test_data is None:
-        raise ValueError(f"no 'test' data available for chrom '{chrom}'")
+        raise ValueError(f"no 'test' data available for region '{region}'")
     sources = [s for s in _QC_SOURCES if getattr(raw, f"{s}_data") is not None]
 
     site_masks = _channel_site_masks(raw.refseq, codes)
     if exp.wrap:
         site_masks = _fold_site_masks(site_masks, raw.nbp)
     stats = {
-        s: _source_stats(exp, chrom, s, site_masks, percentiles, mask_name)
+        s: _source_stats(exp, region, s, site_masks, percentiles, mask_name)
         for s in sources
     }
-    rates = _channel_rates(exp, chrom, codes, sources, mask_name, batch_size)
+    rates = _channel_rates(exp, region, codes, sources, mask_name, batch_size)
 
     names = list(site_masks)
     if len(names) > 1:
@@ -237,7 +237,7 @@ def _chrom_qc_rows(exp, chrom, codes, percentiles, mask_name, batch_size):
     rows = []
     for name in names:
         parts = list(site_masks) if name == "all" else [name]
-        row = {"chrom": chrom, "channel": name}
+        row = {"region": region, "channel": name}
         row.update(_site_cols(site_masks, parts, exp.ignore_strand))
         row["nmol"] = stats["test"]["nmol"]
         for s in sources:

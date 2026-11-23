@@ -22,7 +22,7 @@ def _arr(tmp_path, values, **labels):
 def _load(path):
     with h5py.File(path, "r") as f:
         g = _analysis_group(f, "analysis")
-        analysis = {chrom: _read_entries(g[chrom], path) for chrom in g}
+        analysis = {region: _read_entries(g[region], path) for region in g}
         glob = _read_entries(_analysis_group(f, "global_analysis"), path)
     return analysis, glob
 
@@ -169,7 +169,7 @@ class TestSaveAnalysis:
         analysis, _ = _load(path)
         assert set(analysis["c1"]) == {"a", "b"}
 
-    def test_keep_unlisted_carries_over_chroms(self, tmp_path):
+    def test_keep_unlisted_carries_over_regions(self, tmp_path):
         path = tmp_path / "exp.h5"
         _save_analysis(
             path,
@@ -187,7 +187,7 @@ class TestSaveAnalysis:
         assert set(analysis["c1"]) == {"df"}
         np.testing.assert_array_equal(analysis["c2"]["b"].to_numpy(), B)
 
-    def test_unlisted_chroms_dropped_by_default(self, tmp_path):
+    def test_unlisted_regions_dropped_by_default(self, tmp_path):
         path = tmp_path / "exp.h5"
         _save_analysis(
             path,

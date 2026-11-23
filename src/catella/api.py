@@ -30,7 +30,7 @@ def load_raw(
     meth_file: str | Path | None = None,
     fasta_file: str | Path | None = None,
     mtase: str | Iterable[str] | None = None,
-    chroms: Iterable[str] | None = None,
+    regions: Iterable[str] | None = None,
     wrap: bool = False,
     ignore_strand: bool = False,
     colidx: Iterable | None = None,
@@ -39,7 +39,7 @@ def load_raw(
     seed: int | None = None,
     chunk_size: int = 1000000,
     tmp_dir: str | Path | None = None,
-    max_cached_chroms: int = 1,
+    max_cached_regions: int = 1,
     nworker: int = 1,
     min_gap: int | None = 20,
     gaps_bed: str | Path | Iterable | None = None,
@@ -55,8 +55,8 @@ def load_raw(
     Parameters
     ----------
     chromsize : str or Path
-        Path to the chromosome sizes file or a string identifier for the
-        genome.
+        Path to the chromosome sizes file; each chromosome is analyzed
+        as one region.
     test_file : str or Path
         Path to the primary experimental methylation data file.
     unmeth_file : str or Path, optional
@@ -64,7 +64,7 @@ def load_raw(
     meth_file : str or Path, optional
         Path to the methylated control file.
     fasta_file : str or Path, optional
-        Multi-FASTA file of per-chromosome reference sequences (record
+        Multi-FASTA file of per-region reference sequences (record
         id matching `chromsize`); stored on `MethPrintData.refseq`.
         Required by `compute_model_prob` but not by `load_raw` itself.
     mtase : str or iterable of str, optional
@@ -72,9 +72,9 @@ def load_raw(
         (any-context adenine, e.g., EcoGII), 'CG' (CpG, e.g., M.SssI),
         'GC' (GpC, e.g., M.CviPI). One label, a list of labels, or
         None (default) if unspecified.
-    chroms : iterable of str, optional
-        Restrict processing to these chromosomes. If None (default),
-        all chromosomes in `chromsize` are processed.
+    regions : iterable of str, optional
+        Restrict processing to these regions. If None (default),
+        all regions in `chromsize` are processed.
     wrap : bool, default False
         If True, calculates positions relative to the fiber center
         (useful for circular or symmetrical fibers).
@@ -88,10 +88,10 @@ def load_raw(
         the standard ModKit format; see
         `MethPrintExperiment.load_raw`.
     max_nmol : int, optional
-        Maximum number of molecules to extract for each chromosome.
+        Maximum number of molecules to extract for each region.
     balance_strand : bool, default False
         If True, keep an equal number of '+' and '-' strand molecules
-        per chromosome: at most `max_nmol`; fewer if either strand has
+        per region: at most `max_nmol`; fewer if either strand has
         fewer than `max_nmol // 2` molecules (warns). Molecules with
         unmapped strand ('.') are dropped. Requires `max_nmol` of at
         least 2.
@@ -109,8 +109,8 @@ def load_raw(
         reused for the scratch files backing later smoothing/
         probability calculation steps. The staging file is removed
         once the returned experiment is closed or garbage-collected.
-    max_cached_chroms : int, default 1
-        Maximum number of chromosomes' raw data kept in memory at once.
+    max_cached_regions : int, default 1
+        Maximum number of regions' raw data kept in memory at once.
     nworker : int, default 1
         Maximum number of threads used to read test/unmeth/meth files
         concurrently. Only relevant when more than one is given.
@@ -135,7 +135,7 @@ def load_raw(
         meth_file=meth_file,
         fasta_file=fasta_file,
         mtase=mtase,
-        chroms=chroms,
+        regions=regions,
         wrap=wrap,
         ignore_strand=ignore_strand,
         colidx=colidx,
@@ -144,7 +144,7 @@ def load_raw(
         seed=seed,
         chunk_size=chunk_size,
         tmp_dir=tmp_dir,
-        max_cached_chroms=max_cached_chroms,
+        max_cached_regions=max_cached_regions,
         nworker=nworker,
         min_gap=min_gap,
         gaps_bed=gaps_bed,
@@ -394,7 +394,7 @@ def compute_model_prob(
     Raises
     ------
     ValueError
-        If a chromosome has no reference sequence, if the
+        If a region has no reference sequence, if the
         no-controls path cannot find enough bins with read sites, if
         `eta` is a dict with an unrecognized channel
         name, if `span` is not recognized, or if `norm_by_strand` is
@@ -410,7 +410,7 @@ def compute_model_prob(
 
     Notes
     -----
-    Per-chromosome (and, if `norm_by_strand`, per-strand) calibration
+    Per-region (and, if `norm_by_strand`, per-strand) calibration
     diagnostics -- whether controls were used, fraction of informative
     positions per context, fraction of read sites carrying a call per
     source and context, and (no-controls path only) actual EM
@@ -418,7 +418,7 @@ def compute_model_prob(
     fitted theta_prot/theta_acc per context -- are stored in
     `exp.global_analysis[f"{prob_name}_calib"]`. The full per-position
     theta_prot/theta_acc/informative actually used to score each
-    chromosome are stored in `exp.analysis[chrom][f"{prob_name}_theta"]`.
+    region are stored in `exp.analysis[region][f"{prob_name}_theta"]`.
     """
 
     # Compute methylation probability via the calibrated log-odds model
@@ -456,7 +456,7 @@ def estimate_start_temp(
     exp: MethPrintExperiment,
     *,
     prob_name: str = "meth_prob",
-    chroms: str | Iterable[str] | None = None,
+    regions: str | Iterable[str] | None = None,
     percentile: float = 90.0,
     batch_size: int = 20000,
     percentile_sample_size: int = 100000,
@@ -467,7 +467,7 @@ def estimate_start_temp(
     Estimate a data-driven `SimSettings.start_temp` value.
 
     Returns the `percentile`-th percentile of abs(logit(meth_prob))
-    across `chroms`, via batched random subsampling, so sequence-
+    across `regions`, via batched random subsampling, so sequence-
     energy barriers of that size are crossable early in the
     annealing schedule. Probabilities of exactly 0 or 1 (log odds
     beyond floating-point range) count as the largest finite log
@@ -477,12 +477,12 @@ def estimate_start_temp(
     ----------
     exp : MethPrintExperiment
         The experiment to estimate a temperature from. `prob_name`
-        must already be in `exp.analysis[chrom]` for each chromosome.
+        must already be in `exp.analysis[region]` for each region.
     prob_name : str, default "meth_prob"
-        The key to read from `exp.analysis[chrom]`.
-    chroms : str or iterable of str, optional
-        Chromosome(s) to include. If None (default), all of
-        `exp.chroms` are used.
+        The key to read from `exp.analysis[region]`.
+    regions : str or iterable of str, optional
+        Region(s) to include. If None (default), all of
+        `exp.regions` are used.
     percentile : float, default 90.0
         Percentile (0 to 100, exclusive of 100) of
         abs(logit(meth_prob)) to return.
@@ -490,7 +490,7 @@ def estimate_start_temp(
         Number of molecules read (and held in memory) per batch.
     percentile_sample_size : int, default 100000
         Approximate total number of molecules, split evenly across
-        `chroms`, used to estimate the percentile.
+        `regions`, used to estimate the percentile.
     seed : int, optional
         Seed for the random number generator used for subsampling.
     mask_name : str, optional
@@ -507,13 +507,13 @@ def estimate_start_temp(
     ------
     KeyError
         If `mask_name` is given but no matching mask is found for a
-        chromosome's "test" source.
+        region's "test" source.
     """
     manager = SimManager(verbose=False)
     return manager.estimate_start_temp(
         exp,
         prob_name=prob_name,
-        chroms=chroms,
+        regions=regions,
         percentile=percentile,
         batch_size=batch_size,
         percentile_sample_size=percentile_sample_size,
@@ -528,7 +528,7 @@ def estimate_llink(
     *,
     llinks: Iterable[int] = range(0, 65, 5),
     prob_name: str = "meth_prob",
-    chroms: str | Iterable[str] | None = None,
+    regions: str | Iterable[str] | None = None,
     max_nmol: int | None = None,
     seed: int | None = None,
     batch_size: int = 20000,
@@ -538,9 +538,9 @@ def estimate_llink(
     fill_nan: str | float | None = None,
 ) -> dict[str, int]:
     """
-    Estimate `SimSettings.llink` per chromosome by maximum likelihood.
+    Estimate `SimSettings.llink` per region by maximum likelihood.
 
-    For each chromosome, returns the candidate that maximizes the sum
+    For each region, returns the candidate that maximizes the sum
     over molecules of log Z(data, llink) - log Z(no data, llink), the
     marginal likelihood of the data, computed exactly with the transfer
     matrix at temperature 1. `exp` is not modified unless
@@ -555,7 +555,7 @@ def estimate_llink(
     ----------
     exp : MethPrintExperiment
         The experiment to estimate from. `prob_name` must already be in
-        `exp.analysis[chrom]` for each chromosome.
+        `exp.analysis[region]` for each region.
     settings : str or Path or SimSettings
         A settings object, or a path to a settings file. Provides
         `nucbp`, `elink`, `mu` and `emax`, which should match those used
@@ -563,13 +563,13 @@ def estimate_llink(
     llinks : iterable of int, default range(0, 65, 5)
         Candidate linker lengths (bp).
     prob_name : str, default "meth_prob"
-        The key to read from `exp.analysis[chrom]`.
-    chroms : str or iterable of str, optional
-        Chromosome(s) to include. If None (default), all of `exp.chroms`
+        The key to read from `exp.analysis[region]`.
+    regions : str or iterable of str, optional
+        Region(s) to include. If None (default), all of `exp.regions`
         are used.
     max_nmol : int, optional
         If given, use a random sample of at most this many molecules per
-        chromosome, to reduce run time. All molecules are used if None
+        region, to reduce run time. All molecules are used if None
         (default).
     seed : int, optional
         Seed for the random sample of `max_nmol`.
@@ -584,7 +584,7 @@ def estimate_llink(
         depend on it.
     llink_evid_name : str, optional
         If given, stores the evidence of each candidate in
-        `exp.analysis[chrom][llink_evid_name]`, a DataFrame with columns
+        `exp.analysis[region][llink_evid_name]`, a DataFrame with columns
         `llink`, `evidence` and `nmol`, e.g. for plotting. `exp` is not
         modified if None (default).
     fill_nan : {"mean"}, float, or None, default None
@@ -595,28 +595,28 @@ def estimate_llink(
     Returns
     -------
     dict of str to int
-        Chromosome -> estimated `llink`.
+        Region -> estimated `llink`.
 
     Raises
     ------
     ValueError
         If `llinks` is empty or holds a value that is not a non-negative
         integer, if `max_nmol` is not positive, if `nworker` is not a
-        positive integer, if a chromosome has no usable molecules, if
+        positive integer, if a region has no usable molecules, if
         `fill_nan` is invalid, or if `fill_nan` is None and a molecule is
         nan at some but not all start positions.
     TypeError
         If `settings` is neither a path nor a SimSettings object.
     KeyError
         If `prob_name` or the mask of `mask_name` is missing for a
-        chromosome.
+        region.
 
     Warns
     -----
     UserWarning
-        If `settings.end_temp` is not 1, if the estimate of a chromosome
+        If `settings.end_temp` is not 1, if the estimate of a region
         is the largest candidate (the maximum may lie beyond it), or if a
-        chromosome uses fewer than 50 molecules.
+        region uses fewer than 50 molecules.
 
     Notes
     -----
@@ -629,7 +629,7 @@ def estimate_llink(
         settings,
         llinks=llinks,
         prob_name=prob_name,
-        chroms=chroms,
+        regions=regions,
         max_nmol=max_nmol,
         seed=seed,
         batch_size=batch_size,
@@ -644,7 +644,7 @@ def filter_dropout(
     *,
     which: str | None = None,
     channels: str | list | None = None,
-    chroms: list | None = None,
+    regions: list | None = None,
     thres_min: float = 0.0,
     thres_max: float = 1.0,
     unmapped_strand: str = "union",
@@ -662,14 +662,14 @@ def filter_dropout(
         The experiment to evaluate. Mutated in place.
     which : {"test", "meth", "unmeth"} or None, default None
         Source(s) to evaluate. None evaluates every source present
-        for each chromosome.
+        for each region.
     channels : str, list of str, or None, default None
         Channels to evaluate, as in `qc`. None uses one channel per
         `exp.mtase` label, or every assayed channel unmerged if both
         "GC" and "CG" are present.
-    chroms : list of str, optional
-        Subset of `exp.chroms` to evaluate. None (default) evaluates
-        every chromosome.
+    regions : list of str, optional
+        Subset of `exp.regions` to evaluate. None (default) evaluates
+        every region.
     thres_min : float, default 0.0
         Min allowed no-signal fraction (per channel, or of the pooled
         total under `method="aggregate"`) to be kept.
@@ -686,23 +686,23 @@ def filter_dropout(
         counts pooled across channels into one fraction first.
         Irrelevant for a single channel.
     mask_name : str, default "dropout_mask"
-        Key for the mask in `exp.analysis[chrom]`, as
+        Key for the mask in `exp.analysis[region]`, as
         `f"{source}_{mask_name}"`.
 
     Raises
     ------
     ValueError
         If `mtase` is unset on `exp`, `channels` is invalid,
-        `chroms` contains a chromosome not in
-        `exp.chroms`, `thres_min` or `thres_max` is not in [0, 1],
+        `regions` contains a region not in
+        `exp.regions`, `thres_min` or `thres_max` is not in [0, 1],
         `thres_min` is greater than `thres_max`,
         `unmapped_strand`/`method` is invalid, a requested source is
-        missing for some chromosome, or `refseq` is missing.
+        missing for some region, or `refseq` is missing.
     """
     exp.filter_dropout(
         which=which,
         channels=channels,
-        chroms=chroms,
+        regions=regions,
         thres_min=thres_min,
         thres_max=thres_max,
         unmapped_strand=unmapped_strand,
@@ -715,14 +715,14 @@ def qc(
     exp: MethPrintExperiment,
     *,
     channels: str | list | None = None,
-    chroms: list | None = None,
+    regions: list | None = None,
     percentiles: float | list = (50,),
     mask_name: str | None = None,
     batch_size: int = 20000,
     overwrite: bool = False,
 ) -> pd.DataFrame:
     """
-    Summarize data quality per chromosome and channel.
+    Summarize data quality per region and channel.
 
     Thin wrapper around `MethPrintExperiment.qc`; see it for the
     columns of the returned table.
@@ -735,8 +735,8 @@ def qc(
     channels : str, list of str, or None, default None
         Channels to summarize, as in `compute_model_prob`. None uses
         every assayed channel, unmerged.
-    chroms : list of str, optional
-        Subset of `exp.chroms`. None (default) uses all.
+    regions : list of str, optional
+        Subset of `exp.regions`. None (default) uses all.
     percentiles : float or list of float, default (50,)
         Dropout percentiles to report, each in [0, 100].
     mask_name : str, optional
@@ -750,21 +750,21 @@ def qc(
     Returns
     -------
     pd.DataFrame
-        One row per (chrom, channel), plus a `channel="all"` row per
-        chrom if there is more than one channel.
+        One row per (region, channel), plus a `channel="all"` row per
+        region if there is more than one channel.
 
     Raises
     ------
     ValueError
-        If `channels` or `chroms` is invalid, `percentiles` is empty
+        If `channels` or `regions` is invalid, `percentiles` is empty
         or outside [0, 100], the table exists and `overwrite` is
-        False, or a chromosome has no `refseq` or no test data.
+        False, or a region has no `refseq` or no test data.
     KeyError
         If `mask_name` is not found for some source.
     """
     return exp.qc(
         channels=channels,
-        chroms=chroms,
+        regions=regions,
         percentiles=percentiles,
         mask_name=mask_name,
         batch_size=batch_size,
@@ -775,7 +775,7 @@ def qc(
 def plot_dropout_ecdf(
     exp: MethPrintExperiment,
     *,
-    chroms: str | list,
+    regions: str | list,
     which: str | None = None,
     channels: str | list | None = None,
     unmapped_strand: str = "union",
@@ -787,7 +787,7 @@ def plot_dropout_ecdf(
     """
     Plot the empirical CDF of dropout rate per group.
 
-    Computes `exp.dropout_fractions(...)`, restricted to `chroms`, and
+    Computes `exp.dropout_fractions(...)`, restricted to `regions`, and
     plots the result via `MethPlot.plot_dropout_ecdf`. For each
     matching group, at threshold `t` the plotted value is
     `100 * mean(dropout_frac <= t)` over that group's molecules.
@@ -796,18 +796,18 @@ def plot_dropout_ecdf(
     ----------
     exp : MethPrintExperiment
         The experiment to evaluate.
-    chroms : str or list of str
-        Chromosome(s) to plot.
+    regions : str or list of str
+        Region(s) to plot.
     which : {"test", "meth", "unmeth"} or None, default None
         Source to evaluate and plot. None uses every source present
-        for each chromosome.
+        for each region.
     channels : str, list of str, or None, default None
         Channels to evaluate, as in `filter_dropout`.
     unmapped_strand : {"union", "drop", "+", "-"}, default "union"
         How to evaluate unmapped ('.') strand molecules.
     pooled : bool, default True
         Whether to plot the pooled `channel="all"` groups.
-    split_by : {"chrom", "source", "channel"} or None, default None
+    split_by : {"region", "source", "channel"} or None, default None
         Key field to split into panels, one per value. None draws a
         single panel.
     out_file : str or pathlib.Path, optional
@@ -821,22 +821,22 @@ def plot_dropout_ecdf(
     ValueError
         If `mtase` is unset, `channels` is invalid,
         `unmapped_strand` is invalid, a source is missing for some
-        chromosome, or `refseq` is missing (from
-        `exp.dropout_fractions`); or if `chroms` holds an unknown
-        chromosome or one with no matching entries in the result, or
+        region, or `refseq` is missing (from
+        `exp.dropout_fractions`); or if `regions` holds an unknown
+        region or one with no matching entries in the result, or
         `split_by` is invalid.
     """
-    chroms = [chroms] if isinstance(chroms, str) else list(chroms)
+    regions = [regions] if isinstance(regions, str) else list(regions)
     fractions = exp.dropout_fractions(
         which=which,
         channels=channels,
-        chroms=chroms,
+        regions=regions,
         unmapped_strand=unmapped_strand,
     )
     methplot = MethPlot()
     methplot.plot_dropout_ecdf(
         fractions,
-        chroms,
+        regions,
         which=which,
         pooled=pooled,
         split_by=split_by,
@@ -847,7 +847,7 @@ def plot_dropout_ecdf(
 
 def run(
     *,
-    chroms: str | Iterable[str],
+    regions: str | Iterable[str],
     nsim: int,
     settings: str | Path | SimSettings,
     meth_prob: np.ndarray | Mapping[str, np.ndarray | pd.DataFrame],
@@ -872,8 +872,8 @@ def run(
 
     Parameters
     ----------
-    chroms : str or iterable of str
-        The identifier(s) of chromosome(s) to include in the simulation.
+    regions : str or iterable of str
+        The identifier(s) of region(s) to include in the simulation.
     nsim : int
         Number of independent simulation runs per molecule (`method=
         'mcmc'`), or exact samples per molecule (`method='tm'`; may be
@@ -881,11 +881,11 @@ def run(
         no samples at all).
     settings : str or Path or SimSettings
         Simulation parameters. Can be a path to a configuration file or a
-        `SimSettings` object. `llink` can be a mapping of chromosome to
-        value, which must cover all of `chroms`.
+        `SimSettings` object. `llink` can be a mapping of region to
+        value, which must cover all of `regions`.
     meth_prob : np.ndarray or Mapping[str, np.ndarray | pd.DataFrame]
-        Probability of methylation. If multiple chromosomes are provided, this
-        must be a mapping of {chrom_name: data}. Data can be NumPy arrays or
+        Probability of methylation. If multiple regions are provided, this
+        must be a mapping of {region_name: data}. Data can be NumPy arrays or
         Pandas DataFrames. Molecules that are nan at every nucleosome start
         position (e.g., molecules masked by `filter_dropout`) have no data
         and are not simulated; see `SimDataset.no_data`. Molecules that are
@@ -936,7 +936,7 @@ def run(
     """
     manager = SimManager(nworker=nworker, verbose=verbose)
     dataset = manager.run(
-        chroms=chroms,
+        regions=regions,
         nsim=nsim,
         settings=settings,
         meth_prob=meth_prob,
@@ -957,7 +957,7 @@ def compute_occup(
     dataset: SimDataset,
     *,
     time: int | None = None,
-    chroms: str | Iterable[str] | None = None,
+    regions: str | Iterable[str] | None = None,
     occup_name: str = "occup",
     mean_nnuc_name: str | None = "mean_nnuc",
     compute_var: bool = False,
@@ -974,7 +974,7 @@ def compute_occup(
     simulation runs at a given time point; for `"tm"`, they are computed
     exactly via the transfer-matrix solver, with no time axis, solving
     each molecule only once for all quantities. Results are stored in
-    `dataset.analysis[chrom]`; molecules with no data (see
+    `dataset.analysis[region]`; molecules with no data (see
     `SimDataset.no_data`) get nan.
 
     Parameters
@@ -985,9 +985,9 @@ def compute_occup(
         The time point (snapshot) to use. If None, the final frame is
         used. `method='mcmc'` only; must be None for
         `dataset.method == "tm"`.
-    chroms : str or iterable of str, optional
-        The chromosome(s) to process. If None (default), all of
-        `dataset.chroms`.
+    regions : str or iterable of str, optional
+        The region(s) to process. If None (default), all of
+        `dataset.regions`.
     occup_name : str, default "occup"
         The key of the per-bp occupancy (molecules by base pairs).
     mean_nnuc_name : str or None, default "mean_nnuc"
@@ -1024,7 +1024,7 @@ def compute_occup(
     SimAnalysis().compute_occup(
         dataset,
         time=time,
-        chroms=chroms,
+        regions=regions,
         name=occup_name,
         mean_nnuc_name=mean_nnuc_name,
         compute_var=compute_var,
@@ -1041,7 +1041,7 @@ def compute_config(
     *,
     method: str = "best_match",
     gamma: float | None = None,
-    chroms: str | Iterable[str] | None = None,
+    regions: str | Iterable[str] | None = None,
     name: str | None = None,
     nworker: int = 1,
 ) -> None:
@@ -1068,13 +1068,13 @@ def compute_config(
         For "best_match" only: the weight of correctly called occupied
         sites relative to correctly called empty sites; larger values
         call more nucleosomes. 1.0 if None. Must be positive.
-    chroms : str or iterable of str, optional
-        The chromosome(s) to process. If None (default), all of
-        `dataset.chroms`.
+    regions : str or iterable of str, optional
+        The region(s) to process. If None (default), all of
+        `dataset.regions`.
     name : str, optional
         The prefix of the stored keys `{name}_position_flat`,
         `{name}_position_offset` and `{name}_energy` in
-        `dataset.analysis[chrom]`; `method` if None. An existing result
+        `dataset.analysis[region]`; `method` if None. An existing result
         under `name` is replaced.
     nworker : int, default 1
         Number of worker processes.
@@ -1102,12 +1102,12 @@ def compute_config(
         if gamma is not None:
             raise ValueError("gamma is only used with method='best_match'")
         ana.compute_most_likely_config(
-            dataset, chroms=chroms, name=name, nworker=nworker
+            dataset, regions=regions, name=name, nworker=nworker
         )
         return
     ana.compute_best_match_config(
         dataset,
-        chroms=chroms,
+        regions=regions,
         name=name,
         gamma=1.0 if gamma is None else gamma,
         nworker=nworker,
@@ -1120,7 +1120,7 @@ def compute_linker_hist(
     lmax: int = 200,
     window: tuple[int, int] | Mapping | None = None,
     trim: int = 0,
-    chroms: str | Iterable[str] | None = None,
+    regions: str | Iterable[str] | None = None,
     name: str = "linker_hist",
     batch_size: int | None = None,
     nworker: int = 1,
@@ -1134,7 +1134,7 @@ def compute_linker_hist(
     each length under the posterior is computed exactly via the
     transfer-matrix solver, with no sampling. The values are expected
     counts, not normalized. Requires `dataset.method == "tm"`. Results
-    are stored in `dataset.analysis[chrom]`; molecules with no data (see
+    are stored in `dataset.analysis[region]`; molecules with no data (see
     `SimDataset.no_data`) get nan rows. Use `extract_linker_stats` for
     the mean and standard deviation of the linker lengths, and
     `plot_linker_hist` to plot the histograms.
@@ -1155,15 +1155,15 @@ def compute_linker_hist(
     window : tuple of int or dict, optional
         The region `(xlo, xhi)` (bp, half-open, in the coordinates of the
         stored start positions) in which linkers are counted: both
-        nucleosomes of a linker must lie inside it. A dict keyed by chrom
-        gives one window per chrom (chroms not in it use the whole fiber;
+        nucleosomes of a linker must lie inside it. A dict keyed by region
+        gives one window per region (regions not in it use the whole fiber;
         extra keys are ignored). If None (default), the whole fiber.
     trim : int, default 0
         Number of base pairs removed from each end of the window, e.g.,
         to drop nucleosomes near the fiber ends.
-    chroms : str or iterable of str, optional
-        The chromosome(s) to process. If None (default), all of
-        `dataset.chroms`.
+    regions : str or iterable of str, optional
+        The region(s) to process. If None (default), all of
+        `dataset.regions`.
     name : str, default "linker_hist"
         The key of the histogram: an `H5Array` of shape (nmol, lmax + 2)
         with columns "0" to str(lmax) and "tail". The window and settings
@@ -1194,7 +1194,7 @@ def compute_linker_hist(
         lmax=lmax,
         window=window,
         trim=trim,
-        chroms=chroms,
+        regions=regions,
         name=name,
         batch_size=batch_size,
         nworker=nworker,
@@ -1204,7 +1204,7 @@ def compute_linker_hist(
 def extract_linker_stats(
     dataset: SimDataset,
     *,
-    chroms: str | Iterable[str] | None = None,
+    regions: str | Iterable[str] | None = None,
     name: str = "linker_hist",
     mols: Iterable[int] | dict | None = None,
     pooled: bool = False,
@@ -1223,18 +1223,18 @@ def extract_linker_stats(
     ----------
     dataset : SimDataset
         The simulation dataset holding the histograms.
-    chroms : str or iterable of str, optional
-        The chromosome(s) to use. If None (default), all of
-        `dataset.chroms`.
+    regions : str or iterable of str, optional
+        The region(s) to use. If None (default), all of
+        `dataset.regions`.
     name : str, default "linker_hist"
         The key of the histograms, as passed to `compute_linker_hist`.
     mols : iterable of int or dict, optional
         The molecules to use (duplicates are counted once). If None
-        (default), all molecules. With several chroms, a dict keyed by
-        chrom (chroms not in it use all molecules; extra keys are
+        (default), all molecules. With several regions, a dict keyed by
+        region (regions not in it use all molecules; extra keys are
         ignored).
     pooled : bool, default False
-        If False, one row per molecule. If True, one row per chromosome,
+        If False, one row per molecule. If True, one row per region,
         from the linkers of all selected molecules pooled together, so
         that each linker counts equally. The pooled standard deviation
         also includes the differences between the mean linker lengths of
@@ -1244,26 +1244,26 @@ def extract_linker_stats(
     -------
     pd.DataFrame
         Columns "mean" and "sd" (bp) and "nlink", the expected number of
-        linkers up to `lmax`. Indexed by (chrom, mol) if `pooled` is
-        False, otherwise by chrom. Molecules with no data get nan;
-        molecules or chromosomes with no linkers get nan mean and sd.
+        linkers up to `lmax`. Indexed by (region, mol) if `pooled` is
+        False, otherwise by region. Molecules with no data get nan;
+        molecules or regions with no linkers get nan mean and sd.
 
     Raises
     ------
     KeyError
-        If no histogram is stored under `name` for a chromosome.
+        If no histogram is stored under `name` for a region.
     ValueError
-        If `mols` is not a dict with several chroms or is out of range.
+        If `mols` is not a dict with several regions or is out of range.
     """
     return SimAnalysis().extract_linker_stats(
-        dataset, chroms=chroms, name=name, mols=mols, pooled=pooled
+        dataset, regions=regions, name=name, mols=mols, pooled=pooled
     )
 
 
 def extract_config(
     dataset: SimDataset,
     *,
-    chrom: str,
+    region: str,
     name: str | None = None,
     run: int | None = None,
     time: int | None = None,
@@ -1282,8 +1282,8 @@ def extract_config(
     ----------
     dataset : SimDataset
         The dataset holding the configurations.
-    chrom : str
-        The chromosome of the molecules.
+    region : str
+        The region of the molecules.
     name : str, optional
         The `name` given to `compute_config` (e.g., "best_match"). If
         None (default), raw configurations are read.
@@ -1295,7 +1295,7 @@ def extract_config(
         for MCMC datasets with `name` None.
     mols : iterable of int, optional
         The molecules to read, in this order. If None (default), all
-        molecules of `chrom`.
+        molecules of `region`.
     nworker : int, default 1
         Number of threads used to read raw MCMC files.
 
@@ -1314,13 +1314,13 @@ def extract_config(
         TM dataset, if a TM dataset stores no samples (`nsim` is 0) and
         `name` is None, or if `time` is not a recorded time point.
     KeyError
-        If no configurations are stored under `name` for `chrom`.
+        If no configurations are stored under `name` for `region`.
     IndexError
         If a molecule or `run` is out of range.
     """
     return SimAnalysis().extract_config(
         dataset,
-        chrom=chrom,
+        region=region,
         name=name,
         run=run,
         time=time,
@@ -1332,7 +1332,7 @@ def extract_config(
 def plot_config(
     dataset: SimDataset,
     *,
-    chroms: str | Iterable[str],
+    regions: str | Iterable[str],
     name: str | None = None,
     mols: Iterable[int] | dict | None = None,
     run: int | None = None,
@@ -1357,7 +1357,7 @@ def plot_config(
     or the raw configuration of run `run` at time `time` (MCMC) or of
     exact sample `run` (TM). Molecules without data are drawn in gray.
     For many configurations of one molecule, see
-    `SimPlot.plot_samples`. Each chromosome gets its own panel; several
+    `SimPlot.plot_samples`. Each region gets its own panel; several
     panels are laid out side by side (at most 4 per row) in one figure,
     aligned and sharing one legend or colorbar.
 
@@ -1365,15 +1365,15 @@ def plot_config(
     ----------
     dataset : SimDataset
         The dataset holding the configurations.
-    chroms : str or iterable of str
-        Chromosome(s) to plot, one panel each, in reading order.
+    regions : str or iterable of str
+        Region(s) to plot, one panel each, in reading order.
     name : str, optional
         The `name` given to `compute_config`. If None (default), raw
         configurations are shown.
     mols : iterable of int or dict, optional
         Molecules to show, in this order (all if None). The y-axis counts
-        rows, not molecule indices. With several chroms, a dict keyed by
-        chrom (chroms not in it show all molecules).
+        rows, not molecule indices. With several regions, a dict keyed by
+        region (regions not in it show all molecules).
     run : int, optional
         MCMC run or TM sample to show; 0 if None. Only used if `name` is
         None.
@@ -1408,26 +1408,26 @@ def plot_config(
         Linkage matrix of these molecules (as returned or stored by
         `sort_by_linkage`). If given, the molecules are put in its leaf
         order before `max_rows` downsampling, and its dendrogram is drawn
-        alongside. Cannot be combined with `mols`. With several chroms, a
-        dict keyed by chrom, e.g. the result of `sort_by_linkage` (chroms
+        alongside. Cannot be combined with `mols`. With several regions, a
+        dict keyed by region, e.g. the result of `sort_by_linkage` (regions
         not in it are not sorted; extra keys are ignored).
     sharex : bool, default False
-        If True, all panels span the length of the longest chrom, so they
-        share one bp scale. If False, each panel spans its own chrom.
+        If True, all panels span the length of the longest region, so they
+        share one bp scale. If False, each panel spans its own region.
     show : bool, default True
         Whether to display the figure.
 
     Raises
     ------
     ValueError
-        If `chroms` is empty, if `max_rows` or `downsample_how` is
+        If `regions` is empty, if `max_rows` or `downsample_how` is
         invalid, if `xscale` is not a power of 10, if `plot_eseq` is True
         and the dataset stores no energies, if `mols` or `link_mat` is
-        not a dict with several chroms, if `link_mat` is combined with
+        not a dict with several regions, if `link_mat` is combined with
         `mols` or does not match the number of molecules, or for invalid
         arguments of `extract_config`.
     KeyError
-        If no calls are stored under `name` for a chrom.
+        If no calls are stored under `name` for a region.
     IndexError
         If a molecule or `run` is out of range.
 
@@ -1436,11 +1436,11 @@ def plot_config(
     UserWarning
         If rendering the plot is estimated to need more than 1 GB of
         memory (pass `max_rows` or `mols` to reduce it), or if more than
-        10 chroms are plotted in one figure.
+        10 regions are plotted in one figure.
     """
     SimPlot().plot_config(
         dataset,
-        chroms=chroms,
+        regions=regions,
         name=name,
         mols=mols,
         run=run,
@@ -1461,7 +1461,7 @@ def plot_config(
 def plot_occup(
     dataset: SimDataset,
     *,
-    chroms: str | Iterable[str],
+    regions: str | Iterable[str],
     time: int | None = None,
     out_file: str | Path | None = None,
     occup_name: str = "occup",
@@ -1475,11 +1475,11 @@ def plot_occup(
     show: bool = True,
 ):
     """
-    Visualize nucleosome occupancy profiles for one or more chromosomes.
+    Visualize nucleosome occupancy profiles for one or more regions.
 
     Generate a plot showing the probability of nucleosome occupancy across
     the genomic coordinates based on previously computed analysis within
-    the SimDataset. Each chromosome gets its own panel; several panels
+    the SimDataset. Each region gets its own panel; several panels
     are laid out side by side (at most 4 per row) in one figure, aligned
     and sharing one colorbar.
 
@@ -1487,8 +1487,8 @@ def plot_occup(
     ----------
     dataset : SimDataset
         The simulation dataset containing the computed occupancy data.
-    chroms : str or iterable of str
-        The chromosome(s) to plot, one panel each, in reading order.
+    regions : str or iterable of str
+        The region(s) to plot, one panel each, in reading order.
     time : int, optional
         The time step of interest if occupancy needs to be computed.
     out_file : str | Path, optional
@@ -1501,7 +1501,7 @@ def plot_occup(
         Molecule indices to display, restricting the heatmap (and, if
         `plot_eseq` is True, the sequence-energy average) to this
         subset. If None (default), all molecules are shown. With several
-        chroms, a dict keyed by chrom (chroms not in it show all
+        regions, a dict keyed by region (regions not in it show all
         molecules).
     xscale : int, default 1000
         Spatial scaling factor (must be a power of 10) for the x-axis
@@ -1521,13 +1521,13 @@ def plot_occup(
         `sort_by_linkage`). If given, the rows are put in its leaf order
         and its dendrogram is drawn alongside. Cannot be combined with
         `mols`. If None (default), rows are in molecule order. With
-        several chroms, a dict keyed by chrom, e.g. the result of
-        `sort_by_linkage` (chroms not in it are not sorted; extra keys
+        several regions, a dict keyed by region, e.g. the result of
+        `sort_by_linkage` (regions not in it are not sorted; extra keys
         are ignored).
     sharex : bool, default False
-        If True, all panels span the length of the longest chrom, so
+        If True, all panels span the length of the longest region, so
         they share one bp scale. If False, each panel spans its own
-        chrom.
+        region.
     show : bool, default True
         If True, invokes the active plotting backend to display the
         figure immediately.
@@ -1535,14 +1535,14 @@ def plot_occup(
     Raises
     ------
     ValueError
-        If `chroms` is empty, if the occupancy is missing and no `time`
+        If `regions` is empty, if the occupancy is missing and no `time`
         is provided for computation, or if `mols` or `link_mat` is not
-        a dict with several chroms.
+        a dict with several regions.
 
     Warns
     -----
     UserWarning
-        If more than 10 chroms are plotted in one figure, or if
+        If more than 10 regions are plotted in one figure, or if
         rendering is estimated to need more than 1 GB of memory.
 
     Notes
@@ -1552,7 +1552,7 @@ def plot_occup(
     """
     simplot = SimPlot()
     simplot.plot_occup(
-        chroms=chroms,
+        regions=regions,
         dataset=dataset,
         time=time,
         occup_name=occup_name,
@@ -1571,7 +1571,7 @@ def plot_occup(
 def plot_linker_hist(
     dataset: SimDataset,
     *,
-    chroms: str | Iterable[str],
+    regions: str | Iterable[str],
     name: str = "linker_hist",
     mols: Iterable[int] | dict | None = None,
     panels: bool = False,
@@ -1583,12 +1583,12 @@ def plot_linker_hist(
     show: bool = True,
 ):
     """
-    Plot the pooled linker-length histogram of one or more chromosomes.
+    Plot the pooled linker-length histogram of one or more regions.
 
     Uses the histograms stored by `compute_linker_hist`, pooled over the
-    selected molecules of each chromosome. Only linkers up to `lmax` are
-    shown (the tail bin is left out). By default, all chromosomes are
-    drawn as filled steps on one axis, which suits a few chromosomes;
+    selected molecules of each region. Only linkers up to `lmax` are
+    shown (the tail bin is left out). By default, all regions are
+    drawn as filled steps on one axis, which suits a few regions;
     with `panels`, each gets its own panel, laid out side by side (at
     most 4 per row).
 
@@ -1596,22 +1596,22 @@ def plot_linker_hist(
     ----------
     dataset : SimDataset
         The simulation dataset holding the histograms.
-    chroms : str or iterable of str
-        The chromosome(s) to plot, in order.
+    regions : str or iterable of str
+        The region(s) to plot, in order.
     name : str, default "linker_hist"
         The key of the histograms, as passed to `compute_linker_hist`.
     mols : iterable of int or dict, optional
         The molecules to pool. If None (default), all molecules. With
-        several chroms, a dict keyed by chrom (chroms not in it use all
+        several regions, a dict keyed by region (regions not in it use all
         molecules; extra keys are ignored).
     panels : bool, default False
-        If True, one panel per chromosome; otherwise all on one axis.
+        If True, one panel per region; otherwise all on one axis.
     sharey : bool, default True
         Whether the panels share the y-axis. Only used if `panels` is
         True.
     density : bool, default True
         If True, plot the fraction of linkers (up to `lmax`) of each
-        length, so that chromosomes with different numbers of molecules
+        length, so that regions with different numbers of molecules
         can be compared. If False, plot the expected number of linkers of
         each length per molecule with data.
     plot_stats : bool, default True
@@ -1630,20 +1630,20 @@ def plot_linker_hist(
     Raises
     ------
     KeyError
-        If no histogram is stored under `name` for a chromosome.
+        If no histogram is stored under `name` for a region.
     ValueError
-        If `chroms` is empty, or `mols` is not a dict with several chroms
+        If `regions` is empty, or `mols` is not a dict with several regions
         or is out of range.
 
     Warns
     -----
     UserWarning
-        If more than 10 chroms are plotted in one figure, or a chromosome
+        If more than 10 regions are plotted in one figure, or a region
         has no linkers up to `lmax` (it is then not plotted).
     """
     SimPlot().plot_linker_hist(
         dataset,
-        chroms=chroms,
+        regions=regions,
         name=name,
         mols=mols,
         panels=panels,
@@ -1661,7 +1661,7 @@ def plot_meth(
     *,
     value: str = "prob",
     exp: MethPrintExperiment | None = None,
-    chroms: str | Iterable[str] | None = None,
+    regions: str | Iterable[str] | None = None,
     raw_which: str | None = None,
     data_name: str | None = None,
     mols: int | Sequence[int] | dict | None = None,
@@ -1681,12 +1681,12 @@ def plot_meth(
 ):
     """
     Plot a methylation heatmap, as probability or energy, of one matrix
-    or of one or more chromosomes of an experiment.
+    or of one or more regions of an experiment.
 
     Plots at full resolution -- for large data, pass `max_rows` to
     downsample first, or downsample it yourself (`utils.downsample`,
     works uniformly for `H5Array`, `pd.DataFrame`, or `np.ndarray`) and
-    pass the reduced result. Several chromosomes get one panel each,
+    pass the reduced result. Several regions get one panel each,
     laid out side by side (at most 4 per row) in one figure, aligned and
     sharing one colorbar on a common color scale.
 
@@ -1694,8 +1694,8 @@ def plot_meth(
     ----------
     data : H5Array, pd.DataFrame, or np.ndarray, optional
         One dense signal matrix to plot (rows=molecules, columns=bp
-        position), e.g. `exp.analysis[chrom]["meth_prob"]` or an array
-        not stored in an experiment. Required unless `exp` and `chroms`
+        position), e.g. `exp.analysis[region]["meth_prob"]` or an array
+        not stored in an experiment. Required unless `exp` and `regions`
         are given instead.
     value : {"prob", "energy"}, default "prob"
         "prob" plots the values as given; "energy" plots `logit(data)`,
@@ -1704,22 +1704,22 @@ def plot_meth(
         probabilities in [0, 1] (`data` or `data_name`) and cannot be
         combined with `raw_which`/`mols`/`mask_name`.
     exp : MethPrintExperiment, optional
-        Experiment to read from, together with `chroms` and exactly one
+        Experiment to read from, together with `regions` and exactly one
         of `raw_which`/`data_name`. Not combined with `data`.
-    chroms : str or iterable of str, optional
-        Chromosome(s) to plot from `exp`, one panel each, in reading
+    regions : str or iterable of str, optional
+        Region(s) to plot from `exp`, one panel each, in reading
         order.
     raw_which : {"test", "unmeth", "meth"}, optional
-        Which raw table to plot per chromosome. Calls
-        `exp.to_dense(chrom, which=raw_which, mols=mols,
+        Which raw table to plot per region. Calls
+        `exp.to_dense(region, which=raw_which, mols=mols,
         mask_name=mask_name)` internally.
     data_name : str, optional
-        Key of a dense array to plot per chromosome, read from
-        `exp.analysis[chrom][data_name]` (e.g., "meth_prob").
+        Key of a dense array to plot per region, read from
+        `exp.analysis[region][data_name]` (e.g., "meth_prob").
     mols : int, sequence of int, or dict, optional
         Molecule index/indices to include; only with `raw_which`. See
-        `MethPrintExperiment.to_dense`. With several chroms, a dict keyed
-        by chrom (chroms not in it show all molecules).
+        `MethPrintExperiment.to_dense`. With several regions, a dict keyed
+        by region (regions not in it show all molecules).
     mask_name : str, optional
         Dropout mask name to apply; only with `raw_which`. See
         `MethPrintExperiment.to_dense`.
@@ -1757,13 +1757,13 @@ def plot_meth(
         Linkage matrix of these molecules (as returned or stored by
         `sort_by_linkage`). If given, the rows are put in its leaf order
         before `max_rows` downsampling and its dendrogram is drawn
-        alongside. Cannot be combined with `mols`. With several chroms, a
-        dict keyed by chrom, e.g. the result of `sort_by_linkage` (chroms
+        alongside. Cannot be combined with `mols`. With several regions, a
+        dict keyed by region, e.g. the result of `sort_by_linkage` (regions
         not in it are not sorted; extra keys are ignored).
     xscale : int, default 1000
         Spatial scaling factor (a power of 10) for the x-axis labels.
     sharex : bool, default False
-        If True, all panels span the widest chromosome, so they share
+        If True, all panels span the widest region, so they share
         one bp scale. If False, each panel spans its own.
     show : bool, default True
         Whether to display the figure using the active plotting
@@ -1774,25 +1774,25 @@ def plot_meth(
     ValueError
         If `value` is not "prob" or "energy"; if `xscale` is not a power
         of 10; if neither `data` nor
-        `exp` and `chroms` with exactly one of `raw_which`/`data_name`
-        are given; if `data` is combined with any of `exp`/`chroms`/
+        `exp` and `regions` with exactly one of `raw_which`/`data_name`
+        are given; if `data` is combined with any of `exp`/`regions`/
         `raw_which`/`data_name`/`mols`/`mask_name`; if `mols` or
         `mask_name` is given without `raw_which`; if "energy" is
         combined with `raw_which`/`mols`/`mask_name`; if `emax` is given
         with "prob"; or if `mols` or `link_mat` is not a dict with
-        several chroms.
+        several regions.
 
     Warns
     -----
     UserWarning
-        If more than 10 chroms are plotted in one figure, or if
+        If more than 10 regions are plotted in one figure, or if
         rendering is estimated to need more than 1 GB of memory.
     """
     if value not in ("prob", "energy"):
         raise ValueError(f'value must be "prob" or "energy", got {value!r}')
     kwargs = {
         "exp": exp,
-        "chroms": chroms,
+        "regions": regions,
         "data_name": data_name,
         "max_rows": max_rows,
         "downsample_how": downsample_how,
@@ -1873,7 +1873,7 @@ def sort_by_linkage(
     *,
     dataset: SimDataset | None = None,
     exp: MethPrintExperiment | None = None,
-    chroms: str | Iterable[str] | None = None,
+    regions: str | Iterable[str] | None = None,
     data_name: str | None = None,
     config_name: str | None = None,
     raw_which: str | None = None,
@@ -1888,15 +1888,15 @@ def sort_by_linkage(
     """
     Cluster molecules by similarity, for sorted plots.
 
-    Computes a hierarchical-clustering linkage per chromosome; nothing is
+    Computes a hierarchical-clustering linkage per region; nothing is
     reordered or copied. Pass the linkage as `link_mat` to a plot
     (`plot_occup`, `plot_config`, `plot_meth`),
     which puts its rows in the linkage's leaf order. Several plots of
     the same molecules can share one linkage:
 
     >>> lm = catella.sort_by_linkage(dataset=ds, data_name="occup")
-    >>> catella.plot_occup(ds, chroms=c, link_mat=lm[c])
-    >>> catella.plot_config(ds, chroms=c, name="best_match", link_mat=lm)
+    >>> catella.plot_occup(ds, regions=c, link_mat=lm[c])
+    >>> catella.plot_config(ds, regions=c, name="best_match", link_mat=lm)
 
     Dispatches to `SimAnalysis.sort_by_linkage` (if `dataset` is given)
     or `MethPrintAnalysis.sort_by_linkage` (if `exp` is given) -- exactly
@@ -1909,9 +1909,9 @@ def sort_by_linkage(
     exp : MethPrintExperiment, optional
         Methylation experiment to cluster. Mutually exclusive with
         `dataset`.
-    chroms : str or iterable of str, optional
-        Chromosome(s) to process. If None (default), all chromosomes
-        in `dataset.chroms` (or `exp.chroms`) are processed.
+    regions : str or iterable of str, optional
+        Region(s) to process. If None (default), all regions
+        in `dataset.regions` (or `exp.regions`) are processed.
     data_name : str, optional
         Key of the analysis array to cluster. If None, the underlying
         method's own default is used ("occup" for `dataset`,
@@ -1930,8 +1930,8 @@ def sort_by_linkage(
         flagged as dropout by a prior `filter_dropout(mask_name=
         mask_name)` call are all-nan rows (which need `fill_nan`).
     store_link_mat : bool, default True
-        Whether to also persist each chromosome's linkage matrix into
-        `.analysis[chrom][link_mat_name]`.
+        Whether to also persist each region's linkage matrix into
+        `.analysis[region][link_mat_name]`.
     link_mat_name : str, optional
         Key used to store the linkage matrix if `store_link_mat` is
         True. Defaults to `f"{data_name}_linkage"` (or
@@ -1949,7 +1949,7 @@ def sort_by_linkage(
     Returns
     -------
     dict of str to np.ndarray
-        A mapping from chromosome name to that chromosome's linkage
+        A mapping from region name to that region's linkage
         matrix.
 
     Raises
@@ -1974,8 +1974,8 @@ def sort_by_linkage(
     }
     if data_name is not None:
         kwargs["data_name"] = data_name
-    if chroms is not None:
-        kwargs["chroms"] = chroms
+    if regions is not None:
+        kwargs["regions"] = regions
     if dataset is not None:
         if mask_name is not None:
             raise ValueError("'mask_name' is only used with 'exp'")

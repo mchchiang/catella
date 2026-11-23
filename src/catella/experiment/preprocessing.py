@@ -10,7 +10,7 @@ from catella._regions import _normalize_regions
 from catella.experiment._calibration import (
     _calib_rows,
     _call_frac_info,
-    _chrom_calibration,
+    _region_calibration,
     _theta_frame,
     _warn_call_frac_mismatch,
 )
@@ -82,7 +82,7 @@ class MethPrintAnalysis:
         Smooth methylation signals across an experiment using a rolling
         average.
 
-        Iterate through all chromosomes to perform rolling average smoothing.
+        Iterate through all regions to perform rolling average smoothing.
         Molecules are processed in batches and streamed to a disk-backed
         array so that peak memory scales with `batch_size` rather than the
         total number of molecules. Results are stored in-place within the
@@ -111,7 +111,7 @@ class MethPrintAnalysis:
             If given, molecules flagged as dropout by a prior
             `MethPrintExperiment.filter_dropout(mask_name=mask_name)`
             call are set to all-NaN in the smoothed output, per
-            source. Looked up as `exp.analysis[chrom][f"{source}_
+            source. Looked up as `exp.analysis[region][f"{source}_
             {mask_name}"]`.
 
         Raises
@@ -121,7 +121,7 @@ class MethPrintAnalysis:
             If `fill_edge` is a literal float outside the data range.
         KeyError
             If `mask_name` is given but no matching mask is found for
-            some source/chromosome.
+            some source/region.
 
         Notes
         -----
@@ -155,18 +155,18 @@ class MethPrintAnalysis:
             "batch_size": batch_size,
             "tmp_dir": exp.resolve_tmp_dir(),
         }
-        for chrom in exp.chroms:
-            raw = exp.raw[chrom]
+        for region in exp.regions:
+            raw = exp.raw[region]
             for src in ("test", "meth", "unmeth"):
                 df = getattr(raw, f"{src}_data")
                 if df is None:
                     continue
                 keep = (
-                    exp.is_kept(chrom, which=src, mask_name=mask_name)
+                    exp.is_kept(region, which=src, mask_name=mask_name)
                     if mask_name is not None
                     else None
                 )
-                exp.analysis[chrom][f"{src}_{name}"] = _smooth_source(
+                exp.analysis[region][f"{src}_{name}"] = _smooth_source(
                     df,
                     raw.nbp,
                     len(getattr(raw, f"{src}_mol_id")),
@@ -195,7 +195,7 @@ class MethPrintAnalysis:
         Convert the smoothed methylation signal into a methylation probability
         profile with values ranging between 0 and 1.
 
-        Iterate through all chromosomes to perform optional control-based
+        Iterate through all regions to perform optional control-based
         relative normalization and percentile-based probability scaling.
         Molecules are processed in batches: normalization means are
         accumulated in a streaming pass, percentile clip bounds are
@@ -276,7 +276,7 @@ class MethPrintAnalysis:
             ('.') exist.
         KeyError
             If `mask_name` is given but no matching mask is found for
-            some source/chromosome.
+            some source/region.
 
         Notes
         -----
@@ -300,15 +300,15 @@ class MethPrintAnalysis:
             "eps": self._EPSILON,
         }
 
-        for chrom in exp.chroms:
-            raw = exp.raw[chrom]
+        for region in exp.regions:
+            raw = exp.raw[region]
             has_controls = (
                 raw.meth_data is not None and raw.unmeth_data is not None
             )
             srcs = ("test", "meth", "unmeth") if has_controls else ("test",)
             arrs = {
                 src: _masked_smoothed(
-                    exp, chrom, src, smoothed_name, mask_name, batch_size
+                    exp, region, src, smoothed_name, mask_name, batch_size
                 )
                 for src in srcs
             }
@@ -335,7 +335,7 @@ class MethPrintAnalysis:
                 clip_high=clip_high,
                 **sample_kw,
             )
-            exp.analysis[chrom][prob_name] = _write_empirical_prob(
+            exp.analysis[region][prob_name] = _write_empirical_prob(
                 arrs["test"],
                 labels["test"],
                 means,
@@ -376,7 +376,7 @@ class MethPrintAnalysis:
             result was made with a different `lnuc` or `nan_method`.
         """
         already_smoothed = (
-            f"test_{smoothed_name}" in exp.analysis[exp.chroms[0]]
+            f"test_{smoothed_name}" in exp.analysis[exp.regions[0]]
         )
         cached_params = exp.global_analysis.get(f"{smoothed_name}_params")
         cached_lnuc = None
@@ -447,9 +447,9 @@ class MethPrintAnalysis:
         methylation probability profile with values ranging between 0
         and 1, using a calibrated Bayesian log-odds model.
 
-        Iterate through all chromosomes, classify each reference
+        Iterate through all regions, classify each reference
         position into a footprinting context (m6A/GpC/CpG/GCG) from
-        `exp.raw[chrom].refseq`, estimate position-specific call rates
+        `exp.raw[region].refseq`, estimate position-specific call rates
         under "protected" and "accessible" hypotheses -- from meth/
         unmeth controls when available, or by expectation-maximization
         on the test sample otherwise -- and convert each read's
@@ -591,7 +591,7 @@ class MethPrintAnalysis:
         ValueError
             If `lbin` is less than 1, if `nu` is negative, if
             `min_rel_contrast` is outside [0, 1], if `q_thres` is
-            outside (0, 1], if a chromosome has no reference sequence
+            outside (0, 1], if a region has no reference sequence
             (`refseq`), if an expectation-maximization fit cannot find
             enough bins with read sites, if `channels` is empty, holds
             an unrecognized name, or names a channel not assayed by
@@ -600,7 +600,7 @@ class MethPrintAnalysis:
             True but molecules with unmapped strands ('.') exist.
         KeyError
             If `mask_name` is given but no matching mask is found for
-            some source/chromosome.
+            some source/region.
 
         Warns
         -----
@@ -623,7 +623,7 @@ class MethPrintAnalysis:
         context to be kept; where they disagree, the folded position
         is treated as having no context.
 
-        Per-chromosome (and, if `norm_by_strand`, per-strand)
+        Per-region (and, if `norm_by_strand`, per-strand)
         calibration diagnostics -- whether controls were used,
         fraction of informative positions per context (only the
         channels in use, see `channels`), fraction
@@ -637,8 +637,8 @@ class MethPrintAnalysis:
         stored in
         `exp.global_analysis[f"{prob_name}_calib"]`. The full
         per-position theta_prot/theta_acc/informative actually used to
-        score each chromosome are stored in
-        `exp.analysis[chrom][f"{prob_name}_theta"]`.
+        score each region are stored in
+        `exp.analysis[region][f"{prob_name}_theta"]`.
         """
         if span not in _VALID_SPAN:
             raise ValueError(
@@ -723,22 +723,22 @@ class MethPrintAnalysis:
             ]
         )
 
-        for chrom in exp.chroms:
-            if chrom in calib_cache:
-                calib = calib_cache[chrom]
+        for region in exp.regions:
+            if region in calib_cache:
+                calib = calib_cache[region]
             else:
-                *calib, _, calib_info = _chrom_calibration(
-                    exp, chrom, **calib_kwargs
+                *calib, _, calib_info = _region_calibration(
+                    exp, region, **calib_kwargs
                 )
                 calib_records.extend(
-                    _calib_rows(chrom, calib_info, norm_by_strand)
+                    _calib_rows(region, calib_info, norm_by_strand)
                 )
-            exp.analysis[chrom][f"{prob_name}_theta"] = _theta_frame(
+            exp.analysis[region][f"{prob_name}_theta"] = _theta_frame(
                 calib[0], *calib[2:], norm_by_strand
             )
             prob, test_stats = _score_test_reads(
                 exp,
-                chrom,
+                region,
                 *calib,
                 channel_eta=channel_eta,
                 channels=channels,
@@ -751,14 +751,14 @@ class MethPrintAnalysis:
                 tmp_dir=tmp_dir,
                 q_thres=q_thres,
             )
-            exp.analysis[chrom][prob_name] = prob
+            exp.analysis[region][prob_name] = prob
 
             test_frac = _call_frac_info({"test": test_stats}, channels)
-            rows = [r for r in calib_records if r["chrom"] == chrom]
+            rows = [r for r in calib_records if r["region"] == region]
             for row in rows:
                 row.update(test_frac)
             if rows:
-                _warn_call_frac_mismatch(chrom, rows[0], channels)
+                _warn_call_frac_mismatch(region, rows[0], channels)
 
         exp.global_analysis[f"{prob_name}_calib"] = pd.DataFrame(calib_records)
 
@@ -766,7 +766,7 @@ class MethPrintAnalysis:
         self,
         exp: MethPrintExperiment,
         *,
-        chroms: str | Iterable[str] | None = None,
+        regions: str | Iterable[str] | None = None,
         data_name: str = "test_smoothed",
         raw_which: str | None = None,
         mask_name: str | None = None,
@@ -781,7 +781,7 @@ class MethPrintAnalysis:
         Cluster molecules by similarity, for sorted plots.
 
         Computes a hierarchical-clustering linkage of the molecules of a
-        dense methylation signal, per chromosome. Nothing is reordered or
+        dense methylation signal, per region. Nothing is reordered or
         copied: pass the linkage as `link_mat` to `plot_meth`, which
         puts its rows in its leaf order. By
         default, clusters the smoothed test signal if `smooth` has been
@@ -792,29 +792,29 @@ class MethPrintAnalysis:
         ----------
         exp : MethPrintExperiment
             The experiment object containing raw data and analysis maps.
-        chroms : str or iterable of str, optional
-            The chromosome(s) to process. If None (default), all
-            chromosomes in `exp.chroms` are processed.
+        regions : str or iterable of str, optional
+            The region(s) to process. If None (default), all
+            regions in `exp.regions` are processed.
         data_name : str, default "test_smoothed"
             The key of the dense analysis array to sort, looked up in
-            `exp.analysis[chrom]` (e.g. a `smooth` or `meth_prob`
+            `exp.analysis[region]` (e.g. a `smooth` or `meth_prob`
             output). Ignored if `raw_which` is given. If left at its
             default and not found, falls back to raw test data (see
             above); any other missing `data_name` raises `KeyError`.
         raw_which : {"test", "meth", "unmeth"}, optional
             If given, source the data to sort from the raw long-form
             table instead of `exp.analysis`, via
-            `exp.to_dense(chrom, which=raw_which)`. Takes priority
+            `exp.to_dense(region, which=raw_which)`. Takes priority
             over `data_name`.
         mask_name : str, optional
             Only used with `raw_which`. If given, forwarded to
-            `exp.to_dense(chrom, which=raw_which, mask_name=mask_name)`
+            `exp.to_dense(region, which=raw_which, mask_name=mask_name)`
             so molecules flagged as dropout by a prior
             `filter_dropout(mask_name=mask_name)` call are excluded
             (returned as all-NaN rows, which need `fill_nan`).
         store_link_mat : bool, default True
-            Whether to also persist each chromosome's linkage matrix
-            into `exp.analysis[chrom][link_mat_name]`. If False, the
+            Whether to also persist each region's linkage matrix
+            into `exp.analysis[region][link_mat_name]`. If False, the
             linkage matrix is only returned, not stored.
         link_mat_name : str, optional
             The key used to store the linkage matrix if
@@ -835,10 +835,10 @@ class MethPrintAnalysis:
         Returns
         -------
         dict of str to np.ndarray
-            A mapping from chromosome name to that chromosome's
+            A mapping from region name to that region's
             linkage matrix, to pass as `link_mat` to
             `MethPlot.plot_meth_prob`. Also stored in
-            `exp.analysis[chrom][link_mat_name]` if `store_link_mat` is
+            `exp.analysis[region][link_mat_name]` if `store_link_mat` is
             True.
 
         Raises
@@ -848,20 +848,20 @@ class MethPrintAnalysis:
             molecule has no data (all nan) and `fill_nan` is None.
         KeyError
             If `raw_which` is None, `data_name` is not `"test_smoothed"`
-            (its default), and not found in `exp.analysis[chrom]` for
-            some chromosome.
+            (its default), and not found in `exp.analysis[region]` for
+            some region.
         """
         if mask_name is not None and raw_which is None:
             raise ValueError("'mask_name' requires 'raw_which' to be given")
-        chroms = _normalize_regions(chroms, default_regions=exp.chroms)
+        regions = _normalize_regions(regions, default_regions=exp.regions)
         tmp_dir = exp.resolve_tmp_dir()
         link_mats = {}
-        for chrom in chroms:
-            ana = exp.analysis[chrom]
+        for region in regions:
+            ana = exp.analysis[region]
             owns_data = False
             if raw_which is not None:
                 data = exp.to_dense(
-                    chrom,
+                    region,
                     which=raw_which,
                     as_h5array=True,
                     batch_size=batch_size,
@@ -873,7 +873,10 @@ class MethPrintAnalysis:
                 # Default target not computed yet -- fall back to the
                 # raw test signal rather than requiring smooth() first.
                 data = exp.to_dense(
-                    chrom, which="test", as_h5array=True, batch_size=batch_size
+                    region,
+                    which="test",
+                    as_h5array=True,
+                    batch_size=batch_size,
                 )
                 base_name = "test"
                 owns_data = True
@@ -881,7 +884,7 @@ class MethPrintAnalysis:
                 if data_name not in ana:
                     raise KeyError(
                         f"'{data_name}' not found in "
-                        f"exp.analysis['{chrom}']; run 'smooth' or "
+                        f"exp.analysis['{region}']; run 'smooth' or "
                         "'meth_prob' first (matching the name/prob_name "
                         "used there), or pass 'raw_which' to source "
                         "from the raw long-form data instead"
@@ -907,6 +910,6 @@ class MethPrintAnalysis:
                     if link_mat_name is not None
                     else f"{base_name}_linkage"
                 )
-                exp.analysis[chrom][lname] = pd.DataFrame(link_mat)
-            link_mats[chrom] = link_mat
+                exp.analysis[region][lname] = pd.DataFrame(link_mat)
+            link_mats[region] = link_mat
         return link_mats

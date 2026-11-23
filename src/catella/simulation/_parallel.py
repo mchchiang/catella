@@ -141,14 +141,14 @@ def _progress_bar(verbose):
     )
 
 
-def _job_label(chrom, mol, run=None):
+def _job_label(region, mol, run=None):
     """
     Describe a simulation job for messages.
 
     Parameters
     ----------
-    chrom : str
-        The chromosome.
+    region : str
+        The region.
     mol : int
         The molecule index.
     run : int, optional
@@ -157,9 +157,9 @@ def _job_label(chrom, mol, run=None):
     Returns
     -------
     str
-        For example "chrom=chr1, mol=3, run=0".
+        For example "region=chr1, mol=3, run=0".
     """
-    label = f"chrom={chrom}, mol={mol}"
+    label = f"region={region}, mol={mol}"
     return label if run is None else f"{label}, run={run}"
 
 
@@ -182,8 +182,8 @@ def _report_crash(console, dataset, jobs):
     for job in jobs:
         run = getattr(job, "run", None)
         try:
-            status = dataset._classify_run(job.chrom, job.mol, run or 0)
+            status = dataset._classify_run(job.region, job.mol, run or 0)
             status = status or "ok"
         except Exception:  # noqa: BLE001
             status = "unknown"
-        console.print(f"  {_job_label(job.chrom, job.mol, run)}: {status}")
+        console.print(f"  {_job_label(job.region, job.mol, run)}: {status}")

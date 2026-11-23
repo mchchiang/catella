@@ -26,7 +26,7 @@ from catella._regions import _per_region, _region_list
 from catella._warnings import _warn
 
 # Position of each plot_dropout_ecdf split_by field in a dropout key.
-_ECDF_FIELDS = {"chrom": 0, "source": 1, "channel": 2}
+_ECDF_FIELDS = {"region": 0, "source": 1, "channel": 2}
 
 
 def _close_raw(sources):
@@ -89,7 +89,7 @@ class MethPlot:
         data=None,
         *,
         exp=None,
-        chroms: str | Iterable[str] | None = None,
+        regions: str | Iterable[str] | None = None,
         raw_which: str | None = None,
         data_name: str | None = None,
         mols=None,
@@ -108,12 +108,12 @@ class MethPlot:
     ):
         """
         Plot a methylation heatmap of one matrix, or of one or more
-        chromosomes of an experiment.
+        regions of an experiment.
 
         Plots at full resolution -- for large data, pass `max_rows` to
         downsample first, or downsample it yourself (`utils.downsample`,
         works uniformly for `H5Array`, `pd.DataFrame`, or `np.ndarray`)
-        and pass the reduced result. Several chromosomes get one panel
+        and pass the reduced result. Several regions get one panel
         each, laid out side by side (at most 4 per row) in one figure,
         aligned and sharing one colorbar on a common color scale.
 
@@ -121,26 +121,26 @@ class MethPlot:
         ----------
         data : H5Array, pd.DataFrame, or np.ndarray, optional
             Dense signal matrix to plot (rows=molecules, columns=bp
-            position), e.g. `exp.analysis[chrom]["meth_prob"]` or the
+            position), e.g. `exp.analysis[region]["meth_prob"]` or the
             result of `MethPrintExperiment.to_dense()`. Required unless
-            `exp` and `chroms` are given instead.
+            `exp` and `regions` are given instead.
         exp : MethPrintExperiment, optional
-            Experiment to read from, together with `chroms` and exactly
+            Experiment to read from, together with `regions` and exactly
             one of `raw_which`/`data_name`. Not combined with `data`.
-        chroms : str or iterable of str, optional
-            Chromosome(s) to plot from `exp`, one panel each, in
+        regions : str or iterable of str, optional
+            Region(s) to plot from `exp`, one panel each, in
             reading order.
         raw_which : {"test", "unmeth", "meth"}, optional
-            Which raw table to plot per chromosome. Calls
-            `exp.to_dense(chrom, which=raw_which, mols=mols,
+            Which raw table to plot per region. Calls
+            `exp.to_dense(region, which=raw_which, mols=mols,
             mask_name=mask_name)` internally.
         data_name : str, optional
-            Key of a dense array to plot per chromosome, read from
-            `exp.analysis[chrom][data_name]` (e.g., "meth_prob").
+            Key of a dense array to plot per region, read from
+            `exp.analysis[region][data_name]` (e.g., "meth_prob").
         mols : int, sequence of int, or dict, optional
             Molecule index/indices to include; only with `raw_which`.
-            See `MethPrintExperiment.to_dense`. With several chroms, a
-            dict keyed by chrom (chroms not in it show all molecules).
+            See `MethPrintExperiment.to_dense`. With several regions, a
+            dict keyed by region (regions not in it show all molecules).
         mask_name : str, optional
             Dropout mask name to apply; only with `raw_which`. See
             `MethPrintExperiment.to_dense`.
@@ -172,13 +172,13 @@ class MethPlot:
             put in its leaf order before `max_rows` downsampling, and its
             dendrogram is drawn alongside. Cannot be combined with
             `mols`. With `data` or `data_name`, the whole array is
-            loaded to reorder it. With several chroms, a dict keyed by
-            chrom, e.g. the result of `sort_by_linkage` (chroms not in
+            loaded to reorder it. With several regions, a dict keyed by
+            region, e.g. the result of `sort_by_linkage` (regions not in
             it are not sorted; extra keys are ignored).
         xscale : int, default 1000
             Spatial scaling factor (a power of 10) for the x-axis labels.
         sharex : bool, default False
-            If True, all panels span the widest chromosome, so they
+            If True, all panels span the widest region, so they
             share one bp scale. If False, each panel spans its own.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
@@ -187,12 +187,12 @@ class MethPlot:
         ------
         ValueError
             If `xscale` is not a power of 10, if neither `data` nor
-            `exp` and `chroms` with exactly one of
+            `exp` and `regions` with exactly one of
             `raw_which`/`data_name` are given, if `data` is combined
-            with any of `exp`/`chroms`/`raw_which`/`data_name`/`mols`/
+            with any of `exp`/`regions`/`raw_which`/`data_name`/`mols`/
             `mask_name`, if `mols` or `mask_name` is given without
-            `raw_which`, if `chroms` is empty, if `mols` or `link_mat`
-            is not a dict with several chroms, or if `link_mat` is
+            `raw_which`, if `regions` is empty, if `mols` or `link_mat`
+            is not a dict with several regions, or if `link_mat` is
             combined with `mols` or does not match the number of
             molecules.
 
@@ -202,13 +202,13 @@ class MethPlot:
             If rendering is estimated to need more than 1 GB of memory
             (about 80 bytes per row and base pair, over all panels).
             Pass `max_rows`, or downsample first (`utils.downsample`),
-            to avoid it. Also if more than 10 chroms are plotted.
+            to avoid it. Also if more than 10 regions are plotted.
         """
         _power_of_10(xscale, "xscale")
         sources = self._meth_sources(
             data,
             exp=exp,
-            chroms=chroms,
+            regions=regions,
             raw_which=raw_which,
             data_name=data_name,
             mols=mols,
@@ -237,7 +237,7 @@ class MethPlot:
         data,
         *,
         exp,
-        chroms,
+        regions,
         raw_which,
         data_name,
         mols,
@@ -251,15 +251,15 @@ class MethPlot:
         Returns
         -------
         list of dict
-            Per panel: "title" (the chrom with several chroms, else
+            Per panel: "title" (the region with several regions, else
             None), "data", "link_mat" (float array or None), and "raw"
             (True if "data" is a `to_dense` result to close).
         """
         if data is not None:
-            given = (exp, chroms, raw_which, data_name, mols, mask_name)
+            given = (exp, regions, raw_which, data_name, mols, mask_name)
             if any(v is not None for v in given):
                 raise ValueError(
-                    "'exp'/'chroms'/'raw_which'/'data_name'/'mols'/"
+                    "'exp'/'regions'/'raw_which'/'data_name'/'mols'/"
                     "'mask_name' cannot be combined with 'data'"
                 )
             if link_mat is not None:
@@ -269,40 +269,40 @@ class MethPlot:
                 {"title": None, "data": data, "link_mat": link_mat,
                  "raw": False}
             ]
-        if exp is None or chroms is None or (
+        if exp is None or regions is None or (
             (raw_which is None) == (data_name is None)
         ):
             raise ValueError(
-                "provide either 'data', or 'exp' and 'chroms' with "
+                "provide either 'data', or 'exp' and 'regions' with "
                 "exactly one of 'raw_which' and 'data_name'"
             )
         if raw_which is None and (mols is not None or mask_name is not None):
             raise ValueError("'mols' and 'mask_name' require 'raw_which'")
-        chroms = _region_list(chroms)
-        mols = _per_region(mols, chroms, "mols")
-        link_mat = _per_region(link_mat, chroms, "link_mat")
+        regions = _region_list(regions)
+        mols = _per_region(mols, regions, "mols")
+        link_mat = _per_region(link_mat, regions, "link_mat")
         sources = []
         try:
-            for chrom in chroms:
-                link, sel = link_mat[chrom], mols[chrom]
+            for region in regions:
+                link, sel = link_mat[region], mols[region]
                 if raw_which is not None:
                     if link is not None:
                         mol_id = getattr(
-                            exp.raw[chrom], f"{raw_which}_mol_id"
+                            exp.raw[region], f"{raw_which}_mol_id"
                         )
                         nmol = 0 if mol_id is None else len(mol_id)
                         link, sel = _leaf_order(link, nmol, sel)
                     matrix = exp.to_dense(
-                        chrom, which=raw_which, mols=sel, mask_name=mask_name
+                        region, which=raw_which, mols=sel, mask_name=mask_name
                     )
                 else:
-                    matrix = exp.analysis[chrom][data_name]
+                    matrix = exp.analysis[region][data_name]
                     if link is not None:
                         link, order = _leaf_order(link, matrix.shape[0])
                         matrix = np.asarray(matrix)[order]
                 sources.append(
                     {
-                        "title": chrom if len(chroms) > 1 else None,
+                        "title": region if len(regions) > 1 else None,
                         "data": matrix,
                         "link_mat": link,
                         "raw": raw_which is not None,
@@ -432,7 +432,7 @@ class MethPlot:
         data=None,
         *,
         exp=None,
-        chroms: str | Iterable[str] | None = None,
+        regions: str | Iterable[str] | None = None,
         data_name: str | None = None,
         emax: float | None = None,
         max_rows: int | None = None,
@@ -459,16 +459,16 @@ class MethPlot:
         ----------
         data : H5Array, pd.DataFrame, or np.ndarray, optional
             Dense probability matrix in [0, 1], e.g.
-            `exp.analysis[chrom]["meth_prob"]`. Required unless `exp`,
-            `chroms`, and `data_name` are given instead.
+            `exp.analysis[region]["meth_prob"]`. Required unless `exp`,
+            `regions`, and `data_name` are given instead.
         exp : MethPrintExperiment, optional
             Experiment to read `data_name` from. Not combined with
             `data`.
-        chroms : str or iterable of str, optional
-            Chromosome(s) to plot from `exp`, one panel each.
+        regions : str or iterable of str, optional
+            Region(s) to plot from `exp`, one panel each.
         data_name : str, optional
-            Key of the probability array per chromosome, read from
-            `exp.analysis[chrom][data_name]`.
+            Key of the probability array per region, read from
+            `exp.analysis[region][data_name]`.
         emax : float, optional
             If given, clamp energy to [-emax, emax] (matching
             `SimSettings.emax`'s clamping in `NucPosMCMC.setEnergy`)
@@ -495,11 +495,11 @@ class MethPlot:
         link_mat : np.ndarray, pd.DataFrame, or dict, optional
             Linkage matrix of these molecules; the rows are put in its
             leaf order and its dendrogram is drawn alongside. With
-            several chroms, a dict keyed by chrom. See `plot_meth_prob`.
+            several regions, a dict keyed by region. See `plot_meth_prob`.
         xscale : int, default 1000
             Spatial scaling factor (a power of 10) for the x-axis labels.
         sharex : bool, default False
-            If True, all panels span the widest chromosome.
+            If True, all panels span the widest region.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
@@ -507,19 +507,19 @@ class MethPlot:
         ------
         ValueError
             If `xscale` is not a power of 10, if neither `data` nor
-            `exp`, `chroms`, and `data_name` are given, if `data` is
-            combined with any of them, or for an invalid `chroms` or
+            `exp`, `regions`, and `data_name` are given, if `data` is
+            combined with any of them, or for an invalid `regions` or
             `link_mat` (see `plot_meth_prob`).
         """
         _power_of_10(xscale, "xscale")
         if data is None and exp is not None and data_name is None:
             raise ValueError(
-                "provide either 'data', or 'exp', 'chroms' and 'data_name'"
+                "provide either 'data', or 'exp', 'regions' and 'data_name'"
             )
         sources = self._meth_sources(
             data,
             exp=exp,
-            chroms=chroms,
+            regions=regions,
             raw_which=None,
             data_name=data_name,
             mols=None,
@@ -563,7 +563,7 @@ class MethPlot:
     def plot_dropout_ecdf(
         self,
         dropout_fractions,
-        chroms,
+        regions,
         *,
         which: str | None = None,
         pooled: bool = True,
@@ -574,7 +574,7 @@ class MethPlot:
         """
         Plot the empirical CDF of dropout rate per group.
 
-        For each matching `(chrom, source, channel)` group, at
+        For each matching `(region, source, channel)` group, at
         threshold `t` the plotted value is
         `100 * mean(dropout_frac <= t)` over that group's molecules.
         The legend shows only the key fields that differ between
@@ -585,14 +585,14 @@ class MethPlot:
         ----------
         dropout_fractions : dict of (str, str, str) to np.ndarray
             Output of `MethPrintExperiment.dropout_fractions`.
-        chroms : str or list of str
-            Chromosome(s) to plot.
+        regions : str or list of str
+            Region(s) to plot.
         which : {"test", "meth", "unmeth"}, optional
             Restrict the plot to this source. None plots every
             source present.
         pooled : bool, default True
             Whether to plot the pooled `channel="all"` groups.
-        split_by : {"chrom", "source", "channel"} or None, default None
+        split_by : {"region", "source", "channel"} or None, default None
             Key field to split into panels, one per value, on shared
             axes (at most 4 per row). None draws a single panel.
         out_file : str or pathlib.Path, optional
@@ -604,13 +604,13 @@ class MethPlot:
         Raises
         ------
         ValueError
-            If `chroms` is empty, `split_by` is invalid, or some
-            chromosome in `chroms` has no matching entries in
+            If `regions` is empty, `split_by` is invalid, or some
+            region in `regions` has no matching entries in
             `dropout_fractions`.
         """
-        chroms = [chroms] if isinstance(chroms, str) else list(chroms)
-        if not chroms:
-            raise ValueError("chroms must not be empty")
+        regions = [regions] if isinstance(regions, str) else list(regions)
+        if not regions:
+            raise ValueError("regions must not be empty")
         if split_by is not None and split_by not in _ECDF_FIELDS:
             raise ValueError(
                 f"split_by must be one of {list(_ECDF_FIELDS)} or None, "
@@ -620,16 +620,16 @@ class MethPlot:
             (
                 key
                 for key in dropout_fractions
-                if key[0] in chroms
+                if key[0] in regions
                 and (which is None or key[1] == which)
                 and (pooled or key[2] != "all")
             ),
-            key=lambda k: chroms.index(k[0]),
+            key=lambda k: regions.index(k[0]),
         )
-        missing = [c for c in chroms if not any(k[0] == c for k in keys)]
+        missing = [c for c in regions if not any(k[0] == c for k in keys)]
         if missing:
             raise ValueError(
-                f"no entries for chroms {missing} with which={which!r} "
+                f"no entries for regions {missing} with which={which!r} "
                 f"and pooled={pooled} in dropout_fractions"
             )
         f = None if split_by is None else _ECDF_FIELDS[split_by]
@@ -667,7 +667,7 @@ class MethPlot:
         if len(labels) > 10:
             _warn(
                 f"plotting {len(labels)} lines per panel; colors repeat "
-                "after 10, so use split_by or fewer chroms to keep lines "
+                "after 10, so use split_by or fewer regions to keep lines "
                 "distinguishable"
             )
         for ax, (panel_title, panel_keys) in zip(axes.flat, panels):

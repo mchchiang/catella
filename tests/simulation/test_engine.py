@@ -41,7 +41,7 @@ def _make_sim_run(out_file, **overrides):
         _make_meth_prob(nmol=1)[0], dtype=np.float64
     ).tobytes()
     defaults = {
-        "chrom": "chr1",
+        "region": "chr1",
         "mol": 0,
         "run": 0,
         "seed": 1,
@@ -72,8 +72,8 @@ class TestSimManagerInit:
 class TestRunJob:
     def test_success_returns_true(self, tmp_path):
         p = _make_sim_run(tmp_path / "out.h5")
-        chrom, mol, run, success, err_msg = SimManager._run_mcmc_job(p)
-        assert (chrom, mol, run) == ("chr1", 0, 0)
+        region, mol, run, success, err_msg = SimManager._run_mcmc_job(p)
+        assert (region, mol, run) == ("chr1", 0, 0)
         assert success is True
         assert err_msg is None
 
@@ -82,8 +82,8 @@ class TestRunJob:
         # job should report failure instead of raising.
         bad_path = Path(str(tmp_path) + "/bad\x00dir/out.h5")
         p = _make_sim_run(bad_path)
-        chrom, mol, run, success, err_msg = SimManager._run_mcmc_job(p)
-        assert (chrom, mol, run) == ("chr1", 0, 0)
+        region, mol, run, success, err_msg = SimManager._run_mcmc_job(p)
+        assert (region, mol, run) == ("chr1", 0, 0)
         assert success is False
         assert err_msg
 
@@ -111,7 +111,7 @@ class TestRunJob:
             }
 
 
-class TestPerChromLlink:
+class TestPerRegionLlink:
     CHROMS = ("a", "b")
 
     def _probs(self):
@@ -122,7 +122,7 @@ class TestPerChromLlink:
 
     def _run(self, out_dir, llink, method, nsim=2):
         return SimManager(nworker=1, verbose=False).run(
-            chroms=self.CHROMS,
+            regions=self.CHROMS,
             nsim=nsim,
             method=method,
             settings=_make_settings(nucbp=20, llink=llink),
@@ -141,34 +141,34 @@ class TestPerChromLlink:
     @pytest.mark.parametrize("method", ["mcmc", "tm"])
     def test_matches_uniform_runs(self, tmp_path, method):
         mixed = self._run(tmp_path / "mix", {"a": 0, "b": 30}, method)
-        for chrom, llink in (("a", 0), ("b", 30)):
+        for region, llink in (("a", 0), ("b", 30)):
             uniform = self._run(tmp_path / f"u{llink}", llink, method)
             for mol in range(2):
                 for run in range(2):
-                    got = mixed.raw[chrom, mol, run]
-                    want = uniform.raw[chrom, mol, run]
+                    got = mixed.raw[region, mol, run]
+                    want = uniform.raw[region, mol, run]
                     assert got.llink == llink
                     np.testing.assert_array_equal(
                         self._position(got), self._position(want)
                     )
 
-    def test_tm_logz_uses_chromosome_value(self, tmp_path):
+    def test_tm_logz_uses_region_value(self, tmp_path):
         mixed = self._run(tmp_path / "mix", {"a": 0, "b": 30}, "tm")
-        for chrom, llink in (("a", 0), ("b", 30)):
+        for region, llink in (("a", 0), ("b", 30)):
             uniform = self._run(tmp_path / f"u{llink}", llink, "tm")
-            assert mixed.raw[chrom, 0, 0].logz == pytest.approx(
-                uniform.raw[chrom, 0, 0].logz
+            assert mixed.raw[region, 0, 0].logz == pytest.approx(
+                uniform.raw[region, 0, 0].logz
             )
 
-    def test_occupancy_uses_chromosome_value(self, tmp_path):
+    def test_occupancy_uses_region_value(self, tmp_path):
         mixed = self._run(tmp_path / "mix", {"a": 0, "b": 30}, "tm", nsim=0)
         SimAnalysis().compute_occup(dataset=mixed, batch_size=2)
-        for chrom, llink in (("a", 0), ("b", 30)):
+        for region, llink in (("a", 0), ("b", 30)):
             uniform = self._run(tmp_path / f"u{llink}", llink, "tm", nsim=0)
             SimAnalysis().compute_occup(dataset=uniform, batch_size=2)
             np.testing.assert_allclose(
-                mixed.analysis[chrom]["occup"][:],
-                uniform.analysis[chrom]["occup"][:],
+                mixed.analysis[region]["occup"][:],
+                uniform.analysis[region]["occup"][:],
             )
         other = self._run(tmp_path / "o", 0, "tm", nsim=0)
         SimAnalysis().compute_occup(dataset=other, batch_size=2)
@@ -198,7 +198,7 @@ class TestPerChromLlink:
         back = SimDataset.load(tmp_path / "s" / "results.h5")
         assert back.settings["llink"] == 30
 
-    def test_mcmc_rerun_keeps_chromosome_value(self, tmp_path):
+    def test_mcmc_rerun_keeps_region_value(self, tmp_path):
         manager = SimManager(nworker=1, verbose=False)
         dataset = self._run(tmp_path / "r", {"a": 0, "b": 30}, "mcmc", nsim=1)
         before = self._position(dataset.raw["b", 1, 0])
@@ -210,8 +210,8 @@ class TestPerChromLlink:
             self._position(fresh.raw["b", 1, 0]), before
         )
 
-    def test_missing_chromosome_raises_before_work(self, tmp_path):
-        with pytest.raises(KeyError, match="no value for chromosome 'b'"):
+    def test_missing_region_raises_before_work(self, tmp_path):
+        with pytest.raises(KeyError, match="no value for region 'b'"):
             self._run(tmp_path / "m", {"a": 0}, "tm")
         assert not (tmp_path / "m").exists()
 
@@ -227,7 +227,7 @@ class TestSimManagerRun:
     def test_samples_at_zero_llink_read_back(self, tmp_path, method):
         manager = SimManager(nworker=1, verbose=False)
         dataset = manager.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=1,
             method=method,
             settings=_make_settings(llink=0),
@@ -243,7 +243,7 @@ class TestSimManagerRun:
         meth_prob = _make_meth_prob(nmol=3, nbp=200)
         manager = SimManager(nworker=1, verbose=False)
         dataset = manager.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=1,
             settings=_make_settings(),
             meth_prob=meth_prob,
@@ -261,7 +261,7 @@ class TestSimManagerRun:
         meth_prob = _make_meth_prob(nmol=1, nbp=50)
         manager = SimManager(nworker=1, verbose=False)
         dataset = manager.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=1,
             settings=_make_settings(),
             meth_prob=meth_prob,
@@ -284,7 +284,7 @@ class TestSimManagerRun:
         meth_prob = _make_meth_prob(nmol=3, nbp=200)
         manager = SimManager(nworker=2, verbose=False)
         dataset = manager.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=1,
             settings=_make_settings(),
             meth_prob=meth_prob,
@@ -308,8 +308,8 @@ class TestSimManagerRun:
         def fake_run_mcmc_job(p):
             calls.append(p)
             if len(calls) == 1:
-                return (p.chrom, p.mol, p.run, False, "synthetic failure")
-            return (p.chrom, p.mol, p.run, True, None)
+                return (p.region, p.mol, p.run, False, "synthetic failure")
+            return (p.region, p.mol, p.run, True, None)
 
         monkeypatch.setattr(
             SimManager, "_run_mcmc_job", staticmethod(fake_run_mcmc_job)
@@ -318,7 +318,7 @@ class TestSimManagerRun:
         meth_prob = _make_meth_prob(nmol=2, nbp=200)
         manager = SimManager(nworker=1, verbose=True)
         dataset = manager.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=1,
             settings=_make_settings(),
             meth_prob=meth_prob,
@@ -335,7 +335,7 @@ class TestSimManagerRun:
         meth_prob = _make_meth_prob(nmol=2, nbp=50)
         manager = SimManager(nworker=1, verbose=False)
         dataset = manager.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=2,
             settings=_make_settings(),
             meth_prob=meth_prob,
@@ -359,7 +359,7 @@ class TestSimManagerRun:
         )
         manager = SimManager(nworker=1, verbose=False)
         dataset = manager.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=1,
             method=method,
             settings=settings,
@@ -380,7 +380,7 @@ class TestSimManagerRun:
         meth_prob = _make_meth_prob(nmol=2, nbp=50)
         manager = SimManager(nworker=1, verbose=False)
         dataset = manager.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=1,
             settings=_make_settings(),
             meth_prob=meth_prob,
@@ -399,7 +399,7 @@ class TestSimManagerRun:
         meth_prob[:, -5:] = np.nan
         manager = SimManager(nworker=1, verbose=False)
         dataset = manager.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=1,
             settings=_make_settings(),
             meth_prob=meth_prob,
@@ -414,7 +414,7 @@ class TestSimManagerRun:
         meth_prob = _make_meth_prob(nmol=2, nbp=50)
         manager = SimManager(nworker=1, verbose=False)
         stored = manager.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=1,
             settings=_make_settings(),
             meth_prob=meth_prob,
@@ -423,7 +423,7 @@ class TestSimManagerRun:
             use_median_eseq_mu=True,
         )
         unstored = manager.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=1,
             settings=_make_settings(),
             meth_prob=meth_prob,
@@ -443,7 +443,7 @@ class TestSimManagerRun:
         meth_prob = _make_meth_prob(nmol=3, nbp=50)
         manager = SimManager(nworker=1, verbose=False)
         full = manager.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=1,
             settings=_make_settings(),
             meth_prob=meth_prob,
@@ -451,7 +451,7 @@ class TestSimManagerRun:
             seed=3,
         )
         subset = manager.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=1,
             settings=_make_settings(),
             meth_prob=meth_prob,
@@ -464,7 +464,7 @@ class TestSimManagerRun:
     def test_single_int_mols_runs_one_molecule(self, tmp_path):
         manager = SimManager(nworker=1, verbose=False)
         dataset = manager.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=2,
             settings=_make_settings(),
             meth_prob=_make_meth_prob(nmol=3, nbp=50),
@@ -492,7 +492,7 @@ class TestSimManagerRun:
                 raise TypeError("cannot pickle this")
 
         dataset = SimDataset.create(
-            chroms=["chr1"],
+            regions=["chr1"],
             nmol={"chr1": 1},
             nsim=1,
             nbp={"chr1": 10},
@@ -522,7 +522,7 @@ class TestSimManagerRerun:
         meth_prob = _make_meth_prob(nmol=2, nbp=50)
         manager = SimManager(nworker=1, verbose=False)
         dataset = manager.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=1,
             settings=_make_settings(),
             meth_prob=meth_prob,
@@ -546,7 +546,7 @@ class TestSimManagerRerun:
         meth_prob = _make_meth_prob(nmol=2, nbp=50)
         manager = SimManager(nworker=1, verbose=False)
         dataset = manager.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=1,
             settings=_make_settings(),
             meth_prob=meth_prob,
@@ -566,7 +566,7 @@ class TestSimManagerRerun:
         meth_prob = _make_meth_prob(nmol=2, nbp=50)
         manager = SimManager(nworker=1, verbose=False)
         dataset = manager.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=1,
             settings=_make_settings(),
             meth_prob=meth_prob,
@@ -578,7 +578,7 @@ class TestSimManagerRerun:
         real_run_mcmc_job = SimManager._run_mcmc_job
 
         def spy_run_mcmc_job(p):
-            calls.append((p.chrom, p.mol, p.run))
+            calls.append((p.region, p.mol, p.run))
             return real_run_mcmc_job(p)
 
         monkeypatch.setattr(
@@ -594,7 +594,7 @@ class TestSimManagerRerun:
         self, tmp_path
     ):
         dataset = SimDataset.create(
-            chroms=["chr1"],
+            regions=["chr1"],
             nmol={"chr1": 1},
             nsim=1,
             nbp={"chr1": 50},
@@ -621,7 +621,7 @@ class TestSimManagerRerun:
         meth_prob = _make_meth_prob(nmol=1, nbp=50)
         manager = SimManager(nworker=1, verbose=False)
         dataset = manager.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=1,
             settings=_make_settings(),
             meth_prob=meth_prob,
@@ -646,7 +646,7 @@ class TestSimManagerRerun:
         meth_prob = _make_meth_prob(nmol=1, nbp=50)
         manager = SimManager(nworker=1, verbose=False)
         dataset = manager.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=1,
             settings=_make_settings(nsweep=10),
             meth_prob=meth_prob,
@@ -684,7 +684,7 @@ def _make_tm_job(out_file, seeds=(1, 2, 3), nbp=20, **overrides):
         logit(_make_meth_prob(nmol=1, nbp=nbp)[0]), dtype=np.float64
     ).tobytes()
     defaults = {
-        "chrom": "chr1",
+        "region": "chr1",
         "mol": 0,
         "seeds": seeds,
         "seq_energy": seq_energy,
@@ -733,8 +733,8 @@ class TestRunTMJob:
     def test_failure_reports_error_and_writes_nothing(self, tmp_path):
         out_file = tmp_path / "mol.h5"
         p = _make_tm_job(out_file, settings=_make_tm_settings(end_temp=0.0))
-        chrom, mol, run, success, err_msg = SimManager._run_tm_job(p)
-        assert (chrom, mol, run) == ("chr1", 0, None)
+        region, mol, run, success, err_msg = SimManager._run_tm_job(p)
+        assert (region, mol, run) == ("chr1", 0, None)
         assert success is False
         assert err_msg
         assert not out_file.exists()
@@ -745,7 +745,7 @@ class TestSimManagerRunTM:
         meth_prob = _make_meth_prob(nmol=2, nbp=30)
         manager = SimManager(nworker=1, verbose=False)
         dataset = manager.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=0,
             method="tm",
             settings=_make_tm_settings(),
@@ -763,7 +763,7 @@ class TestSimManagerRunTM:
         meth_prob = _make_meth_prob(nmol=2, nbp=30)
         manager = SimManager(nworker=1, verbose=False)
         dataset = manager.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=3,
             method="tm",
             settings=_make_tm_settings(),
@@ -780,7 +780,7 @@ class TestSimManagerRunTM:
         meth_prob = _make_meth_prob(nmol=3, nbp=30)
         datasets = [
             SimManager(nworker=nworker, verbose=False).run(
-                chroms="chr1",
+                regions="chr1",
                 nsim=2,
                 method="tm",
                 settings=_make_tm_settings(),
@@ -803,7 +803,7 @@ class TestSimManagerRunTM:
         meth_prob = _make_meth_prob(nmol=2, nbp=30)
         manager = SimManager(nworker=1, verbose=False)
         dataset = manager.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=3,
             method="tm",
             settings=_make_tm_settings(),
@@ -834,7 +834,7 @@ class TestSimManagerRunTM:
         meth_prob = _make_meth_prob(nmol=1, nbp=30)
         manager = SimManager(nworker=1, verbose=False)
         dataset = manager.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=2,
             method="tm",
             settings=_make_tm_settings(),
@@ -853,7 +853,7 @@ class TestRerunTM:
         meth_prob = _make_meth_prob(nmol=1, nbp=30)
         manager = SimManager(nworker=1, verbose=False)
         dataset = manager.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=2,
             method="tm",
             settings=_make_tm_settings(),
@@ -872,7 +872,7 @@ class TestRerunTM:
         meth_prob = _make_meth_prob(nmol=2, nbp=30)
         manager = SimManager(nworker=1, verbose=False)
         dataset = manager.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=2,
             method="tm",
             settings=_make_tm_settings(),
@@ -896,7 +896,7 @@ class TestRerunTM:
         meth_prob = _make_meth_prob(nmol=2, nbp=30)
         manager = SimManager(nworker=1, verbose=False)
         dataset = manager.run(
-            chroms="chr1",
+            regions="chr1",
             nsim=2,
             method="tm",
             settings=_make_tm_settings(),
@@ -933,7 +933,7 @@ def _run_no_data(tmp_path, method="mcmc", nsim=2, name="ds"):
         settings = _make_tm_settings()
         meth_prob = _no_data_meth_prob(nbp=30, nucbp=3)
     dataset = SimManager(nworker=1, verbose=False).run(
-        chroms="chr1",
+        regions="chr1",
         nsim=nsim,
         method=method,
         settings=settings,
@@ -997,7 +997,7 @@ class TestNoData:
         assert np.isnan(energy["energy"][1])
         assert np.isnan(energy["log_prob"][1])
         assert not np.isnan(energy["energy"][[0, 2]]).any()
-        configs = ana.extract_config(dataset, chrom="chr1", name="best_match")
+        configs = ana.extract_config(dataset, region="chr1", name="best_match")
         assert configs[1] is None
         assert configs[0] is not None
 
@@ -1006,7 +1006,7 @@ class TestNoData:
         meth_prob[0, 10] = np.nan
         with pytest.raises(ValueError, match="nan at nucleosome start"):
             SimManager(nworker=1, verbose=False).run(
-                chroms="chr1",
+                regions="chr1",
                 nsim=1,
                 settings=_make_settings(),
                 meth_prob=meth_prob,
@@ -1063,7 +1063,7 @@ def _partial_nan_meth_prob(nmol=3, nbp=400):
 class TestFillNan:
     def _run(self, tmp_path, meth_prob, fill_nan, name="ds"):
         return SimManager(nworker=1, verbose=False).run(
-            chroms="chr1",
+            regions="chr1",
             nsim=1,
             settings=_make_settings(),
             meth_prob=meth_prob,
@@ -1114,7 +1114,7 @@ def _llink_exp(linker=10, nmol=50, nbp=200):
     energy[:, 0 : nbp - 4 : 5 + linker] = -20.0
     prob = 1.0 / (1.0 + np.exp(-energy))
     return SimpleNamespace(
-        chroms=("chr1",), analysis={"chr1": {"meth_prob": prob}}
+        regions=("chr1",), analysis={"chr1": {"meth_prob": prob}}
     )
 
 
@@ -1125,7 +1125,7 @@ def _llink_settings():
 
 
 class TestSimManagerEstimateLlink:
-    def test_returns_value_per_chromosome(self):
+    def test_returns_value_per_region(self):
         best = SimManager().estimate_llink(
             _llink_exp(), _llink_settings(), llinks=[0, 10, 30]
         )
@@ -1170,7 +1170,7 @@ class TestSimManagerEstimateLlink:
 
 def _prob_exp(arrays):
     return SimpleNamespace(
-        chroms=tuple(arrays),
+        regions=tuple(arrays),
         analysis={c: {"meth_prob": a} for c, a in arrays.items()},
     )
 
@@ -1196,14 +1196,14 @@ class TestSimManagerEstimateStartTemp:
         high = SimManager().estimate_start_temp(exp, percentile=90.0)
         assert low < high
 
-    def test_chroms_selects_chromosomes(self):
+    def test_regions_selects_regions(self):
         exp = _prob_exp(
             {
                 "chr1": np.full((10, 20), 0.9),
                 "chr2": np.full((10, 20), 0.6),
             }
         )
-        got = SimManager().estimate_start_temp(exp, chroms="chr2")
+        got = SimManager().estimate_start_temp(exp, regions="chr2")
         assert got == pytest.approx(abs(logit(0.6)))
 
     def test_saturated_prob_is_finite(self):

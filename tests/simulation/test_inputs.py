@@ -47,23 +47,23 @@ class TestIsValidLlink:
 
 
 class TestNormalizeMethProb:
-    def test_array_for_single_chrom(self):
+    def test_array_for_single_region(self):
         arr = np.random.default_rng(0).random((3, 5))
         out = _normalize_meth_prob(arr, ["chr1"])
         assert list(out) == ["chr1"]
         np.testing.assert_array_equal(out["chr1"], arr)
 
-    def test_array_for_multiple_chroms_raises(self):
+    def test_array_for_multiple_regions_raises(self):
         with pytest.raises(TypeError):
             _normalize_meth_prob(np.zeros((2, 3)), ["chr1", "chr2"])
 
-    def test_mapping_selects_chroms_in_order(self):
+    def test_mapping_selects_regions_in_order(self):
         data = {"a": np.zeros((1, 2)), "b": np.ones((2, 2)), "c": None}
         out = _normalize_meth_prob(data, ["b", "a"])
         assert list(out) == ["b", "a"]
         np.testing.assert_array_equal(out["b"], np.ones((2, 2)))
 
-    def test_mapping_missing_chrom_raises(self):
+    def test_mapping_missing_region_raises(self):
         with pytest.raises(KeyError):
             _normalize_meth_prob({"a": np.zeros((1, 2))}, ["b"])
 
@@ -177,15 +177,15 @@ class TestPrepareRows:
 
 class TestNormalizeMols:
     @pytest.mark.parametrize("mols", [2, slice(0, 3), [0, 2]])
-    def test_selection_applied_to_every_chrom(self, mols):
+    def test_selection_applied_to_every_region(self, mols):
         out = _normalize_mols(mols, ["a", "b"])
         assert out == {"a": mols, "b": mols}
 
-    def test_mapping_selects_chroms(self):
+    def test_mapping_selects_regions(self):
         out = _normalize_mols({"a": [0], "b": [1], "c": [2]}, ["a", "b"])
         assert out == {"a": [0], "b": [1]}
 
-    def test_mapping_missing_chrom_raises(self):
+    def test_mapping_missing_region_raises(self):
         with pytest.raises(KeyError):
             _normalize_mols({"a": [0]}, ["b"])
 
@@ -195,7 +195,7 @@ class TestNormalizeMols:
 
 
 class TestCountMols:
-    def test_counts_over_chroms(self):
+    def test_counts_over_regions(self):
         mols = {"a": slice(None), "b": [0, 2], "c": 1}
         nmol = {"a": 4, "b": 3, "c": 2}
         assert _count_mols(mols, nmol) == 7
@@ -239,10 +239,10 @@ class TestCheckLlink:
         with pytest.raises(ValueError, match="non-negative integer"):
             _check_llink(_make_settings(llink=llink), ["a"])
 
-    def test_mapping_covering_chroms_passes(self):
+    def test_mapping_covering_regions_passes(self):
         _check_llink(_make_settings(llink={"a": 10, "b": 0}), ["a", "b"])
 
-    def test_missing_chrom_raises(self):
+    def test_missing_region_raises(self):
         with pytest.raises(KeyError, match="'b'"):
             _check_llink(_make_settings(llink={"a": 10}), ["a", "b"])
 

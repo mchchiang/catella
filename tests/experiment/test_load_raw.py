@@ -25,16 +25,16 @@ def _write_chromsize(path, sizes):
 
 def _write_fasta(path, records):
     with open(path, "w") as f:
-        f.writelines(f">{chrom}\n{seq}\n" for chrom, seq in records.items())
+        f.writelines(f">{region}\n{seq}\n" for region, seq in records.items())
 
 
-def _make_rows(chrom, mol_ids, positions, seed=0, strand="+"):
+def _make_rows(region, mol_ids, positions, seed=0, strand="+"):
     rng = np.random.default_rng(seed)
     rows = []
     for mol in mol_ids:
         for pos in positions:
             rows.append(
-                (mol, pos, chrom, strand, round(float(rng.random()), 4), "a")
+                (mol, pos, region, strand, round(float(rng.random()), 4), "a")
             )
     return rows
 
@@ -46,23 +46,23 @@ def _legacy_reference(
     # only to verify the streaming version reproduces it exactly.
     df = pd.DataFrame(
         test_rows,
-        columns=["mol_id", "upos", "chrom", "strand", "mod_qual", "mod_code"],
+        columns=["mol_id", "upos", "region", "strand", "mod_qual", "mod_code"],
     )
     df_size = pd.DataFrame(
-        list(chromsize.items()), columns=["chrom", "length"]
+        list(chromsize.items()), columns=["region", "length"]
     )
     rng = None if max_nmol is None else np.random.default_rng(seed)
     if max_nmol is not None:
-        mol_map = df[["chrom", "mol_id"]].drop_duplicates()
+        mol_map = df[["region", "mol_id"]].drop_duplicates()
         sampled = []
-        for chrom, group in mol_map.groupby("chrom"):
+        for region, group in mol_map.groupby("region"):
             mols = group["mol_id"].values
             if len(mols) > max_nmol:
                 mols = rng.choice(mols, max_nmol, replace=False)
             sampled.append(mols)
         sampled = np.concatenate(sampled)
         df = df.set_index("mol_id").loc[sampled].reset_index()
-    df = pd.merge(df, df_size, on="chrom")
+    df = pd.merge(df, df_size, on="region")
     if wrap:
         df["pos"] = np.where(
             df["upos"] > (df["length"] - 1) / 2,
@@ -71,18 +71,18 @@ def _legacy_reference(
         )
     else:
         df["pos"] = df["upos"]
-    df = df.sort_values(["chrom", "mol_id", "pos"]).reset_index(drop=True)
-    df["mol_index"] = df.groupby("chrom")["mol_id"].transform(
+    df = df.sort_values(["region", "mol_id", "pos"]).reset_index(drop=True)
+    df["mol_index"] = df.groupby("region")["mol_id"].transform(
         lambda x: pd.factorize(x)[0]
     )
-    mol_ids = {c: g["mol_id"].unique() for c, g in df.groupby("chrom")}
-    keep = ["chrom", "mol_index", "pos", "strand", "mod_qual", "mod_code"]
-    dfs = {c: g[keep].drop(columns="chrom") for c, g in df.groupby("chrom")}
+    mol_ids = {c: g["mol_id"].unique() for c, g in df.groupby("region")}
+    keep = ["region", "mol_index", "pos", "strand", "mod_qual", "mod_code"]
+    dfs = {c: g[keep].drop(columns="region") for c, g in df.groupby("region")}
     return mol_ids, dfs
 
 
 class TestBasicIngestion:
-    def test_multi_chromosome(self, tmp_path):
+    def test_multi_region(self, tmp_path):
         rows = _make_rows(
             "chr1", ["m0", "m1", "m2"], [10, 20, 30], seed=0
         ) + _make_rows("chr2", ["m0", "m1"], [5, 15], seed=1)
@@ -94,7 +94,7 @@ class TestBasicIngestion:
         exp = MethPrintExperiment.load_raw(
             chromsize=chromsize, test_file=test_file, chunk_size=4
         )
-        assert set(exp.chroms) == {"chr1", "chr2"}
+        assert set(exp.regions) == {"chr1", "chr2"}
 
         raw1 = exp.raw["chr1"]
         assert raw1.nbp == 100
@@ -148,7 +148,7 @@ class TestBasicIngestion:
         assert sorted(codes) == ["76792", "a"]
         exp.close()
 
-    def test_numeric_chromosome_names(self, tmp_path):
+    def test_numeric_region_names(self, tmp_path):
         rows = _make_rows("601", ["m0", "m1"], [10, 20]) + _make_rows(
             "1", ["m0"], [5], seed=1
         )
@@ -160,7 +160,7 @@ class TestBasicIngestion:
         exp = MethPrintExperiment.load_raw(
             chromsize=chromsize, test_file=test_file
         )
-        assert set(exp.chroms) == {"601", "1"}
+        assert set(exp.regions) == {"601", "1"}
         assert sorted(exp.raw["601"].test_mol_id) == ["m0", "m1"]
         assert exp.raw["1"].nbp == 50
         exp.close()
@@ -226,11 +226,11 @@ class TestDownsamplingAndWrap:
             chunk_size=5,
         )
 
-        for chrom in ("chr1", "chr2"):
-            raw = exp.raw[chrom]
-            assert np.array_equal(np.sort(legacy_ids[chrom]), raw.test_mol_id)
+        for region in ("chr1", "chr2"):
+            raw = exp.raw[region]
+            assert np.array_equal(np.sort(legacy_ids[region]), raw.test_mol_id)
             l = (
-                legacy_dfs[chrom]
+                legacy_dfs[region]
                 .sort_values(["mol_index", "pos"])
                 .reset_index(drop=True)
             )
@@ -269,7 +269,7 @@ class TestDownsamplingAndWrap:
         assert positions == [9, 10]
         exp.close()
 
-    def test_chrom_mismatch_raises(self, tmp_path):
+    def test_region_mismatch_raises(self, tmp_path):
         test_rows = _make_rows("chr1", ["m0"], [1, 2])
         unmeth_rows = _make_rows("chr2", ["m0"], [1, 2])
         test_file = tmp_path / "test.tsv"
@@ -405,7 +405,7 @@ class TestBalanceStrand:
         exp_plain.close()
         exp_wrap.close()
 
-    def test_one_strand_only_gives_empty_chrom(self, tmp_path):
+    def test_one_strand_only_gives_empty_region(self, tmp_path):
         chromsize, test_file = self._setup(tmp_path, 10, 0)
         fasta_file = tmp_path / "ref.fa"
         _write_fasta(fasta_file, {"chr1": "A" * 100})
@@ -566,7 +566,7 @@ class TestNonPrimaryRows:
 
 class TestColidx:
     def test_headerless_file_with_colidx(self, tmp_path):
-        # File columns: extra, chrom, upos, strand, mod_qual, mod_code, mol_id
+        # File columns: extra, region, upos, strand, mod_qual, mod_code, mol_id
         rows = [
             ("junk", "chr1", 5, "+", 0.5, "a", "mol1"),
             ("junk", "chr1", 6, "-", 0.6, "h", "mol1"),
@@ -577,7 +577,7 @@ class TestColidx:
         chromsize = tmp_path / "sizes.tsv"
         _write_chromsize(chromsize, {"chr1": 100})
 
-        # colidx positional order: read_id, ref_position, chrom,
+        # colidx positional order: read_id, ref_position, region,
         # ref_strand, mod_qual, mod_code
         colidx = [6, 2, 1, 3, 4, 5]
         exp = MethPrintExperiment.load_raw(
@@ -589,8 +589,8 @@ class TestColidx:
         exp.close()
 
 
-class TestChromSelection:
-    def test_selects_subset_of_chromosomes(self, tmp_path):
+class TestRegionSelection:
+    def test_selects_subset_of_regions(self, tmp_path):
         rows = (
             _make_rows("chr1", ["m0"], [1, 2])
             + _make_rows("chr2", ["m0"], [1, 2])
@@ -602,14 +602,14 @@ class TestChromSelection:
         _write_chromsize(chromsize, {"chr1": 100, "chr2": 100, "chr3": 100})
 
         exp = MethPrintExperiment.load_raw(
-            chromsize=chromsize, test_file=test_file, chroms=["chr1", "chr3"]
+            chromsize=chromsize, test_file=test_file, regions=["chr1", "chr3"]
         )
-        assert set(exp.chroms) == {"chr1", "chr3"}
+        assert set(exp.regions) == {"chr1", "chr3"}
         with pytest.raises(KeyError):
             exp.raw["chr2"]
         exp.close()
 
-    def test_unknown_chromosome_raises(self, tmp_path):
+    def test_unknown_region_raises(self, tmp_path):
         rows = _make_rows("chr1", ["m0"], [1, 2])
         test_file = tmp_path / "test.tsv"
         _write_tsv(test_file, rows)
@@ -618,7 +618,7 @@ class TestChromSelection:
 
         with pytest.raises(ValueError):
             MethPrintExperiment.load_raw(
-                chromsize=chromsize, test_file=test_file, chroms=["chrX"]
+                chromsize=chromsize, test_file=test_file, regions=["chrX"]
             )
 
     def _scoped_setup(self, tmp_path, with_chr0):
@@ -639,24 +639,24 @@ class TestChromSelection:
         return chromsize, test_file
 
     @pytest.mark.filterwarnings("error")
-    def test_balance_strand_ignores_excluded_chroms(self, tmp_path):
+    def test_balance_strand_ignores_excluded_regions(self, tmp_path):
         chromsize, test_file = self._scoped_setup(tmp_path, True)
         exp = MethPrintExperiment.load_raw(
             chromsize=chromsize,
             test_file=test_file,
-            chroms=["chr1"],
+            regions=["chr1"],
             max_nmol=10,
             balance_strand=True,
         )
-        assert set(exp.chroms) == {"chr1"}
+        assert set(exp.regions) == {"chr1"}
         exp.close()
 
     @pytest.mark.parametrize("balance_strand", [False, True])
-    def test_excluded_chroms_do_not_affect_sampling(
+    def test_excluded_regions_do_not_affect_sampling(
         self, tmp_path, balance_strand
     ):
         kwargs = {
-            "chroms": ["chr1"],
+            "regions": ["chr1"],
             "max_nmol": 10,
             "balance_strand": balance_strand,
             "seed": 5,
@@ -725,7 +725,7 @@ class TestRefseq:
                 chromsize=chromsize, test_file=test_file, fasta_file=fasta_file
             )
 
-    def test_chrom_missing_from_fasta_stays_none(self, tmp_path):
+    def test_region_missing_from_fasta_stays_none(self, tmp_path):
         rows = _make_rows("chr1", ["m0"], [1, 2]) + _make_rows(
             "chr2", ["m0"], [1, 2]
         )
@@ -785,7 +785,7 @@ class TestRefseq:
                 fasta_file=halved_fasta,
             )
 
-    def test_chroms_filter_ignores_excluded_fasta_records(self, tmp_path):
+    def test_regions_filter_ignores_excluded_fasta_records(self, tmp_path):
         rows = _make_rows("chr1", ["m0"], [1, 2]) + _make_rows(
             "chr3", ["m0"], [1, 2]
         )
@@ -794,7 +794,7 @@ class TestRefseq:
         chromsize = tmp_path / "sizes.tsv"
         _write_chromsize(chromsize, {"chr1": 10, "chr2": 8, "chr3": 6})
         fasta_file = tmp_path / "ref.fa"
-        # chr2 is excluded via chroms=, and deliberately wrong-length
+        # chr2 is excluded via regions=, and deliberately wrong-length
         _write_fasta(
             fasta_file, {"chr1": "ACGTACGTAC", "chr2": "AAA", "chr3": "TTTTTT"}
         )
@@ -803,7 +803,7 @@ class TestRefseq:
             chromsize=chromsize,
             test_file=test_file,
             fasta_file=fasta_file,
-            chroms=["chr1", "chr3"],
+            regions=["chr1", "chr3"],
         )
         assert exp.raw["chr1"].refseq == "ACGTACGTAC"
         assert exp.raw["chr3"].refseq == "TTTTTT"
@@ -1238,13 +1238,13 @@ class TestLazyAndScratchLifecycle:
         assert not leaked
 
 
-def _raw_snapshot(exp, chroms):
+def _raw_snapshot(exp, regions):
     # Comparable snapshot of an experiment's raw data across sources
     # actually present (test, and unmeth/meth if given).
     snapshot = {}
-    for chrom in chroms:
-        raw = exp.raw[chrom]
-        snapshot[chrom] = {}
+    for region in regions:
+        raw = exp.raw[region]
+        snapshot[region] = {}
         for src in ("test", "unmeth", "meth"):
             mol_id = getattr(raw, f"{src}_mol_id")
             if mol_id is None:
@@ -1254,17 +1254,17 @@ def _raw_snapshot(exp, chroms):
                 .sort_values(["mol_index", "pos"])
                 .reset_index(drop=True)
             )
-            snapshot[chrom][src] = (sorted(mol_id), data)
+            snapshot[region][src] = (sorted(mol_id), data)
     return snapshot
 
 
 def _assert_snapshots_equal(a, b):
     assert a.keys() == b.keys()
-    for chrom in a:
-        assert a[chrom].keys() == b[chrom].keys()
-        for src in a[chrom]:
-            ids_a, df_a = a[chrom][src]
-            ids_b, df_b = b[chrom][src]
+    for region in a:
+        assert a[region].keys() == b[region].keys()
+        for src in a[region]:
+            ids_a, df_a = a[region][src]
+            ids_b, df_b = b[region][src]
             assert ids_a == ids_b
             pd.testing.assert_frame_equal(df_a, df_b)
 
@@ -1436,7 +1436,7 @@ class TestReadExtents:
         assert raw.test_data["pos"].tolist() == [20]
         exp.close()
 
-    def test_clipped_to_chromosome(self, tmp_path):
+    def test_clipped_to_region(self, tmp_path):
         rows = [("m0", 5, "chr1", "+", 0.9, "a", -3, 140)]
         chromsize, f = _extent_setup(tmp_path, rows, header=_ALIGN_HEADER)
         exp = MethPrintExperiment.load_raw(chromsize=chromsize, test_file=f)
@@ -1658,9 +1658,9 @@ class TestInternalGaps:
         reloaded.close()
 
 
-def _bed_line(chrom, start, end, name, sizes, starts):
+def _bed_line(region, start, end, name, sizes, starts):
     return (
-        f"{chrom}\t{start}\t{end}\t{name}\t60\t+\t{start}\t{end}\t"
+        f"{region}\t{start}\t{end}\t{name}\t60\t+\t{start}\t{end}\t"
         f"0\t{len(sizes)}\t{','.join(map(str, sizes))},\t"
         f"{','.join(map(str, starts))},\n"
     )

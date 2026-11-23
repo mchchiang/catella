@@ -111,12 +111,12 @@ def _smooth_source(
     return out
 
 
-def _masked_smoothed(exp, chrom, src, smoothed_name, mask_name, batch_size):
+def _masked_smoothed(exp, region, src, smoothed_name, mask_name, batch_size):
     """Smoothed array of `src`, with dropout molecules set to nan."""
-    arr = exp.analysis[chrom][f"{src}_{smoothed_name}"]
+    arr = exp.analysis[region][f"{src}_{smoothed_name}"]
     if mask_name is None:
         return arr
-    keep = exp.is_kept(chrom, which=src, mask_name=mask_name)
+    keep = exp.is_kept(region, which=src, mask_name=mask_name)
     return _apply_keep_mask(arr, keep, batch_size)
 
 

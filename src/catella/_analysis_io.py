@@ -54,15 +54,15 @@ def _save_analysis(
     path : str or pathlib.Path
         The HDF5 file to write to, created if missing.
     analysis : mapping of str to mapping of str to H5Array or DataFrame
-        Per-chromosome entries, written to `analysis/<chrom>/<name>`.
+        Per-region entries, written to `analysis/<region>/<name>`.
     global_analysis : mapping of str to H5Array or DataFrame
         Entries written to `global_analysis/<name>`.
     write_extra : callable, optional
         Called with the open `h5py.File` before the analysis groups are
         written, e.g. to write raw data or metadata.
     keep_unlisted : bool, default False
-        Carry over chromosome groups of the existing `analysis` group
-        that are not keys of `analysis` (e.g. chromosomes not loaded).
+        Carry over region groups of the existing `analysis` group
+        that are not keys of `analysis` (e.g. regions not loaded).
 
     Raises
     ------
@@ -83,14 +83,14 @@ def _save_analysis(
             for name in _GROUPS:
                 _recover(f, name, sources)
             gnew = f.create_group("analysis" + _STAGED)
-            for chrom, data in analysis.items():
+            for region, data in analysis.items():
                 _link_or_write(
-                    f, gnew.create_group(chrom), data, sources, staged
+                    f, gnew.create_group(region), data, sources, staged
                 )
             if keep_unlisted and "analysis" in f:
-                for chrom, gold in f["analysis"].items():
-                    if chrom not in analysis:
-                        gnew[chrom] = gold
+                for region, gold in f["analysis"].items():
+                    if region not in analysis:
+                        gnew[region] = gold
             gnew = f.create_group("global_analysis" + _STAGED)
             _link_or_write(f, gnew, global_analysis, sources, staged)
             f.flush()
@@ -205,6 +205,8 @@ def _read_entries(group, h5_path):
     Read analysis entries written by `_write_entries`.
 
     Datasets are opened lazily as H5Array; groups are read as DataFrames.
+    A "chrom" column or index level, written before the analysis unit
+    was renamed, is read as "region".
 
     Parameters
     ----------
@@ -226,5 +228,18 @@ def _read_entries(group, h5_path):
         if isinstance(group[name], h5py.Dataset):
             entries[name] = H5Array.load_from(h5_path, f"{prefix}/{name}")
         else:
-            entries[name] = h5_utils.load_df(name, group)
+            entries[name] = _legacy_region_names(
+                h5_utils.load_df(name, group)
+            )
     return entries
+
+
+def _legacy_region_names(df):
+    """Rename a "chrom" column or index level of `df` to "region"."""
+    if "chrom" in df.columns and "region" not in df.columns:
+        df = df.rename(columns={"chrom": "region"})
+    if "chrom" in df.index.names:
+        df.index = df.index.set_names(
+            ["region" if n == "chrom" else n for n in df.index.names]
+        )
+    return df

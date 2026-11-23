@@ -9,6 +9,7 @@ import pandas as pd
 from catella_cpp import NucPosTM
 
 from catella import utils
+from catella._batches import _row_batches
 from catella._chroms import _normalize_chroms, _per_chrom
 from catella._warnings import _warn
 from catella.h5_array import H5Array
@@ -344,8 +345,7 @@ def _iter_hist_rows(arr, mask, batch_size):
         Their histograms.
     """
     nmol = arr.shape[0]
-    for start in range(0, nmol, batch_size):
-        stop = min(start + batch_size, nmol)
+    for start, stop in _row_batches(0, nmol, batch_size):
         mol_ids = np.arange(start, stop)
         rows = arr.iloc[start:stop, :]
         if mask is not None:
@@ -629,8 +629,7 @@ class SimAnalysis:
             nbp = dataset.nbp[chrom]
             out = H5Array.create((nmol, nbp), dtype=np.float64, dir=tmp_dir)
             n_missing = 0
-            for start in range(0, nmol, batch_size):
-                stop = min(start + batch_size, nmol)
+            for start, stop in _row_batches(0, nmol, batch_size):
                 batch = dataset.extract(
                     time=time,
                     obs="position",
@@ -1515,8 +1514,7 @@ class SimAnalysis:
         out = H5Array.create(
             (len(configs), nbp), dtype=np.float32, dir=tmp_dir
         )
-        for start in range(0, len(configs), batch_size):
-            stop = min(start + batch_size, len(configs))
+        for start, stop in _row_batches(0, len(configs), batch_size):
             block = np.full((stop - start, nbp), np.nan, dtype=np.float32)
             for i, starts in enumerate(configs[start:stop]):
                 if starts is not None:

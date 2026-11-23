@@ -8,7 +8,7 @@ from concurrent.futures import (
     as_completed,
     wait,
 )
-from itertools import islice
+from itertools import batched, islice
 
 from rich.progress import (
     BarColumn,
@@ -53,9 +53,10 @@ def _threaded_map(func, items, *, nworker=1, batch_size=1000):
         for item in items:
             yield item, func(item)
         return
-    items = iter(items)
+    if batch_size < 1:
+        raise ValueError(f"batch_size must be positive, got {batch_size}")
     with ThreadPoolExecutor(max_workers=nworker) as executor:
-        while batch := list(islice(items, batch_size)):
+        for batch in batched(items, batch_size):
             futures = {executor.submit(func, item): item for item in batch}
             for future in as_completed(futures):
                 yield futures[future], future.result()

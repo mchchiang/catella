@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from catella import h5_utils
+from catella._batches import _row_batches
 
 _DATASET_NAME = "data"
 
@@ -121,8 +122,7 @@ def _downsample_rows(data, max_rows, how, batch_size):
     for i in range(max_rows):
         start, stop = edges[i], edges[i + 1]
         acc = None
-        for sub_start in range(start, stop, batch_size):
-            sub_stop = min(sub_start + batch_size, stop)
+        for sub_start, sub_stop in _row_batches(start, stop, batch_size):
             acc = acc_fn(acc, data[sub_start:sub_stop, :])
         out[i] = fin_fn(acc, ncol)
     return out
@@ -540,8 +540,7 @@ class H5Array:
 
         if axis == 1:
             chunks = []
-            for start in range(0, nrow, batch_size):
-                stop = min(start + batch_size, nrow)
+            for start, stop in _row_batches(0, nrow, batch_size):
                 batch = self._dataset[start:stop, :]
                 if row_mask is not None:
                     batch = batch[row_mask[start:stop]]
@@ -551,8 +550,7 @@ class H5Array:
             return np.concatenate(chunks) if chunks else np.array([])
 
         acc = None
-        for start in range(0, nrow, batch_size):
-            stop = min(start + batch_size, nrow)
+        for start, stop in _row_batches(0, nrow, batch_size):
             batch = self._dataset[start:stop, :]
             if row_mask is not None:
                 batch = batch[row_mask[start:stop]]
@@ -651,8 +649,7 @@ class H5Array:
             index=index,
             columns=columns,
         )
-        for start in range(0, nrow_out, batch_size):
-            stop = min(start + batch_size, nrow_out)
+        for start, stop in _row_batches(0, nrow_out, batch_size):
             block = np.empty((stop - start, ncol), dtype=self.dtype)
             for i, src in enumerate(order[start:stop]):
                 block[i] = self._dataset[int(src), :]

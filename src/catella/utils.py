@@ -10,6 +10,7 @@ import scipy.cluster.hierarchy as sch
 from scipy.spatial.distance import cdist, pdist, squareform
 
 from catella import h5_utils
+from catella._batches import _row_batches
 from catella._warnings import _warn
 from catella.h5_array import H5Array, _downsample_rows
 
@@ -204,8 +205,7 @@ def _count_nan_rows(matrix, batch_size):
         dense = np.asarray(matrix, dtype=np.float64)
         return int(np.isnan(dense).all(axis=1).sum())
     count = 0
-    for start in range(0, matrix.shape[0], batch_size):
-        stop = min(start + batch_size, matrix.shape[0])
+    for start, stop in _row_batches(0, matrix.shape[0], batch_size):
         block = np.asarray(matrix[start:stop, :], dtype=np.float64)
         count += int(np.isnan(block).all(axis=1).sum())
     return count
@@ -268,8 +268,7 @@ def _streamed_pdist(h5arr, *, metric, batch_size, dir, fill_nan=None):
 
         nrow = h5arr.shape[0]
         dist = H5Array.create((nrow, nrow), dtype=np.float64, dir=dir)
-        for a0 in range(0, nrow, batch_size):
-            a1 = min(a0 + batch_size, nrow)
+        for a0, a1 in _row_batches(0, nrow, batch_size):
             block_a = h5arr[a0:a1, :]
             if fill_values is not None:
                 block_a = np.where(np.isnan(block_a), fill_values, block_a)
@@ -277,8 +276,7 @@ def _streamed_pdist(h5arr, *, metric, batch_size, dir, fill_nan=None):
             else:
                 has_nan_a = np.isnan(block_a).any()
             row_block = np.empty((a1 - a0, nrow), dtype=np.float64)
-            for b0 in range(0, nrow, batch_size):
-                b1 = min(b0 + batch_size, nrow)
+            for b0, b1 in _row_batches(0, nrow, batch_size):
                 if b0 == a0:
                     if a1 - a0 == 1:
                         row_block[:, b0:b1] = 0.0

@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 
 from catella import h5_utils
+from catella._batches import _row_batches
 from catella._dataclasses import _add_frozen_properties, _init_frozen_fields
 from catella._warnings import _warn
 from catella.containers import DataFrameMap, FixedKeyMap
@@ -994,8 +995,7 @@ class MethPrintExperiment:
             index=(mol_ids if mols is not None else None),
             dir=self.resolve_tmp_dir(),
         )
-        for start in range(0, nmol_out, batch_size):
-            stop = min(start + batch_size, nmol_out)
+        for start, stop in _row_batches(0, nmol_out, batch_size):
             chunk_ids = mol_ids[start:stop]
             if mols is None:
                 # mol_ids == arange(nmol_out): contiguous, sorted --

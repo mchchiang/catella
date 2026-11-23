@@ -3,6 +3,7 @@
 import numpy as np
 import pandas as pd
 
+from catella._batches import _row_batches
 from catella.experiment._dropout import _apply_keep_mask
 from catella.h5_array import H5Array
 
@@ -92,8 +93,7 @@ def _smooth_source(
     mol_index = df["mol_index"].to_numpy()
     out = H5Array.create((nmol, nbp), dtype=np.float64, dir=tmp_dir)
 
-    for start in range(0, nmol, batch_size):
-        stop = min(start + batch_size, nmol)
+    for start, stop in _row_batches(0, nmol, batch_size):
         lo, hi = np.searchsorted(mol_index, [start, stop])
         df_piv = (
             df.iloc[lo:hi]
@@ -225,8 +225,7 @@ def _percentile_sample(
     n_total = arr.shape[0]
     sample_frac = min(sample_size, n_total) / n_total
     chunks = []
-    for start in range(0, n_total, batch_size):
-        stop = min(start + batch_size, n_total)
+    for start, stop in _row_batches(0, n_total, batch_size):
         batch_labels = None if labels is None else labels[start:stop]
         batch = _normalize_to_controls(
             arr[start:stop, :], batch_labels, means, eps
@@ -327,8 +326,7 @@ def _write_empirical_prob(
     nmol, nbp = arr.shape
     denom = np.maximum(vmax - vmin, eps)
     out = H5Array.create((nmol, nbp), dtype=np.float64, dir=tmp_dir)
-    for start in range(0, nmol, batch_size):
-        stop = min(start + batch_size, nmol)
+    for start, stop in _row_batches(0, nmol, batch_size):
         batch_labels = None if labels is None else labels[start:stop]
         batch = _normalize_to_controls(
             arr[start:stop, :], batch_labels, means, eps

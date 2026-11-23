@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from catella._batches import _row_batches
 from catella.h5_array import H5Array
 
 
@@ -55,8 +56,7 @@ class CoordsTransform:
             columns=x.columns,
         )
         if axis != 0:
-            for start in range(0, nrow, batch_size):
-                stop = min(start + batch_size, nrow)
+            for start, stop in _row_batches(0, nrow, batch_size):
                 out.write_batch(
                     start,
                     stop,
@@ -81,8 +81,7 @@ class CoordsTransform:
         copy_range = (
             (fill_range[1], nrow) if delta >= 0 else (0, fill_range[0])
         )
-        for start in range(copy_range[0], copy_range[1], batch_size):
-            stop = min(start + batch_size, copy_range[1])
+        for start, stop in _row_batches(*copy_range, batch_size):
             src_start, src_stop = src_of(start, stop)
             out.write_batch(start, stop, x[src_start:src_stop, :])
         return out

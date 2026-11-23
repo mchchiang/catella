@@ -347,6 +347,13 @@ def test_downsample_all_nan_column_gives_nan_without_warning(how):
     assert result[0, 1] == (1.0 if how == "min" else 3.0)
 
 
+@pytest.mark.parametrize("axis", [0, 1])
+def test_mean_nonpositive_batch_size_raises(axis):
+    arr, _ = _filled((4, 3), seed=6)
+    with pytest.raises(ValueError, match="batch_size must be positive"):
+        arr.mean(axis=axis, batch_size=-5)
+
+
 def test_downsample_invalid_how_raises():
     arr, _ = _filled((5, 2), seed=3)
     with pytest.raises(ValueError):

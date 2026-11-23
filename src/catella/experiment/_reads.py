@@ -4,6 +4,7 @@ from typing import NamedTuple
 
 import numpy as np
 
+from catella._batches import _row_batches
 from catella.experiment._contexts import NONE
 from catella.experiment._dropout import _strand_of_mol
 
@@ -165,8 +166,7 @@ def _dense_batches(df, nmol, nbp, batch_size):
     qual = df["mod_qual"].to_numpy(dtype=np.float64)
     in_range = (pos >= 0) & (pos < nbp)
     mol_index, pos, qual = mol_index[in_range], pos[in_range], qual[in_range]
-    for start in range(0, nmol, batch_size):
-        stop = min(start + batch_size, nmol)
+    for start, stop in _row_batches(0, nmol, batch_size):
         lo, hi = np.searchsorted(mol_index, [start, stop])
         rows, cols = mol_index[lo:hi] - start, pos[lo:hi]
         seen = np.zeros((stop - start, nbp), dtype=bool)

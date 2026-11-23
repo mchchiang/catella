@@ -298,6 +298,11 @@ class TestToDense:
         np.testing.assert_array_equal(out.to_numpy(), expected)
         assert isinstance(out.index, pd.RangeIndex)
 
+    def test_nonpositive_batch_size_raises(self):
+        exp = self._experiment()
+        with pytest.raises(ValueError, match="batch_size must be positive"):
+            exp.to_dense("chr1", batch_size=-5)
+
     def test_h5array_subset_unsorted_matches_manual_pivot_and_index(self):
         exp = self._experiment()
         mols = [3, 0]  # unsorted, non-contiguous subset

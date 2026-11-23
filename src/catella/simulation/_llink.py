@@ -10,6 +10,7 @@ import pandas as pd
 from catella_cpp import NucPosTM
 from scipy.special import logit
 
+from catella._batches import _row_batches
 from catella._warnings import _warn
 from catella.simulation._inputs import (
     _check_fill_nan,
@@ -55,8 +56,7 @@ def _chrom_rows(arr, keep, max_nmol, rng, batch_size, nucbp, chrom, fill_nan):
     Partly-nan rows raise unless `fill_nan` is given.
     """
     usable = []
-    for start in range(0, arr.shape[0], batch_size):
-        stop = min(start + batch_size, arr.shape[0])
+    for start, stop in _row_batches(0, arr.shape[0], batch_size):
         block = np.asarray(arr[start:stop, :], dtype=np.float64)
         _, no_data = _prepare_rows(block, nucbp, chrom, fill_nan)
         has_data = ~no_data

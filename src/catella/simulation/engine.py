@@ -14,6 +14,7 @@ import pandas as pd
 from catella_cpp import NucPosMCMC, NucPosTM
 from scipy.special import logit
 
+from catella._batches import _row_batches
 from catella._chroms import _normalize_chroms
 from catella.experiment.methdata import MethPrintExperiment
 from catella.simulation._inputs import (
@@ -631,8 +632,7 @@ class SimManager:
             if n_total == 0:
                 continue
             sample_frac = min(1.0, target_per_chrom / n_total)
-            for start in range(0, n_total, batch_size):
-                stop = min(start + batch_size, n_total)
+            for start, stop in _row_batches(0, n_total, batch_size):
                 batch = arr[start:stop, :]
                 if keep is not None:
                     batch = batch[keep[start:stop]]

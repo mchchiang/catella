@@ -38,6 +38,11 @@ class TestThreadedMap:
         )
         assert sorted(out) == [(i, i * i) for i in range(7)]
 
+    @pytest.mark.parametrize("batch_size", [0, -5])
+    def test_threaded_nonpositive_batch_size_raises(self, batch_size):
+        with pytest.raises(ValueError, match="batch_size must be positive"):
+            list(_threaded_map(_square, [1], nworker=2, batch_size=batch_size))
+
     def test_batches_follow_input_order(self):
         out = list(
             _threaded_map(_square, range(6), nworker=2, batch_size=2)

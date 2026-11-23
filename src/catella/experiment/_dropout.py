@@ -3,6 +3,7 @@
 import numpy as np
 import pandas as pd
 
+from catella._batches import _row_batches
 from catella.experiment._contexts import (
     _MTASE_CHANNELS,
     CONTEXT_NAMES,
@@ -275,8 +276,7 @@ def _apply_keep_mask(data, keep, batch_size=20000):
         data.loc[~keep, :] = np.nan
         return data
     if isinstance(data, H5Array):
-        for start in range(0, data.shape[0], batch_size):
-            stop = min(start + batch_size, data.shape[0])
+        for start, stop in _row_batches(0, data.shape[0], batch_size):
             batch = data[start:stop, :]
             batch[~keep[start:stop], :] = np.nan
             data.write_batch(start, stop, batch)

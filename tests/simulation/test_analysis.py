@@ -67,6 +67,11 @@ class TestComputeOccup:
         full = dataset.analysis["chr1"]["occup_full"].to_numpy()
         assert np.allclose(batched, full)
 
+    def test_nonpositive_batch_size_raises(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=3, nbp=20)
+        with pytest.raises(ValueError, match="batch_size must be positive"):
+            SimAnalysis().compute_occup(dataset=dataset, batch_size=-5)
+
     def test_record_time_appends_suffix(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=3, nbp=20)
         ana = SimAnalysis()

@@ -154,7 +154,7 @@ fields exactly (unknown keys raise ``TypeError``):
      - int or mapping
      - Soft minimum linker DNA length (bp) between nucleosomes, enforced by
        a repulsion of strength ``elink`` for shorter linkers. Either one value
-       for all chromosomes or a mapping of chromosome to value.
+       for all regions or a mapping of region to value.
    * - ``elink``
      - float
      - Energy scale (:math:`k_BT`) of the linker repulsion potential.
@@ -189,8 +189,8 @@ Methylation probability array
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The array passed to ``catella.run`` as ``meth_prob`` (or read from
-``exp_data.analysis[chrom]["meth_prob"]`` when using the CLI) is a
-NumPy array (single chromosome) or a mapping of chromosome name to
+``exp_data.analysis[region]["meth_prob"]`` when using the CLI) is a
+NumPy array (single region) or a mapping of region name to
 array/DataFrame, of shape ``(n_molecules, nbp)``, with values in
 ``[0, 1]``. As throughout catella, the coordinate convention is
 left-aligned: a footprint or window's position is its leftmost bp.
@@ -230,9 +230,10 @@ top-level attributes, ``mtase`` (comma-joined channel labels), ``wrap``
 
 .. code-block:: text
 
-   /raw_data/<chrom>/metadata      group; attrs: chrom, nbp;
-                                    optional "refseq" dataset (str)
-   /raw_data/<chrom>/data/
+   /raw_data/<region>/metadata     group; attrs: chrom (the region
+                                    name), nbp; optional "refseq"
+                                    dataset (str)
+   /raw_data/<region>/data/
        test_mol_id                 string dataset, one entry per
                                     test-channel molecule
        test_data                   save_df sub-group: columns
@@ -240,7 +241,7 @@ top-level attributes, ``mtase`` (comma-joined channel labels), ``wrap``
                                     mod_code
        unmeth_mol_id, unmeth_data   same shape, optional
        meth_mol_id, meth_data       same shape, optional
-   /analysis/<chrom>/<key>          H5Array dataset or save_df sub-group
+   /analysis/<region>/<key>         H5Array dataset or save_df sub-group
    /global_analysis/<key>           H5Array dataset or save_df sub-group
 
 Raw per-source tables (``test_data``/``meth_data``/``unmeth_data``)
@@ -248,7 +249,7 @@ have columns ``mol_index`` (row position in ``*_mol_id``), ``pos``
 (bp position, folded if ``wrap``), ``strand``, ``mod_qual`` (the
 confidence score :math:`q_x`), and ``mod_code``.
 
-Common ``analysis[chrom]`` keys produced by the processing pipeline:
+Common ``analysis[region]`` keys produced by the processing pipeline:
 
 .. list-table::
    :header-rows: 1
@@ -311,8 +312,8 @@ Common ``global_analysis`` keys:
        ``lnuc``, ``lbin``, ``max_iters``, ``tol``, ``fill_edge``, ``norm_by_strand``,
        ``mask_name``).
    * - ``<prob_name>_calib``
-     - DataFrame, one row per chromosome (and, if ``norm_by_strand``,
-       per strand, adding a ``strand`` column): ``chrom``,
+     - DataFrame, one row per region (and, if ``norm_by_strand``,
+       per strand, adding a ``strand`` column): ``region``,
        ``has_controls``, ``frac_informative_<channel>`` per channel,
        and, for an EM fit, also ``iters``, ``log_likelihood``,
        ``frac_protected``, and per channel
@@ -340,7 +341,7 @@ that must not already exist:
    out_dir/
      <dataset_name>.h5     default "results.h5"; dataset metadata
                             and analysis (see below)
-     raw_data/              one HDF5 file per (chrom, molecule, run),
+     raw_data/              one HDF5 file per (region, molecule, run),
                              sharded into subdirectories of 100
                              molecules each
 
@@ -371,20 +372,20 @@ The dataset-level file (``<dataset_name>.h5``, default
 
    /metadata
        attrs: raw_dir, nsim (always); out_type, seed (optional)
-       chroms              string dataset, chromosome names
-       nmol                int array, molecules per chromosome
-       nbp                 int array, bp length per chromosome
+       chroms              string dataset, region names
+       nmol                int array, molecules per region
+       nbp                 int array, bp length per region
        settings/           group; attrs = every SimSettings field
-       eseq/<chrom>        (optional, store_eseq=True) gzip dataset,
+       eseq/<region>       (optional, store_eseq=True) gzip dataset,
                             (n_mol, nbp), sequence-specific binding
                             energy landscape
-       seed_table/<chrom>  (optional) uint32 array, (nmol, nsim),
+       seed_table/<region> (optional) uint32 array, (nmol, nsim),
                             per-(molecule, run) seed for reproducing
                             an individual run
-   /analysis/<chrom>/<key>   H5Array or DataFrameMap entry
+   /analysis/<region>/<key>  H5Array or DataFrameMap entry
    /global_analysis/<key>    H5Array or DataFrameMap entry
 
-Common ``analysis[chrom]`` keys produced by ``catella.compute_occup``:
+Common ``analysis[region]`` keys produced by ``catella.compute_occup``:
 
 .. list-table::
    :header-rows: 1
@@ -411,7 +412,7 @@ Common ``analysis[chrom]`` keys produced by ``catella.compute_occup``:
        Molecules with no data are all-``NaN`` rows.
    * - ``linker_hist_settings``
      - One-row DataFrame: ``lmax`` and the window ``xlo``, ``xhi`` in
-       which linkers were counted, and the ``llink`` of the chrom.
+       which linkers were counted, and the ``llink`` of the region.
    * - ``<name>_position_flat``, ``<name>_position_offset``,
        ``<name>_energy``
      - One configuration per molecule from ``compute_config`` (read

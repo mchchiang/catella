@@ -38,9 +38,9 @@ commentary. See :doc:`tutorials/tut01_meth_prob` and
    for which in ("test", "unmeth", "meth"):
        link = catella.sort_by_linkage(exp=exp_data, raw_which=which,
                                       fill_nan=0.0)
-       catella.plot_meth(exp=exp_data, chroms="601", raw_which=which,
+       catella.plot_meth(exp=exp_data, regions="601", raw_which=which,
                          link_mat=link, vmin=0.0, vmax=1.0)
-   catella.plot_dropout_ecdf(exp=exp_data, chroms="601")
+   catella.plot_dropout_ecdf(exp=exp_data, regions="601")
 
    # Model-based normalized methylation probability
    exp_data = catella.compute_model_prob(exp=exp_data,
@@ -54,15 +54,15 @@ commentary. See :doc:`tutorials/tut01_meth_prob` and
    # Optional: center-align the left-aligned probability windows
    lnuc = 147
    coords = CoordsTransform(lnuc=lnuc)
-   for c in exp_data.chroms:
-       exp_data.analysis[c]["meth_prob_model_centered"] = \
+   for r in exp_data.regions:
+       exp_data.analysis[r]["meth_prob_model_centered"] = \
            coords.left_to_center_aligned(
-	       exp_data.analysis[c]["meth_prob_model"])
+	       exp_data.analysis[r]["meth_prob_model"])
 
    # Empirical normalized methylation probability (cross-check)
    exp_data = catella.compute_empirical_prob(exp=exp_data,
                                              prob_name="meth_prob_empirical")
-   link = catella.sort_by_linkage(exp=exp_data, chroms="601",
+   link = catella.sort_by_linkage(exp=exp_data, regions="601",
                                   data_name="meth_prob_empirical",
                                   fill_nan=0.0)
    catella.plot_meth(
@@ -103,7 +103,7 @@ commentary. See :doc:`tutorials/tut01_meth_prob` and
    sim_dir = Path("example/tut02_run_sim/simulation/result/")
 
    # Run the simulations
-   sim_data = catella.run(chroms="601",
+   sim_data = catella.run(regions="601",
                           nsim=5,
                           seed=2346,
                           meth_prob=meth_prob,
@@ -115,11 +115,11 @@ commentary. See :doc:`tutorials/tut01_meth_prob` and
    from catella.simulation.plot import SimPlot
 
    simplot = SimPlot()
-   simplot.plot_energy(sim_data, chrom="601", mol=0, run=0)
-   simplot.plot_samples(sim_data, chrom="601", mol=0, plot_eseq=True)
+   simplot.plot_energy(sim_data, region="601", mol=0, run=0)
+   simplot.plot_samples(sim_data, region="601", mol=0, plot_eseq=True)
 
    # Analyze and save results
    catella.compute_occup(sim_data)
    link = catella.sort_by_linkage(dataset=sim_data, data_name="occup")
-   catella.plot_occup(sim_data, chroms="601", link_mat=link, plot_eseq=True)
+   catella.plot_occup(sim_data, regions="601", link_mat=link, plot_eseq=True)
    sim_data.save()

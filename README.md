@@ -83,8 +83,8 @@ exp = catella.compute_model_prob(exp)
 # Draw 100 exact samples per molecule with the transfer matrix solver
 settings = SimSettings(nucbp=147, llink=50, elink=25.0, mu=0.0,
                        end_temp=1.0, emax=25.0)
-meth_prob = {c: exp.analysis[c]["meth_prob"] for c in exp.chroms}
-sim = catella.run(chroms=exp.chroms,
+meth_prob = {r: exp.analysis[r]["meth_prob"] for r in exp.regions}
+sim = catella.run(regions=exp.regions,
                   nsim=100,
                   method="tm",
                   settings=settings,
@@ -100,7 +100,8 @@ occup = sim.analysis["601"]["occup"]
 positions = sim.raw["601", 0, 0].position
 ```
 
-Here `"601"` is a chromosome named in `segments.size`. The same
+Here `"601"` is a region: a chromosome named in `segments.size`,
+analyzed whole. The same
 operations are available as CLI subcommands, e.g., `catella load_raw`,
 `catella compute_model_prob`, and `catella run`; run `catella --help`
 for the full list.

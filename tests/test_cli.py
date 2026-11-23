@@ -1438,6 +1438,27 @@ class TestComputeConfig:
 
 
 class TestDownsample:
+    @pytest.mark.parametrize("batch_size", ["0", "-5"])
+    def test_nonpositive_batch_size_rejected(self, tmp_path, batch_size):
+        dataset = _make_dataset(tmp_path, nmol=4, nbp=10)
+        dataset.save()
+        result = runner.invoke(
+            app,
+            [
+                "downsample",
+                str(dataset._dataset_file),
+                "chr1",
+                "occup",
+                "3",
+                "--kind",
+                "dataset",
+                "--batch-size",
+                batch_size,
+            ],
+        )
+        assert result.exit_code == 2
+        assert "x>=1" in result.output
+
     def test_dataset_downsample_matches_utils(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=8, nbp=10)
         SimAnalysis().compute_occup(dataset=dataset)

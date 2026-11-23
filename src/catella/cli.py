@@ -335,7 +335,8 @@ def qc(
         typer.Option(help="Dropout mask from filter_dropout"),
     ] = None,
     batch_size: Annotated[
-        int, typer.Option(help="Molecules per batch when counting calls")
+        int,
+        typer.Option(min=1, help="Molecules per batch when counting calls"),
     ] = 20000,
     tsv_file: Annotated[
         Path | None,
@@ -478,7 +479,7 @@ def compute_empirical_prob(
         float, typer.Option(help="Probability for the unfilled trailing edge")
     ] = float("nan"),
     batch_size: Annotated[
-        int, typer.Option(help="Molecules processed per batch")
+        int, typer.Option(min=1, help="Molecules processed per batch")
     ] = 20000,
     percentile_sample_size: Annotated[
         int, typer.Option(help="Sample size for percentile estimation")
@@ -631,7 +632,7 @@ def compute_model_prob(
         ),
     ] = "full",
     batch_size: Annotated[
-        int, typer.Option(help="Molecules processed per batch")
+        int, typer.Option(min=1, help="Molecules processed per batch")
     ] = 20000,
     mask_name: Annotated[
         str | None,
@@ -988,7 +989,7 @@ def downsample(
         str, typer.Option(help="mean, sum, min, max, or stride")
     ] = "mean",
     batch_size: Annotated[
-        int, typer.Option(help="Rows read per streamed chunk")
+        int, typer.Option(min=1, help="Rows read per streamed chunk")
     ] = 20000,
     out_key: Annotated[
         str | None,
@@ -1087,7 +1088,7 @@ def sort_by_linkage(
     metric: Annotated[str, typer.Option(help="Distance metric")] = "euclidean",
     method: Annotated[str, typer.Option(help="Linkage method")] = "ward",
     batch_size: Annotated[
-        int, typer.Option(help="Rows processed per batch")
+        int, typer.Option(min=1, help="Rows processed per batch")
     ] = 20000,
     fill_nan: Annotated[
         str | None,

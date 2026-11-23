@@ -287,6 +287,15 @@ def test_downsample_integer_input_dtype(kind, how, expected):
     assert utils.downsample(data, 3, how=how).dtype == expected
 
 
+@pytest.mark.parametrize("how", ["mean", "sum", "min", "max"])
+def test_downsample_ndarray_batch_size_does_not_change_result(how):
+    values = np.random.default_rng(13).random((23, 3))
+    values[values < 0.2] = np.nan
+    small = utils.downsample(values, 4, how=how, batch_size=1)
+    large = utils.downsample(values, 4, how=how, batch_size=1000)
+    np.testing.assert_allclose(small, large)
+
+
 def test_downsample_noop_when_nrow_within_max_rows():
     values = np.random.default_rng(11).random((5, 2))
     np.testing.assert_array_equal(utils.downsample(values, 10), values)

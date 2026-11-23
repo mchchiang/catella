@@ -1841,8 +1841,8 @@ def downsample(
     how : {"mean", "sum", "min", "max", "stride"}, default "mean"
         How to collapse groups of consecutive rows into one row.
     batch_size : int, default 20000
-        Rows read per streamed chunk. Only used when `data` is an
-        `H5Array`.
+        Number of rows reduced at a time within a bin, when `how`
+        aggregates bins. Ignored for "stride".
 
     Returns
     -------

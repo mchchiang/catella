@@ -97,6 +97,33 @@ _COL_FINALIZERS = {
 }
 
 
+def _downsample_rows(data, max_rows, how, batch_size):
+    """Downsample a row-sliceable 2D array (ndarray or h5py dataset)."""
+    if how not in _DOWNSAMPLE_HOW:
+        raise ValueError(f"'how' must be one of {_DOWNSAMPLE_HOW}")
+    nrow, ncol = data.shape
+
+    if nrow <= max_rows:
+        return data[:]
+
+    if how == "stride":
+        step = -(-nrow // max_rows)
+        return data[0:nrow:step, :]
+
+    acc_fn = _COL_ACCUMULATORS[how]
+    fin_fn = _COL_FINALIZERS[how]
+    edges = np.linspace(0, nrow, max_rows + 1).astype(int)
+    out = np.empty((max_rows, ncol), dtype=_out_dtype(data.dtype, how))
+    for i in range(max_rows):
+        start, stop = edges[i], edges[i + 1]
+        acc = None
+        for sub_start in range(start, stop, batch_size):
+            sub_stop = min(sub_start + batch_size, stop)
+            acc = acc_fn(acc, data[sub_start:sub_stop, :])
+        out[i] = fin_fn(acc, ncol)
+    return out
+
+
 class _ILocIndexer:
     """Positional 2D indexing proxy, mirroring pandas' `.iloc`."""
 
@@ -564,30 +591,7 @@ class H5Array:
         ValueError
             If `how` is not a recognized option.
         """
-        if how not in _DOWNSAMPLE_HOW:
-            raise ValueError(f"'how' must be one of {_DOWNSAMPLE_HOW}")
-        nrow, ncol = self.shape
-
-        if nrow <= max_rows:
-            return self._dataset[:]
-
-        if how == "stride":
-            step = -(-nrow // max_rows)
-            return self._dataset[0:nrow:step, :]
-
-        acc_fn = _COL_ACCUMULATORS[how]
-        fin_fn = _COL_FINALIZERS[how]
-        edges = np.linspace(0, nrow, max_rows + 1).astype(int)
-        out = np.empty((max_rows, ncol), dtype=_out_dtype(self.dtype, how))
-        for i in range(max_rows):
-            start, stop = edges[i], edges[i + 1]
-            acc = None
-            for sub_start in range(start, stop, batch_size):
-                sub_stop = min(sub_start + batch_size, stop)
-                batch = self._dataset[sub_start:sub_stop, :]
-                acc = acc_fn(acc, batch)
-            out[i] = fin_fn(acc, ncol)
-        return out
+        return _downsample_rows(self._dataset, max_rows, how, batch_size)
 
     def reorder_rows(self, order, *, path=None, dir=None, batch_size=20000):
         """

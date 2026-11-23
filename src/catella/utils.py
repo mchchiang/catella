@@ -11,7 +11,7 @@ from scipy.spatial.distance import cdist, pdist, squareform
 
 from catella import h5_utils
 from catella._warnings import _warn
-from catella.h5_array import _DOWNSAMPLE_HOW, H5Array
+from catella.h5_array import H5Array, _downsample_rows
 
 IndexType = int | slice | Sequence[int]
 
@@ -30,15 +30,15 @@ def downsample(arr, max_rows, *, how="mean", batch_size=20000):
     arr : H5Array, pd.DataFrame, or np.ndarray
         2D data to collapse (rows=molecules, columns=bp position).
         `H5Array` input is dispatched to its own `.downsample`
-        (streamed from disk); other input is binned in memory.
+        (streamed from disk); other input is reduced in memory.
     max_rows : int
         Target number of rows.
     how : {"mean", "sum", "min", "max", "stride"}, default "mean"
         How to collapse groups of consecutive rows into one row.
         "stride" reads every k-th row instead of aggregating bins.
     batch_size : int, default 20000
-        Number of rows read per streamed chunk. Only used when `arr`
-        is an `H5Array`.
+        Number of rows reduced at a time within a bin, when `how`
+        aggregates bins. Ignored for "stride".
 
     Returns
     -------
@@ -56,44 +56,10 @@ def downsample(arr, max_rows, *, how="mean", batch_size=20000):
     """
     if isinstance(arr, H5Array):
         return arr.downsample(max_rows, how=how, batch_size=batch_size)
-    if how not in _DOWNSAMPLE_HOW:
-        raise ValueError(f"'how' must be one of {_DOWNSAMPLE_HOW}")
-
     dense = (
         arr.to_numpy() if isinstance(arr, pd.DataFrame) else np.asarray(arr)
     )
-    nrow = dense.shape[0]
-    if nrow <= max_rows:
-        return dense
-    if how == "stride":
-        step = -(-nrow // max_rows)  # ceil div
-        return dense[0:nrow:step]
-    edges = _bin_edges(nrow, max_rows)
-    return np.stack(
-        [
-            _reduce_rows(dense[edges[i] : edges[i + 1]], how)
-            for i in range(len(edges) - 1)
-        ]
-    )
-
-
-def _bin_edges(n, max_rows):
-    n_bins = min(n, max_rows)
-    return np.linspace(0, n, n_bins + 1).astype(int)
-
-
-def _reduce_rows(block, how):
-    if block.shape[0] == 0:
-        return np.full(block.shape[1], np.nan)
-    fn = {
-        "mean": np.nanmean,
-        "sum": np.nansum,
-        "min": np.nanmin,
-        "max": np.nanmax,
-    }[how]
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", category=RuntimeWarning)
-        return fn(block, axis=0)
+    return _downsample_rows(dense, max_rows, how, batch_size)
 
 
 def compute_linkage(

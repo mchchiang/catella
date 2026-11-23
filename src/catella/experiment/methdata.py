@@ -434,7 +434,8 @@ class MethPrintExperiment:
             Explicit column indices if the input file has no header
             matching Modkit's column names, in canonical field order:
             `read_id`, `ref_position`, `chrom`, `ref_strand`,
-            `mod_qual`, `mod_code`.
+            `mod_qual`, `mod_code`, and optionally `alignment_start`,
+            `alignment_end` (6 or 8 entries).
         max_nmol : int or None
             Maximum number of molecules to extract for each chromosome.
         balance_strand : bool, default False

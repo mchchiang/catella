@@ -8,12 +8,58 @@ from catella.experiment._ingest import (
     _ensure_fasta_index,
     _load_refseqs,
     _read_chromsize,
+    _resolve_modkit_schema,
 )
 
 
 def _write(path, text):
     path.write_text(text)
     return path
+
+
+_REQUIRED = ["mol_id", "upos", "chrom", "strand", "mod_qual", "mod_code"]
+
+
+class TestResolveModkitSchema:
+    def test_header_with_alignment_columns(self, tmp_path):
+        f = _write(
+            tmp_path / "d.tsv",
+            "read_id\tref_position\tchrom\tref_strand\tmod_qual\t"
+            "mod_code\talignment_start\talignment_end\n",
+        )
+        header, name_for = _resolve_modkit_schema(f, "\t", None)
+        assert header is None
+        assert name_for["align_start"] == "alignment_start"
+        assert name_for["align_end"] == "alignment_end"
+
+    def test_header_without_alignment_columns(self, tmp_path):
+        f = _write(
+            tmp_path / "d.tsv",
+            "read_id\tref_position\tchrom\tref_strand\tmod_qual\tmod_code\n",
+        )
+        _, name_for = _resolve_modkit_schema(f, "\t", None)
+        assert sorted(name_for) == sorted(_REQUIRED)
+
+    def test_colidx_six_entries(self, tmp_path):
+        f = _write(tmp_path / "d.tsv", "a\t1\tc\t+\t0.5\ta\t0\t9\n")
+        header, name_for = _resolve_modkit_schema(f, "\t", [0, 1, 2, 3, 4, 5])
+        assert sorted(name_for) == sorted(_REQUIRED)
+        assert header[:6] == _REQUIRED
+
+    def test_colidx_eight_entries(self, tmp_path):
+        f = _write(tmp_path / "d.tsv", "a\t1\tc\t+\t0.5\ta\t0\t9\n")
+        header, name_for = _resolve_modkit_schema(
+            f, "\t", [0, 1, 2, 3, 4, 5, 6, 7]
+        )
+        assert sorted(name_for) == sorted(
+            _REQUIRED + ["align_start", "align_end"]
+        )
+        assert header[6:] == ["align_start", "align_end"]
+
+    def test_colidx_wrong_length_raises(self, tmp_path):
+        f = _write(tmp_path / "d.tsv", "a\t1\tc\t+\t0.5\ta\t0\t9\n")
+        with pytest.raises(ValueError, match="6 or 8 entries, got 7"):
+            _resolve_modkit_schema(f, "\t", [0, 1, 2, 3, 4, 5, 6])
 
 
 class TestReadChromsize:

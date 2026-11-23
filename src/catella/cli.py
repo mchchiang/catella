@@ -157,7 +157,10 @@ def load_raw(
     ] = False,
     colidx: Annotated[
         str | None,
-        typer.Option(callback=csv_parser(int), help="ModKit column indices"),
+        typer.Option(
+            callback=csv_parser(int),
+            help="ModKit column indices (6, or 8 with alignment start/end)",
+        ),
     ] = None,
     max_nmol: Annotated[
         int | None, typer.Option(help="Max molecules per chromosome")

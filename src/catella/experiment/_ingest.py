@@ -24,6 +24,8 @@ _MODKIT_COLNAMES = [
     "ref_strand",
     "mod_qual",
     "mod_code",
+    "alignment_start",
+    "alignment_end",
 ]
 _CANONICAL_NAMES = [
     "mol_id",
@@ -32,7 +34,12 @@ _CANONICAL_NAMES = [
     "strand",
     "mod_qual",
     "mod_code",
+    "align_start",
+    "align_end",
 ]
+# Canonical columns a file may lack; the read extent then falls back
+# to the first and last row of each molecule.
+_OPTIONAL_NAMES = ("align_start", "align_end")
 _CANONICAL_PA_TYPES = {
     "mol_id": pa.string(),
     "upos": pa.int64(),
@@ -40,6 +47,8 @@ _CANONICAL_PA_TYPES = {
     "strand": pa.string(),
     "mod_qual": pa.float64(),
     "mod_code": pa.string(),
+    "align_start": pa.int64(),
+    "align_end": pa.int64(),
 }
 # Fixed schema for the raw per-chromosome long-format tables, used by
 # the streaming AppendableDF writer in load_raw().
@@ -190,8 +199,9 @@ def _resolve_modkit_schema(data_file, sep, colidx):
         Explicit column indices, positionally parallel to
         `_CANONICAL_NAMES` (i.e. `colidx[0]` is the file column index
         holding `read_id`/`mol_id`, `colidx[1]` holds `ref_position`/
-        `upos`, etc). If None, the file is assumed to have a header row
-        with Modkit's own column names.
+        `upos`, etc). Six entries map the required columns; eight also
+        map `alignment_start`/`alignment_end`. If None, the file is
+        assumed to have a header row with Modkit's own column names.
 
     Returns
     -------
@@ -200,7 +210,12 @@ def _resolve_modkit_schema(data_file, sep, colidx):
         the file has its own header row for pyarrow to consume.
     name_for : dict of str to str
         Canonical field name -> the column name pyarrow will parse it
-        as.
+        as. Optional columns absent from the file are left out.
+
+    Raises
+    ------
+    ValueError
+        If `colidx` has neither 6 nor 8 entries.
     """
     if colidx is None:
         header_df = pd.read_csv(data_file, sep=sep, nrows=0)
@@ -214,13 +229,19 @@ def _resolve_modkit_schema(data_file, sep, colidx):
         }
         return None, name_for
 
+    n_required = len(_CANONICAL_NAMES) - len(_OPTIONAL_NAMES)
+    if len(colidx) not in (n_required, len(_CANONICAL_NAMES)):
+        raise ValueError(
+            f"colidx must have {n_required} or {len(_CANONICAL_NAMES)} "
+            f"entries, got {len(colidx)}"
+        )
     with open(data_file, "r") as fh:
         first_line = fh.readline()
     ncols = len(first_line.rstrip("\n").split(sep))
     header_names = [f"_col{i}" for i in range(ncols)]
     for canon, idx in zip(_CANONICAL_NAMES, colidx):
         header_names[idx] = canon
-    name_for = {canon: canon for canon in _CANONICAL_NAMES}
+    name_for = {canon: canon for canon in _CANONICAL_NAMES[: len(colidx)]}
     return header_names, name_for
 
 

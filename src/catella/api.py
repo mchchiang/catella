@@ -83,7 +83,8 @@ def load_raw(
         `norm_by_strand`.
     colidx : Iterable, optional
         Specific column indices to use if the input file does not follow
-        the standard ModKit format.
+        the standard ModKit format; see
+        `MethPrintExperiment.load_raw`.
     max_nmol : int, optional
         Maximum number of molecules to extract for each chromosome.
     balance_strand : bool, default False

@@ -16,6 +16,11 @@ import h5py
 import numpy as np
 
 from catella import h5_utils
+from catella._analysis_io import (
+    _read_entries,
+    _replace_group,
+    _write_entries,
+)
 from catella._chroms import _normalize_chroms
 from catella._dataclasses import _add_frozen_properties, _init_frozen_fields
 from catella.containers import DataclassPublicProxy, DataFrameMap, FixedKeyMap
@@ -23,13 +28,10 @@ from catella.h5_array import H5Array
 from catella.simulation._inputs import _check_fill_nan
 from catella.simulation._io import (
     SimFileMapper,
-    _read_entries,
     _read_mcmc_file,
     _read_metadata,
     _read_tm_file,
-    _replace_group,
     _tm_sample_fields,
-    _write_entries,
     _write_metadata,
 )
 from catella.simulation._parallel import _threaded_map

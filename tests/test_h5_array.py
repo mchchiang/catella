@@ -3,9 +3,36 @@
 import warnings
 from pathlib import Path
 
+import h5py
 import numpy as np
 import pytest
-from catella.h5_array import H5Array
+from catella.h5_array import H5Array, _is_label
+
+
+class TestIsLabel:
+    @pytest.fixture
+    def group(self, tmp_path):
+        with h5py.File(tmp_path / "g.h5", "w") as f:
+            f.create_dataset("x", data=np.zeros((2, 2)))
+            f.create_dataset("x__index", data=[0, 1])
+            f.create_dataset("x__columns", data=[0, 1])
+            f.create_dataset("y__index", data=[0, 1])
+            f.create_group("z")
+            f.create_dataset("z__index", data=[0, 1])
+            yield f
+
+    def test_labels_of_sibling_dataset(self, group):
+        assert _is_label(group, "x__index")
+        assert _is_label(group, "x__columns")
+
+    def test_dataset_itself_is_not_label(self, group):
+        assert not _is_label(group, "x")
+
+    def test_suffix_without_sibling_is_not_label(self, group):
+        assert not _is_label(group, "y__index")
+
+    def test_suffix_with_group_sibling_is_not_label(self, group):
+        assert not _is_label(group, "z__index")
 
 
 def test_write_batch_and_read_back():

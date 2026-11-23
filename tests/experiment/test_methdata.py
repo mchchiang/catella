@@ -187,6 +187,35 @@ class TestSaveToExistingFile:
         assert not leaked
 
 
+class TestLabeledAnalysisLoad:
+    @pytest.fixture
+    def path(self, tmp_path):
+        exp = MethPrintExperiment._create(
+            _raw_data={"chr1": _make_raw("chr1", nmol=2, nbp=6, seed=0)}
+        )
+        labels = {"index": ["m0", "m1"], "columns": [5, 6, 7]}
+        exp._analysis["chr1"]["sig"] = H5Array.create(
+            (2, 3), dir=tmp_path, **labels
+        )
+        exp._global_analysis["sig"] = H5Array.create(
+            (2, 3), dir=tmp_path, **labels
+        )
+        path = tmp_path / "experiment.h5"
+        exp.save(path)
+        return path
+
+    def test_chrom_labels_not_loaded_as_entries(self, path):
+        loaded = MethPrintExperiment.load(path)
+        assert set(loaded._analysis["chr1"]) == {"sig"}
+        assert list(loaded._analysis["chr1"]["sig"].index) == ["m0", "m1"]
+        assert list(loaded._analysis["chr1"]["sig"].columns) == [5, 6, 7]
+
+    def test_global_labels_not_loaded_as_entries(self, path):
+        loaded = MethPrintExperiment.load(path)
+        assert set(loaded._global_analysis) == {"sig"}
+        assert list(loaded._global_analysis["sig"].index) == ["m0", "m1"]
+
+
 class TestRefseq:
     def test_refseq_roundtrips_through_save_load(self, tmp_path):
         raw = {

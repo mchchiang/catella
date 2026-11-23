@@ -39,7 +39,7 @@ from catella.experiment._ingest import (
     _read_chromsize,
 )
 from catella.experiment._qc import _check_percentiles, _chrom_qc_rows
-from catella.h5_array import H5Array
+from catella.h5_array import H5Array, _is_label
 
 # Estimated peak memory of to_dense(as_h5array=False) per molecule and
 # base pair: the pivot needs ~9x the 8-byte result (measured on 1000 and
@@ -756,6 +756,8 @@ class MethPrintExperiment:
                     continue
                 gchrom = gana[chrom]
                 for name in gchrom:
+                    if _is_label(gchrom, name):
+                        continue
                     if isinstance(gchrom[name], h5py.Dataset):
                         obj._analysis[chrom][name] = H5Array.load_from(
                             exp_file, f"analysis/{chrom}/{name}"
@@ -766,6 +768,8 @@ class MethPrintExperiment:
                         )
             gana = h5stream["global_analysis"]
             for name in gana:
+                if _is_label(gana, name):
+                    continue
                 if isinstance(gana[name], h5py.Dataset):
                     obj._global_analysis[name] = H5Array.load_from(
                         exp_file, f"global_analysis/{name}"

@@ -14,6 +14,16 @@ from catella import h5_utils
 from catella._batches import _row_batches
 
 _DATASET_NAME = "data"
+_LABEL_SUFFIXES = ("__index", "__columns")
+
+
+def _is_label(group, name):
+    """Return True if `name` in `group` labels a sibling H5Array dataset."""
+    for suffix in _LABEL_SUFFIXES:
+        if name.endswith(suffix):
+            base = group.get(name[: -len(suffix)])
+            return isinstance(base, h5py.Dataset)
+    return False
 
 _ROW_REDUCERS = {
     "mean": lambda b: np.nanmean(b, axis=1),
@@ -672,7 +682,7 @@ class H5Array:
             Name of the dataset to create within `group`.
         """
         group.copy(self._dataset, name)
-        for suffix in ("__index", "__columns"):
+        for suffix in _LABEL_SUFFIXES:
             ds = self._label_dataset(suffix)
             if ds is not None:
                 group.copy(ds, f"{name}{suffix}")

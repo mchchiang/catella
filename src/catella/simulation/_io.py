@@ -11,7 +11,7 @@ import numpy as np
 from catella_cpp import Dump
 
 from catella import h5_utils
-from catella.h5_array import H5Array
+from catella.h5_array import H5Array, _is_label
 from catella.simulation.config import SimSettings
 
 # Largest chunk (in elements) of a compressed MCMC run dataset
@@ -606,6 +606,8 @@ def _read_entries(group, h5_path):
     prefix = group.name.strip("/")
     entries = {}
     for name in group:
+        if _is_label(group, name):
+            continue
         if isinstance(group[name], h5py.Dataset):
             entries[name] = H5Array.load_from(h5_path, f"{prefix}/{name}")
         else:

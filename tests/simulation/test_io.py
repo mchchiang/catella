@@ -316,3 +316,16 @@ class TestEntries:
             entries["arr"].to_numpy(), np.arange(6.0).reshape(2, 3)
         )
         pd.testing.assert_frame_equal(entries["df"], df)
+
+    def test_round_trip_labeled_array_is_one_entry(self, tmp_path):
+        path = tmp_path / "d.h5"
+        arr = H5Array.create(
+            (2, 3), dir=tmp_path, index=["a", "b"], columns=[10, 20, 30]
+        )
+        with h5py.File(path, "w") as f:
+            _write_entries(f.create_group("c1"), {"arr": arr})
+        with h5py.File(path, "r") as f:
+            entries = _read_entries(f["c1"], path)
+        assert set(entries) == {"arr"}
+        assert list(entries["arr"].index) == ["a", "b"]
+        assert list(entries["arr"].columns) == [10, 20, 30]

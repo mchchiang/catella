@@ -64,7 +64,7 @@ _CANONICAL_PA_TYPES = {
     "flag": pa.int64(),
     "read_pos": pa.int64(),
 }
-# Fixed schema for the raw per-chromosome long-format tables, used by
+# Fixed schema for the raw per-region long-format tables, used by
 # the streaming AppendableDF writer in load_raw().
 _RAW_COLUMN_SPEC = {
     "mol_index": "integer",
@@ -946,7 +946,7 @@ class _GapTracker:
         Parameters
         ----------
         nbp : int
-            Chromosome length (bp).
+            Region length (bp).
 
         Returns
         -------
@@ -1150,7 +1150,7 @@ def _clip_extents(start, end, nbp):
     start, end : np.ndarray
         int64 half-open extent per molecule.
     nbp : int
-        Chromosome length (bp).
+        Region length (bp).
 
     Returns
     -------

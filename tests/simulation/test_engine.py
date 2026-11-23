@@ -112,7 +112,7 @@ class TestRunJob:
 
 
 class TestPerRegionLlink:
-    CHROMS = ("a", "b")
+    REGIONS = ("a", "b")
 
     def _probs(self):
         return {
@@ -122,7 +122,7 @@ class TestPerRegionLlink:
 
     def _run(self, out_dir, llink, method, nsim=2):
         return SimManager(nworker=1, verbose=False).run(
-            regions=self.CHROMS,
+            regions=self.REGIONS,
             nsim=nsim,
             method=method,
             settings=_make_settings(nucbp=20, llink=llink),

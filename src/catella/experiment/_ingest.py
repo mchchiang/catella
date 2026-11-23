@@ -26,6 +26,7 @@ _MODKIT_COLNAMES = [
     "mod_code",
     "alignment_start",
     "alignment_end",
+    "flag",
 ]
 _CANONICAL_NAMES = [
     "mol_id",
@@ -36,10 +37,16 @@ _CANONICAL_NAMES = [
     "mod_code",
     "align_start",
     "align_end",
+    "flag",
 ]
 # Canonical columns a file may lack; the read extent then falls back
 # to the first and last row of each molecule.
 _OPTIONAL_NAMES = ("align_start", "align_end")
+# Columns `colidx` can map (6 required, or 8 with the alignment
+# columns); later ones are read only from a Modkit header.
+_COLIDX_NAMES = _CANONICAL_NAMES[:8]
+# SAM flags of secondary and supplementary alignments
+_NON_PRIMARY_FLAGS = 256 | 2048
 _CANONICAL_PA_TYPES = {
     "mol_id": pa.string(),
     "upos": pa.int64(),
@@ -49,6 +56,7 @@ _CANONICAL_PA_TYPES = {
     "mod_code": pa.string(),
     "align_start": pa.int64(),
     "align_end": pa.int64(),
+    "flag": pa.int64(),
 }
 # Fixed schema for the raw per-chromosome long-format tables, used by
 # the streaming AppendableDF writer in load_raw().
@@ -210,7 +218,8 @@ def _resolve_modkit_schema(data_file, sep, colidx):
         the file has its own header row for pyarrow to consume.
     name_for : dict of str to str
         Canonical field name -> the column name pyarrow will parse it
-        as. Optional columns absent from the file are left out.
+        as. Optional columns absent from the file are left out; `flag`
+        is only mapped from a header.
 
     Raises
     ------
@@ -229,19 +238,19 @@ def _resolve_modkit_schema(data_file, sep, colidx):
         }
         return None, name_for
 
-    n_required = len(_CANONICAL_NAMES) - len(_OPTIONAL_NAMES)
-    if len(colidx) not in (n_required, len(_CANONICAL_NAMES)):
+    n_required = len(_COLIDX_NAMES) - len(_OPTIONAL_NAMES)
+    if len(colidx) not in (n_required, len(_COLIDX_NAMES)):
         raise ValueError(
-            f"colidx must have {n_required} or {len(_CANONICAL_NAMES)} "
+            f"colidx must have {n_required} or {len(_COLIDX_NAMES)} "
             f"entries, got {len(colidx)}"
         )
     with open(data_file, "r") as fh:
         first_line = fh.readline()
     ncols = len(first_line.rstrip("\n").split(sep))
     header_names = [f"_col{i}" for i in range(ncols)]
-    for canon, idx in zip(_CANONICAL_NAMES, colidx):
+    for canon, idx in zip(_COLIDX_NAMES, colidx):
         header_names[idx] = canon
-    name_for = {canon: canon for canon in _CANONICAL_NAMES[: len(colidx)]}
+    name_for = {canon: canon for canon in _COLIDX_NAMES[: len(colidx)]}
     return header_names, name_for
 
 
@@ -423,6 +432,11 @@ def _iter_csv_chunks(
         yield pa.Table.from_batches(buf).to_pandas().rename(columns=rename)
 
 
+def _is_primary(df):
+    """Bool mask of rows from primary alignments, per the `flag` column."""
+    return (df["flag"].to_numpy() & _NON_PRIMARY_FLAGS) == 0
+
+
 def _scan_accepted_mols(
     data_file,
     header_names,
@@ -439,7 +453,8 @@ def _scan_accepted_mols(
     Determine, per chromosome, which molecules are kept and their
     `mol_index`.
 
-    Streams only the `chrom`+`mol_id` columns (much cheaper than full
+    Streams only the `chrom`+`mol_id` columns (plus `flag` if present,
+    to skip secondary and supplementary rows; much cheaper than full
     rows) to build each chromosome's distinct molecule set in
     file-encounter order, then reproduces the legacy single-shot
     downsampling exactly: chromosomes are visited in sorted order,
@@ -484,6 +499,8 @@ def _scan_accepted_mols(
         chromosome found in the file that is in `chroms`.
     """
     cols = ["chrom", "mol_id"] + (["strand"] if balance_strand else [])
+    if "flag" in name_for:
+        cols.append("flag")
     mol_order = {}
     for batch_df in _iter_csv_chunks(
         data_file,
@@ -494,6 +511,8 @@ def _scan_accepted_mols(
         chunk_size,
         block_size,
     ):
+        if "flag" in batch_df:
+            batch_df = batch_df[_is_primary(batch_df)]
         if chroms is not None:
             batch_df = batch_df[batch_df["chrom"].isin(chroms)]
         dedup = batch_df.drop_duplicates(["chrom", "mol_id"])
@@ -650,7 +669,8 @@ def _stream_rows_to_staging(
     -----
     UserWarning
         If rows have `upos` outside `[0, full_size)` (e.g., -1 for
-        unaligned bases); those rows are dropped.
+        unaligned bases), or come from secondary or supplementary
+        alignments (per a `flag` column); those rows are dropped.
     """
     n_out = {}
     extents = None
@@ -676,9 +696,16 @@ def _stream_rows_to_staging(
     needed = ["mol_id", "upos", "chrom", "strand", "mod_qual", "mod_code"]
     if has_align and extents is not None:
         needed += list(_OPTIONAL_NAMES)
+    if "flag" in name_for:
+        needed.append("flag")
+    n_non_primary = 0
     for batch_df in _iter_csv_chunks(
         data_file, header_names, name_for, sep, needed, chunk_size, block_size
     ):
+        if "flag" in batch_df:
+            primary = _is_primary(batch_df)
+            n_non_primary += int((~primary).sum())
+            batch_df = batch_df[primary]
         for chrom, group in batch_df.groupby("chrom", sort=False):
             mapping = mol_maps.get(chrom)
             if mapping is None:
@@ -738,6 +765,11 @@ def _stream_rows_to_staging(
             )
             appenders[chrom].append(out)
 
+    if n_non_primary:
+        _warn(
+            f"dropped {n_non_primary} row(s) of secondary or "
+            f"supplementary alignments in {data_file}"
+        )
     for chrom, n in n_out.items():
         _warn(
             f"dropped {n} row(s) on chrom '{chrom}' with ref_position "

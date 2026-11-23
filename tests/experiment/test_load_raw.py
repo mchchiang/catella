@@ -514,6 +514,56 @@ class TestOutOfBoundsRows:
         assert not [w for w in recwarn if "dropped" in str(w.message)]
 
 
+_FLAG_HEADER = (
+    "read_id\tref_position\tchrom\tref_strand\tmod_qual\tmod_code\tflag\n"
+)
+
+
+class TestNonPrimaryRows:
+    def _load(self, tmp_path, rows):
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows, header=_FLAG_HEADER)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 100})
+        return MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file
+        )
+
+    def test_secondary_and_supplementary_rows_dropped(self, tmp_path):
+        rows = [
+            ("m0", 10, "chr1", "+", 0.9, "a", 0),
+            ("m0", 20, "chr1", "+", 0.8, "a", 16 | 0),
+            ("m0", 30, "chr1", "+", 0.7, "a", 2048),
+            ("m0", 40, "chr1", "-", 0.6, "a", 256 | 16),
+        ]
+        with pytest.warns(UserWarning, match="dropped 2 row"):
+            exp = self._load(tmp_path, rows)
+        raw = exp.raw["chr1"]
+        assert raw.test_data["pos"].tolist() == [10, 20]
+        assert raw.test_mol_end.tolist() == [21]
+        exp.close()
+
+    def test_molecule_with_only_supplementary_rows_not_kept(self, tmp_path):
+        rows = [
+            ("m0", 10, "chr1", "+", 0.9, "a", 0),
+            ("m1", 50, "chr1", "+", 0.8, "a", 2048),
+        ]
+        with pytest.warns(UserWarning, match="supplementary"):
+            exp = self._load(tmp_path, rows)
+        assert list(exp.raw["chr1"].test_mol_id) == ["m0"]
+        exp.close()
+
+    def test_no_warning_for_primary_rows(self, tmp_path, recwarn):
+        rows = [
+            ("m0", 10, "chr1", "+", 0.9, "a", 0),
+            ("m1", 50, "chr1", "-", 0.8, "a", 16),
+        ]
+        exp = self._load(tmp_path, rows)
+        assert sorted(exp.raw["chr1"].test_mol_id) == ["m0", "m1"]
+        exp.close()
+        assert not [w for w in recwarn if "supplementary" in str(w.message)]
+
+
 class TestColidx:
     def test_headerless_file_with_colidx(self, tmp_path):
         # File columns: extra, chrom, upos, strand, mod_qual, mod_code, mol_id

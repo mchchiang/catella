@@ -523,8 +523,10 @@ class MethPrintExperiment:
         UserWarning
             If `balance_strand` is True and a chromosome has fewer
             than `max_nmol // 2` molecules on either strand, or if
-            rows have a `ref_position` outside the chromosome (those
-            rows are dropped).
+            rows have a `ref_position` outside the chromosome or come
+            from secondary or supplementary alignments (per Modkit's
+            `flag` column, present with `--allow-non-primary`); those
+            rows are dropped.
 
         Notes
         -----

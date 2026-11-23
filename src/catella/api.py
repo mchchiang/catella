@@ -42,6 +42,7 @@ def load_raw(
     max_cached_chroms: int = 1,
     nworker: int = 1,
     min_gap: int | None = 20,
+    gaps_bed: str | Path | Iterable | None = None,
 ) -> MethPrintExperiment:
     """
     Load raw methylation footprinting data into a MethPrintExperiment.
@@ -116,6 +117,9 @@ def load_raw(
     min_gap : int or None, default 20
         Minimum deletion (bp) inside a read recorded as an internal
         gap; None records none. See `MethPrintExperiment.load_raw`.
+    gaps_bed : str, pathlib.Path, or iterable of them, optional
+        BED12 file(s) giving exact gaps for the reads they list; see
+        `MethPrintExperiment.load_raw`.
 
     Returns
     -------
@@ -143,6 +147,7 @@ def load_raw(
         max_cached_chroms=max_cached_chroms,
         nworker=nworker,
         min_gap=min_gap,
+        gaps_bed=gaps_bed,
     )
 
 

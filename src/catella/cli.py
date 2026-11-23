@@ -196,6 +196,13 @@ def load_raw(
             min=0, help="Min deletion (bp) recorded as a read gap; 0 = off"
         ),
     ] = 20,
+    gaps_bed: Annotated[
+        str | None,
+        typer.Option(
+            callback=csv_parser(str),
+            help="BED12 file(s) of read blocks (bamtobed -bed12 -splitD)",
+        ),
+    ] = None,
 ):
     """
     Load raw methylation footprinting data into a MethPrintExperiment.
@@ -219,6 +226,7 @@ def load_raw(
         max_cached_chroms=max_cached_chroms,
         nworker=nworker,
         min_gap=min_gap or None,
+        gaps_bed=gaps_bed,
     )
     exp.save(out_file)
 

@@ -825,7 +825,8 @@ def _stream_rows_to_staging(
         _warn(
             f"{n_unordered} molecule(s) in {data_file} have rows not "
             "ordered along the reference; no internal gaps are inferred "
-            "for them (sort the file by read and reference position)"
+            "for them (sort the file by read and reference position, or "
+            "pass gaps_bed)"
         )
     return extents, gaps
 
@@ -973,6 +974,172 @@ class _GapTracker:
         return rows[:, 1:].copy(), offset, n_unordered
 
 
+def _read_bed_gaps(bed_files, mol_maps, full_sizes, min_gap, chunk_size):
+    """
+    Internal gaps of the accepted molecules from BED12 files.
+
+    Gaps are the stretches between consecutive blocks of a line (as
+    written by `bedtools bamtobed -bed12 -splitD`), at least `min_gap`
+    long. Lines are matched to molecules by chromosome and read name.
+
+    Parameters
+    ----------
+    bed_files : sequence of str or pathlib.Path
+        BED12 files, without a header.
+    mol_maps : dict of str to dict
+        As returned by `_scan_accepted_mols`.
+    full_sizes : dict of str to int
+        Chromosome -> length (bp), to clip gaps to.
+    min_gap : int
+        Minimum gap length (bp).
+    chunk_size : int
+        Lines read per chunk.
+
+    Returns
+    -------
+    listed : dict of str to np.ndarray
+        Chromosome -> bool per molecule, True if it has exactly one
+        line.
+    rows : dict of str to np.ndarray
+        Chromosome -> int64, (n_gap, 3), `(mol_index, start, end)`
+        of each gap of the listed molecules.
+    n_multi : int
+        Molecules with more than one line (e.g., supplementary
+        alignments); they count as unlisted.
+    """
+    n_lines = {
+        c: np.zeros(len(m["mol_id"]), np.int64) for c, m in mol_maps.items()
+    }
+    found = {c: [] for c in mol_maps}
+    cols = [0, 1, 3, 9, 10, 11]
+    names = ["chrom", "start", "name", "count", "sizes", "starts"]
+    for bed in bed_files:
+        reader = pd.read_csv(
+            bed,
+            sep="\t",
+            header=None,
+            comment="#",
+            usecols=cols,
+            names=names,
+            dtype={"chrom": str, "name": str, "sizes": str, "starts": str},
+            chunksize=chunk_size,
+        )
+        for chunk in reader:
+            for chrom, group in chunk.groupby("chrom", sort=False):
+                mapping = mol_maps.get(chrom)
+                if mapping is None:
+                    continue
+                idx = group["name"].map(mapping["index"])
+                group = group[idx.notna()]
+                idx = idx[idx.notna()].astype(np.int64).to_numpy()
+                np.add.at(n_lines[chrom], idx, 1)
+                for i, line in zip(idx, group.itertuples(index=False)):
+                    if line.count < 2:
+                        continue
+                    sizes = np.array(line.sizes.rstrip(",").split(","), int)
+                    starts = np.array(line.starts.rstrip(",").split(","), int)
+                    lo = line.start + starts[:-1] + sizes[:-1]
+                    hi = line.start + starts[1:]
+                    keep = hi - lo >= min_gap
+                    for a, b in zip(lo[keep], hi[keep]):
+                        found[chrom].append((i, a, b))
+
+    listed, rows, n_multi = {}, {}, 0
+    for chrom, counts in n_lines.items():
+        listed[chrom] = counts == 1
+        n_multi += int((counts > 1).sum())
+        arr = np.array(found[chrom], dtype=np.int64).reshape(-1, 3)
+        arr = arr[listed[chrom][arr[:, 0]]]
+        arr[:, 1:] = np.clip(arr[:, 1:], 0, full_sizes[chrom])
+        rows[chrom] = arr[arr[:, 1] < arr[:, 2]]
+    return listed, rows, n_multi
+
+
+def _merge_gaps(inferred, listed, bed_rows, nmol):
+    """
+    Combine inferred gaps with BED gaps, which replace them for the
+    molecules listed in the BED files.
+
+    Parameters
+    ----------
+    inferred : (np.ndarray, np.ndarray) or None
+        `(gaps, offset)` from `_GapTracker.result`, or None.
+    listed : np.ndarray
+        bool per molecule, from `_read_bed_gaps`.
+    bed_rows : np.ndarray
+        int64, (n_gap, 3), from `_read_bed_gaps`.
+    nmol : int
+        Number of molecules.
+
+    Returns
+    -------
+    gaps : np.ndarray
+        int64, (n_gap, 2), grouped by molecule and sorted.
+    offset : np.ndarray
+        int64, length nmol + 1.
+    """
+    parts = [bed_rows]
+    if inferred is not None:
+        gaps, offset = inferred
+        mol = np.repeat(np.arange(nmol), np.diff(offset))
+        keep = ~listed[mol]
+        parts.append(np.column_stack([mol[keep], gaps[keep]]))
+    rows = np.concatenate(parts).astype(np.int64)
+    rows = rows[np.lexsort((rows[:, 1], rows[:, 0]))]
+    offset = np.zeros(nmol + 1, dtype=np.int64)
+    offset[1:] = np.cumsum(np.bincount(rows[:, 0], minlength=nmol))
+    return rows[:, 1:].copy(), offset
+
+
+def _apply_bed_gaps(
+    inferred, bed_files, mol_maps, full_sizes, min_gap, chunk_size, data_file
+):
+    """
+    Replace inferred gaps with BED12 gaps for the molecules listed.
+
+    Parameters
+    ----------
+    inferred : dict of str to (np.ndarray, np.ndarray) or None
+        Gaps from `_stream_rows_to_staging`.
+    bed_files : sequence of str or pathlib.Path
+        BED12 files (see `_read_bed_gaps`).
+    mol_maps, full_sizes, min_gap, chunk_size
+        As in `_read_bed_gaps`.
+    data_file : str or pathlib.Path
+        The raw data file, for the warning.
+
+    Returns
+    -------
+    dict of str to (np.ndarray, np.ndarray)
+        Chromosome -> `(gaps, offset)`.
+
+    Warns
+    -----
+    UserWarning
+        If molecules are not listed exactly once in `bed_files`.
+    """
+    listed, rows, n_multi = _read_bed_gaps(
+        bed_files, mol_maps, full_sizes, min_gap, chunk_size
+    )
+    merged = {}
+    n_missing = 0
+    for chrom, m in mol_maps.items():
+        nmol = len(m["mol_id"])
+        own = None if inferred is None else inferred[chrom]
+        merged[chrom] = _merge_gaps(own, listed[chrom], rows[chrom], nmol)
+        n_missing += int((~listed[chrom]).sum())
+    if n_missing:
+        fallback = (
+            "inferred from rows" if inferred is not None else "not recorded"
+        )
+        _warn(
+            f"{n_missing} molecule(s) of {data_file} are not listed "
+            f"exactly once in gaps_bed ({n_multi} listed more than "
+            f"once); their gaps are {fallback}"
+        )
+    return merged
+
+
 def _clip_extents(start, end, nbp):
     """
     Clip extents to `[0, nbp]`, with empty ones set to `(0, 0)`.
@@ -1040,6 +1207,7 @@ def _ingest_into(
     rng,
     tmp_dir,
     min_gap=None,
+    gaps_bed=None,
 ):
     """
     Resolve, scan, and stream one raw data file into the `raw_data`
@@ -1118,6 +1286,16 @@ def _ingest_into(
         for chrom, (start, end) in (extents or {}).items():
             gdatas[chrom].create_dataset(f"{name}_mol_start", data=start)
             gdatas[chrom].create_dataset(f"{name}_mol_end", data=end)
+        if gaps_bed and extents is not None:
+            gaps = _apply_bed_gaps(
+                gaps,
+                gaps_bed,
+                mol_maps,
+                full_sizes,
+                min_gap,
+                chunk_size,
+                data_file,
+            )
         for chrom, (flat, offset) in (gaps or {}).items():
             gdatas[chrom].create_dataset(f"{name}_gaps", data=flat)
             gdatas[chrom].create_dataset(f"{name}_gap_offset", data=offset)

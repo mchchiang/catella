@@ -1656,3 +1656,79 @@ class TestInternalGaps:
         assert _gaps(raw, "unmeth") == ([[6, 70]], [0, 1])
         assert raw.meth_gaps is None
         reloaded.close()
+
+
+def _bed_line(chrom, start, end, name, sizes, starts):
+    return (
+        f"{chrom}\t{start}\t{end}\t{name}\t60\t+\t{start}\t{end}\t"
+        f"0\t{len(sizes)}\t{','.join(map(str, sizes))},\t"
+        f"{','.join(map(str, starts))},\n"
+    )
+
+
+def _write_bed(path, lines):
+    with open(path, "w") as f:
+        f.writelines(_bed_line(*line) for line in lines)
+    return path
+
+
+class TestGapsBed:
+    def _load(self, tmp_path, bed_lines, rows=None, header=_GAP_HEADER, **kw):
+        chromsize, f = _extent_setup(
+            tmp_path, rows or _gap_rows(), header=header
+        )
+        bed = _write_bed(tmp_path / "reads.bed", bed_lines)
+        return MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=f, gaps_bed=bed, **kw
+        )
+
+    def test_listed_molecule_uses_bed_blocks(self, tmp_path):
+        lines = [
+            ("chr1", 0, 70, "m0", [10, 5], [0, 65]),
+            ("chr1", 20, 120, "m1", [10, 30], [0, 70]),
+        ]
+        exp = self._load(tmp_path, lines)
+        assert _gaps(exp.raw["chr1"]) == ([[10, 65], [30, 90]], [0, 1, 2])
+        exp.close()
+
+    def test_unlisted_molecule_keeps_inferred_gaps(self, tmp_path):
+        lines = [("chr1", 20, 120, "m1", [10, 30], [0, 70])]
+        with pytest.warns(UserWarning, match="inferred from rows"):
+            exp = self._load(tmp_path, lines)
+        assert _gaps(exp.raw["chr1"]) == ([[15, 60], [30, 90]], [0, 1, 2])
+        exp.close()
+
+    def test_short_bed_gap_ignored(self, tmp_path):
+        lines = [
+            ("chr1", 0, 70, "m0", [10, 50], [0, 20]),
+            ("chr1", 20, 120, "m1", [10, 30], [0, 70]),
+        ]
+        exp = self._load(tmp_path, lines)
+        assert _gaps(exp.raw["chr1"]) == ([[30, 90]], [0, 0, 1])
+        exp.close()
+
+    def test_multi_line_molecule_counts_as_unlisted(self, tmp_path):
+        lines = [
+            ("chr1", 0, 70, "m0", [10, 5], [0, 65]),
+            ("chr1", 20, 120, "m1", [10, 30], [0, 70]),
+            ("chr1", 20, 60, "m1", [40], [0]),
+        ]
+        with pytest.warns(UserWarning, match="1 listed more than once"):
+            exp = self._load(tmp_path, lines)
+        assert _gaps(exp.raw["chr1"]) == ([[10, 65]], [0, 1, 1])
+        exp.close()
+
+    def test_without_read_position_column(self, tmp_path):
+        rows = [r[:1] + r[2:] for r in _gap_rows()]
+        lines = [("chr1", 20, 120, "m1", [10, 30], [0, 70])]
+        with pytest.warns(UserWarning, match="not recorded"):
+            exp = self._load(tmp_path, lines, rows=rows, header=_HEADER)
+        assert _gaps(exp.raw["chr1"]) == ([[30, 90]], [0, 0, 1])
+        exp.close()
+
+    @pytest.mark.parametrize(
+        "kw", [{"wrap": True}, {"min_gap": None}], ids=["wrap", "no_gap"]
+    )
+    def test_invalid_combination_raises(self, tmp_path, kw):
+        with pytest.raises(ValueError, match="gaps_bed requires"):
+            self._load(tmp_path, [], **kw)

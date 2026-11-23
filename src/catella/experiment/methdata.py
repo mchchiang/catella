@@ -5,7 +5,7 @@ import shutil
 import tempfile
 import weakref
 from collections import OrderedDict
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from collections.abc import Mapping as ABCMapping
 from dataclasses import dataclass, field, fields
 from numbers import Integral
@@ -468,6 +468,7 @@ class MethPrintExperiment:
         max_cached_chroms: int = 1,
         nworker: int = 1,
         min_gap: int | None = 20,
+        gaps_bed: str | Path | Iterable | None = None,
     ) -> Self:
         """
         Create an experiment by processing raw sequencing data files.
@@ -551,6 +552,11 @@ class MethPrintExperiment:
             Minimum net deletion (bp) inside a read recorded as an
             internal gap, a stretch the read did not measure (see
             Notes). None records no gaps.
+        gaps_bed : str, pathlib.Path, or list of them, optional
+            BED12 file(s) from `bedtools bamtobed -bed12 -splitD`
+            (filter out non-primary alignments first, e.g.,
+            `samtools view -F 2304`). For the reads listed, gaps are
+            taken from the alignment blocks instead of being inferred.
 
         Returns
         -------
@@ -568,8 +574,9 @@ class MethPrintExperiment:
             chromosome's length in `chromsize`, if `mtase`
             contains an unknown or duplicate label, or if
             `balance_strand` is True and `max_nmol` is None or less
-            than 2, if `colidx` has neither 6 nor 8 entries, or if
-            `min_gap` is neither None nor a positive integer.
+            than 2, if `colidx` has neither 6 nor 8 entries, if
+            `min_gap` is neither None nor a positive integer, or if
+            `gaps_bed` is given with `wrap` True or `min_gap` None.
 
         Warns
         -----
@@ -602,6 +609,14 @@ class MethPrintExperiment:
         ):
             raise ValueError(
                 f"min_gap must be None or a positive integer, got {min_gap!r}"
+            )
+        if isinstance(gaps_bed, (str, Path)):
+            gaps_bed = [gaps_bed]
+        elif gaps_bed is not None:
+            gaps_bed = list(gaps_bed)
+        if gaps_bed and (wrap or min_gap is None):
+            raise ValueError(
+                "gaps_bed requires wrap=False and min_gap not None"
             )
         if balance_strand:
             if max_nmol is None:
@@ -639,6 +654,7 @@ class MethPrintExperiment:
             "balance_strand": balance_strand,
             "tmp_dir": tmp_dir,
             "min_gap": min_gap,
+            "gaps_bed": gaps_bed,
         }
 
         try:

@@ -1171,7 +1171,7 @@ def plot_config(
         raise typer.BadParameter("--mols requires a single region")
     dataset = SimDataset.load(dataset_file)
     link_mat = (
-        {c: dataset.analysis[c][link_mat_name] for c in regions}
+        {r: dataset.analysis[r][link_mat_name] for r in regions}
         if link_mat_name is not None
         else None
     )
@@ -1268,8 +1268,8 @@ def plot_occup(
     dataset = SimDataset.load(dataset_file)
     link_mat = (
         {
-            c: dataset.analysis[c][link_mat_name].to_numpy()
-            for c in regions
+            r: dataset.analysis[r][link_mat_name].to_numpy()
+            for r in regions
         }
         if link_mat_name is not None
         else None
@@ -1407,7 +1407,7 @@ def plot_meth(
         raise typer.BadParameter("--value energy requires --key")
     exp = MethPrintExperiment.load(exp_file)
     link_mat = (
-        {c: exp.analysis[c][link_mat_name].to_numpy() for c in regions}
+        {r: exp.analysis[r][link_mat_name].to_numpy() for r in regions}
         if link_mat_name is not None
         else None
     )

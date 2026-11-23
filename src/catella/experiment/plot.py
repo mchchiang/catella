@@ -626,7 +626,7 @@ class MethPlot:
             ),
             key=lambda k: regions.index(k[0]),
         )
-        missing = [c for c in regions if not any(k[0] == c for k in keys)]
+        missing = [r for r in regions if not any(k[0] == r for k in keys)]
         if missing:
             raise ValueError(
                 f"no entries for regions {missing} with which={which!r} "

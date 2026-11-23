@@ -33,7 +33,7 @@ def _settings(**overrides):
 def _exp(arrays):
     exp = SimpleNamespace(
         regions=tuple(arrays),
-        analysis={c: {"meth_prob": a} for c, a in arrays.items()},
+        analysis={r: {"meth_prob": a} for r, a in arrays.items()},
     )
     exp.is_kept = partial(MethPrintExperiment.is_kept, exp)
     return exp

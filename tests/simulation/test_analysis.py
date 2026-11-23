@@ -160,7 +160,7 @@ class TestComputeMeanNnuc:
 
     def test_only_requested_regions_extracted(self, tmp_path):
         rng = np.random.default_rng(0)
-        meth_prob = {c: rng.random((2, 20)) for c in ("chr1", "chr2")}
+        meth_prob = {r: rng.random((2, 20)) for r in ("chr1", "chr2")}
         dataset = SimManager(nworker=1, verbose=False).run(
             regions=["chr1", "chr2"],
             nsim=2,

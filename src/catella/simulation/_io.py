@@ -415,8 +415,8 @@ def _write_metadata(
     gmeta.attrs["method"] = method
     dt = h5py.string_dtype(encoding="utf-8")
     gmeta.create_dataset("chroms", data=regions, dtype=dt)
-    gmeta.create_dataset("nmol", data=np.asarray([nmol[c] for c in regions]))
-    gmeta.create_dataset("nbp", data=np.asarray([nbp[c] for c in regions]))
+    gmeta.create_dataset("nmol", data=np.asarray([nmol[r] for r in regions]))
+    gmeta.create_dataset("nbp", data=np.asarray([nbp[r] for r in regions]))
     _write_settings(gmeta.create_group("settings"), settings)
     if eseq is not None:
         geseq = gmeta.create_group("eseq")

@@ -1171,7 +1171,7 @@ class TestSimManagerEstimateLlink:
 def _prob_exp(arrays):
     return SimpleNamespace(
         regions=tuple(arrays),
-        analysis={c: {"meth_prob": a} for c, a in arrays.items()},
+        analysis={r: {"meth_prob": a} for r, a in arrays.items()},
     )
 
 

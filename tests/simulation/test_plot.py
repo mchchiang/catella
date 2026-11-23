@@ -260,7 +260,7 @@ def _make_region_dataset(tmp_path, nregion, seed=6):
         regions=regions,
         nsim=2,
         settings=_make_settings(),
-        meth_prob={c: rng.random((4, 20)) for c in regions},
+        meth_prob={r: rng.random((4, 20)) for r in regions},
         out_dir=tmp_path / "dataset_n",
         seed=seed,
     )

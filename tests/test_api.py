@@ -1108,7 +1108,7 @@ class TestPlotMeth:
         catella.plot_meth(
             exp=exp, regions=["chr1", "chr2"], data_name="prob", show=False
         )
-        data = [exp.analysis[c]["prob"].to_numpy() for c in ("chr1", "chr2")]
+        data = [exp.analysis[r]["prob"].to_numpy() for r in ("chr1", "chr2")]
         for im in self._images():
             assert im.norm.vmin == pytest.approx(min(d.min() for d in data))
             assert im.norm.vmax == pytest.approx(max(d.max() for d in data))
@@ -1123,8 +1123,8 @@ class TestPlotMeth:
             show=False,
         )
         halfrange = max(
-            np.abs(logit(exp.analysis[c]["prob"].to_numpy())).max()
-            for c in ("chr1", "chr2")
+            np.abs(logit(exp.analysis[r]["prob"].to_numpy())).max()
+            for r in ("chr1", "chr2")
         )
         for im in self._images():
             assert im.norm.vmin == pytest.approx(-halfrange)

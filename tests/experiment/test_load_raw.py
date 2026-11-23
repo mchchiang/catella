@@ -75,9 +75,9 @@ def _legacy_reference(
     df["mol_index"] = df.groupby("region")["mol_id"].transform(
         lambda x: pd.factorize(x)[0]
     )
-    mol_ids = {c: g["mol_id"].unique() for c, g in df.groupby("region")}
+    mol_ids = {r: g["mol_id"].unique() for r, g in df.groupby("region")}
     keep = ["region", "mol_index", "pos", "strand", "mod_qual", "mod_code"]
-    dfs = {c: g[keep].drop(columns="region") for c, g in df.groupby("region")}
+    dfs = {r: g[keep].drop(columns="region") for r, g in df.groupby("region")}
     return mol_ids, dfs
 
 

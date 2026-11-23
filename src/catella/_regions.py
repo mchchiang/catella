@@ -98,7 +98,7 @@ def _per_region(value, regions, name):
     if value is None:
         return dict.fromkeys(regions)
     if isinstance(value, dict):
-        return {c: value.get(c) for c in regions}
+        return {r: value.get(r) for r in regions}
     if len(regions) > 1:
         raise ValueError(
             f"{name} must be a dict keyed by region when several regions are "

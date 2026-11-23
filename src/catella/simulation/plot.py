@@ -658,8 +658,8 @@ class SimPlot:
         """
         regions = _region_list(regions)
         mols = {
-            c: None if m is None else [int(i) for i in m]
-            for c, m in _per_region(mols, regions, "mols").items()
+            r: None if m is None else [int(i) for i in m]
+            for r, m in _per_region(mols, regions, "mols").items()
         }
         link_mat = _per_region(link_mat, regions, "link_mat")
         xpow = int(self._log10(xscale, "xscale"))
@@ -675,8 +675,8 @@ class SimPlot:
             return _shown_rows(nrow, max_rows)
 
         _warn_if_large(
-            sum(shown_rows(c) for c in regions),
-            max(dataset.nbp[c] for c in regions),
+            sum(shown_rows(r) for r in regions),
+            max(dataset.nbp[r] for r in regions),
             "consider passing 'max_rows' or 'mols'",
         )
         data = [
@@ -726,7 +726,7 @@ class SimPlot:
         self._footprint_side(fig, panels, im, matrices, cmap)
         _left_ylabels(panels)
         if sharex:
-            _share_xlim(panels, max(dataset.nbp[c] for c in regions) / xscale)
+            _share_xlim(panels, max(dataset.nbp[r] for r in regions) / xscale)
         _finish(fig, show, out_file)
 
     def _config_panel(
@@ -1042,20 +1042,20 @@ class SimPlot:
         """
         regions = _region_list(regions)
         mols = {
-            c: None if m is None else list(m)
-            for c, m in _per_region(mols, regions, "mols").items()
+            r: None if m is None else list(m)
+            for r, m in _per_region(mols, regions, "mols").items()
         }
         link_mat = _per_region(link_mat, regions, "link_mat")
         xpow = int(self._log10(xscale, "xscale"))
         _warn_if_large(
             sum(
-                dataset.nmol[c] if mols[c] is None else len(mols[c])
-                for c in regions
+                dataset.nmol[r] if mols[r] is None else len(mols[r])
+                for r in regions
             ),
-            max(dataset.nbp[c] for c in regions),
+            max(dataset.nbp[r] for r in regions),
             "consider passing 'mols' to plot a subset",
         )
-        sort_data = any(link_mat[c] is not None for c in regions)
+        sort_data = any(link_mat[r] is not None for r in regions)
         extra_rows = [
             name
             for name, on in (("mean", plot_mean), ("eseq", plot_eseq))
@@ -1089,7 +1089,7 @@ class SimPlot:
         _colorbar(fig, panels, im, "Occupancy")
         _left_ylabels(panels)
         if sharex:
-            _share_xlim(panels, max(dataset.nbp[c] for c in regions) / xscale)
+            _share_xlim(panels, max(dataset.nbp[r] for r in regions) / xscale)
         _finish(fig, show, out_file)
 
     def _draw_occup(
@@ -1315,7 +1315,7 @@ class SimPlot:
                 dataset,
                 regions=list(curves),
                 name=name,
-                mols={c: mols[c] for c in curves},
+                mols={r: mols[r] for r in curves},
                 pooled=True,
             )
 

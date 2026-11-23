@@ -648,7 +648,7 @@ class MethPrintExperiment:
             "sizes": sizes,
             "full_sizes": full_sizes,
             "wrap": wrap,
-            "refseq_by_chrom": refseq_by_region,
+            "refseq_by_region": refseq_by_region,
             "mtase": mtase,
             "ignore_strand": ignore_strand,
             "max_nmol": max_nmol,

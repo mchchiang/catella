@@ -453,19 +453,20 @@ def _scan_accepted_mols(
     max_nmol,
     rng,
     balance_strand=False,
-    chroms=None,
+    regions=None,
 ):
     """
-    Determine, per chromosome, which molecules are kept and their
+    Determine, per region, which molecules are kept and their
     `mol_index`.
 
-    Streams only the `chrom`+`mol_id` columns (plus `flag` if present,
-    to skip secondary and supplementary rows; much cheaper than full
-    rows) to build each chromosome's distinct molecule set in
-    file-encounter order, then reproduces the legacy single-shot
-    downsampling exactly: chromosomes are visited in sorted order,
-    `rng.choice(mols, max_nmol, replace=False)` is called only when a
-    chromosome has more than `max_nmol` molecules, and `mol_index` is
+    Each region is a value of the `chrom` column (a whole
+    chromosome). Streams only the `chrom`+`mol_id` columns (plus
+    `flag` if present, to skip secondary and supplementary rows; much
+    cheaper than full rows) to build each region's distinct molecule
+    set in file-encounter order, then reproduces the legacy
+    single-shot downsampling exactly: regions are visited in sorted
+    order, `rng.choice(mols, max_nmol, replace=False)` is called only
+    when a region has more than `max_nmol` molecules, and `mol_index` is
     the rank of each accepted `mol_id` in ascending sorted order
     (equivalent to `pd.factorize` on an already mol_id-sorted frame,
     which is what the legacy single-shot code produced).
@@ -485,24 +486,24 @@ def _scan_accepted_mols(
     block_size : int
         Byte size of the underlying pyarrow read buffer per batch.
     max_nmol : int or None
-        Maximum number of molecules to keep per chromosome.
+        Maximum number of molecules to keep per region.
     rng : np.random.Generator or None
         Random number generator for downsampling; required if
         `max_nmol` is not None.
     balance_strand : bool, default False
         If True, keep an equal number of '+' and '-' strand molecules
-        per chromosome (see `_balanced_mols`); requires `max_nmol`.
-    chroms : collection of str or None, default None
-        Chromosomes to keep. Rows on other chromosomes are skipped
-        before sampling, so they neither warn nor consume `rng` draws.
-        If None, keep every chromosome found in the file.
+        per region (see `_balanced_mols`); requires `max_nmol`.
+    regions : collection of str or None, default None
+        Regions to keep. Rows on other regions are skipped before
+        sampling, so they neither warn nor consume `rng` draws. If
+        None, keep every region found in the file.
 
     Returns
     -------
     dict of str to dict
-        `{chrom: {"mol_id": np.ndarray (sorted, accepted mol_ids),
+        `{region: {"mol_id": np.ndarray (sorted, accepted mol_ids),
         "index": dict mapping mol_id -> mol_index}}`, covering every
-        chromosome found in the file that is in `chroms`.
+        region found in the file that is in `regions`.
     """
     cols = ["chrom", "mol_id"] + (["strand"] if balance_strand else [])
     if "flag" in name_for:
@@ -519,38 +520,38 @@ def _scan_accepted_mols(
     ):
         if "flag" in batch_df:
             batch_df = batch_df[_is_primary(batch_df)]
-        if chroms is not None:
-            batch_df = batch_df[batch_df["chrom"].isin(chroms)]
+        if regions is not None:
+            batch_df = batch_df[batch_df["chrom"].isin(regions)]
         dedup = batch_df.drop_duplicates(["chrom", "mol_id"])
         strands = (
             dedup["strand"].to_numpy()
             if balance_strand
             else [None] * len(dedup)
         )
-        for chrom, mol_id, strand in zip(
+        for region, mol_id, strand in zip(
             dedup["chrom"].to_numpy(), dedup["mol_id"].to_numpy(), strands
         ):
-            seen = mol_order.setdefault(chrom, {})
+            seen = mol_order.setdefault(region, {})
             if mol_id not in seen:
                 seen[mol_id] = strand
 
     result = {}
-    for chrom in sorted(mol_order.keys()):
+    for region in sorted(mol_order.keys()):
         if balance_strand:
-            mols = _balanced_mols(chrom, mol_order[chrom], max_nmol, rng)
+            mols = _balanced_mols(region, mol_order[region], max_nmol, rng)
         else:
-            mols = np.array(list(mol_order[chrom].keys()), dtype=object)
+            mols = np.array(list(mol_order[region].keys()), dtype=object)
             if max_nmol is not None and len(mols) > max_nmol:
                 mols = rng.choice(mols, max_nmol, replace=False)
         sorted_mols = np.sort(mols)
-        result[chrom] = {
+        result[region] = {
             "mol_id": sorted_mols,
             "index": {m: i for i, m in enumerate(sorted_mols)},
         }
     return result
 
 
-def _balanced_mols(chrom, strand_of, max_nmol, rng):
+def _balanced_mols(region, strand_of, max_nmol, rng):
     """
     Draw an equal number of '+' and '-' strand molecules.
 
@@ -560,8 +561,8 @@ def _balanced_mols(chrom, strand_of, max_nmol, rng):
 
     Parameters
     ----------
-    chrom : str
-        Chromosome name, used only in the warning message.
+    region : str
+        Region name, used only in the warning message.
     strand_of : dict of str to str
         Molecule id -> strand, in file-encounter order.
     max_nmol : int
@@ -589,7 +590,7 @@ def _balanced_mols(chrom, strand_of, max_nmol, rng):
         short = "+" if len(pools["+"]) < len(pools["-"]) else "-"
         _warn(
             f"only {len(pools[short])} '{short}' strand molecules on "
-            f"{chrom}; kept {k} per strand"
+            f"{region}; kept {k} per strand"
         )
     return np.concatenate(
         [rng.choice(pools[s], k, replace=False) for s in ("+", "-")]
@@ -607,13 +608,13 @@ def _stream_rows_to_staging(
     wrap,
     mol_maps,
     appenders,
-    refseq_by_chrom=None,
+    refseq_by_region=None,
     mtase=None,
     ignore_strand=False,
     min_gap=None,
 ):
     """
-    Stream full rows, transform them, and append to per-chromosome
+    Stream full rows, transform them, and append to per-region
     disk-backed appenders.
 
     Rows with a canonical call (`mod_code` of '-', i.e. no methylation
@@ -635,22 +636,22 @@ def _stream_rows_to_staging(
     block_size : int
         Byte size of the underlying pyarrow read buffer per batch.
     full_sizes : dict of str to int
-        Chromosome name -> full (unhalved) length (bp), used for the
+        Region name -> full (unhalved) length (bp), used for the
         `wrap` position transform.
     wrap : bool
         If True, positions are folded around the fiber center.
     mol_maps : dict of str to dict
         As returned by `_scan_accepted_mols`, already filtered down to
-        the chromosomes actually being processed.
+        the regions actually being processed.
     appenders : dict of str to h5_utils.AppendableDF
-        One appender per chromosome in `mol_maps`, already created.
-    refseq_by_chrom : dict of str to str, optional
-        Chromosome name -> reference sequence, as returned by
-        `_parse_fasta`. Together with `mtase`, used to drop rows whose
+        One appender per region in `mol_maps`, already created.
+    refseq_by_region : dict of str to str, optional
+        Region name -> reference sequence, as returned by
+        `_load_refseqs`. Together with `mtase`, used to drop rows whose
         `strand` is inconsistent with the reference base at their
         (unfolded) `upos` -- e.g. a '+'-strand row at a position whose
         reference base cannot carry a real target base for any given
-        `mtase` label on '+'. Chromosomes absent from this mapping (or
+        `mtase` label on '+'. Regions absent from this mapping (or
         when it is None) are not filtered.
     mtase : tuple of str, optional
         Methyltransferase label(s) (as normalized by
@@ -667,15 +668,15 @@ def _stream_rows_to_staging(
     Returns
     -------
     extents : dict of str to (np.ndarray, np.ndarray) or None
-        Chromosome -> `(start, end)`, int64 of length nmol, the
-        half-open extent `[start, end)` of each molecule, taken before
-        the `mod_code` and strand filters and clipped to the
-        chromosome; `(0, 0)` for a molecule with no in-bounds row.
+        Region -> `(start, end)`, int64 of length nmol, the half-open
+        extent `[start, end)` of each molecule, taken before the
+        `mod_code` and strand filters and clipped to the region;
+        `(0, 0)` for a molecule with no in-bounds row.
         Taken from the `align_start`/`align_end` columns if present,
         else from the first and last row of each molecule. None if
         `wrap`, since folded positions have no extent.
     gaps : dict of str to (np.ndarray, np.ndarray) or None
-        Chromosome -> `(gaps, offset)` from `_GapTracker.result`,
+        Region -> `(gaps, offset)` from `_GapTracker.result`,
         inferred from all rows before the `mod_code` and strand
         filters. None if `wrap`, if `min_gap` is None, or if the file
         has no `read_pos` column.
@@ -693,28 +694,28 @@ def _stream_rows_to_staging(
     extents = None
     if not wrap:
         extents = {
-            chrom: (
-                np.full(len(m["mol_id"]), full_sizes[chrom], dtype=np.int64),
+            region: (
+                np.full(len(m["mol_id"]), full_sizes[region], dtype=np.int64),
                 np.zeros(len(m["mol_id"]), dtype=np.int64),
             )
-            for chrom, m in mol_maps.items()
+            for region, m in mol_maps.items()
         }
     has_align = all(c in name_for for c in _OPTIONAL_NAMES)
     trackers = None
     if extents is not None and min_gap is not None and "read_pos" in name_for:
         trackers = {
-            chrom: _GapTracker(len(m["mol_id"]), min_gap)
-            for chrom, m in mol_maps.items()
+            region: _GapTracker(len(m["mol_id"]), min_gap)
+            for region, m in mol_maps.items()
         }
-    valid_by_chrom = {}
-    if mtase is not None and refseq_by_chrom is not None:
-        for chrom, seq in refseq_by_chrom.items():
+    valid_by_region = {}
+    if mtase is not None and refseq_by_region is not None:
+        for region, seq in refseq_by_region.items():
             plus = np.zeros(len(seq), dtype=bool)
             minus = np.zeros(len(seq), dtype=bool)
             for label in mtase:
                 plus |= _methylatable_positions(seq, label, "+")
                 minus |= _methylatable_positions(seq, label, "-")
-            valid_by_chrom[chrom] = (plus, minus)
+            valid_by_region[region] = (plus, minus)
 
     needed = ["mol_id", "upos", "chrom", "strand", "mod_qual", "mod_code"]
     if has_align and extents is not None:
@@ -754,7 +755,7 @@ def _stream_rows_to_staging(
                 group["mod_code"].to_numpy() != "-"
             )
 
-            masks = valid_by_chrom.get(chrom)
+            masks = valid_by_region.get(chrom)
             if masks is not None:
                 plus, minus = masks
                 upos_all = group["upos"].to_numpy()
@@ -810,16 +811,16 @@ def _stream_rows_to_staging(
     if extents is None:
         return None, None
     extents = {
-        chrom: _clip_extents(start, end, full_sizes[chrom])
-        for chrom, (start, end) in extents.items()
+        region: _clip_extents(start, end, full_sizes[region])
+        for region, (start, end) in extents.items()
     }
     if trackers is None:
         return extents, None
     gaps = {}
     n_unordered = 0
-    for chrom, tracker in trackers.items():
-        flat, offset, n_bad = tracker.result(full_sizes[chrom])
-        gaps[chrom] = (flat, offset)
+    for region, tracker in trackers.items():
+        flat, offset, n_bad = tracker.result(full_sizes[region])
+        gaps[region] = (flat, offset)
         n_unordered += n_bad
     if n_unordered:
         _warn(
@@ -840,7 +841,7 @@ def _update_extents(extent, group, mol_index, has_align):
     extent : (np.ndarray, np.ndarray)
         int64 running `(start, end)` per molecule.
     group : pd.DataFrame
-        Rows of one chromosome, with `upos` and, if `has_align`,
+        Rows of one region, with `upos` and, if `has_align`,
         `align_start`/`align_end` columns.
     mol_index : pd.Series
         Molecule index of each row of `group`; nan for molecules not
@@ -864,7 +865,7 @@ def _update_extents(extent, group, mol_index, has_align):
 
 class _GapTracker:
     """
-    Infer internal gaps (deletions) of each molecule of one chromosome
+    Infer internal gaps (deletions) of each molecule of one region
     from its rows, streamed in chunks.
 
     Between two consecutive rows of a molecule, the reference step
@@ -980,7 +981,8 @@ def _read_bed_gaps(bed_files, mol_maps, full_sizes, min_gap, chunk_size):
 
     Gaps are the stretches between consecutive blocks of a line (as
     written by `bedtools bamtobed -bed12 -splitD`), at least `min_gap`
-    long. Lines are matched to molecules by chromosome and read name.
+    long. Lines are matched to molecules by chromosome (the region
+    name) and read name.
 
     Parameters
     ----------
@@ -989,7 +991,7 @@ def _read_bed_gaps(bed_files, mol_maps, full_sizes, min_gap, chunk_size):
     mol_maps : dict of str to dict
         As returned by `_scan_accepted_mols`.
     full_sizes : dict of str to int
-        Chromosome -> length (bp), to clip gaps to.
+        Region -> length (bp), to clip gaps to.
     min_gap : int
         Minimum gap length (bp).
     chunk_size : int
@@ -998,19 +1000,18 @@ def _read_bed_gaps(bed_files, mol_maps, full_sizes, min_gap, chunk_size):
     Returns
     -------
     listed : dict of str to np.ndarray
-        Chromosome -> bool per molecule, True if it has exactly one
-        line.
+        Region -> bool per molecule, True if it has exactly one line.
     rows : dict of str to np.ndarray
-        Chromosome -> int64, (n_gap, 3), `(mol_index, start, end)`
+        Region -> int64, (n_gap, 3), `(mol_index, start, end)`
         of each gap of the listed molecules.
     n_multi : int
         Molecules with more than one line (e.g., supplementary
         alignments); they count as unlisted.
     """
     n_lines = {
-        c: np.zeros(len(m["mol_id"]), np.int64) for c, m in mol_maps.items()
+        r: np.zeros(len(m["mol_id"]), np.int64) for r, m in mol_maps.items()
     }
-    found = {c: [] for c in mol_maps}
+    found = {r: [] for r in mol_maps}
     cols = [0, 1, 3, 9, 10, 11]
     names = ["chrom", "start", "name", "count", "sizes", "starts"]
     for bed in bed_files:
@@ -1045,13 +1046,13 @@ def _read_bed_gaps(bed_files, mol_maps, full_sizes, min_gap, chunk_size):
                         found[chrom].append((i, a, b))
 
     listed, rows, n_multi = {}, {}, 0
-    for chrom, counts in n_lines.items():
-        listed[chrom] = counts == 1
+    for region, counts in n_lines.items():
+        listed[region] = counts == 1
         n_multi += int((counts > 1).sum())
-        arr = np.array(found[chrom], dtype=np.int64).reshape(-1, 3)
-        arr = arr[listed[chrom][arr[:, 0]]]
-        arr[:, 1:] = np.clip(arr[:, 1:], 0, full_sizes[chrom])
-        rows[chrom] = arr[arr[:, 1] < arr[:, 2]]
+        arr = np.array(found[region], dtype=np.int64).reshape(-1, 3)
+        arr = arr[listed[region][arr[:, 0]]]
+        arr[:, 1:] = np.clip(arr[:, 1:], 0, full_sizes[region])
+        rows[region] = arr[arr[:, 1] < arr[:, 2]]
     return listed, rows, n_multi
 
 
@@ -1111,7 +1112,7 @@ def _apply_bed_gaps(
     Returns
     -------
     dict of str to (np.ndarray, np.ndarray)
-        Chromosome -> `(gaps, offset)`.
+        Region -> `(gaps, offset)`.
 
     Warns
     -----
@@ -1123,11 +1124,11 @@ def _apply_bed_gaps(
     )
     merged = {}
     n_missing = 0
-    for chrom, m in mol_maps.items():
+    for region, m in mol_maps.items():
         nmol = len(m["mol_id"])
-        own = None if inferred is None else inferred[chrom]
-        merged[chrom] = _merge_gaps(own, listed[chrom], rows[chrom], nmol)
-        n_missing += int((~listed[chrom]).sum())
+        own = None if inferred is None else inferred[region]
+        merged[region] = _merge_gaps(own, listed[region], rows[region], nmol)
+        n_missing += int((~listed[region]).sum())
     if n_missing:
         fallback = (
             "inferred from rows" if inferred is not None else "not recorded"
@@ -1164,27 +1165,28 @@ def _clip_extents(start, end, nbp):
     return start, end
 
 
-def _ensure_chrom_data_group(graw, chrom, nbp, refseq_by_chrom):
+def _ensure_region_data_group(graw, region, nbp, refseq_by_region):
     """
-    Create a chromosome's `metadata` and `data` groups under `graw`.
+    Create a region's `metadata` and `data` groups under `graw`.
 
-    Each chromosome is created at most once per private staging file,
-    so no idempotency check is needed here (unlike a shared file).
+    Each region is created at most once per private staging file, so
+    no idempotency check is needed here (unlike a shared file). The
+    region name is stored in the `chrom` attribute (on-disk key).
 
     Returns
     -------
     h5py.Group
         The new `data` group.
     """
-    gchrom = graw.create_group(chrom)
-    gmeta = gchrom.create_group("metadata")
-    gmeta.attrs["chrom"] = chrom
+    gregion = graw.create_group(region)
+    gmeta = gregion.create_group("metadata")
+    gmeta.attrs["chrom"] = region
     gmeta.attrs["nbp"] = int(nbp)
-    seq = refseq_by_chrom.get(chrom)
+    seq = refseq_by_region.get(region)
     if seq is not None:
         dt = h5py.string_dtype(encoding="utf-8")
         gmeta.create_dataset("refseq", data=seq, dtype=dt)
-    return gchrom.create_group("data")
+    return gregion.create_group("data")
 
 
 def _ingest_into(
@@ -1199,7 +1201,7 @@ def _ingest_into(
     sizes,
     full_sizes,
     wrap,
-    refseq_by_chrom,
+    refseq_by_region,
     mtase,
     ignore_strand,
     max_nmol,
@@ -1231,7 +1233,7 @@ def _ingest_into(
     Returns
     -------
     set of str
-        Chromosomes found in the file, already filtered to `sizes`.
+        Regions found in the file, already filtered to `sizes`.
     """
     print(f"Reading {data_file} ...")
     scratch_path = _decompress_once(data_file, tmp_dir)
@@ -1248,24 +1250,24 @@ def _ingest_into(
             max_nmol,
             rng,
             balance_strand=balance_strand,
-            chroms=set(sizes),
+            regions=set(sizes),
         )
 
         dt = h5py.string_dtype(encoding="utf-8")
         appenders = {}
         gdatas = {}
-        for chrom, m in mol_maps.items():
-            gdata = _ensure_chrom_data_group(
-                graw, chrom, sizes[chrom], refseq_by_chrom
+        for region, m in mol_maps.items():
+            gdata = _ensure_region_data_group(
+                graw, region, sizes[region], refseq_by_region
             )
             gdata.create_dataset(f"{name}_mol_id", data=m["mol_id"], dtype=dt)
-            appenders[chrom] = h5_utils.AppendableDF(
+            appenders[region] = h5_utils.AppendableDF(
                 gdata,
                 f"{name}_data",
                 columns=list(_RAW_COLUMN_SPEC),
                 dtypes=_RAW_COLUMN_SPEC,
             )
-            gdatas[chrom] = gdata
+            gdatas[region] = gdata
 
         extents, gaps = _stream_rows_to_staging(
             read_path,
@@ -1278,14 +1280,14 @@ def _ingest_into(
             wrap,
             mol_maps,
             appenders,
-            refseq_by_chrom=refseq_by_chrom,
+            refseq_by_region=refseq_by_region,
             mtase=mtase,
             ignore_strand=ignore_strand,
             min_gap=min_gap,
         )
-        for chrom, (start, end) in (extents or {}).items():
-            gdatas[chrom].create_dataset(f"{name}_mol_start", data=start)
-            gdatas[chrom].create_dataset(f"{name}_mol_end", data=end)
+        for region, (start, end) in (extents or {}).items():
+            gdatas[region].create_dataset(f"{name}_mol_start", data=start)
+            gdatas[region].create_dataset(f"{name}_mol_end", data=end)
         if gaps_bed and extents is not None:
             gaps = _apply_bed_gaps(
                 gaps,
@@ -1296,9 +1298,9 @@ def _ingest_into(
                 chunk_size,
                 data_file,
             )
-        for chrom, (flat, offset) in (gaps or {}).items():
-            gdatas[chrom].create_dataset(f"{name}_gaps", data=flat)
-            gdatas[chrom].create_dataset(f"{name}_gap_offset", data=offset)
+        for region, (flat, offset) in (gaps or {}).items():
+            gdatas[region].create_dataset(f"{name}_gaps", data=flat)
+            gdatas[region].create_dataset(f"{name}_gap_offset", data=offset)
     finally:
         if scratch_path is not None:
             os.remove(scratch_path)
@@ -1331,8 +1333,8 @@ def _ingest_file(name, data_file, *, tmp_dir, **kwargs):
     -------
     name : str
         Echoes the `name` argument.
-    chroms : set of str
-        Chromosomes found in the file, already filtered to `sizes`.
+    regions : set of str
+        Regions found in the file, already filtered to `sizes`.
     private_path : str
         Path to the private staging file, to be merged and removed by
         the caller.
@@ -1340,14 +1342,14 @@ def _ingest_file(name, data_file, *, tmp_dir, **kwargs):
     fd, private_path = tempfile.mkstemp(suffix=f".{name}.h5", dir=tmp_dir)
     os.close(fd)
     with h5py.File(private_path, "w") as h5stream:
-        chroms = _ingest_into(
+        regions = _ingest_into(
             h5stream.create_group("raw_data"),
             name,
             data_file,
             tmp_dir=tmp_dir,
             **kwargs,
         )
-    return name, chroms, private_path
+    return name, regions, private_path
 
 
 def _ingest_sources(files, *, nworker, seed, **kwargs):
@@ -1405,26 +1407,25 @@ def _merge_staging(graw, ingested):
     Raises
     ------
     ValueError
-        If a control file covers different chromosomes than the test
-        file.
+        If a control file covers different regions than the test file.
     """
-    test_chroms = ingested[0][1]
-    for name, chroms_found, _ in ingested[1:]:
-        if chroms_found != test_chroms:
+    test_regions = ingested[0][1]
+    for name, regions_found, _ in ingested[1:]:
+        if regions_found != test_regions:
             raise ValueError(
-                f"different number of chromosomes in test and {name} datasets"
+                f"different number of regions in test and {name} datasets"
             )
 
     handles = {name: h5py.File(path, "r") for name, _, path in ingested}
     try:
-        for chrom in sorted(test_chroms):
-            gchrom = graw.create_group(chrom)
+        for region in sorted(test_regions):
+            gregion = graw.create_group(region)
             handles["test"].copy(
-                f"raw_data/{chrom}/metadata", gchrom, name="metadata"
+                f"raw_data/{region}/metadata", gregion, name="metadata"
             )
-            gdata = gchrom.create_group("data")
+            gdata = gregion.create_group("data")
             for name, _, _ in ingested:
-                src = handles[name][f"raw_data/{chrom}/data"]
+                src = handles[name][f"raw_data/{region}/data"]
                 src.copy(f"{name}_mol_id", gdata, name=f"{name}_mol_id")
                 src.copy(f"{name}_data", gdata, name=f"{name}_data")
                 for key in _PER_MOL_KEYS:

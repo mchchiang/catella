@@ -267,15 +267,6 @@ def filter_dropout(
             dir_okay=False,
         ),
     ] = None,
-    overwrite: Annotated[
-        bool,
-        typer.Option(
-            help="Allow overwriting out_file if it is "
-            "already backed by H5Array analysis data. "
-            "Ignored (always allowed) when out_file is "
-            "not given"
-        ),
-    ] = False,
 ):
     """
     Flag molecules with poor coverage at methylatable positions.
@@ -354,8 +345,7 @@ def qc(
     overwrite: Annotated[
         bool,
         typer.Option(
-            help="Replace an existing qc table, and allow overwriting "
-            "out_file if it is already backed by H5Array analysis data"
+            help="Replace an existing qc table"
         ),
     ] = False,
 ):
@@ -493,15 +483,6 @@ def compute_empirical_prob(
             dir_okay=False,
         ),
     ] = None,
-    overwrite: Annotated[
-        bool,
-        typer.Option(
-            help="Allow overwriting out_file if it is "
-            "already backed by H5Array analysis data. "
-            "Ignored (always allowed) when out_file is "
-            "not given"
-        ),
-    ] = False,
 ):
     """
     Compute methylation probabilities via empirical normalization.
@@ -637,15 +618,6 @@ def compute_model_prob(
             dir_okay=False,
         ),
     ] = None,
-    overwrite: Annotated[
-        bool,
-        typer.Option(
-            help="Allow overwriting out_file if it is "
-            "already backed by H5Array analysis data. "
-            "Ignored (always allowed) when out_file is "
-            "not given"
-        ),
-    ] = False,
 ):
     """
     Compute methylation probabilities via a calibrated log-odds model.
@@ -828,15 +800,6 @@ def compute_occup(
             dir_okay=False,
         ),
     ] = None,
-    overwrite: Annotated[
-        bool,
-        typer.Option(
-            help="Allow overwriting out_file if it is "
-            "already backed by H5Array analysis data. "
-            "Ignored (always allowed) when out_file is "
-            "not given"
-        ),
-    ] = False,
 ):
     """
     Compute the nucleosome occupancy and mean nucleosome count.
@@ -903,15 +866,6 @@ def compute_config(
             dir_okay=False,
         ),
     ] = None,
-    overwrite: Annotated[
-        bool,
-        typer.Option(
-            help="Allow overwriting out_file if it is "
-            "already backed by H5Array analysis data. "
-            "Ignored (always allowed) when out_file is "
-            "not given"
-        ),
-    ] = False,
 ):
     """
     Call one nucleosome configuration per molecule.
@@ -987,15 +941,6 @@ def downsample(
             dir_okay=False,
         ),
     ] = None,
-    overwrite: Annotated[
-        bool,
-        typer.Option(
-            help="Allow overwriting out_file if it is "
-            "already backed by H5Array analysis data. "
-            "Ignored (always allowed) when out_file is "
-            "not given"
-        ),
-    ] = False,
 ):
     """
     Downsample an analysis array and store the result under a new key.
@@ -1086,15 +1031,6 @@ def sort_by_linkage(
             dir_okay=False,
         ),
     ] = None,
-    overwrite: Annotated[
-        bool,
-        typer.Option(
-            help="Allow overwriting out_file if it is "
-            "already backed by H5Array analysis data. "
-            "Ignored (always allowed) when out_file is "
-            "not given"
-        ),
-    ] = False,
 ):
     """
     Cluster molecules by similarity and store the linkage matrix.

@@ -440,7 +440,6 @@ project combining an experiment and its simulations:
        raw_data/                  per-run SimData files (sharded)
 
 ``MethPrintExperiment.save``/``SimDataset.save`` (and their CLI
-wrappers) support ``--out_file``/``--overwrite``: omit ``out_file`` to
-overwrite the source file in place, or give a path (``--overwrite``
-is then only needed if it collides with an ``H5Array`` already backing
-loaded analysis data).
+wrappers) support ``--out_file``: omit it to update the source file in
+place, or give a path to write elsewhere. Saving in place relinks
+analysis arrays already stored in the file instead of copying them.

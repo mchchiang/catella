@@ -574,7 +574,9 @@ class MethPrintAnalysis:
             with base callers that omit confident canonical calls,
             this trims protected ends of the molecule. A `mask_name`
             from `filter_dropout` still counts dropout over the whole
-            fiber, so it drops partial reads.
+            fiber, so it drops partial reads. Under every span, sites
+            inside internal gaps recorded by `load_raw` (see
+            `min_gap`) are not read.
         batch_size : int, default 20000
             Number of molecules processed (and held in memory) per
             batch.

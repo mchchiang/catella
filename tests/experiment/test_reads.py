@@ -7,7 +7,11 @@ import numpy as np
 import pandas as pd
 import pytest
 from catella.experiment._contexts import A
-from catella.experiment._reads import _dense_batches, _iter_read_sites
+from catella.experiment._reads import (
+    _dense_batches,
+    _gap_mask,
+    _iter_read_sites,
+)
 from catella.experiment.methdata import MethPrintData, MethPrintExperiment
 
 _NBP = 6
@@ -103,6 +107,64 @@ class TestDenseBatches:
         before = df.copy()
         list(_dense_batches(df, _NMOL, _NBP, 2))
         pd.testing.assert_frame_equal(df, before)
+
+
+class TestGapMask:
+    _GAPS = np.array([[1, 3], [4, 6], [0, 2]])
+    _OFFSET = np.array([0, 2, 2, 3])
+
+    def test_whole_range(self):
+        mask = _gap_mask(self._GAPS, self._OFFSET, 0, 3, 6)
+        np.testing.assert_array_equal(
+            mask,
+            [
+                [False, True, True, False, True, True],
+                [False] * 6,
+                [True, True, False, False, False, False],
+            ],
+        )
+
+    def test_sub_range(self):
+        mask = _gap_mask(self._GAPS, self._OFFSET, 1, 3, 6)
+        np.testing.assert_array_equal(
+            mask, [[False] * 6, [True, True, False, False, False, False]]
+        )
+
+    def test_overlapping_gaps(self):
+        mask = _gap_mask(np.array([[1, 4], [2, 5]]), np.array([0, 2]), 0, 1, 6)
+        np.testing.assert_array_equal(
+            mask, [[False, True, True, True, True, False]]
+        )
+
+
+def _gapped_experiment():
+    raw = MethPrintData._create(
+        chrom="chr1",
+        nbp=_NBP,
+        test_mol_id=np.array([f"mol{m}" for m in range(_NMOL)], dtype=object),
+        test_data=_table(_ROWS),
+        test_gaps=np.array([[1, 3]], dtype=np.int64),
+        test_gap_offset=np.array([0, 1, 1, 1, 1, 1], dtype=np.int64),
+    )
+    return MethPrintExperiment._create(_raw_data={"chr1": raw})
+
+
+class TestIterReadSitesGaps:
+    def _read(self, exp, span="full"):
+        ctx, assay = _read_args()
+        batches = _iter_read_sites(
+            exp, "chr1", "test", ctx, assay,
+            batch_size=2, mask_name=None, span=span,
+        )
+        return np.concatenate([b.read for b in batches], axis=0)
+
+    @pytest.mark.parametrize("span", ["full", "calls"])
+    def test_gap_sites_not_read(self, span):
+        read = self._read(_gapped_experiment(), span)
+        assert not read[0, 1:3].any()
+        np.testing.assert_array_equal(
+            read[1:], self._read(_experiment(), span)[1:]
+        )
 
 
 class TestIterReadSites:

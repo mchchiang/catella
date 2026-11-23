@@ -2492,6 +2492,23 @@ class TestReadSites:
         assert not read.any()
         assert np.isnan(q).all()
 
+    @pytest.mark.parametrize("span", ["full", "calls"])
+    def test_gap_sites_not_read(self, span):
+        batch = np.array([[0.4, np.nan, np.nan, np.nan, 0.6]])
+        assay = np.ones((1, 5), dtype=bool)
+        gap = np.array([[False, True, True, False, False]])
+        q, read = _read_sites(batch, assay, np.ones(5, bool), span, gap=gap)
+        np.testing.assert_array_equal(read, [[True, False, False, True, True]])
+        np.testing.assert_array_equal(q[read], [0.4, 0.0, 0.6])
+
+    def test_gap_keeps_calls(self):
+        batch = np.array([[np.nan, 0.7, np.nan]])
+        assay = np.ones((1, 3), dtype=bool)
+        gap = np.array([[False, True, True]])
+        q, read = _read_sites(batch, assay, np.ones(3, bool), gap=gap)
+        np.testing.assert_array_equal(read, [[True, True, False]])
+        assert q[0, 1] == 0.7
+
     def test_read_span_per_molecule_extents(self):
         batch = np.full((2, 4), np.nan)
         assay = np.ones((2, 4), dtype=bool)

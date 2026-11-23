@@ -32,7 +32,9 @@ def _check_mapped_strands(raw, has_controls):
             raise ValueError(_UNMAPPED_STRAND_MSG)
 
 
-def _read_sites(batch, assay_rows, ctx_ok, span="full", extent=None):
+def _read_sites(
+    batch, assay_rows, ctx_ok, span="full", extent=None, gap=None
+):
     """
     Confidence scores over the sites each molecule reads, with a
     missing call at a read site treated as unmethylated.
@@ -53,6 +55,10 @@ def _read_sites(batch, assay_rows, ctx_ok, span="full", extent=None):
     extent : (np.ndarray, np.ndarray), optional
         int64 half-open `(start, end)` per molecule. Required if
         `span` is "read", ignored otherwise.
+    gap : np.ndarray, optional
+        bool, (n_mol, L), positions inside each molecule's internal
+        gaps; sites there without a call are not read, under every
+        `span`.
 
     Returns
     -------
@@ -77,6 +83,8 @@ def _read_sites(batch, assay_rows, ctx_ok, span="full", extent=None):
         in_span = (idx >= start[:, None]) & (idx < end[:, None])
         read = read & in_span
         called = called & in_span
+    if gap is not None:
+        read = read & ~gap
     read = read | called
     q = np.where(read, np.where(called, batch, 0.0), np.nan)
     return q, read
@@ -138,6 +146,35 @@ def _read_weights(b, assay, strand=None):
         fill = b.frac[strand] * assay[strand]
     w[b.blank] = fill
     return w
+
+
+def _gap_mask(gaps, offset, start, stop, nbp):
+    """
+    Positions inside the internal gaps of molecules `start:stop`.
+
+    Parameters
+    ----------
+    gaps : np.ndarray
+        int64, (n_gap, 2), half-open gaps grouped by molecule.
+    offset : np.ndarray
+        int64, length nmol + 1; the gaps of molecule `i` are
+        `gaps[offset[i]:offset[i + 1]]`.
+    start, stop : int
+        Molecule range.
+    nbp : int
+        Number of positions.
+
+    Returns
+    -------
+    np.ndarray
+        bool, (stop - start, nbp).
+    """
+    lo, hi = offset[start], offset[stop]
+    mol = np.repeat(np.arange(stop - start), np.diff(offset[start : stop + 1]))
+    edges = np.zeros((stop - start, nbp + 1), dtype=np.int64)
+    np.add.at(edges, (mol, gaps[lo:hi, 0]), 1)
+    np.add.at(edges, (mol, gaps[lo:hi, 1]), -1)
+    return np.cumsum(edges, axis=1)[:, :nbp] > 0
 
 
 def _dense_batches(df, nmol, nbp, batch_size):
@@ -228,6 +265,8 @@ def _iter_read_sites(
     span : {"full", "calls", "read"}, default "full"
         Forwarded to `_read_sites`; "read" uses the read extents
         stored at ingest (`{which}_mol_start`/`{which}_mol_end`).
+        Internal gaps stored at ingest (`{which}_gaps`), if any, are
+        not read under every span.
     q_thres : float, optional
         If given, each read site's score in `q` becomes 1 if it is at
         least `q_thres` and 0 otherwise. `read` and `called` are not
@@ -270,6 +309,8 @@ def _iter_read_sites(
     code = np.where(labels_all == "+", 0, np.where(labels_all == "-", 1, 2))
     stacked = np.stack([assay["+"], assay["-"], assay["."]])
     ctx_ok = ctx != NONE
+    gaps = getattr(raw, f"{which}_gaps")
+    gap_offset = getattr(raw, f"{which}_gap_offset")
     dense = _dense_batches(
         getattr(raw, f"{which}_data"), len(keep_all), raw.nbp, batch_size
     )
@@ -277,8 +318,11 @@ def _iter_read_sites(
         ext = None
         if extent is not None:
             ext = (extent[0][start:stop], extent[1][start:stop])
+        gap = None
+        if gaps is not None and gap_offset is not None:
+            gap = _gap_mask(gaps, gap_offset, start, stop, raw.nbp)
         q, read = _read_sites(
-            batch, stacked[code[start:stop]], ctx_ok, span, ext
+            batch, stacked[code[start:stop]], ctx_ok, span, ext, gap
         )
         if q_thres is not None:
             q = np.where(np.isnan(q), np.nan, (q >= q_thres).astype(float))

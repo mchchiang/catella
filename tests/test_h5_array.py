@@ -1,5 +1,6 @@
 # test_h5_array.py
 
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -319,6 +320,31 @@ def test_sum_of_integer_array_keeps_integer_dtype():
     result = arr.sum(axis=0, batch_size=2)
     assert np.issubdtype(result.dtype, np.integer)
     np.testing.assert_array_equal(result, values.sum(axis=0))
+
+
+@pytest.mark.parametrize(
+    ("op", "expected"), [("min", [5.0, 1.0]), ("max", [6.0, 4.0])]
+)
+def test_min_max_nan_only_in_first_batch_no_warning(op, expected):
+    values = np.array([[np.nan, 1.0], [np.nan, 2.0], [5.0, 3.0], [6.0, 4.0]])
+    arr = H5Array.create(values.shape)
+    arr.write_batch(0, 4, values)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = getattr(arr, op)(axis=0, batch_size=2)
+    np.testing.assert_array_equal(result, expected)
+
+
+@pytest.mark.parametrize("how", ["min", "max"])
+def test_downsample_all_nan_column_gives_nan_without_warning(how):
+    values = np.array([[np.nan, 1.0], [np.nan, 2.0], [np.nan, 3.0]])
+    arr = H5Array.create(values.shape)
+    arr.write_batch(0, 3, values)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = arr.downsample(1, how=how, batch_size=2)
+    assert np.isnan(result[0, 0])
+    assert result[0, 1] == (1.0 if how == "min" else 3.0)
 
 
 def test_downsample_invalid_how_raises():

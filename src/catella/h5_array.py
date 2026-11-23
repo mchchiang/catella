@@ -34,12 +34,12 @@ def _acc_sum(acc, batch):
 
 
 def _acc_min(acc, batch):
-    m = np.nanmin(batch, axis=0)
+    m = np.fmin.reduce(batch, axis=0)
     return m if acc is None else np.fmin(acc, m)
 
 
 def _acc_max(acc, batch):
-    m = np.nanmax(batch, axis=0)
+    m = np.fmax.reduce(batch, axis=0)
     return m if acc is None else np.fmax(acc, m)
 
 

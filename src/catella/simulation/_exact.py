@@ -6,9 +6,9 @@ import numpy as np
 import pandas as pd
 from catella_cpp import NucPosTM
 
+from catella._jagged import _pack_jagged
 from catella.h5_array import H5Array
 from catella.simulation._inputs import _start_positions
-from catella.simulation._io import _pack_jagged
 from catella.simulation._parallel import _process_map
 from catella.simulation.config import SimSettings
 

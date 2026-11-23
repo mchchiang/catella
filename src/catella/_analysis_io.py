@@ -36,7 +36,9 @@ def _analysis_group(h5stream, name):
     return h5stream[name + _STAGED]
 
 
-def _save_analysis(path, analysis, global_analysis, *, write_extra=None):
+def _save_analysis(
+    path, analysis, global_analysis, *, write_extra=None, keep_unlisted=False
+):
     """
     Write the analysis groups to `path` in place.
 
@@ -58,6 +60,9 @@ def _save_analysis(path, analysis, global_analysis, *, write_extra=None):
     write_extra : callable, optional
         Called with the open `h5py.File` before the analysis groups are
         written, e.g. to write raw data or metadata.
+    keep_unlisted : bool, default False
+        Carry over chromosome groups of the existing `analysis` group
+        that are not keys of `analysis` (e.g. chromosomes not loaded).
 
     Raises
     ------
@@ -82,6 +87,10 @@ def _save_analysis(path, analysis, global_analysis, *, write_extra=None):
                 _link_or_write(
                     f, gnew.create_group(chrom), data, sources, staged
                 )
+            if keep_unlisted and "analysis" in f:
+                for chrom, gold in f["analysis"].items():
+                    if chrom not in analysis:
+                        gnew[chrom] = gold
             gnew = f.create_group("global_analysis" + _STAGED)
             _link_or_write(f, gnew, global_analysis, sources, staged)
             f.flush()

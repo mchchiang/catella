@@ -169,6 +169,35 @@ class TestSaveAnalysis:
         analysis, _ = _load(path)
         assert set(analysis["c1"]) == {"a", "b"}
 
+    def test_keep_unlisted_carries_over_chroms(self, tmp_path):
+        path = tmp_path / "exp.h5"
+        _save_analysis(
+            path,
+            {"c1": {"a": _arr(tmp_path, A)}, "c2": {"b": _arr(tmp_path, B)}},
+            {},
+        )
+        _save_analysis(
+            path,
+            {"c1": {"df": pd.DataFrame({"v": [1.0]})}},
+            {},
+            keep_unlisted=True,
+        )
+        analysis, _ = _load(path)
+        assert set(analysis) == {"c1", "c2"}
+        assert set(analysis["c1"]) == {"df"}
+        np.testing.assert_array_equal(analysis["c2"]["b"].to_numpy(), B)
+
+    def test_unlisted_chroms_dropped_by_default(self, tmp_path):
+        path = tmp_path / "exp.h5"
+        _save_analysis(
+            path,
+            {"c1": {"a": _arr(tmp_path, A)}, "c2": {"b": _arr(tmp_path, B)}},
+            {},
+        )
+        _save_analysis(path, {"c1": {}}, {})
+        analysis, _ = _load(path)
+        assert set(analysis) == {"c1"}
+
     def test_file_open_elsewhere_raises(self, path):
         analysis, glob = _load(path)
         other = H5Array.load_from(path, "analysis/c1/b")

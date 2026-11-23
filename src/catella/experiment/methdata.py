@@ -629,6 +629,7 @@ class MethPrintExperiment:
             self._analysis,
             self._global_analysis,
             write_extra=write_raw,
+            keep_unlisted=same_file,
         )
         self._exp_file = str(dest_path.resolve())
 

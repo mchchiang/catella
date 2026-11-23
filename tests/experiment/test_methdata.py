@@ -225,6 +225,37 @@ class TestSaveInPlace:
             np.arange(6.0).reshape(2, 3),
         )
 
+    def test_subset_load_keeps_other_chroms_analysis(self, tmp_path):
+        raw = {
+            c: _make_raw(c, nmol=2, nbp=6, seed=i)
+            for i, c in enumerate(["chr1", "chr2"])
+        }
+        exp = MethPrintExperiment._create(_raw_data=raw)
+        exp._analysis["chr2"]["df2"] = pd.DataFrame({"v": [2.0]})
+        path = tmp_path / "multi.h5"
+        exp.save(path)
+
+        subset = MethPrintExperiment.load(path, chroms=["chr1"])
+        subset._analysis["chr1"]["df1"] = pd.DataFrame({"v": [1.0]})
+        subset.save()
+
+        full = MethPrintExperiment.load(path)
+        assert set(full.analysis["chr1"]) == {"df1"}
+        pd.testing.assert_frame_equal(
+            full.analysis["chr2"]["df2"], pd.DataFrame({"v": [2.0]})
+        )
+
+    def test_save_to_other_file_drops_its_chroms(self, path, tmp_path):
+        other = tmp_path / "other.h5"
+        exp = MethPrintExperiment._create(
+            _raw_data={"chr2": _make_raw("chr2", nmol=2, nbp=6, seed=1)}
+        )
+        exp._analysis["chr2"]["df2"] = pd.DataFrame({"v": [2.0]})
+        exp.save(other)
+        MethPrintExperiment.load(path).save(other)
+        with h5py.File(other, "r") as f:
+            assert set(f["analysis"]) == {"chr1"}
+
     def test_file_open_elsewhere_raises(self, path):
         loaded = MethPrintExperiment.load(path)
         other = MethPrintExperiment.load(path)

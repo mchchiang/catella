@@ -190,6 +190,12 @@ def load_raw(
     nworker: Annotated[
         int, typer.Option(help="Threads for parallel file reading")
     ] = 1,
+    min_gap: Annotated[
+        int,
+        typer.Option(
+            min=0, help="Min deletion (bp) recorded as a read gap; 0 = off"
+        ),
+    ] = 20,
 ):
     """
     Load raw methylation footprinting data into a MethPrintExperiment.
@@ -212,6 +218,7 @@ def load_raw(
         tmp_dir=tmp_dir,
         max_cached_chroms=max_cached_chroms,
         nworker=nworker,
+        min_gap=min_gap or None,
     )
     exp.save(out_file)
 

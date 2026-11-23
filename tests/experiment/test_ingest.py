@@ -3,9 +3,11 @@ import os
 from concurrent.futures import ProcessPoolExecutor
 from unittest.mock import patch
 
+import numpy as np
 import pytest
 from catella.experiment._ingest import (
     _ensure_fasta_index,
+    _GapTracker,
     _load_refseqs,
     _read_chromsize,
     _resolve_modkit_schema,
@@ -18,6 +20,91 @@ def _write(path, text):
 
 
 _REQUIRED = ["mol_id", "upos", "chrom", "strand", "mod_qual", "mod_code"]
+
+
+def _track(chunks, nmol=1, min_gap=20, nbp=1000):
+    tracker = _GapTracker(nmol, min_gap)
+    for idx, ref, read in chunks:
+        tracker.update(
+            np.array(idx, dtype=np.int64),
+            np.array(ref, dtype=np.int64),
+            np.array(read, dtype=np.int64),
+        )
+    gaps, offset, n_bad = tracker.result(nbp)
+    return gaps.tolist(), offset.tolist(), n_bad
+
+
+class TestGapTracker:
+    def test_plus_read_deletion(self):
+        gaps, offset, n_bad = _track([([0, 0, 0], [10, 14, 60], [5, 9, 15])])
+        assert gaps == [[15, 60]]
+        assert offset == [0, 1]
+        assert n_bad == 0
+
+    def test_minus_read_deletion(self):
+        gaps, _, _ = _track([([0, 0, 0], [10, 14, 60], [90, 86, 80])])
+        assert gaps == [[15, 60]]
+
+    def test_below_min_gap_ignored(self):
+        gaps, offset, _ = _track([([0, 0], [10, 40], [0, 11])])
+        assert gaps == []
+        assert offset == [0, 0]
+
+    def test_exactly_min_gap_recorded(self):
+        gaps, _, _ = _track([([0, 0], [10, 40], [0, 10])])
+        assert gaps == [[11, 40]]
+
+    def test_insertion_offsets_deletion(self):
+        gaps, _, _ = _track([([0, 0], [10, 40], [0, 25])])
+        assert gaps == []
+
+    def test_gap_across_chunk_boundary(self):
+        gaps, _, _ = _track(
+            [([0, 0], [10, 14], [5, 9]), ([0, 0], [60, 64], [15, 19])]
+        )
+        assert gaps == [[15, 60]]
+
+    def test_interleaved_molecules(self):
+        gaps, offset, _ = _track(
+            [([0, 1, 0, 1], [10, 100, 60, 104], [0, 0, 5, 4])], nmol=2
+        )
+        assert gaps == [[11, 60]]
+        assert offset == [0, 1, 1]
+
+    def test_same_position_rows_ignored(self):
+        gaps, _, n_bad = _track([([0, 0, 0], [10, 10, 11], [3, 3, 4])])
+        assert gaps == []
+        assert n_bad == 0
+
+    def test_unordered_molecule_gets_no_gaps(self):
+        gaps, offset, n_bad = _track(
+            [([0, 0, 0, 1, 1], [10, 60, 30, 5, 50], [0, 5, 3, 0, 4])],
+            nmol=2,
+        )
+        assert n_bad == 1
+        assert gaps == [[6, 50]]
+        assert offset == [0, 0, 1]
+
+    def test_direction_change_across_chunks_is_unordered(self):
+        _, _, n_bad = _track([([0, 0], [10, 20], [0, 10]), ([0], [5], [15])])
+        assert n_bad == 1
+
+    def test_gaps_sorted_per_molecule(self):
+        gaps, offset, _ = _track(
+            [([0, 0, 0], [10, 60, 200], [0, 5, 10])], min_gap=20
+        )
+        assert gaps == [[11, 60], [61, 200]]
+        assert offset == [0, 2]
+
+    def test_clipped_to_nbp(self):
+        gaps, _, _ = _track([([0, 0], [10, 90], [0, 5])], nbp=50)
+        assert gaps == [[11, 50]]
+
+    def test_no_rows(self):
+        gaps, offset, n_bad = _track([], nmol=3)
+        assert gaps == []
+        assert offset == [0, 0, 0, 0]
+        assert n_bad == 0
 
 
 class TestResolveModkitSchema:

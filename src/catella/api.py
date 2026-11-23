@@ -41,6 +41,7 @@ def load_raw(
     tmp_dir: str | Path | None = None,
     max_cached_chroms: int = 1,
     nworker: int = 1,
+    min_gap: int | None = 20,
 ) -> MethPrintExperiment:
     """
     Load raw methylation footprinting data into a MethPrintExperiment.
@@ -112,6 +113,9 @@ def load_raw(
     nworker : int, default 1
         Maximum number of threads used to read test/unmeth/meth files
         concurrently. Only relevant when more than one is given.
+    min_gap : int or None, default 20
+        Minimum deletion (bp) inside a read recorded as an internal
+        gap; None records none. See `MethPrintExperiment.load_raw`.
 
     Returns
     -------
@@ -138,6 +142,7 @@ def load_raw(
         tmp_dir=tmp_dir,
         max_cached_chroms=max_cached_chroms,
         nworker=nworker,
+        min_gap=min_gap,
     )
 
 

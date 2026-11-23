@@ -1549,3 +1549,110 @@ class TestReadExtents:
         assert raw.test_mol_end is None
         assert list(raw.test_mol_id) == ["m0"]
         reloaded.close()
+
+
+_GAP_HEADER = (
+    "read_id\tforward_read_position\tref_position\tchrom\tref_strand\t"
+    "mod_qual\tmod_code\n"
+)
+
+
+def _gap_rows():
+    return [
+        ("m0", 0, 10, "chr1", "+", 0.9, "a"),
+        ("m0", 4, 14, "chr1", "+", 0.8, "-"),
+        ("m0", 10, 60, "chr1", "+", 0.7, "a"),
+        ("m1", 50, 20, "chr1", "-", 0.6, "a"),
+        ("m1", 45, 25, "chr1", "-", 0.5, "a"),
+    ]
+
+
+def _gaps(raw, src="test"):
+    return (
+        getattr(raw, f"{src}_gaps").tolist(),
+        getattr(raw, f"{src}_gap_offset").tolist(),
+    )
+
+
+class TestInternalGaps:
+    def _load(self, tmp_path, rows=None, header=_GAP_HEADER, **kwargs):
+        chromsize, f = _extent_setup(
+            tmp_path, rows or _gap_rows(), header=header
+        )
+        return MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=f, **kwargs
+        )
+
+    def test_inferred_from_read_positions(self, tmp_path):
+        exp = self._load(tmp_path)
+        assert _gaps(exp.raw["chr1"]) == ([[15, 60]], [0, 1, 1])
+        exp.close()
+
+    def test_canonical_rows_used_before_filtering(self, tmp_path):
+        rows = _gap_rows()
+        rows[1] = ("m0", 4, 50, "chr1", "+", 0.8, "-")
+        exp = self._load(tmp_path, rows)
+        raw = exp.raw["chr1"]
+        assert _gaps(raw) == ([[11, 50]], [0, 1, 1])
+        assert 50 not in raw.test_data["pos"].tolist()
+        exp.close()
+
+    def test_min_gap_threshold(self, tmp_path):
+        exp = self._load(tmp_path, min_gap=50)
+        assert _gaps(exp.raw["chr1"]) == ([], [0, 0, 0])
+        exp.close()
+
+    def test_min_gap_none_records_nothing(self, tmp_path):
+        exp = self._load(tmp_path, min_gap=None)
+        raw = exp.raw["chr1"]
+        assert raw.test_gaps is None
+        assert raw.test_gap_offset is None
+        exp.close()
+
+    @pytest.mark.parametrize("bad", [0, -5, 2.5, True, "20"])
+    def test_invalid_min_gap_raises(self, tmp_path, bad):
+        with pytest.raises(ValueError, match="min_gap must be None"):
+            self._load(tmp_path, min_gap=bad)
+
+    def test_no_read_position_column_records_nothing(self, tmp_path):
+        rows = [r[:1] + r[2:] for r in _gap_rows()]
+        exp = self._load(tmp_path, rows, header=_HEADER)
+        assert exp.raw["chr1"].test_gaps is None
+        exp.close()
+
+    def test_none_with_wrap(self, tmp_path):
+        exp = self._load(tmp_path, wrap=True)
+        assert exp.raw["chr1"].test_gaps is None
+        exp.close()
+
+    def test_unordered_molecule_warns(self, tmp_path):
+        rows = _gap_rows() + [("m0", 12, 30, "chr1", "+", 0.4, "a")]
+        with pytest.warns(UserWarning, match="not ordered"):
+            exp = self._load(tmp_path, rows)
+        assert _gaps(exp.raw["chr1"]) == ([], [0, 0, 0])
+        exp.close()
+
+    def test_chunks_do_not_change_gaps(self, tmp_path):
+        exp = self._load(tmp_path, chunk_size=1)
+        assert _gaps(exp.raw["chr1"]) == ([[15, 60]], [0, 1, 1])
+        exp.close()
+
+    def test_multi_file_and_save_load(self, tmp_path):
+        chromsize, f = _extent_setup(tmp_path, _gap_rows(), header=_GAP_HEADER)
+        ctrl = [
+            ("u0", 0, 5, "chr1", "+", 0.1, "a"),
+            ("u0", 3, 70, "chr1", "+", 0.1, "a"),
+        ]
+        _, uf = _extent_setup(tmp_path, ctrl, header=_GAP_HEADER, name="u")
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=f, unmeth_file=uf
+        )
+        saved = tmp_path / "exp.h5"
+        exp.save(saved)
+        exp.close()
+        reloaded = MethPrintExperiment.load(saved)
+        raw = reloaded.raw["chr1"]
+        assert _gaps(raw) == ([[15, 60]], [0, 1, 1])
+        assert _gaps(raw, "unmeth") == ([[6, 70]], [0, 1])
+        assert raw.meth_gaps is None
+        reloaded.close()

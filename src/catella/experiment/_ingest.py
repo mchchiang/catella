@@ -27,6 +27,7 @@ _MODKIT_COLNAMES = [
     "alignment_start",
     "alignment_end",
     "flag",
+    "forward_read_position",
 ]
 _CANONICAL_NAMES = [
     "mol_id",
@@ -38,6 +39,7 @@ _CANONICAL_NAMES = [
     "align_start",
     "align_end",
     "flag",
+    "read_pos",
 ]
 # Canonical columns a file may lack; the read extent then falls back
 # to the first and last row of each molecule.
@@ -45,6 +47,9 @@ _OPTIONAL_NAMES = ("align_start", "align_end")
 # Columns `colidx` can map (6 required, or 8 with the alignment
 # columns); later ones are read only from a Modkit header.
 _COLIDX_NAMES = _CANONICAL_NAMES[:8]
+# Optional per-molecule datasets stored as `{src}_{key}` next to
+# `{src}_mol_id` (read extents and internal gaps)
+_PER_MOL_KEYS = ("mol_start", "mol_end", "gaps", "gap_offset")
 # SAM flags of secondary and supplementary alignments
 _NON_PRIMARY_FLAGS = 256 | 2048
 _CANONICAL_PA_TYPES = {
@@ -57,6 +62,7 @@ _CANONICAL_PA_TYPES = {
     "align_start": pa.int64(),
     "align_end": pa.int64(),
     "flag": pa.int64(),
+    "read_pos": pa.int64(),
 }
 # Fixed schema for the raw per-chromosome long-format tables, used by
 # the streaming AppendableDF writer in load_raw().
@@ -219,7 +225,7 @@ def _resolve_modkit_schema(data_file, sep, colidx):
     name_for : dict of str to str
         Canonical field name -> the column name pyarrow will parse it
         as. Optional columns absent from the file are left out; `flag`
-        is only mapped from a header.
+        and `read_pos` are only mapped from a header.
 
     Raises
     ------
@@ -604,6 +610,7 @@ def _stream_rows_to_staging(
     refseq_by_chrom=None,
     mtase=None,
     ignore_strand=False,
+    min_gap=None,
 ):
     """
     Stream full rows, transform them, and append to per-chromosome
@@ -653,10 +660,13 @@ def _stream_rows_to_staging(
         If True, a row is kept if its `upos` is methylatable by any
         `mtase` label on either strand, instead of only the row's own
         recorded `strand`.
+    min_gap : int, optional
+        Minimum net deletion (bp) recorded as an internal gap (see
+        `_GapTracker`). None records no gaps.
 
     Returns
     -------
-    dict of str to (np.ndarray, np.ndarray) or None
+    extents : dict of str to (np.ndarray, np.ndarray) or None
         Chromosome -> `(start, end)`, int64 of length nmol, the
         half-open extent `[start, end)` of each molecule, taken before
         the `mod_code` and strand filters and clipped to the
@@ -664,13 +674,20 @@ def _stream_rows_to_staging(
         Taken from the `align_start`/`align_end` columns if present,
         else from the first and last row of each molecule. None if
         `wrap`, since folded positions have no extent.
+    gaps : dict of str to (np.ndarray, np.ndarray) or None
+        Chromosome -> `(gaps, offset)` from `_GapTracker.result`,
+        inferred from all rows before the `mod_code` and strand
+        filters. None if `wrap`, if `min_gap` is None, or if the file
+        has no `read_pos` column.
 
     Warns
     -----
     UserWarning
         If rows have `upos` outside `[0, full_size)` (e.g., -1 for
         unaligned bases), or come from secondary or supplementary
-        alignments (per a `flag` column); those rows are dropped.
+        alignments (per a `flag` column); those rows are dropped. Also
+        if some molecules' rows are not ordered along the reference;
+        those molecules get no gaps.
     """
     n_out = {}
     extents = None
@@ -683,6 +700,12 @@ def _stream_rows_to_staging(
             for chrom, m in mol_maps.items()
         }
     has_align = all(c in name_for for c in _OPTIONAL_NAMES)
+    trackers = None
+    if extents is not None and min_gap is not None and "read_pos" in name_for:
+        trackers = {
+            chrom: _GapTracker(len(m["mol_id"]), min_gap)
+            for chrom, m in mol_maps.items()
+        }
     valid_by_chrom = {}
     if mtase is not None and refseq_by_chrom is not None:
         for chrom, seq in refseq_by_chrom.items():
@@ -698,6 +721,8 @@ def _stream_rows_to_staging(
         needed += list(_OPTIONAL_NAMES)
     if "flag" in name_for:
         needed.append("flag")
+    if trackers is not None:
+        needed.append("read_pos")
     n_non_primary = 0
     for batch_df in _iter_csv_chunks(
         data_file, header_names, name_for, sep, needed, chunk_size, block_size
@@ -718,6 +743,13 @@ def _stream_rows_to_staging(
             mol_index = group["mol_id"].map(mapping["index"])
             if extents is not None:
                 _update_extents(extents[chrom], group, mol_index, has_align)
+            if trackers is not None:
+                mapped = mol_index.notna().to_numpy()
+                trackers[chrom].update(
+                    mol_index.to_numpy()[mapped].astype(np.int64),
+                    group["upos"].to_numpy()[mapped].astype(np.int64),
+                    group["read_pos"].to_numpy()[mapped].astype(np.int64),
+                )
             keep = mol_index.notna().to_numpy() & (
                 group["mod_code"].to_numpy() != "-"
             )
@@ -776,11 +808,26 @@ def _stream_rows_to_staging(
             f"outside [0, {full_sizes[chrom]})"
         )
     if extents is None:
-        return None
-    return {
+        return None, None
+    extents = {
         chrom: _clip_extents(start, end, full_sizes[chrom])
         for chrom, (start, end) in extents.items()
     }
+    if trackers is None:
+        return extents, None
+    gaps = {}
+    n_unordered = 0
+    for chrom, tracker in trackers.items():
+        flat, offset, n_bad = tracker.result(full_sizes[chrom])
+        gaps[chrom] = (flat, offset)
+        n_unordered += n_bad
+    if n_unordered:
+        _warn(
+            f"{n_unordered} molecule(s) in {data_file} have rows not "
+            "ordered along the reference; no internal gaps are inferred "
+            "for them (sort the file by read and reference position)"
+        )
+    return extents, gaps
 
 
 def _update_extents(extent, group, mol_index, has_align):
@@ -812,6 +859,118 @@ def _update_extents(extent, group, mol_index, has_align):
         hi = lo + 1
     np.minimum.at(extent[0], idx, lo.astype(np.int64))
     np.maximum.at(extent[1], idx, hi.astype(np.int64))
+
+
+class _GapTracker:
+    """
+    Infer internal gaps (deletions) of each molecule of one chromosome
+    from its rows, streamed in chunks.
+
+    Between two consecutive rows of a molecule, the reference step
+    minus the read step is the net number of deleted bases; if it is
+    at least `min_gap`, the open interval between the two rows is a
+    gap. An insertion between the same rows offsets the deletion, so
+    the count is a lower bound. A molecule whose rows are not ordered
+    along the reference (in either direction) is flagged as unordered
+    and gets no gaps.
+
+    Parameters
+    ----------
+    nmol : int
+        Number of molecules.
+    min_gap : int
+        Minimum net deletion (bp) to record a gap.
+    """
+
+    def __init__(self, nmol, min_gap):
+        self.min_gap = min_gap
+        self.last_ref = np.full(nmol, -1, dtype=np.int64)
+        self.last_read = np.zeros(nmol, dtype=np.int64)
+        self.sign = np.zeros(nmol, dtype=np.int8)
+        self.unordered = np.zeros(nmol, dtype=bool)
+        self.found = []
+
+    def update(self, idx, ref, read):
+        """
+        Add one chunk of rows, in file order.
+
+        Parameters
+        ----------
+        idx : np.ndarray
+            int64, molecule index of each row.
+        ref : np.ndarray
+            int64, reference position of each row (non-negative).
+        read : np.ndarray
+            int64, position of each row on the forward read.
+        """
+        if not len(idx):
+            return
+        order = np.argsort(idx, kind="stable")
+        idx, ref, read = idx[order], ref[order], read[order]
+        first = np.ones(len(idx), dtype=bool)
+        first[1:] = idx[1:] != idx[:-1]
+        prev_ref = np.roll(ref, 1)
+        prev_read = np.roll(read, 1)
+        prev_ref[first] = self.last_ref[idx[first]]
+        prev_read[first] = self.last_read[idx[first]]
+        has_prev = prev_ref >= 0
+
+        dref = np.where(has_prev, ref - prev_ref, 0)
+        up = np.zeros(len(self.sign), dtype=bool)
+        down = np.zeros(len(self.sign), dtype=bool)
+        np.logical_or.at(up, idx, dref > 0)
+        np.logical_or.at(down, idx, dref < 0)
+        self.unordered |= (up & down) | (up & (self.sign < 0))
+        self.unordered |= down & (self.sign > 0)
+        self.sign[(self.sign == 0) & up] = 1
+        self.sign[(self.sign == 0) & down] = -1
+
+        net = np.abs(dref) - np.abs(read - prev_read)
+        hit = has_prev & (net >= self.min_gap)
+        if hit.any():
+            lo = np.minimum(ref[hit], prev_ref[hit]) + 1
+            hi = np.maximum(ref[hit], prev_ref[hit])
+            self.found.append(np.stack([idx[hit], lo, hi], axis=1))
+
+        last = np.ones(len(idx), dtype=bool)
+        last[:-1] = idx[:-1] != idx[1:]
+        self.last_ref[idx[last]] = ref[last]
+        self.last_read[idx[last]] = read[last]
+
+    def result(self, nbp):
+        """
+        Gaps per molecule, sorted, clipped to `[0, nbp)`.
+
+        Parameters
+        ----------
+        nbp : int
+            Chromosome length (bp).
+
+        Returns
+        -------
+        gaps : np.ndarray
+            int64, (n_gap, 2), half-open `[start, end)` of each gap,
+            grouped by molecule.
+        offset : np.ndarray
+            int64, length nmol + 1; the gaps of molecule `i` are
+            `gaps[offset[i]:offset[i + 1]]`.
+        n_unordered : int
+            Number of molecules skipped as unordered.
+        """
+        nmol = len(self.sign)
+        rows = (
+            np.concatenate(self.found)
+            if self.found
+            else np.empty((0, 3), dtype=np.int64)
+        )
+        rows = rows[~self.unordered[rows[:, 0]]]
+        rows[:, 1:] = np.clip(rows[:, 1:], 0, nbp)
+        rows = rows[rows[:, 1] < rows[:, 2]]
+        rows = rows[np.lexsort((rows[:, 1], rows[:, 0]))]
+        offset = np.zeros(nmol + 1, dtype=np.int64)
+        offset[1:] = np.cumsum(np.bincount(rows[:, 0], minlength=nmol))
+        n_unordered = int(self.unordered.sum())
+        return rows[:, 1:].copy(), offset, n_unordered
 
 
 def _clip_extents(start, end, nbp):
@@ -880,6 +1039,7 @@ def _ingest_into(
     balance_strand,
     rng,
     tmp_dir,
+    min_gap=None,
 ):
     """
     Resolve, scan, and stream one raw data file into the `raw_data`
@@ -939,7 +1099,7 @@ def _ingest_into(
             )
             gdatas[chrom] = gdata
 
-        extents = _stream_rows_to_staging(
+        extents, gaps = _stream_rows_to_staging(
             read_path,
             header_names,
             name_for,
@@ -953,10 +1113,14 @@ def _ingest_into(
             refseq_by_chrom=refseq_by_chrom,
             mtase=mtase,
             ignore_strand=ignore_strand,
+            min_gap=min_gap,
         )
         for chrom, (start, end) in (extents or {}).items():
             gdatas[chrom].create_dataset(f"{name}_mol_start", data=start)
             gdatas[chrom].create_dataset(f"{name}_mol_end", data=end)
+        for chrom, (flat, offset) in (gaps or {}).items():
+            gdatas[chrom].create_dataset(f"{name}_gaps", data=flat)
+            gdatas[chrom].create_dataset(f"{name}_gap_offset", data=offset)
     finally:
         if scratch_path is not None:
             os.remove(scratch_path)
@@ -1085,9 +1249,9 @@ def _merge_staging(graw, ingested):
                 src = handles[name][f"raw_data/{chrom}/data"]
                 src.copy(f"{name}_mol_id", gdata, name=f"{name}_mol_id")
                 src.copy(f"{name}_data", gdata, name=f"{name}_data")
-                for key in (f"{name}_mol_start", f"{name}_mol_end"):
-                    if key in src:
-                        src.copy(key, gdata, name=key)
+                for key in _PER_MOL_KEYS:
+                    if f"{name}_{key}" in src:
+                        src.copy(f"{name}_{key}", gdata, name=f"{name}_{key}")
     finally:
         for h in handles.values():
             h.close()

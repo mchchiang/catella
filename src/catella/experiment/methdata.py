@@ -8,6 +8,7 @@ from collections import OrderedDict
 from collections.abc import Mapping
 from collections.abc import Mapping as ABCMapping
 from dataclasses import dataclass, field, fields
+from numbers import Integral
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Self
@@ -36,6 +37,7 @@ from catella.experiment._dropout import (
     _site_coverage,
 )
 from catella.experiment._ingest import (
+    _PER_MOL_KEYS,
     _ingest_into,
     _ingest_sources,
     _load_refseqs,
@@ -170,6 +172,51 @@ class MethPrintData:
         }
     )
 
+    _frozen_test_gaps: np.ndarray | None = field(
+        metadata={
+            "doc": "np.ndarray: Internal gaps (deletions) of the test "
+            "molecules, shape (n_gap, 2), half-open [start, end), "
+            "grouped by molecule (see `test_gap_offset`), or None if "
+            "not recorded."
+        }
+    )
+
+    _frozen_test_gap_offset: np.ndarray | None = field(
+        metadata={
+            "doc": "np.ndarray: Length nmol + 1; the gaps of test "
+            "molecule i are `test_gaps[offset[i]:offset[i + 1]]`, or "
+            "None."
+        }
+    )
+
+    _frozen_unmeth_gaps: np.ndarray | None = field(
+        metadata={
+            "doc": "np.ndarray: Internal gaps of the unmethylated "
+            "controls (see `test_gaps`), or None."
+        }
+    )
+
+    _frozen_unmeth_gap_offset: np.ndarray | None = field(
+        metadata={
+            "doc": "np.ndarray: Gap offsets of the unmethylated "
+            "controls (see `test_gap_offset`), or None."
+        }
+    )
+
+    _frozen_meth_gaps: np.ndarray | None = field(
+        metadata={
+            "doc": "np.ndarray: Internal gaps of the methylated "
+            "controls (see `test_gaps`), or None."
+        }
+    )
+
+    _frozen_meth_gap_offset: np.ndarray | None = field(
+        metadata={
+            "doc": "np.ndarray: Gap offsets of the methylated controls "
+            "(see `test_gap_offset`), or None."
+        }
+    )
+
     def __init__(self, **kwargs: Any):
         _init_frozen_fields(
             self, kwargs, "use MethPrintData._load() to instantiate this class"
@@ -192,7 +239,7 @@ class MethPrintData:
                 continue
             gdata.create_dataset(name + "_mol_id", data=mol_id, dtype=dt)
             h5_utils.save_df(name + "_data", df, gdata)
-            for key in ("mol_start", "mol_end"):
+            for key in _PER_MOL_KEYS:
                 arr = getattr(self, f"_frozen_{name}_{key}")
                 if arr is not None:
                     gdata.create_dataset(f"{name}_{key}", data=arr)
@@ -222,7 +269,7 @@ class MethPrintData:
             mol_id, df = load_data(name, gdata)
             kwargs[f"{name}_mol_id"] = mol_id
             kwargs[f"{name}_data"] = df
-            for key in ("mol_start", "mol_end"):
+            for key in _PER_MOL_KEYS:
                 ds = f"{name}_{key}"
                 if mol_id is not None and ds in gdata:
                     kwargs[ds] = gdata[ds][()].astype(np.int64)
@@ -420,6 +467,7 @@ class MethPrintExperiment:
         tmp_dir: str | Path | None = None,
         max_cached_chroms: int = 1,
         nworker: int = 1,
+        min_gap: int | None = 20,
     ) -> Self:
         """
         Create an experiment by processing raw sequencing data files.
@@ -499,6 +547,10 @@ class MethPrintExperiment:
             Maximum number of threads used to read test/unmeth/meth
             files concurrently. Only relevant when more than one is
             given; never changes the resulting data.
+        min_gap : int or None, default 20
+            Minimum net deletion (bp) inside a read recorded as an
+            internal gap, a stretch the read did not measure (see
+            Notes). None records no gaps.
 
         Returns
         -------
@@ -516,7 +568,8 @@ class MethPrintExperiment:
             chromosome's length in `chromsize`, if `mtase`
             contains an unknown or duplicate label, or if
             `balance_strand` is True and `max_nmol` is None or less
-            than 2, or if `colidx` has neither 6 nor 8 entries.
+            than 2, if `colidx` has neither 6 nor 8 entries, or if
+            `min_gap` is neither None nor a positive integer.
 
         Warns
         -----
@@ -526,17 +579,30 @@ class MethPrintExperiment:
             rows have a `ref_position` outside the chromosome or come
             from secondary or supplementary alignments (per Modkit's
             `flag` column, present with `--allow-non-primary`); those
-            rows are dropped.
+            rows are dropped. Also if some molecules' rows are not
+            ordered along the reference; those get no internal gaps.
 
         Notes
         -----
-        Unless `wrap` is True, the half-open read extent of each
-        molecule is stored as `MethPrintData.{src}_mol_start` and
-        `{src}_mol_end`, clipped to the chromosome. It comes from the
-        `alignment_start`/`alignment_end` columns if the file has
-        them, and otherwise from the first and last row of the
-        molecule, which is shorter if rows were filtered out upstream.
+        Unless `wrap` is True, each molecule's read extent is stored as
+        `MethPrintData.{src}_mol_start`/`{src}_mol_end`, from the
+        `alignment_start`/`alignment_end` columns, or else from its
+        first and last row.
+
+        Internal gaps (deletions, which leave no rows) are stored as
+        `{src}_gaps`/`{src}_gap_offset`. They are inferred from the
+        `forward_read_position` column: a net deletion of at least
+        `min_gap` between consecutive rows marks the stretch between
+        them as a gap.
         """
+        if min_gap is not None and (
+            isinstance(min_gap, bool)
+            or not isinstance(min_gap, Integral)
+            or min_gap < 1
+        ):
+            raise ValueError(
+                f"min_gap must be None or a positive integer, got {min_gap!r}"
+            )
         if balance_strand:
             if max_nmol is None:
                 raise ValueError("balance_strand requires max_nmol")
@@ -572,6 +638,7 @@ class MethPrintExperiment:
             "max_nmol": max_nmol,
             "balance_strand": balance_strand,
             "tmp_dir": tmp_dir,
+            "min_gap": min_gap,
         }
 
         try:

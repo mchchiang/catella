@@ -603,7 +603,8 @@ def compute_model_prob(
         str,
         typer.Option(
             help="Molecule extent for reading uncalled sites: 'full' "
-            "(whole fiber) or 'calls' (first to last call)"
+            "(whole fiber), 'read' (read extent) or 'calls' (first to "
+            "last call)"
         ),
     ] = "full",
     batch_size: Annotated[

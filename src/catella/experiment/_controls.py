@@ -213,7 +213,7 @@ def _streamed_call_count(
     by_strand : bool, default False
         If True, counts are accumulated separately per strand from a
         single streamed pass, and the return value is keyed by strand.
-    span : {"full", "calls"}, default "full"
+    span : {"full", "calls", "read"}, default "full"
         Forwarded to `_iter_read_sites`.
     call_stats : dict, optional
         If given, per-channel call and read-site counts are added to

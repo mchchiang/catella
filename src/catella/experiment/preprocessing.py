@@ -53,7 +53,7 @@ __all__ = [
     "MethPrintAnalysis",
 ]
 
-_VALID_SPAN = {"full", "calls"}
+_VALID_SPAN = {"full", "calls", "read"}
 
 
 class MethPrintAnalysis:
@@ -561,16 +561,20 @@ class MethPrintAnalysis:
             pooled across strands, since the crosstalk it corrects for
             is an assay-chemistry property rather than a strand-
             specific one.
-        span : {"full", "calls"}, default "full"
+        span : {"full", "calls", "read"}, default "full"
             Extent of each molecule, within which every assayable site
             on the molecule's strand is read, and a read site without a
-            call is treated as unmethylated. "full" assumes every
-            molecule covers the whole fiber, as for artificial
-            constructs or native fragments filtered to fully cover the
-            region. "calls" restricts each molecule to its first to
-            last call, for data with partial reads; with base callers
-            that omit confident canonical calls, this trims protected
-            ends of the molecule.
+            call is treated as unmethylated. Applies to the test data
+            and to the controls used for calibration. "full" assumes
+            every molecule covers the whole fiber, as for artificial
+            constructs. "read" restricts each molecule to its read
+            extent recorded by `load_raw` (its alignment), for data
+            with partial reads such as in-vivo native fragments.
+            "calls" restricts each molecule to its first to last call;
+            with base callers that omit confident canonical calls,
+            this trims protected ends of the molecule. A `mask_name`
+            from `filter_dropout` still counts dropout over the whole
+            fiber, so it drops partial reads.
         batch_size : int, default 20000
             Number of molecules processed (and held in memory) per
             batch.

@@ -32,7 +32,7 @@ def _check_mapped_strands(raw, has_controls):
             raise ValueError(_UNMAPPED_STRAND_MSG)
 
 
-def _read_sites(batch, assay_rows, ctx_ok, span="full"):
+def _read_sites(batch, assay_rows, ctx_ok, span="full", extent=None):
     """
     Confidence scores over the sites each molecule reads, with a
     missing call at a read site treated as unmethylated.
@@ -47,9 +47,12 @@ def _read_sites(batch, assay_rows, ctx_ok, span="full"):
         (see `_strand_assay_masks`).
     ctx_ok : np.ndarray
         bool, length L, positions with a context.
-    span : {"full", "calls"}, default "full"
-        Extent of each molecule: the whole fiber, or from its first to
-        its last row.
+    span : {"full", "calls", "read"}, default "full"
+        Extent of each molecule: the whole fiber, from its first to
+        its last row, or its read extent `extent`.
+    extent : (np.ndarray, np.ndarray), optional
+        int64 half-open `(start, end)` per molecule. Required if
+        `span` is "read", ignored otherwise.
 
     Returns
     -------
@@ -68,6 +71,12 @@ def _read_sites(batch, assay_rows, ctx_ok, span="full"):
         idx = np.arange(L)[None, :]
         in_span = (idx >= first[:, None]) & (idx <= last[:, None])
         read = read & in_span & called.any(axis=1)[:, None]
+    elif span == "read":
+        idx = np.arange(batch.shape[1])[None, :]
+        start, end = extent
+        in_span = (idx >= start[:, None]) & (idx < end[:, None])
+        read = read & in_span
+        called = called & in_span
     read = read | called
     q = np.where(read, np.where(called, batch, 0.0), np.nan)
     return q, read
@@ -216,8 +225,9 @@ def _iter_read_sites(
     mask_name : str or None
         If given, molecules flagged as dropout by
         `filter_dropout(mask_name=mask_name)` are not kept.
-    span : {"full", "calls"}, default "full"
-        Forwarded to `_read_sites`.
+    span : {"full", "calls", "read"}, default "full"
+        Forwarded to `_read_sites`; "read" uses the read extents
+        stored at ingest (`{which}_mol_start`/`{which}_mol_end`).
     q_thres : float, optional
         If given, each read site's score in `q` becomes 1 if it is at
         least `q_thres` and 0 otherwise. `read` and `called` are not
@@ -233,7 +243,25 @@ def _iter_read_sites(
         `blank`, bool per molecule, kept molecules with neither a
         strand nor a call (only with `span="full"`); and `frac`, the
         fraction of kept stranded molecules on each strand ("+"/"-").
+
+    Raises
+    ------
+    ValueError
+        If `span` is "read" and `which` has no stored read extents.
     """
+    raw = exp.raw[chrom]
+    extent = None
+    if span == "read":
+        extent = (
+            getattr(raw, f"{which}_mol_start"),
+            getattr(raw, f"{which}_mol_end"),
+        )
+        if extent[0] is None or extent[1] is None:
+            raise ValueError(
+                f"span='read' requires read extents, but '{which}' on "
+                f"chrom '{chrom}' has none; reload the raw data with "
+                "load_raw and wrap=False"
+            )
     keep_all = exp.is_kept(chrom, which=which, mask_name=mask_name)
     labels_all = _mol_strand(exp, chrom, which)
     n_strand = {s: (keep_all & (labels_all == s)).sum() for s in "+-"}
@@ -242,12 +270,16 @@ def _iter_read_sites(
     code = np.where(labels_all == "+", 0, np.where(labels_all == "-", 1, 2))
     stacked = np.stack([assay["+"], assay["-"], assay["."]])
     ctx_ok = ctx != NONE
-    raw = exp.raw[chrom]
     dense = _dense_batches(
         getattr(raw, f"{which}_data"), len(keep_all), raw.nbp, batch_size
     )
     for start, stop, batch in dense:
-        q, read = _read_sites(batch, stacked[code[start:stop]], ctx_ok, span)
+        ext = None
+        if extent is not None:
+            ext = (extent[0][start:stop], extent[1][start:stop])
+        q, read = _read_sites(
+            batch, stacked[code[start:stop]], ctx_ok, span, ext
+        )
         if q_thres is not None:
             q = np.where(np.isnan(q), np.nan, (q >= q_thres).astype(float))
         keep = keep_all[start:stop]

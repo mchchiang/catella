@@ -243,7 +243,7 @@ def _accumulate_eta_source(
     norm_by_strand : bool, default False
         Whether `theta_prot`/`theta_acc`/`informative` are per-strand
         dicts requiring a per-strand log-odds computation.
-    span : {"full", "calls"}, default "full"
+    span : {"full", "calls", "read"}, default "full"
         Forwarded to `_iter_read_sites`.
     q_thres : float, optional
         Forwarded to `_iter_read_sites`.

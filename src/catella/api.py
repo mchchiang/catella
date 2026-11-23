@@ -363,15 +363,11 @@ def compute_model_prob(
         calibration. `eta` is still auto-estimated pooled across
         strands, since the crosstalk it corrects for is an
         assay-chemistry property rather than a strand-specific one.
-    span : {"full", "calls"}, default "full"
-        Extent of each molecule, within which every assayable site on
-        the molecule's strand is read, and a read site without a call
-        is treated as unmethylated. "full" assumes every molecule
-        covers the whole fiber, as for artificial constructs or native
-        fragments filtered to fully cover the region. "calls"
-        restricts each molecule to its first to last call, for data
-        with partial reads; with base callers that omit confident
-        canonical calls, this trims protected ends of the molecule.
+    span : {"full", "calls", "read"}, default "full"
+        Extent of each molecule; see `MethPrintAnalysis.model_prob`.
+        "full" assumes every molecule covers the whole fiber, "read"
+        uses each molecule's read extent (for partial reads, e.g.
+        in-vivo native fragments), and "calls" its first to last call.
     batch_size : int, default 20000
         Number of molecules processed (and held in memory) per
         batch.

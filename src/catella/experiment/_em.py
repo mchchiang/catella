@@ -62,7 +62,7 @@ def _streamed_window_count(
     channels : iterable of int, optional
         Context channels eligible to be counted. Defaults to all of
         `_ALL_CHANNELS`.
-    span : {"full", "calls"}, default "full"
+    span : {"full", "calls", "read"}, default "full"
         Forwarded to `_iter_read_sites`.
     profiles : dict, optional
         Stratum (None, or "+"/"-" if `by_strand`) -> `(F, D, mask)`,

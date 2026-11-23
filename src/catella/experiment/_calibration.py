@@ -602,7 +602,7 @@ def _chrom_calibration(
     channels : iterable of int, optional
         Context channels actually assayed, from `_active_channels`.
         Defaults to all of `_ALL_CHANNELS`.
-    span : {"full", "calls"}, default "full"
+    span : {"full", "calls", "read"}, default "full"
         Forwarded to the streamed counting helpers.
     q_thres : float, optional
         Forwarded to the streamed counting helpers.

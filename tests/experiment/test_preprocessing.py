@@ -2459,6 +2459,50 @@ class TestReadSites:
         assert read.all()
         np.testing.assert_array_equal(q, 0.0)
 
+    def test_read_span_limits_to_extent(self):
+        batch = np.array([[np.nan, np.nan, 0.8, np.nan, np.nan, np.nan]])
+        assay = np.ones((1, 6), dtype=bool)
+        extent = (np.array([1]), np.array([4]))
+        q, read = _read_sites(
+            batch, assay, np.ones(6, bool), span="read", extent=extent
+        )
+        np.testing.assert_array_equal(
+            read, [[False, True, True, True, False, False]]
+        )
+        np.testing.assert_array_equal(q[read], [0.0, 0.8, 0.0])
+        assert np.isnan(q[~read]).all()
+
+    def test_read_span_drops_calls_outside_extent(self):
+        batch = np.array([[0.3, np.nan, np.nan, np.nan, 0.9]])
+        assay = np.ones((1, 5), dtype=bool)
+        extent = (np.array([0]), np.array([3]))
+        q, read = _read_sites(
+            batch, assay, np.ones(5, bool), span="read", extent=extent
+        )
+        np.testing.assert_array_equal(read, [[True, True, True, False, False]])
+        assert np.isnan(q[0, 4])
+
+    def test_read_span_empty_extent_reads_nothing(self):
+        batch = np.array([[np.nan, 0.5, np.nan]])
+        assay = np.ones((1, 3), dtype=bool)
+        extent = (np.array([0]), np.array([0]))
+        q, read = _read_sites(
+            batch, assay, np.ones(3, bool), span="read", extent=extent
+        )
+        assert not read.any()
+        assert np.isnan(q).all()
+
+    def test_read_span_per_molecule_extents(self):
+        batch = np.full((2, 4), np.nan)
+        assay = np.ones((2, 4), dtype=bool)
+        extent = (np.array([0, 2]), np.array([2, 4]))
+        _, read = _read_sites(
+            batch, assay, np.ones(4, bool), span="read", extent=extent
+        )
+        np.testing.assert_array_equal(
+            read, [[True, True, False, False], [False, False, True, True]]
+        )
+
     def test_strand_assay_masks_follow_mtase_strand(self):
         exp = _make_footprint_experiment(mtase=("A",))
         seq = exp.raw["chr1"].refseq
@@ -2578,6 +2622,60 @@ class TestModelProbMissingCalls:
         assert params["span"].iloc[0] == "calls"
         prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
         assert np.isfinite(prob[:, : prob.shape[1] - 29]).all()
+
+    def _with_extents(self, exp, extent_of):
+        raw = exp.raw["chr1"]
+        kwargs = {}
+        for src in ("test", "meth", "unmeth"):
+            mol_id = getattr(raw, f"{src}_mol_id")
+            kwargs[f"{src}_mol_id"] = mol_id
+            kwargs[f"{src}_data"] = getattr(raw, f"{src}_data")
+            start, end = extent_of(len(mol_id), raw.nbp)
+            kwargs[f"{src}_mol_start"] = start
+            kwargs[f"{src}_mol_end"] = end
+        new_raw = MethPrintData._create(
+            chrom="chr1", nbp=raw.nbp, refseq=raw.refseq, **kwargs
+        )
+        return MethPrintExperiment._create(_raw_data={"chr1": new_raw})
+
+    def _footprint(self):
+        return _make_footprint_experiment(
+            with_controls=True, lnuc=30, own_strand_only=True
+        )
+
+    def test_read_span_without_extents_raises(self):
+        with pytest.raises(ValueError, match="requires read extents"):
+            MethPrintAnalysis().model_prob(
+                exp=self._footprint(), lnuc=30, span="read"
+            )
+
+    def test_read_span_with_whole_fiber_extents_matches_full(self):
+        def whole(nmol, nbp):
+            return np.zeros(nmol, np.int64), np.full(nmol, nbp, np.int64)
+
+        full = self._with_extents(self._footprint(), whole)
+        read = self._with_extents(self._footprint(), whole)
+        MethPrintAnalysis().model_prob(exp=full, lnuc=30, span="full")
+        MethPrintAnalysis().model_prob(exp=read, lnuc=30, span="read")
+        params = read.global_analysis["meth_prob_params"]
+        assert params["span"].iloc[0] == "read"
+        np.testing.assert_allclose(
+            read.analysis["chr1"]["meth_prob"].to_numpy(),
+            full.analysis["chr1"]["meth_prob"].to_numpy(),
+            equal_nan=True,
+        )
+
+    def test_read_span_with_short_extents_differs_from_full(self):
+        def half(nmol, nbp):
+            return np.zeros(nmol, np.int64), np.full(nmol, nbp // 2, np.int64)
+
+        full = self._with_extents(self._footprint(), half)
+        read = self._with_extents(self._footprint(), half)
+        MethPrintAnalysis().model_prob(exp=full, lnuc=30, span="full")
+        MethPrintAnalysis().model_prob(exp=read, lnuc=30, span="read")
+        p_full = full.analysis["chr1"]["meth_prob"].to_numpy()
+        p_read = read.analysis["chr1"]["meth_prob"].to_numpy()
+        assert not np.allclose(p_full, p_read, equal_nan=True)
 
     def _with_test_data(self, edit, nmol=4):
         exp = _make_footprint_experiment(

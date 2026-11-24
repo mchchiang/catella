@@ -271,24 +271,6 @@ def _compute_eseq(settings, meth_prob, regions):
     return eseq
 
 
-def _median_eseq_mu(eseq):
-    """
-    Return the chemical potential matching the median binding energy.
-
-    Parameters
-    ----------
-    eseq : mapping of str to np.ndarray
-        The binding energy of each region.
-
-    Returns
-    -------
-    float
-        The mean over regions of each region's median energy,
-        ignoring nan.
-    """
-    return float(np.mean([np.nanmedian(arr) for arr in eseq.values()]))
-
-
 def _iter_selected(regions, nmol, mols):
     """
     Yield the selected molecules of each region.

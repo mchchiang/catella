@@ -13,7 +13,6 @@ from catella.simulation._jobs import (
     _iter_tm_jobs,
     _job_seed,
     _mcmc_rerun_targets,
-    _median_eseq_mu,
     _resolve_master_seed,
     _run_seeds,
     _seed_table,
@@ -166,15 +165,6 @@ class TestComputeEseq:
         model = NucPosMCMC(147, 30, 20, 1.0, -1.0, 0)
         model.setEnergy(logit(meth_prob["chr2"][1]), 5.0)
         np.testing.assert_allclose(eseq["chr2"][1], model.getSeqEnergy())
-
-
-class TestMedianEseqMu:
-    def test_mean_of_region_medians(self):
-        eseq = {
-            "a": np.array([[1.0, 2.0, 9.0]]),
-            "b": np.array([[np.nan, 4.0, 6.0]]),
-        }
-        assert _median_eseq_mu(eseq) == pytest.approx(3.5)
 
 
 class TestIterSelected:

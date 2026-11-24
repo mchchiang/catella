@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator, Mapping
-from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -41,7 +40,6 @@ from catella.simulation._jobs import (
     _iter_selected,
     _iter_tm_jobs,
     _mcmc_rerun_targets,
-    _median_eseq_mu,
     _resolve_master_seed,
     _seed_table,
     _tm_rerun_targets,
@@ -195,7 +193,6 @@ class SimManager:
         seed: int | None = None,
         mols: IndexType | Mapping[str, IndexType] = slice(None),
         store_eseq: bool = True,
-        use_median_eseq_mu: bool = False,
         fill_nan: str | float | None = None,
     ) -> SimDataset:
         """
@@ -252,10 +249,6 @@ class SimManager:
         store_eseq : bool, default True
             Whether to store the sequence-specific nucleosome binding energy
             landscape derived from the methylation data to output dataset file.
-        use_median_eseq_mu : bool : default False
-            Whether to modify the chemical potential parameter so that it is
-            equal to the median of the sequence-specific nucleosome binding
-            energy.
         fill_nan : {"mean"}, float, or None, default None
             How to treat a molecule of `meth_prob` that is nan at some but
             not all nucleosome start positions. If None (default), raise
@@ -314,12 +307,8 @@ class SimManager:
             out_type = None
 
         eseq = None
-        if store_eseq or use_median_eseq_mu:
+        if store_eseq:
             eseq = _compute_eseq(settings, meth_prob, regions)
-        if use_median_eseq_mu:
-            mu = _median_eseq_mu(eseq)
-            print(f"Using median eseq mu: {mu}")
-            settings = replace(settings, mu=mu)
         seed = _resolve_master_seed(seed)
 
         # Save now so a loadable dataset exists even if the run is cut short

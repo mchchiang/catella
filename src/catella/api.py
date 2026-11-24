@@ -872,7 +872,6 @@ def run(
     seed: int | None = None,
     mols: IndexType | Mapping[str, IndexType] = slice(None),
     store_eseq: bool = True,
-    use_median_eseq_mu: bool = False,
     fill_nan: str | float | None = None,
     nworker: int = 1,
     verbose: bool = True,
@@ -921,9 +920,6 @@ def run(
     store_eseq : bool, default True
         Whether to store the sequence-specific nucleosome binding energy
         landscape derived from the methylation data to output dataset file.
-    use_median_eseq_mu : bool : default False
-        Whether to modify the chemical potential parameter so that it is
-        equal to the mean of the methlyation energy.
     fill_nan : {"mean"}, float, or None, default None
         How to treat a molecule that is nan at some but not all
         nucleosome start positions. If None (default), raise
@@ -963,7 +959,6 @@ def run(
         seed=seed,
         mols=mols,
         store_eseq=store_eseq,
-        use_median_eseq_mu=use_median_eseq_mu,
         fill_nan=fill_nan,
     )
     return dataset

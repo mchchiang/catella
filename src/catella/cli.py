@@ -756,10 +756,6 @@ def run(
         bool | None,
         typer.Option(help="Store sequence-specific energy landscape"),
     ] = True,
-    use_median_eseq_mu: Annotated[
-        bool | None,
-        typer.Option(help="Shift mu to median of sequence-specific energy"),
-    ] = False,
     fill_nan: Annotated[
         str | None,
         typer.Option(
@@ -794,7 +790,6 @@ def run(
         mols=mols if mols is not None else slice(None),
         nworker=nworker,
         store_eseq=store_eseq,
-        use_median_eseq_mu=use_median_eseq_mu,
         fill_nan=fill_nan,
         verbose=verbose,
     )

@@ -127,6 +127,12 @@ class TestPrepareRows:
         with pytest.raises(ValueError, match="chr1.*1 molecule.*first: 2"):
             _prepare_rows(block, 4, "chr1")
 
+    def test_partial_nan_message_suggests_half(self):
+        block = np.full((1, 10), 0.5)
+        block[0, 3] = np.nan
+        with pytest.raises(ValueError, match="fill_nan \\(0.5 for windows"):
+            _prepare_rows(block, 4, "chr1")
+
     def test_short_molecules_never_raise(self):
         block = np.full((2, 3), 0.5)
         block[0, 1] = np.nan

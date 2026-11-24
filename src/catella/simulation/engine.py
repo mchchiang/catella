@@ -262,8 +262,10 @@ class SimManager:
             `ValueError`. If "mean", fill each nan with the molecule's
             mean over its other start positions. If a number in [0, 1],
             fill each nan with that probability (0.5 adds no information).
-            `meth_prob` itself is not modified, and the value is stored
-            as `SimDataset.nan_fill` for reruns.
+            Use 0.5 for windows a read does not cover (read ends with
+            `span="read"`, long gaps). `meth_prob` itself is not
+            modified, and the value is stored as `SimDataset.nan_fill`
+            for reruns.
 
         Returns
         -------

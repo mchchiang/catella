@@ -171,8 +171,9 @@ def _prepare_rows(block, nucbp, region, fill_nan=None):
         raise ValueError(
             f"meth_prob of region '{region}' has nan at nucleosome start "
             f"positions in {partial.size} molecule(s) (first: "
-            f"{partial[0]}); pass fill_nan, or fill them upstream (e.g., "
-            "fill_edge or nan_method)"
+            f"{partial[0]}); pass fill_nan (0.5 for windows a read does "
+            "not cover, e.g. with span='read' or long gaps), or fill "
+            "them upstream (e.g., fill_edge or nan_method)"
         )
     block = np.array(block, dtype=np.float64)
     starts = _start_positions(block, nucbp)

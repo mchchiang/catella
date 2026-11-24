@@ -79,17 +79,8 @@ def _read_sites(
     """
     called = ~np.isnan(batch) & ctx_ok[None, :]
     read = assay_rows & ctx_ok[None, :]
-    if span == "calls":
-        L = batch.shape[1]
-        first = np.argmax(called, axis=1)
-        last = L - 1 - np.argmax(called[:, ::-1], axis=1)
-        idx = np.arange(L)[None, :]
-        in_span = (idx >= first[:, None]) & (idx <= last[:, None])
-        read = read & in_span & called.any(axis=1)[:, None]
-    elif span == "read":
-        idx = np.arange(batch.shape[1])[None, :]
-        start, end = extent
-        in_span = (idx >= start[:, None]) & (idx < end[:, None])
+    in_span = _span_mask(called, span, extent)
+    if in_span is not None:
         read = read & in_span
         called = called & in_span
     if gap is not None:
@@ -97,6 +88,63 @@ def _read_sites(
     read = read | called
     q = np.where(read, np.where(called, batch, 0.0), np.nan)
     return q, read
+
+
+def _span_mask(called, span, extent=None):
+    """
+    Positions inside each molecule's span.
+
+    Parameters
+    ----------
+    called : np.ndarray
+        bool, (n_mol, L), calls on context sites.
+    span : {"full", "calls", "read"}
+        As in `_read_sites`.
+    extent : (np.ndarray, np.ndarray), optional
+        int64 half-open `(start, end)` per molecule; required if `span`
+        is "read".
+
+    Returns
+    -------
+    np.ndarray or None
+        bool, (n_mol, L); None for "full" (every position). Under
+        "calls", a molecule without calls spans nothing.
+    """
+    if span == "full":
+        return None
+    L = called.shape[1]
+    idx = np.arange(L)[None, :]
+    if span == "calls":
+        first = np.argmax(called, axis=1)
+        last = L - 1 - np.argmax(called[:, ::-1], axis=1)
+        in_span = (idx >= first[:, None]) & (idx <= last[:, None])
+        return in_span & called.any(axis=1)[:, None]
+    start, end = extent
+    return (idx >= start[:, None]) & (idx < end[:, None])
+
+
+def _window_covered(covered, lnuc):
+    """
+    Whether each left-aligned window holds a covered position.
+
+    Parameters
+    ----------
+    covered : np.ndarray
+        bool, (n_mol, L), positions each molecule covers.
+    lnuc : int
+        Window size; window i is `[i, min(i + lnuc, L))`.
+
+    Returns
+    -------
+    np.ndarray
+        bool, (n_mol, L).
+    """
+    n_mol, L = covered.shape
+    cum = np.zeros((n_mol, L + 1), dtype=np.int32)
+    np.cumsum(covered, axis=1, dtype=np.int32, out=cum[:, 1:])
+    idx = np.arange(L)
+    end = np.minimum(idx + lnuc, L)
+    return cum[:, end] > cum[:, idx]
 
 
 class _ReadBatch(NamedTuple):
@@ -111,6 +159,7 @@ class _ReadBatch(NamedTuple):
     called: np.ndarray
     blank: np.ndarray
     frac: dict
+    covered: np.ndarray | None = None
 
 
 def _accumulate_call_frac(stats, b, assay, ctx, channels):
@@ -289,8 +338,10 @@ def _iter_read_sites(
         returned by `_read_sites` (all nan / False on rows not kept);
         `called`, bool (n_mol, L), read sites with a call;
         `blank`, bool per molecule, kept molecules with neither a
-        strand nor a call (only with `span="full"`); and `frac`, the
-        fraction of kept stranded molecules on each strand ("+"/"-").
+        strand nor a call (only with `span="full"`); `frac`, the
+        fraction of kept stranded molecules on each strand ("+"/"-");
+        and `covered`, bool (n_mol, L), positions inside the span and
+        outside gaps (None if every position is covered).
 
     Raises
     ------
@@ -339,6 +390,14 @@ def _iter_read_sites(
         blank = keep & (labels == ".") & ~read.any(axis=1)
         if span != "full":
             blank[:] = False
+        covered = None
+        if span != "full" or gap is not None:
+            in_span = _span_mask(~np.isnan(batch) & ctx_ok[None, :], span, ext)
+            covered = np.ones(batch.shape, dtype=bool)
+            if in_span is not None:
+                covered = in_span
+            if gap is not None:
+                covered = covered & ~gap
         yield _ReadBatch(
-            start, stop, keep, labels, q, read, called, blank, frac
+            start, stop, keep, labels, q, read, called, blank, frac, covered
         )

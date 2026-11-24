@@ -11,6 +11,8 @@ from catella.experiment._reads import (
     _dense_batches,
     _gap_mask,
     _iter_read_sites,
+    _span_mask,
+    _window_covered,
 )
 from catella.experiment.methdata import MethPrintData, MethPrintExperiment
 
@@ -274,3 +276,54 @@ class TestIterReadSites:
         before = set(tmp_dir.glob("*.h5"))
         self._batches(exp)
         assert set(tmp_dir.glob("*.h5")) == before
+
+    def _covered(self, exp, span):
+        batches = self._batches(exp, span=span)
+        if batches[0].covered is None:
+            return None
+        return np.concatenate([b.covered for b in batches], axis=0)
+
+    def test_full_without_gaps_has_no_coverage_mask(self):
+        assert self._covered(_experiment(), "full") is None
+
+    def test_full_with_gaps_leaves_gaps_out(self):
+        covered = self._covered(_gapped_experiment(), "full")
+        assert covered[0].tolist() == [1, 0, 0, 1, 1, 1]
+        assert covered[1:].all()
+
+    def test_calls_covers_first_to_last_call(self):
+        covered = self._covered(_experiment(), "calls")
+        assert covered[0].tolist() == [1, 1, 1, 1, 1, 0]
+        assert covered[3].tolist() == [0, 0, 1, 1, 1, 1]
+        assert not covered[2].any()
+
+
+class TestSpanMask:
+    def test_full_is_none(self):
+        assert _span_mask(np.zeros((1, 3), bool), "full") is None
+
+    def test_calls(self):
+        called = np.array([[0, 1, 0, 1, 0], [0, 0, 0, 0, 0]], dtype=bool)
+        got = _span_mask(called, "calls")
+        assert got.tolist() == [[0, 1, 1, 1, 0], [0, 0, 0, 0, 0]]
+
+    def test_read(self):
+        extent = (np.array([1, 0]), np.array([3, 0]))
+        got = _span_mask(np.zeros((2, 4), bool), "read", extent)
+        assert got.tolist() == [[0, 1, 1, 0], [0, 0, 0, 0]]
+
+
+class TestWindowCovered:
+    def test_window_with_one_covered_position(self):
+        covered = np.array([[0, 0, 1, 0, 0, 0]], dtype=bool)
+        got = _window_covered(covered, 3)
+        assert got.tolist() == [[1, 1, 1, 0, 0, 0]]
+
+    def test_trailing_windows_truncated(self):
+        covered = np.array([[0, 0, 0, 0, 1]], dtype=bool)
+        got = _window_covered(covered, 3)
+        assert got.tolist() == [[0, 0, 1, 1, 1]]
+
+    def test_region_shorter_than_window(self):
+        covered = np.array([[0, 1], [0, 0]], dtype=bool)
+        assert _window_covered(covered, 5).tolist() == [[1, 1], [0, 0]]

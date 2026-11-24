@@ -756,7 +756,10 @@ class MethPrintExperiment:
             "chunk_size": chunk_size,
             "block_size": 64 * 1024 * 1024,
             "sizes": sizes,
-            "full_sizes": full_sizes,
+            "coords": {
+                r: Region(r, 0, full_sizes[r], r, ".") for r in sizes
+            },
+            "chrom_sizes": full_sizes,
             "wrap": wrap,
             "refseq_by_region": refseq_by_region,
             "mtase": mtase,
@@ -766,9 +769,6 @@ class MethPrintExperiment:
             "tmp_dir": tmp_dir,
             "min_gap": min_gap,
             "gaps_bed": gaps_bed,
-            "coords": {
-                r: Region(r, 0, full_sizes[r], r, ".") for r in sizes
-            },
         }
 
         try:

@@ -13,7 +13,7 @@ import pyarrow.csv as pyarrow_csv
 import pyfaidx
 
 from catella import h5_utils
-from catella._regions import Region
+from catella._regions import Region, _RegionMap
 from catella._warnings import _warn
 
 # Column names as they appear in raw Modkit output, and their internal
@@ -455,25 +455,21 @@ def _scan_accepted_mols(
     block_size,
     max_nmol,
     rng,
+    region_map,
     balance_strand=False,
-    regions=None,
-    sizes=None,
+    chrom_sizes=None,
+    extents=True,
 ):
     """
     Determine, per region, which molecules are kept, their
     `mol_index`, and their read extents.
 
-    Each region is a value of the `chrom` column (a whole
-    chromosome). Streams only the `chrom`+`mol_id` columns (plus
-    `flag` if present, to skip secondary and supplementary rows; much
-    cheaper than full rows) to build each region's distinct molecule
-    set in file-encounter order, then reproduces the legacy
-    single-shot downsampling exactly: regions are visited in sorted
-    order, `rng.choice(mols, max_nmol, replace=False)` is called only
-    when a region has more than `max_nmol` molecules, and `mol_index` is
-    the rank of each accepted `mol_id` in ascending sorted order
-    (equivalent to `pd.factorize` on an already mol_id-sorted frame,
-    which is what the legacy single-shot code produced).
+    A molecule belongs to a region if it has a row in it. Regions are
+    sampled in sorted order, `rng.choice(mols, max_nmol,
+    replace=False)` only when a region has more than `max_nmol`, and
+    `mol_index` is the rank of each accepted `mol_id`. Extents use all
+    of a molecule's rows on the chromosome, then are clipped and
+    shifted to each region.
 
     Parameters
     ----------
@@ -494,32 +490,36 @@ def _scan_accepted_mols(
     rng : np.random.Generator or None
         Random number generator for downsampling; required if
         `max_nmol` is not None.
+    region_map : _RegionMap
+        The regions to keep. Rows outside every region are skipped
+        before sampling, so they neither warn nor consume `rng` draws.
     balance_strand : bool, default False
         If True, keep an equal number of '+' and '-' strand molecules
         per region (see `_balanced_mols`); requires `max_nmol`.
-    regions : collection of str or None, default None
-        Regions to keep. Rows on other regions are skipped before
-        sampling, so they neither warn nor consume `rng` draws. If
-        None, keep every region found in the file.
-    sizes : dict of str to int, optional
-        Region -> length (bp), used to bound and clip read extents.
-        None computes no extents (`wrap=True`).
+    chrom_sizes : dict of str to int, optional
+        Reference chromosome -> length (bp); rows at or beyond it do
+        not count toward extents. Chromosomes absent from it (or all,
+        if None) are only bounded below by 0.
+    extents : bool, default True
+        Whether to compute read extents (False with `wrap=True`).
 
     Returns
     -------
     dict of str to dict
         `{region: {"mol_id", "index", "start", "end"}}`: the sorted
         accepted mol_ids, mol_id -> mol_index, and the read extent
-        `[start, end)` of each molecule (int64; `(0, 0)` without an
-        in-bounds row), or None for `start`/`end` without `sizes`.
-        Covers every region found in the file that is in `regions`.
+        `[start, end)` of each molecule in region coordinates (int64;
+        `(0, 0)` without an in-bounds row), or None for `start`/`end`
+        if not `extents`. Covers every region with a row in the file.
     """
     has_align = all(c in name_for for c in _OPTIONAL_NAMES)
-    cols = ["chrom", "mol_id"] + (["strand"] if balance_strand else [])
+    cols = ["chrom", "mol_id", "upos"]
+    if balance_strand:
+        cols.append("strand")
     if "flag" in name_for:
         cols.append("flag")
-    if sizes is not None:
-        cols += ["upos", *(_OPTIONAL_NAMES if has_align else ())]
+    if extents and has_align:
+        cols += list(_OPTIONAL_NAMES)
     mol_order = {}
     extent_of = {}
     for batch_df in _iter_csv_chunks(
@@ -533,9 +533,12 @@ def _scan_accepted_mols(
     ):
         if "flag" in batch_df:
             batch_df = batch_df[_is_primary(batch_df)]
-        if regions is not None:
-            batch_df = batch_df[batch_df["chrom"].isin(regions)]
-        dedup = batch_df.drop_duplicates(["chrom", "mol_id"])
+        batch_df = batch_df[batch_df["chrom"].isin(region_map.chroms)]
+        if extents:
+            _merge_chunk_extents(extent_of, batch_df, chrom_sizes, has_align)
+        dedup = _split_rows(region_map, batch_df).drop_duplicates(
+            ["chrom", "mol_id"]
+        )
         strands = (
             dedup["strand"].to_numpy()
             if balance_strand
@@ -547,8 +550,6 @@ def _scan_accepted_mols(
             seen = mol_order.setdefault(region, {})
             if mol_id not in seen:
                 seen[mol_id] = strand
-        if sizes is not None:
-            _merge_chunk_extents(extent_of, batch_df, sizes, has_align)
 
     result = {}
     for region in sorted(mol_order.keys()):
@@ -560,9 +561,10 @@ def _scan_accepted_mols(
                 mols = rng.choice(mols, max_nmol, replace=False)
         sorted_mols = np.sort(mols)
         start = end = None
-        if sizes is not None:
+        if extents:
+            reg = region_map.regions[region]
             start, end = _extent_arrays(
-                extent_of.get(region, {}), sorted_mols, sizes[region]
+                extent_of.get(reg.chrom, {}), sorted_mols, reg
             )
         result[region] = {
             "mol_id": sorted_mols,
@@ -573,25 +575,43 @@ def _scan_accepted_mols(
     return result
 
 
-def _merge_chunk_extents(extent_of, batch_df, sizes, has_align):
+def _split_rows(region_map, df):
+    """
+    Rows of `df` copied into each region holding them (see
+    `_RegionMap.split`), chromosome by chromosome.
+    """
+    parts = [
+        region_map.split(group, chrom)
+        for chrom, group in df.groupby("chrom", sort=False)
+    ]
+    return pd.concat(parts) if parts else df.iloc[:0]
+
+
+def _merge_chunk_extents(extent_of, batch_df, chrom_sizes, has_align):
     """
     Widen per-molecule extents in place with one chunk of rows.
 
     Parameters
     ----------
     extent_of : dict of str to dict
-        Region -> mol_id -> `(start, end)`, updated in place.
+        Reference chromosome -> mol_id -> `(start, end)`, updated in
+        place.
     batch_df : pd.DataFrame
         Rows with `chrom`, `mol_id`, `upos` and, if `has_align`,
         `align_start`/`align_end` columns.
-    sizes : dict of str to int
-        Region -> length (bp); rows with `upos` outside `[0, length)`
-        are ignored.
+    chrom_sizes : dict of str to int or None
+        Chromosome -> length (bp); rows with `upos` outside
+        `[0, length)` are ignored. Chromosomes without a length are
+        only bounded below by 0.
     has_align : bool
         Whether to use the alignment columns instead of `upos`.
     """
     upos = batch_df["upos"].to_numpy()
-    length = batch_df["chrom"].map(sizes).to_numpy()
+    length = (
+        batch_df["chrom"].map(chrom_sizes).fillna(np.inf).to_numpy()
+        if chrom_sizes
+        else np.inf
+    )
     rows = batch_df[(upos >= 0) & (upos < length)]
     if rows.empty:
         return
@@ -611,43 +631,48 @@ def _merge_chunk_extents(extent_of, batch_df, sizes, has_align):
         .groupby(["chrom", "mol_id"], sort=False)
         .agg(lo=("lo", "min"), hi=("hi", "max"))
     )
-    for (region, mol_id), lo_, hi_ in zip(
+    for (chrom, mol_id), lo_, hi_ in zip(
         agg.index, agg["lo"].to_numpy(), agg["hi"].to_numpy()
     ):
-        by_mol = extent_of.setdefault(region, {})
+        by_mol = extent_of.setdefault(chrom, {})
         cur = by_mol.get(mol_id)
         if cur is not None:
             lo_, hi_ = min(cur[0], lo_), max(cur[1], hi_)
         by_mol[mol_id] = (int(lo_), int(hi_))
 
 
-def _extent_arrays(extent_of_region, mol_ids, size):
+def _extent_arrays(extent_of_chrom, mol_ids, region):
     """
-    Read extents of `mol_ids` as arrays, clipped to `[0, size]`.
+    Read extents of `mol_ids` in the coordinates of `region`.
 
     Parameters
     ----------
-    extent_of_region : dict of str to (int, int)
-        mol_id -> `(start, end)`, from `_merge_chunk_extents`.
+    extent_of_chrom : dict of str to (int, int)
+        mol_id -> `(start, end)` on the region's chromosome, from
+        `_merge_chunk_extents`.
     mol_ids : sequence of str
         Molecules, in `mol_index` order.
-    size : int
-        Region length (bp).
+    region : Region
+        The region; extents are shifted by its start and clipped to
+        its length.
 
     Returns
     -------
     start, end : np.ndarray
         int64; `(0, 0)` for a molecule without an in-bounds row.
     """
+    missing = (region.end, region.start)
     start = np.array(
-        [extent_of_region.get(m, (size, 0))[0] for m in mol_ids],
+        [extent_of_chrom.get(m, missing)[0] for m in mol_ids],
         dtype=np.int64,
     )
     end = np.array(
-        [extent_of_region.get(m, (size, 0))[1] for m in mol_ids],
+        [extent_of_chrom.get(m, missing)[1] for m in mol_ids],
         dtype=np.int64,
     )
-    return _clip_extents(start, end, size)
+    return _clip_extents(
+        start - region.start, end - region.start, region.end - region.start
+    )
 
 
 def _balanced_mols(region, strand_of, max_nmol, rng):
@@ -703,10 +728,12 @@ def _stream_rows_to_staging(
     sep,
     chunk_size,
     block_size,
-    full_sizes,
     wrap,
     mol_maps,
     appenders,
+    region_map,
+    src_maps,
+    chrom_sizes=None,
     refseq_by_region=None,
     mtase=None,
     ignore_strand=False,
@@ -734,16 +761,21 @@ def _stream_rows_to_staging(
         Approximate rows accumulated per streamed chunk.
     block_size : int
         Byte size of the underlying pyarrow read buffer per batch.
-    full_sizes : dict of str to int
-        Region name -> full (unhalved) length (bp), used for the
-        `wrap` position transform.
     wrap : bool
-        If True, positions are folded around the fiber center.
+        If True, positions are folded around the region center.
     mol_maps : dict of str to dict
         As returned by `_scan_accepted_mols`, already filtered down to
         the regions actually being processed.
     appenders : dict of str to h5_utils.AppendableDF
         One appender per region in `mol_maps`, already created.
+    region_map : _RegionMap
+        Assigns rows to regions; region lengths are used for `wrap`.
+    src_maps : dict of str to dict
+        Per reference chromosome, the accepted molecules of all its
+        regions (see `_source_maps`); gaps are tracked in this index.
+    chrom_sizes : dict of str to int, optional
+        Reference chromosome -> length (bp), for the bounds check;
+        without a length, only negative `upos` are dropped.
     refseq_by_region : dict of str to str, optional
         Region name -> reference sequence, as returned by
         `_load_refseqs`. Together with `mtase`, used to drop rows whose
@@ -767,15 +799,16 @@ def _stream_rows_to_staging(
     Returns
     -------
     dict of str to (np.ndarray, np.ndarray) or None
-        Region -> `(gaps, offset)` from `_GapTracker.result`, inferred
-        from all rows before the `mod_code` and strand filters. None if
-        `wrap`, if `min_gap` is None, or if the file has no `read_pos`
-        column.
+        Reference chromosome -> `(gaps, offset)` from
+        `_GapTracker.result`, in chromosome coordinates and the
+        `src_maps` index, inferred from all rows before the `mod_code`
+        and strand filters. None if `wrap`, if `min_gap` is None, or if
+        the file has no `read_pos` column.
 
     Warns
     -----
     UserWarning
-        If rows have `upos` outside `[0, full_size)` (e.g., -1 for
+        If rows have `upos` outside the chromosome (e.g., -1 for
         unaligned bases), or come from secondary or supplementary
         alignments (per a `flag` column); those rows are dropped. Also
         if some molecules' rows are not ordered along the reference;
@@ -785,8 +818,8 @@ def _stream_rows_to_staging(
     trackers = None
     if not wrap and min_gap is not None and "read_pos" in name_for:
         trackers = {
-            region: _GapTracker(len(m["mol_id"]), min_gap)
-            for region, m in mol_maps.items()
+            chrom: _GapTracker(len(m["mol_id"]), min_gap)
+            for chrom, m in src_maps.items()
         }
     valid_by_region = {}
     if mtase is not None and refseq_by_region is not None:
@@ -812,68 +845,38 @@ def _stream_rows_to_staging(
             n_non_primary += int((~primary).sum())
             batch_df = batch_df[primary]
         for chrom, group in batch_df.groupby("chrom", sort=False):
-            mapping = mol_maps.get(chrom)
-            if mapping is None:
+            if chrom not in src_maps:
                 continue
             upos_all = group["upos"].to_numpy()
-            in_bounds = (upos_all >= 0) & (upos_all < full_sizes[chrom])
+            length = (chrom_sizes or {}).get(chrom)
+            in_bounds = upos_all >= 0
+            if length is not None:
+                in_bounds &= upos_all < length
             if not in_bounds.all():
                 n_out[chrom] = n_out.get(chrom, 0) + int((~in_bounds).sum())
                 group = group.loc[in_bounds]
-            mol_index = group["mol_id"].map(mapping["index"])
             if trackers is not None:
-                mapped = mol_index.notna().to_numpy()
+                src_index = group["mol_id"].map(src_maps[chrom]["index"])
+                mapped = src_index.notna().to_numpy()
                 trackers[chrom].update(
-                    mol_index.to_numpy()[mapped].astype(np.int64),
+                    src_index.to_numpy()[mapped].astype(np.int64),
                     group["upos"].to_numpy()[mapped].astype(np.int64),
                     group["read_pos"].to_numpy()[mapped].astype(np.int64),
                 )
-            keep = mol_index.notna().to_numpy() & (
-                group["mod_code"].to_numpy() != "-"
-            )
-
-            masks = valid_by_region.get(chrom)
-            if masks is not None:
-                plus, minus = masks
-                upos_all = group["upos"].to_numpy()
-                if ignore_strand:
-                    consistent = (plus | minus)[upos_all]
-                else:
-                    strand_all = group["strand"].to_numpy()
-                    # Unmapped strand ('.') is not validated -- kept.
-                    consistent = np.where(
-                        strand_all == "+",
-                        plus[upos_all],
-                        np.where(strand_all == "-", minus[upos_all], True),
-                    )
-                keep = keep & consistent
-
-            if not keep.any():
-                continue
-            group = group.loc[keep]
-            mol_index = mol_index[keep].astype(np.int64).to_numpy()
-
-            upos = group["upos"].to_numpy()
-            if wrap:
-                length = full_sizes[chrom]
-                pos = np.where(
-                    upos > (length - 1) / 2, length - upos - 1, upos
+            split = region_map.split(group, chrom)
+            for region, rows in split.groupby("chrom", sort=False):
+                if region not in mol_maps:
+                    continue
+                reg = region_map.regions[region]
+                out = _stage_region_rows(
+                    rows,
+                    mol_maps[region]["index"],
+                    valid_by_region.get(region),
+                    ignore_strand,
+                    reg.end - reg.start if wrap else None,
                 )
-            else:
-                pos = upos
-
-            out = pd.DataFrame(
-                {
-                    "mol_index": mol_index,
-                    "pos": pos.astype(np.int64),
-                    "strand": group["strand"].to_numpy(),
-                    "mod_qual": group["mod_qual"]
-                    .astype(np.float64)
-                    .to_numpy(),
-                    "mod_code": group["mod_code"].to_numpy(),
-                }
-            )
-            appenders[chrom].append(out)
+                if out is not None:
+                    appenders[region].append(out)
 
     if n_non_primary:
         _warn(
@@ -881,17 +884,20 @@ def _stream_rows_to_staging(
             f"supplementary alignments in {data_file}"
         )
     for chrom, n in n_out.items():
+        length = (chrom_sizes or {}).get(chrom)
+        bound = f"[0, {length})" if length is not None else "[0, ...)"
         _warn(
             f"dropped {n} row(s) on chrom '{chrom}' with ref_position "
-            f"outside [0, {full_sizes[chrom]})"
+            f"outside {bound}"
         )
     if trackers is None:
         return None
     gaps = {}
     n_unordered = 0
-    for region, tracker in trackers.items():
-        flat, offset, n_bad = tracker.result(full_sizes[region])
-        gaps[region] = (flat, offset)
+    for chrom, tracker in trackers.items():
+        length = (chrom_sizes or {}).get(chrom, np.iinfo(np.int64).max)
+        flat, offset, n_bad = tracker.result(length)
+        gaps[chrom] = (flat, offset)
         n_unordered += n_bad
     if n_unordered:
         _warn(
@@ -901,6 +907,67 @@ def _stream_rows_to_staging(
             "pass gaps_bed)"
         )
     return gaps
+
+
+def _stage_region_rows(rows, index, masks, ignore_strand, fold_length):
+    """
+    Filter and transform the rows of one region for staging.
+
+    Parameters
+    ----------
+    rows : pd.DataFrame
+        Rows of the region, in region coordinates.
+    index : dict of str to int
+        mol_id -> mol_index of the region's accepted molecules.
+    masks : (np.ndarray, np.ndarray) or None
+        Methylatable positions on '+' and '-' (see `mtase` of
+        `_stream_rows_to_staging`); None skips the strand check.
+    ignore_strand : bool
+        Accept a row methylatable on either strand.
+    fold_length : int or None
+        Unfolded length, if positions are folded (`wrap`).
+
+    Returns
+    -------
+    pd.DataFrame or None
+        The staged rows (`_RAW_COLUMN_SPEC` columns), or None if none
+        are kept.
+    """
+    mol_index = rows["mol_id"].map(index)
+    keep = mol_index.notna().to_numpy() & (rows["mod_code"].to_numpy() != "-")
+    if masks is not None:
+        plus, minus = masks
+        upos = rows["upos"].to_numpy()
+        if ignore_strand:
+            consistent = (plus | minus)[upos]
+        else:
+            strand = rows["strand"].to_numpy()
+            # Unmapped strand ('.') is not validated -- kept.
+            consistent = np.where(
+                strand == "+",
+                plus[upos],
+                np.where(strand == "-", minus[upos], True),
+            )
+        keep &= consistent
+    if not keep.any():
+        return None
+    rows = rows.loc[keep]
+    upos = rows["upos"].to_numpy()
+    if fold_length is not None:
+        pos = np.where(
+            upos > (fold_length - 1) / 2, fold_length - upos - 1, upos
+        )
+    else:
+        pos = upos
+    return pd.DataFrame(
+        {
+            "mol_index": mol_index[keep].astype(np.int64).to_numpy(),
+            "pos": pos.astype(np.int64),
+            "strand": rows["strand"].to_numpy(),
+            "mod_qual": rows["mod_qual"].astype(np.float64).to_numpy(),
+            "mod_code": rows["mod_code"].to_numpy(),
+        }
+    )
 
 
 class _GapTracker:
@@ -1015,23 +1082,23 @@ class _GapTracker:
         return rows[:, 1:].copy(), offset, n_unordered
 
 
-def _read_bed_gaps(bed_files, mol_maps, full_sizes, min_gap, chunk_size):
+def _read_bed_gaps(bed_files, mol_maps, chrom_sizes, min_gap, chunk_size):
     """
     Internal gaps of the accepted molecules from BED12 files.
 
     Gaps are the stretches between consecutive blocks of a line (as
     written by `bedtools bamtobed -bed12 -splitD`), at least `min_gap`
-    long. Lines are matched to molecules by chromosome (the region
-    name) and read name.
+    long. Lines are matched to molecules by chromosome and read name.
 
     Parameters
     ----------
     bed_files : sequence of str or pathlib.Path
         BED12 files, without a header.
     mol_maps : dict of str to dict
-        As returned by `_scan_accepted_mols`.
-    full_sizes : dict of str to int
-        Region -> length (bp), to clip gaps to.
+        Chromosome -> accepted molecules (see `_source_maps`).
+    chrom_sizes : dict of str to int or None
+        Chromosome -> length (bp), to clip gaps to; chromosomes
+        without a length are clipped below by 0 only.
     min_gap : int
         Minimum gap length (bp).
     chunk_size : int
@@ -1091,7 +1158,8 @@ def _read_bed_gaps(bed_files, mol_maps, full_sizes, min_gap, chunk_size):
         n_multi += int((counts > 1).sum())
         arr = np.array(found[region], dtype=np.int64).reshape(-1, 3)
         arr = arr[listed[region][arr[:, 0]]]
-        arr[:, 1:] = np.clip(arr[:, 1:], 0, full_sizes[region])
+        length = (chrom_sizes or {}).get(region, np.iinfo(np.int64).max)
+        arr[:, 1:] = np.clip(arr[:, 1:], 0, length)
         rows[region] = arr[arr[:, 1] < arr[:, 2]]
     return listed, rows, n_multi
 
@@ -1132,8 +1200,81 @@ def _merge_gaps(inferred, listed, bed_rows, nmol):
     return rows[:, 1:].copy(), offset
 
 
+def _source_maps(mol_maps, region_map):
+    """
+    Per reference chromosome, the accepted molecules of all its regions.
+
+    Parameters
+    ----------
+    mol_maps : dict of str to dict
+        From `_scan_accepted_mols`, by region.
+    region_map : _RegionMap
+        The regions.
+
+    Returns
+    -------
+    dict of str to dict
+        Chromosome -> `{"mol_id": sorted ids, "index": id -> index}`.
+    """
+    ids_of = {}
+    for region, m in mol_maps.items():
+        chrom = region_map.regions[region].chrom
+        ids_of.setdefault(chrom, set()).update(m["mol_id"])
+    out = {}
+    for chrom, ids in ids_of.items():
+        mol_id = np.array(sorted(ids), dtype=object)
+        out[chrom] = {
+            "mol_id": mol_id,
+            "index": {m: i for i, m in enumerate(mol_id)},
+        }
+    return out
+
+
+def _gaps_to_regions(src_gaps, src_maps, mol_maps, region_map):
+    """
+    Per-chromosome gaps clipped and shifted to each region.
+
+    Parameters
+    ----------
+    src_gaps : dict of str to (np.ndarray, np.ndarray)
+        Chromosome -> `(gaps, offset)` in chromosome coordinates and
+        the `src_maps` index.
+    src_maps : dict of str to dict
+        From `_source_maps`.
+    mol_maps : dict of str to dict
+        From `_scan_accepted_mols`, by region.
+    region_map : _RegionMap
+        The regions.
+
+    Returns
+    -------
+    dict of str to (np.ndarray, np.ndarray)
+        Region -> `(gaps, offset)` in region coordinates and the
+        region's `mol_index`; gaps outside the region are dropped.
+    """
+    out = {}
+    for region, m in mol_maps.items():
+        reg = region_map.regions[region]
+        flat, offset = src_gaps[reg.chrom]
+        index = src_maps[reg.chrom]["index"]
+        idx = np.array([index[x] for x in m["mol_id"]], dtype=np.int64)
+        counts = offset[idx + 1] - offset[idx]
+        mol = np.repeat(np.arange(len(idx)), counts)
+        within = np.arange(counts.sum()) - np.repeat(
+            np.cumsum(counts) - counts, counts
+        )
+        gaps = flat[np.repeat(offset[idx], counts) + within] - reg.start
+        gaps = np.clip(gaps, 0, reg.end - reg.start).reshape(-1, 2)
+        keep = gaps[:, 0] < gaps[:, 1]
+        gaps, mol = gaps[keep], mol[keep]
+        new_offset = np.zeros(len(idx) + 1, dtype=np.int64)
+        new_offset[1:] = np.cumsum(np.bincount(mol, minlength=len(idx)))
+        out[region] = (gaps.astype(np.int64), new_offset)
+    return out
+
+
 def _apply_bed_gaps(
-    inferred, bed_files, mol_maps, full_sizes, min_gap, chunk_size, data_file
+    inferred, bed_files, mol_maps, chrom_sizes, min_gap, chunk_size, data_file
 ):
     """
     Replace inferred gaps with BED12 gaps for the molecules listed.
@@ -1144,7 +1285,7 @@ def _apply_bed_gaps(
         Gaps from `_stream_rows_to_staging`.
     bed_files : sequence of str or pathlib.Path
         BED12 files (see `_read_bed_gaps`).
-    mol_maps, full_sizes, min_gap, chunk_size
+    mol_maps, chrom_sizes, min_gap, chunk_size
         As in `_read_bed_gaps`.
     data_file : str or pathlib.Path
         The raw data file, for the warning.
@@ -1152,7 +1293,7 @@ def _apply_bed_gaps(
     Returns
     -------
     dict of str to (np.ndarray, np.ndarray)
-        Region -> `(gaps, offset)`.
+        Chromosome -> `(gaps, offset)`.
 
     Warns
     -----
@@ -1160,7 +1301,7 @@ def _apply_bed_gaps(
         If molecules are not listed exactly once in `bed_files`.
     """
     listed, rows, n_multi = _read_bed_gaps(
-        bed_files, mol_maps, full_sizes, min_gap, chunk_size
+        bed_files, mol_maps, chrom_sizes, min_gap, chunk_size
     )
     merged = {}
     n_missing = 0
@@ -1289,7 +1430,7 @@ def _ingest_into(
     chunk_size,
     block_size,
     sizes,
-    full_sizes,
+    coords,
     wrap,
     refseq_by_region,
     mtase,
@@ -1300,7 +1441,7 @@ def _ingest_into(
     tmp_dir,
     min_gap=None,
     gaps_bed=None,
-    coords=None,
+    chrom_sizes=None,
 ):
     """
     Resolve, scan, and stream one raw data file into the `raw_data`
@@ -1319,9 +1460,14 @@ def _ingest_into(
         `MethPrintExperiment.load_raw`'s `seed` parameter.
     tmp_dir : str or pathlib.Path
         Directory for any decompression scratch copy.
-    coords : dict of str to Region, optional
-        Region name -> genomic coordinates, stored with each region
-        (see `_write_coords`).
+    sizes : dict of str to int
+        Region name -> stored length (bp); halved if `wrap`.
+    coords : dict of str to Region
+        Region name -> reference interval, used to assign rows and
+        stored with each region (see `_write_coords`).
+    chrom_sizes : dict of str to int, optional
+        Reference chromosome -> length (bp), bounding rows; None
+        bounds them below by 0 only.
     Other parameters are as in `MethPrintExperiment.load_raw`.
 
     Returns
@@ -1329,6 +1475,7 @@ def _ingest_into(
     set of str
         Regions found in the file, already filtered to `sizes`.
     """
+    region_map = _RegionMap([coords[r] for r in sizes])
     print(f"Reading {data_file} ...")
     scratch_path = _decompress_once(data_file, tmp_dir)
     read_path = scratch_path or str(data_file)
@@ -1343,10 +1490,12 @@ def _ingest_into(
             block_size,
             max_nmol,
             rng,
+            region_map,
             balance_strand=balance_strand,
-            regions=set(sizes),
-            sizes=None if wrap else sizes,
+            chrom_sizes=chrom_sizes,
+            extents=not wrap,
         )
+        src_maps = _source_maps(mol_maps, region_map)
 
         dt = h5py.string_dtype(encoding="utf-8")
         appenders = {}
@@ -1357,7 +1506,7 @@ def _ingest_into(
                 region,
                 sizes[region],
                 refseq_by_region,
-                (coords or {}).get(region),
+                coords[region],
             )
             gdata.create_dataset(f"{name}_mol_id", data=m["mol_id"], dtype=dt)
             if m["start"] is not None:
@@ -1378,10 +1527,12 @@ def _ingest_into(
             sep,
             chunk_size,
             block_size,
-            full_sizes,
             wrap,
             mol_maps,
             appenders,
+            region_map,
+            src_maps,
+            chrom_sizes=chrom_sizes,
             refseq_by_region=refseq_by_region,
             mtase=mtase,
             ignore_strand=ignore_strand,
@@ -1391,12 +1542,14 @@ def _ingest_into(
             gaps = _apply_bed_gaps(
                 gaps,
                 gaps_bed,
-                mol_maps,
-                full_sizes,
+                src_maps,
+                chrom_sizes,
                 min_gap,
                 chunk_size,
                 data_file,
             )
+        if gaps is not None:
+            gaps = _gaps_to_regions(gaps, src_maps, mol_maps, region_map)
         for region, (flat, offset) in (gaps or {}).items():
             gdatas[region].create_dataset(f"{name}_gaps", data=flat)
             gdatas[region].create_dataset(f"{name}_gap_offset", data=offset)

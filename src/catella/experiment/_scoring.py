@@ -9,7 +9,11 @@ from catella.experiment._calibration import (
     _per_base_log_odds,
     _window_sum_log_odds,
 )
-from catella.experiment._reads import _accumulate_call_frac, _iter_read_sites
+from catella.experiment._reads import (
+    _accumulate_call_frac,
+    _iter_read_sites,
+    _window_covered,
+)
 from catella.h5_array import H5Array
 
 
@@ -103,7 +107,9 @@ def _score_test_reads(
     -------
     prob : H5Array
         float64, (n_mol, nbp); all nan for molecules that are dropped,
-        read no site, or (if `norm_by_strand`) have no strand.
+        read no site, or (if `norm_by_strand`) have no strand; nan for
+        windows without a covered position (outside the span or inside
+        a gap).
     call_stats : dict
         Per-channel call and read-site counts of the test reads (see
         `_accumulate_call_frac`).
@@ -148,6 +154,8 @@ def _score_test_reads(
                 log_odds, lnuc, fill_edge=log_odds_fill
             )
             prob = expit(-log_odds_win)
+            if b.covered is not None:
+                prob[~_window_covered(b.covered, lnuc)] = np.nan
             prob[masked, :] = np.nan
             out.write_batch(b.start, b.stop, prob)
     return out, call_stats

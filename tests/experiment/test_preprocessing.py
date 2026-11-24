@@ -2693,6 +2693,55 @@ class TestModelProbMissingCalls:
         p_read = read.analysis["chr1"]["meth_prob"].to_numpy()
         assert not np.allclose(p_full, p_read, equal_nan=True)
 
+    def test_read_span_nan_outside_extent(self):
+        def half(nmol, nbp):
+            return np.zeros(nmol, np.int64), np.full(nmol, nbp // 2, np.int64)
+
+        exp = self._with_extents(self._footprint(), half)
+        MethPrintAnalysis().model_prob(
+            exp=exp, lnuc=30, span="read", fill_edge=0.5
+        )
+        prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
+        mid = exp.raw["chr1"].nbp // 2
+        assert np.isfinite(prob[:, :mid]).all()
+        assert np.isnan(prob[:, mid:]).all()
+
+    def _with_test_gap(self, gap):
+        exp = self._footprint()
+        raw = exp.raw["chr1"]
+        nmol = raw.test.nmol
+        offset = np.ones(nmol + 1, dtype=np.int64)
+        offset[0] = 0
+        kwargs = {
+            f"{src}_{key}": getattr(source, key)
+            for src, source in raw.sources.items()
+            for key in ("mol_id", "data")
+        }
+        new_raw = MethPrintData._create(
+            region="chr1",
+            nbp=raw.nbp,
+            refseq=raw.refseq,
+            test_gaps=np.array([gap], dtype=np.int64),
+            test_gap_offset=offset,
+            **kwargs,
+        )
+        return MethPrintExperiment._create(_raw_data={"chr1": new_raw})
+
+    def test_window_inside_long_gap_is_nan(self):
+        exp = self._with_test_gap((40, 100))
+        MethPrintAnalysis().model_prob(exp=exp, lnuc=30, fill_edge=0.5)
+        prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
+        assert np.isnan(prob[0, 40:71]).all()
+        assert np.isfinite(prob[0, :40]).all()
+        assert np.isfinite(prob[0, 71:]).all()
+        assert np.isfinite(prob[1:]).all()
+
+    def test_gap_shorter_than_window_leaves_no_nan(self):
+        exp = self._with_test_gap((40, 60))
+        MethPrintAnalysis().model_prob(exp=exp, lnuc=30, fill_edge=0.5)
+        prob = exp.analysis["chr1"]["meth_prob"].to_numpy()
+        assert np.isfinite(prob).all()
+
     def _with_test_data(self, edit, nmol=4):
         exp = _make_footprint_experiment(
             with_controls=True,

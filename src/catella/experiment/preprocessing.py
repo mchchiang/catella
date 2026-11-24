@@ -572,7 +572,9 @@ class MethPrintAnalysis:
             `span` to `filter_dropout` for a `mask_name`, or it may
             drop partial reads. Under every span, sites
             inside internal gaps recorded by `load_raw` (see
-            `min_gap`) are not read.
+            `min_gap`) are not read. Windows with no position inside
+            the span and outside gaps are nan; `run` then needs
+            `fill_nan=0.5`.
         batch_size : int, default 20000
             Number of molecules processed (and held in memory) per
             batch.

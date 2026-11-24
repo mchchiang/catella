@@ -15,10 +15,10 @@ using std::shared_ptr;
 using std::string;
 using std::vector;
 
-NucPosMCMC::NucPosMCMC(int nucbp, int nbp, int llink, double elink,
+NucPosMCMC::NucPosMCMC(int lnuc, int nbp, int llink, double elink,
 		       double mu, ulint seed) :
-  model(nucbp, nbp, llink, elink, mu) {
-  params.model = NucPosModel::Params{nucbp, nbp, llink, elink, mu};
+  model(lnuc, nbp, llink, elink, mu) {
+  params.model = NucPosModel::Params{lnuc, nbp, llink, elink, mu};
   params.seed = seed;
   reset();
 }
@@ -59,7 +59,7 @@ void NucPosMCMC::update() {
   int mode = randMode(mt);
   double p = rand(mt);
   int nnuc = static_cast<int>(nucpos.size());
-  int nucbp = model.nucbp();
+  int lnuc = model.lnuc();
   int npos = model.npos();
   const vector<double>& edata = model.edata();
   if (mode == 0 && nnuc > 0) { // Shift a nuclosome
@@ -83,14 +83,14 @@ void NucPosMCMC::update() {
     if (iup != -1) {
       int dpos = nucpos[iup]-pos;
       int ndpos = dpos-dir;
-      if (ndpos < nucbp) return; // Nucleosomes cannot overlap
+      if (ndpos < lnuc) return; // Nucleosomes cannot overlap
       dErep += model.erep(ndpos);
       dErep -= model.erep(dpos);
     }
     if (idown != -1) {
       int dpos = pos-nucpos[idown];
       int ndpos = dpos+dir;
-      if (ndpos < nucbp) return; // Nucleosomes cannot overlap
+      if (ndpos < lnuc) return; // Nucleosomes cannot overlap
       dErep += model.erep(ndpos);
       dErep -= model.erep(dpos);
     }
@@ -110,12 +110,12 @@ void NucPosMCMC::update() {
     double dErep = 0.0;
     if (iup != -1) {
       int dpos = nucpos[iup]-pos;
-      if (dpos < nucbp) return; // Nucleosomes cannot overlap
+      if (dpos < lnuc) return; // Nucleosomes cannot overlap
       dErep += model.erep(dpos);
     }
     if (idown != -1) {
       int dpos = pos-nucpos[idown];
-      if (dpos < nucbp) return; // Nucleosomes cannot overlap
+      if (dpos < lnuc) return; // Nucleosomes cannot overlap
       dErep += model.erep(dpos);
     }
     if (p < std::min(1.0, static_cast<double>(npos)/(nnuc+1.0)*
@@ -194,7 +194,7 @@ double NucPosMCMC::getEnergy() const {
     totalEdata += edata[pos];
     if (i > 0) {
       int dpos = nucpos[i]-nucpos[i-1];
-      if (dpos >= model.nucbp()) totalErep += model.erep(dpos);
+      if (dpos >= model.lnuc()) totalErep += model.erep(dpos);
     }
   }
   return totalEdata + totalErep - model.mu()*nucpos.size();

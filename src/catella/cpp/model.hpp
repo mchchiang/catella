@@ -19,14 +19,14 @@ class NucPosModel {
 
 public:
   struct Params {
-    int nucbp;
+    int lnuc;
     int nbp;
     int llink;
     double elink;
     double mu;
   };
 
-  NucPosModel(int nucbp, int nbp, int llink, double elink, double mu);
+  NucPosModel(int lnuc, int nbp, int llink, double elink, double mu);
   explicit NucPosModel(const Params& params);
   ~NucPosModel();
 
@@ -34,7 +34,7 @@ public:
   void setEnergy(const std::vector<double>& edata, double emax);
   void resetEnergy();
 
-  int nucbp() const;
+  int lnuc() const;
   int nbp() const;
   int llink() const;
   double elink() const;
@@ -44,8 +44,8 @@ public:
 
   // Repulsion energy for a pair of nucleosomes separated by gap (the
   // distance between their left-aligned start positions). gap must be
-  // at least nucbp (the hard-core exclusion distance); returns 0 for
-  // gap >= nucbp+llink, since the WCA potential has no effect beyond
+  // at least lnuc (the hard-core exclusion distance); returns 0 for
+  // gap >= lnuc+llink, since the WCA potential has no effect beyond
   // that range.
   double erep(int gap) const;
 

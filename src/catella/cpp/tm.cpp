@@ -14,9 +14,9 @@
 using std::string;
 using std::vector;
 
-NucPosTM::NucPosTM(int nucbp, int nbp, int llink, double elink, double mu,
+NucPosTM::NucPosTM(int lnuc, int nbp, int llink, double elink, double mu,
 		   ulint seed_) :
-  model(nucbp, nbp, llink, elink, mu), seed(seed_), temp(1.0),
+  model(lnuc, nbp, llink, elink, mu), seed(seed_), temp(1.0),
   solved(false), logZ(0.0), meanN(0.0), mt(seed_),
   rand(0.0, 1.0) {}
 
@@ -101,12 +101,12 @@ void requireFinite(double logValue, const char* pass) {
 
 void NucPosTM::forwardStep(const vector<double>& cur, vector<double>& nxt,
 			   int x, double t, double mu) const {
-  int W = model.nucbp() + model.llink();
-  int nucbp = model.nucbp();
+  int W = model.lnuc() + model.llink();
+  int lnuc = model.lnuc();
 
-  vector<double> logPlace(W - nucbp + 1);
-  for (int k = nucbp-1; k < W; k++) {
-    logPlace[k-nucbp+1] = cur[k] + logPlaceWeight(x, k+1, t, mu);
+  vector<double> logPlace(W - lnuc + 1);
+  for (int k = lnuc-1; k < W; k++) {
+    logPlace[k-lnuc+1] = cur[k] + logPlaceWeight(x, k+1, t, mu);
   }
   nxt[0] = logSumExp(logPlace);
   for (int k = 1; k < W-1; k++) nxt[k] = cur[k-1];
@@ -115,7 +115,7 @@ void NucPosTM::forwardStep(const vector<double>& cur, vector<double>& nxt,
 }
 
 void NucPosTM::computeForwardFull() {
-  int W = model.nucbp() + model.llink();
+  int W = model.lnuc() + model.llink();
   int npos = model.npos();
   double mu = model.mu();
 
@@ -129,28 +129,28 @@ void NucPosTM::computeForwardFull() {
 }
 
 void NucPosTM::computeBackwardAndMarginals() {
-  int W = model.nucbp() + model.llink();
+  int W = model.lnuc() + model.llink();
   int npos = model.npos();
-  int nucbp = model.nucbp();
+  int lnuc = model.lnuc();
   double mu = model.mu();
 
   logU.assign(npos+1, vector<double>(W, 0.0));
   startProb.assign(npos, 0.0);
   vector<double> logW(W, NINF);
-  vector<double> logStart(W - nucbp + 1);
+  vector<double> logStart(W - lnuc + 1);
 
   for (int x = npos-1; x >= 0; x--) {
     const vector<double>& nxtU = logU[x+1];
-    for (int k = nucbp-1; k < W; k++) {
+    for (int k = lnuc-1; k < W; k++) {
       logW[k] = logPlaceWeight(x, k+1, temp, mu);
-      logStart[k-nucbp+1] = logV[x][k] + logW[k];
+      logStart[k-lnuc+1] = logV[x][k] + logW[k];
     }
     startProb[x] = std::exp(logSumExp(logStart) + nxtU[0] - logZ);
 
     vector<double>& cur = logU[x];
     for (int k = 0; k < W; k++) {
       cur[k] = nxtU[std::min(k+1, W-1)];
-      if (k+1 >= nucbp) cur[k] = logAdd(cur[k], logW[k] + nxtU[0]);
+      if (k+1 >= lnuc) cur[k] = logAdd(cur[k], logW[k] + nxtU[0]);
     }
     requireFinite(cur[W-1], "backward");
   }
@@ -158,7 +158,7 @@ void NucPosTM::computeBackwardAndMarginals() {
 
 void NucPosTM::computeOccupFromStartProb() {
   int nbp = model.nbp();
-  int nucbp = model.nucbp();
+  int lnuc = model.lnuc();
   int npos = model.npos();
 
   vector<double> prefix(npos+1, 0.0);
@@ -166,7 +166,7 @@ void NucPosTM::computeOccupFromStartProb() {
 
   occup.assign(nbp, 0.0);
   for (int y = 0; y < nbp; y++) {
-    int xLo = std::max(0, y - nucbp + 1);
+    int xLo = std::max(0, y - lnuc + 1);
     int xHi = std::min(y, npos-1);
     if (xHi < xLo) continue;
     occup[y] = prefix[xHi+1] - prefix[xLo];
@@ -174,7 +174,7 @@ void NucPosTM::computeOccupFromStartProb() {
 }
 
 double NucPosTM::forwardLogZOnly(double t, double muOverride) const {
-  int W = model.nucbp() + model.llink();
+  int W = model.lnuc() + model.llink();
   int npos = model.npos();
 
   vector<double> cur(W, NINF);
@@ -243,16 +243,16 @@ double NucPosTM::configEnergy(const vector<int>& positions) const {
 
 std::pair<vector<int>, double> NucPosTM::sampleConfig() {
   requireSolved();
-  int W = model.nucbp() + model.llink();
+  int W = model.lnuc() + model.llink();
   int npos = model.npos();
-  int nucbp = model.nucbp();
+  int lnuc = model.lnuc();
   double mu = model.mu();
 
   vector<int> positions;
   int s = W;
   for (int x = 0; x < npos; x++) {
     bool placed = false;
-    if (s >= nucbp) {
+    if (s >= lnuc) {
       double logPlace = logPlaceWeight(x, s, temp, mu) + logU[x+1][0];
       double logSkip = logU[x+1][std::min(s, W-1)];
       double pPlace = 1.0/(1.0 + std::exp(logSkip - logPlace));
@@ -272,7 +272,7 @@ std::pair<vector<int>, double> NucPosTM::sampleConfig() {
 
 vector<int> NucPosTM::maxScoreConfig(const vector<double>& siteScore,
 				     const vector<double>& stateScore) const {
-  int W = model.nucbp() + model.llink();
+  int W = model.lnuc() + model.llink();
   int npos = model.npos();
 
   vector<double> cur(W, NINF), nxt(W);
@@ -318,15 +318,15 @@ vector<int> NucPosTM::maxScoreConfig(const vector<double>& siteScore,
 }
 
 std::pair<vector<int>, double> NucPosTM::getMostLikelyConfig() const {
-  int W = model.nucbp() + model.llink();
+  int W = model.lnuc() + model.llink();
   int npos = model.npos();
-  int nucbp = model.nucbp();
+  int lnuc = model.lnuc();
   double mu = model.mu();
 
   vector<double> siteScore(npos);
   for (int x = 0; x < npos; x++) siteScore[x] = -(model.edata()[x] - mu);
   vector<double> stateScore(W, NINF);
-  for (int k = nucbp-1; k < W; k++) stateScore[k] = -model.erep(k+1);
+  for (int k = lnuc-1; k < W; k++) stateScore[k] = -model.erep(k+1);
 
   vector<int> positions = maxScoreConfig(siteScore, stateScore);
   return {positions, configEnergy(positions)};
@@ -340,9 +340,9 @@ std::pair<vector<int>, double> NucPosTM::getBestMatchConfig(
     msg << "gamma must be positive, got " << gamma;
     throw std::invalid_argument(msg.str());
   }
-  int W = model.nucbp() + model.llink();
+  int W = model.lnuc() + model.llink();
   int npos = model.npos();
-  int nucbp = model.nucbp();
+  int lnuc = model.lnuc();
 
   vector<double> prefix(occup.size()+1, 0.0);
   for (size_t y = 0; y < occup.size(); y++) {
@@ -350,10 +350,10 @@ std::pair<vector<int>, double> NucPosTM::getBestMatchConfig(
   }
   vector<double> siteScore(npos);
   for (int x = 0; x < npos; x++) {
-    siteScore[x] = prefix[x+nucbp] - prefix[x];
+    siteScore[x] = prefix[x+lnuc] - prefix[x];
   }
   vector<double> stateScore(W, NINF);
-  for (int k = nucbp-1; k < W; k++) stateScore[k] = -model.erep(k+1);
+  for (int k = lnuc-1; k < W; k++) stateScore[k] = -model.erep(k+1);
 
   vector<int> positions = maxScoreConfig(siteScore, stateScore);
   return {positions, configEnergy(positions)};
@@ -374,10 +374,10 @@ vector<double> NucPosTM::getLinkerHist(int lmax, int xlo, int xhi) const {
 	<< ", " << xhi << ")";
     throw std::invalid_argument(msg.str());
   }
-  int nucbp = model.nucbp();
-  int W = nucbp + model.llink();
+  int lnuc = model.lnuc();
+  int W = lnuc + model.llink();
   double mu = model.mu();
-  int bmax = xhi - nucbp;
+  int bmax = xhi - lnuc;
 
   // Probability summed over consecutive pairs (a, a+g) in the window
   auto pairSum = [&](int g) {
@@ -392,10 +392,10 @@ vector<double> NucPosTM::getLinkerHist(int lmax, int xlo, int xhi) const {
   };
 
   vector<double> hist(lmax+2, 0.0);
-  for (int l = 0; l <= lmax; l++) hist[l] = pairSum(nucbp + l);
+  for (int l = 0; l <= lmax; l++) hist[l] = pairSum(lnuc + l);
 
-  int gmin = std::max(nucbp + lmax + 1, W);
-  for (int g = nucbp + lmax + 1; g < gmin; g++) hist[lmax+1] += pairSum(g);
+  int gmin = std::max(lnuc + lmax + 1, W);
+  for (int g = lnuc + lmax + 1; g < gmin; g++) hist[lmax+1] += pairSum(g);
 
   // Gaps >= W factorize, so sum them with a log-space suffix over b
   if (xlo + gmin <= bmax) {

@@ -27,7 +27,7 @@ public:
     Constant
   };
 
-  NucPosMCMC(int nucbp, int nbp, int llink, double elink, double mu,
+  NucPosMCMC(int lnuc, int nbp, int llink, double elink, double mu,
 	     ulint seed);
   explicit NucPosMCMC(const Params& params);
   ~NucPosMCMC();

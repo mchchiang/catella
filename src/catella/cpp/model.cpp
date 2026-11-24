@@ -14,9 +14,9 @@ using std::string;
 using std::stringstream;
 using std::vector;
 
-NucPosModel::NucPosModel(int nucbp, int nbp, int llink, double elink,
+NucPosModel::NucPosModel(int lnuc, int nbp, int llink, double elink,
 			 double mu) :
-  params{nucbp, nbp, llink, elink, mu} {
+  params{lnuc, nbp, llink, elink, mu} {
   siteEnergy = vector<double>(nbp, 0.0);
   buildErep();
 }
@@ -85,19 +85,19 @@ void NucPosModel::setEnergy(const std::vector<double>& edata_in,
   }
 }
 
-int NucPosModel::nucbp() const { return params.nucbp; }
+int NucPosModel::lnuc() const { return params.lnuc; }
 int NucPosModel::nbp() const { return params.nbp; }
 int NucPosModel::llink() const { return params.llink; }
 double NucPosModel::elink() const { return params.elink; }
 double NucPosModel::mu() const { return params.mu; }
-int NucPosModel::npos() const { return params.nbp - params.nucbp + 1; }
+int NucPosModel::npos() const { return params.nbp - params.lnuc + 1; }
 
 const vector<double>& NucPosModel::edata() const { return siteEnergy; }
 
 double NucPosModel::erep(int gap) const {
-  int i = gap - params.nucbp;
+  int i = gap - params.lnuc;
   if (i < 0) {
-    throw std::runtime_error("erep: gap must be at least nucbp");
+    throw std::runtime_error("erep: gap must be at least lnuc");
   }
   if (i >= params.llink) {
     return 0.0;

@@ -23,7 +23,7 @@ using std::vector;
 PYBIND11_MODULE(catella_cpp, m) {
   py::class_<NucPosMCMC> mcmccls(m, "NucPosMCMC");
   mcmccls.def(py::init<int,int,int,double,double,ulint>(),
-	      py::arg("nucbp"), py::arg("nbp"), py::arg("llink"),
+	      py::arg("lnuc"), py::arg("nbp"), py::arg("llink"),
 	      py::arg("elink"), py::arg("mu"), py::arg("seed"));
   mcmccls.def("run", &NucPosMCMC::run);
   mcmccls.def("reset", &NucPosMCMC::reset);
@@ -41,7 +41,7 @@ PYBIND11_MODULE(catella_cpp, m) {
 
   py::class_<NucPosTM> tmcls(m, "NucPosTM");
   tmcls.def(py::init<int,int,int,double,double,ulint>(),
-	    py::arg("nucbp"), py::arg("nbp"), py::arg("llink"),
+	    py::arg("lnuc"), py::arg("nbp"), py::arg("llink"),
 	    py::arg("elink"), py::arg("mu"), py::arg("seed"));
   tmcls.def("setEnergy", [](NucPosTM& self, vector<double> edata,
 			    double emax) {

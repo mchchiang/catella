@@ -15,10 +15,10 @@ DumpPos::DumpPos(lint freq, const string& outFile) :
 
 void DumpPos::dump(lint time, const NucPosMCMC& model, ofstream& writer) {
   auto nucpos = model.getNucPos();
-  auto nucbp = model.getParams().model.nucbp;
+  auto lnuc = model.getParams().model.lnuc;
   writer << "Nucleosomes: " << nucpos.size() << "\n";
   writer << "Timesteps: " << time << "\n";
   for (auto& pos : nucpos) {
-    writer << pos << " " << pos+nucbp << "\n";
+    writer << pos << " " << pos+lnuc << "\n";
   }
 }

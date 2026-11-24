@@ -16,7 +16,7 @@
 class NucPosTM {
 
 public:
-  NucPosTM(int nucbp, int nbp, int llink, double elink, double mu,
+  NucPosTM(int lnuc, int nbp, int llink, double elink, double mu,
 	   ulint seed);
   explicit NucPosTM(const NucPosModel::Params& params, ulint seed);
   ~NucPosTM();

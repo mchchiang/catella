@@ -2009,3 +2009,51 @@ class TestIntervalRegions:
     def test_no_region_kept_raises(self, tmp_path):
         with pytest.raises(ValueError, match="no region has molecules"):
             self._load(tmp_path, regions=[("chr2", 40, 50, "E")])
+
+
+class TestMinOverlap:
+    def _load(self, tmp_path, rows=None, regions=None, **kwargs):
+        return TestIntervalRegions()._load(tmp_path, rows, regions, **kwargs)
+
+    def test_short_overlap_dropped(self, tmp_path):
+        exp = self._load(tmp_path, min_overlap=6)
+        assert exp.raw["A"].test.mol_id.tolist() == ["m0"]
+        assert exp.raw["B"].test.mol_id.tolist() == ["m0"]
+        exp.close()
+
+    def test_region_left_empty_dropped(self, tmp_path):
+        with pytest.warns(UserWarning, match="dropped 1 region.*'B'"):
+            exp = self._load(tmp_path, min_overlap=7)
+        assert exp.regions == ("A",)
+        exp.close()
+
+    def test_filter_before_sampling(self, tmp_path):
+        short = [f"s{i}" for i in range(10)]
+        long = ["l0", "l1", "l2"]
+        rows = _make_rows("chr1", short, [30]) + _make_rows(
+            "chr1", long, [26, 60]
+        )
+        exp = self._load(
+            tmp_path,
+            rows=rows,
+            regions=[("chr1", 25, 70, "B")],
+            min_overlap=10,
+            max_nmol=2,
+            seed=0,
+        )
+        kept = exp.raw["B"].test.mol_id.tolist()
+        assert len(kept) == 2
+        assert set(kept) <= set(long)
+        exp.close()
+
+    @pytest.mark.parametrize("bad", [-1, 2.5, True, "5"])
+    def test_invalid_value_raises(self, tmp_path, bad):
+        with pytest.raises(ValueError, match="min_overlap must be"):
+            self._load(tmp_path, min_overlap=bad)
+
+    def test_wrap_raises(self, tmp_path):
+        chromsize, f = _extent_setup(tmp_path, _make_rows("chr1", ["m"], [1]))
+        with pytest.raises(ValueError, match="min_overlap requires"):
+            MethPrintExperiment.load_raw(
+                chromsize=chromsize, test_file=f, wrap=True, min_overlap=1
+            )

@@ -126,6 +126,29 @@ class TestLoadRaw:
         assert got.raw["mid"].nbp == 20
         got.close()
 
+    def test_min_overlap_forwarded(self, tmp_path):
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, _make_test_rows(nmol=3, nbp=30))
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 30})
+        bed = tmp_path / "regions.bed"
+        bed.write_text("chr1\t5\t25\tmid\n")
+        result = runner.invoke(
+            app,
+            [
+                "load_raw",
+                str(chromsize),
+                str(test_file),
+                str(tmp_path / "exp.h5"),
+                "--regions",
+                str(bed),
+                "--min-overlap",
+                "21",
+            ],
+        )
+        assert result.exit_code != 0
+        assert "no region has molecules" in str(result.exception)
+
     def test_fasta_file_populates_refseq(self, tmp_path):
         rows = _make_test_rows(nmol=5, nbp=30)
         test_file = tmp_path / "test.tsv"

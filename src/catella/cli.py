@@ -204,6 +204,10 @@ def load_raw(
             help="BED12 file(s) of read blocks (bamtobed -bed12 -splitD)",
         ),
     ] = None,
+    min_overlap: Annotated[
+        int,
+        typer.Option(min=0, help="Min read overlap (bp) with a region"),
+    ] = 0,
 ):
     """
     Load raw methylation footprinting data into a MethPrintExperiment.
@@ -231,6 +235,7 @@ def load_raw(
         nworker=nworker,
         min_gap=min_gap or None,
         gaps_bed=gaps_bed,
+        min_overlap=min_overlap,
     )
     exp.save(out_file)
 

@@ -506,6 +506,7 @@ def _scan_accepted_mols(
     balance_strand=False,
     chrom_sizes=None,
     extents=True,
+    min_overlap=0,
 ):
     """
     Determine, per region, which molecules are kept, their
@@ -549,6 +550,10 @@ def _scan_accepted_mols(
         if None) are only bounded below by 0.
     extents : bool, default True
         Whether to compute read extents (False with `wrap=True`).
+    min_overlap : int, default 0
+        Molecules whose extent overlaps a region by fewer bp are
+        dropped from it before sampling; requires `extents`. Regions
+        left without molecules are omitted.
 
     Returns
     -------
@@ -600,10 +605,24 @@ def _scan_accepted_mols(
 
     result = {}
     for region in sorted(mol_order.keys()):
+        candidates = mol_order[region]
+        if min_overlap:
+            reg = region_map.regions[region]
+            ids = list(candidates)
+            start, end = _extent_arrays(
+                extent_of.get(reg.chrom, {}), ids, reg
+            )
+            candidates = {
+                m: candidates[m]
+                for m, ok in zip(ids, end - start >= min_overlap)
+                if ok
+            }
+            if not candidates:
+                continue
         if balance_strand:
-            mols = _balanced_mols(region, mol_order[region], max_nmol, rng)
+            mols = _balanced_mols(region, candidates, max_nmol, rng)
         else:
-            mols = np.array(list(mol_order[region].keys()), dtype=object)
+            mols = np.array(list(candidates.keys()), dtype=object)
             if max_nmol is not None and len(mols) > max_nmol:
                 mols = rng.choice(mols, max_nmol, replace=False)
         sorted_mols = np.sort(mols)
@@ -1489,6 +1508,7 @@ def _ingest_into(
     min_gap=None,
     gaps_bed=None,
     chrom_sizes=None,
+    min_overlap=0,
 ):
     """
     Resolve, scan, and stream one raw data file into the `raw_data`
@@ -1541,6 +1561,7 @@ def _ingest_into(
             balance_strand=balance_strand,
             chrom_sizes=chrom_sizes,
             extents=not wrap,
+            min_overlap=min_overlap,
         )
         src_maps = _source_maps(mol_maps, region_map)
 

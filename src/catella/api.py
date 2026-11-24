@@ -43,6 +43,7 @@ def load_raw(
     nworker: int = 1,
     min_gap: int | None = 20,
     gaps_bed: str | Path | Iterable | None = None,
+    min_overlap: int = 0,
 ) -> MethPrintExperiment:
     """
     Load raw methylation footprinting data into a MethPrintExperiment.
@@ -122,6 +123,9 @@ def load_raw(
     gaps_bed : str, pathlib.Path, or iterable of them, optional
         BED12 file(s) giving exact gaps for the reads they list; see
         `MethPrintExperiment.load_raw`.
+    min_overlap : int, default 0
+        Minimum overlap (bp) of a read's extent with a region; reads
+        overlapping less are dropped before `max_nmol` sampling.
 
     Returns
     -------
@@ -150,6 +154,7 @@ def load_raw(
         nworker=nworker,
         min_gap=min_gap,
         gaps_bed=gaps_bed,
+        min_overlap=min_overlap,
     )
 
 

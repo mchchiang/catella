@@ -577,6 +577,7 @@ class MethPrintExperiment:
         nworker: int = 1,
         min_gap: int | None = 20,
         gaps_bed: str | Path | Iterable | None = None,
+        min_overlap: int = 0,
     ) -> Self:
         """
         Create an experiment by processing raw sequencing data files.
@@ -671,6 +672,10 @@ class MethPrintExperiment:
             (filter out non-primary alignments first, e.g.,
             `samtools view -F 2304`). For the reads listed, gaps are
             taken from the alignment blocks instead of being inferred.
+        min_overlap : int, default 0
+            Minimum overlap (bp) of a molecule's read extent with a
+            region (internal gaps not subtracted); molecules
+            overlapping less are dropped before `max_nmol` sampling.
 
         Returns
         -------
@@ -695,7 +700,9 @@ class MethPrintExperiment:
             safe as a file name, if `regions` gives intervals with
             `wrap` True, or if an interval's chromosome is not in
             `chromsize` or its end is past the chromosome's end, or
-            if no interval region has molecules in every given file.
+            if no interval region has molecules in every given file, or
+            if `min_overlap` is negative, not an integer, or positive
+            with `wrap` True.
         TypeError
             If `regions` has an unsupported type or mixes names and
             tuples.
@@ -744,6 +751,17 @@ class MethPrintExperiment:
             raise ValueError(
                 "gaps_bed requires wrap=False and min_gap not None"
             )
+        if (
+            isinstance(min_overlap, bool)
+            or not isinstance(min_overlap, Integral)
+            or min_overlap < 0
+        ):
+            raise ValueError(
+                "min_overlap must be a non-negative integer, got "
+                f"{min_overlap!r}"
+            )
+        if min_overlap and wrap:
+            raise ValueError("min_overlap requires wrap=False")
         if balance_strand:
             if max_nmol is None:
                 raise ValueError("balance_strand requires max_nmol")
@@ -802,6 +820,7 @@ class MethPrintExperiment:
             "tmp_dir": tmp_dir,
             "min_gap": min_gap,
             "gaps_bed": gaps_bed,
+            "min_overlap": min_overlap,
         }
 
         try:

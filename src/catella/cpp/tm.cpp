@@ -40,8 +40,8 @@ void NucPosTM::setEnergy(string dataFile, double emax) {
   solved = false;
 }
 
-void NucPosTM::setEnergy(const vector<double>& eseq, double emax) {
-  model.setEnergy(eseq, emax);
+void NucPosTM::setEnergy(const vector<double>& edata, double emax) {
+  model.setEnergy(edata, emax);
   solved = false;
 }
 
@@ -52,8 +52,8 @@ void NucPosTM::requireSolved() const {
   }
 }
 
-const vector<double>& NucPosTM::getSeqEnergy() const {
-  return model.eseq();
+const vector<double>& NucPosTM::getDataEnergy() const {
+  return model.edata();
 }
 
 void NucPosTM::solve(double t) {
@@ -69,7 +69,7 @@ void NucPosTM::solve(double t) {
 }
 
 double NucPosTM::logPlaceWeight(int x, int s, double t, double mu) const {
-  return -(model.eseq()[x] + model.erep(s) - mu)/t;
+  return -(model.edata()[x] + model.erep(s) - mu)/t;
 }
 
 namespace {
@@ -209,7 +209,7 @@ double NucPosTM::getMeanN() const {
 }
 
 double NucPosTM::getVarN(double dmu) const {
-  // Self-contained: only needs model.mu()/model.eseq() and temp (which
+  // Self-contained: only needs model.mu()/model.edata() and temp (which
   // defaults to 1.0), not any cached solve() state.
   double mu = model.mu();
   double lp = forwardLogZOnly(temp, mu + dmu);
@@ -229,16 +229,16 @@ vector<double> NucPosTM::getVarOccup() const {
 }
 
 double NucPosTM::configEnergy(const vector<int>& positions) const {
-  double totalEseq = 0.0;
+  double totalEdata = 0.0;
   double totalErep = 0.0;
-  const vector<double>& eseq = model.eseq();
+  const vector<double>& edata = model.edata();
   for (size_t i = 0; i < positions.size(); i++) {
-    totalEseq += eseq[positions[i]];
+    totalEdata += edata[positions[i]];
     if (i > 0) {
       totalErep += model.erep(positions[i] - positions[i-1]);
     }
   }
-  return totalEseq + totalErep - model.mu()*positions.size();
+  return totalEdata + totalErep - model.mu()*positions.size();
 }
 
 std::pair<vector<int>, double> NucPosTM::sampleConfig() {
@@ -324,7 +324,7 @@ std::pair<vector<int>, double> NucPosTM::getMostLikelyConfig() const {
   double mu = model.mu();
 
   vector<double> siteScore(npos);
-  for (int x = 0; x < npos; x++) siteScore[x] = -(model.eseq()[x] - mu);
+  for (int x = 0; x < npos; x++) siteScore[x] = -(model.edata()[x] - mu);
   vector<double> stateScore(W, NINF);
   for (int k = nucbp-1; k < W; k++) stateScore[k] = -model.erep(k+1);
 

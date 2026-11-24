@@ -28,11 +28,11 @@ PYBIND11_MODULE(catella_cpp, m) {
   mcmccls.def("run", &NucPosMCMC::run);
   mcmccls.def("reset", &NucPosMCMC::reset);
   mcmccls.def("addTracker", &NucPosMCMC::addTracker);
-  mcmccls.def("getSeqEnergy", &NucPosMCMC::getSeqEnergy);
-  mcmccls.def("setEnergy", [](NucPosMCMC& self, vector<double> eseq,
+  mcmccls.def("getDataEnergy", &NucPosMCMC::getDataEnergy);
+  mcmccls.def("setEnergy", [](NucPosMCMC& self, vector<double> edata,
 			      double emax) {
-    self.setEnergy(eseq, emax);
-  }, py::arg("eseq"), py::arg("emax"));
+    self.setEnergy(edata, emax);
+  }, py::arg("edata"), py::arg("emax"));
 
   py::enum_<NucPosMCMC::Cooling>(mcmccls, "Cooling")
     .value("Linear", NucPosMCMC::Cooling::Linear)
@@ -43,10 +43,10 @@ PYBIND11_MODULE(catella_cpp, m) {
   tmcls.def(py::init<int,int,int,double,double,ulint>(),
 	    py::arg("nucbp"), py::arg("nbp"), py::arg("llink"),
 	    py::arg("elink"), py::arg("mu"), py::arg("seed"));
-  tmcls.def("setEnergy", [](NucPosTM& self, vector<double> eseq,
+  tmcls.def("setEnergy", [](NucPosTM& self, vector<double> edata,
 			    double emax) {
-    self.setEnergy(eseq, emax);
-  }, py::arg("eseq"), py::arg("emax"));
+    self.setEnergy(edata, emax);
+  }, py::arg("edata"), py::arg("emax"));
   tmcls.def("solve", &NucPosTM::solve, py::arg("temp") = 1.0);
   tmcls.def("getLogZ", &NucPosTM::getLogZ);
   tmcls.def("getStartProb", &NucPosTM::getStartProb);
@@ -60,7 +60,7 @@ PYBIND11_MODULE(catella_cpp, m) {
 	    py::arg("gamma") = 1.0);
   tmcls.def("getLinkerHist", &NucPosTM::getLinkerHist, py::arg("lmax"),
 	    py::arg("xlo") = 0, py::arg("xhi") = -1);
-  tmcls.def("getSeqEnergy", &NucPosTM::getSeqEnergy);
+  tmcls.def("getDataEnergy", &NucPosTM::getDataEnergy);
   tmcls.def("reset", &NucPosTM::reset);
   tmcls.def("setSeed", &NucPosTM::setSeed, py::arg("seed"));
 

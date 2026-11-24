@@ -70,18 +70,18 @@ void NucPosModel::setEnergy(string dataFile, double emax) {
   reader.close();
 }
 
-void NucPosModel::setEnergy(const std::vector<double>& eseq_in,
+void NucPosModel::setEnergy(const std::vector<double>& edata_in,
 			    double emax) {
   if (!(emax >= 0)) {
     throw std::runtime_error(
       "emax must be non-negative (pass inf to disable clipping)");
   }
-  if (static_cast<int>(eseq_in.size()) != params.nbp) {
+  if (static_cast<int>(edata_in.size()) != params.nbp) {
     throw std::runtime_error("energy array size does not match "
 			     "the size of the simulated fiber");
   }
   for (int i = 0; i < params.nbp; i++) {
-    siteEnergy[i] = std::clamp(eseq_in[i], -emax, emax);
+    siteEnergy[i] = std::clamp(edata_in[i], -emax, emax);
   }
 }
 
@@ -92,7 +92,7 @@ double NucPosModel::elink() const { return params.elink; }
 double NucPosModel::mu() const { return params.mu; }
 int NucPosModel::npos() const { return params.nbp - params.nucbp + 1; }
 
-const vector<double>& NucPosModel::eseq() const { return siteEnergy; }
+const vector<double>& NucPosModel::edata() const { return siteEnergy; }
 
 double NucPosModel::erep(int gap) const {
   int i = gap - params.nucbp;

@@ -267,7 +267,7 @@ def _compute_eseq(settings, meth_prob, regions):
         eseq[region] = np.empty(prob.shape)
         for i in range(prob.shape[0]):
             model.setEnergy(logit(prob[i]), settings.emax)
-            eseq[region][i] = model.getSeqEnergy()
+            eseq[region][i] = model.getDataEnergy()
     return eseq
 
 

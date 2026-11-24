@@ -164,7 +164,7 @@ class TestComputeEseq:
         assert eseq["chr2"].shape == meth_prob["chr2"].shape
         model = NucPosMCMC(147, 30, 20, 1.0, -1.0, 0)
         model.setEnergy(logit(meth_prob["chr2"][1]), 5.0)
-        np.testing.assert_allclose(eseq["chr2"][1], model.getSeqEnergy())
+        np.testing.assert_allclose(eseq["chr2"][1], model.getDataEnergy())
 
 
 class TestIterSelected:

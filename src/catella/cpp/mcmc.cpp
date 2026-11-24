@@ -51,8 +51,8 @@ void NucPosMCMC::setEnergy(string dataFile, double emax) {
   model.setEnergy(dataFile, emax);
 }
 
-void NucPosMCMC::setEnergy(const vector<double>& eseq, double emax) {
-  model.setEnergy(eseq, emax);
+void NucPosMCMC::setEnergy(const vector<double>& edata, double emax) {
+  model.setEnergy(edata, emax);
 }
 
 void NucPosMCMC::update() {
@@ -61,7 +61,7 @@ void NucPosMCMC::update() {
   int nnuc = static_cast<int>(nucpos.size());
   int nucbp = model.nucbp();
   int npos = model.npos();
-  const vector<double>& eseq = model.eseq();
+  const vector<double>& edata = model.edata();
   if (mode == 0 && nnuc > 0) { // Shift a nuclosome
     // Pick a nucleosome
     std::uniform_int_distribution<int> randNuc(0,nnuc-1);
@@ -94,8 +94,8 @@ void NucPosMCMC::update() {
       dErep += model.erep(ndpos);
       dErep -= model.erep(dpos);
     }
-    double dEseq = eseq[nxt]-eseq[pos];
-    if (p < std::min(1.0, exp((-dEseq-dErep)/temp))) {
+    double dEdata = edata[nxt]-edata[pos];
+    if (p < std::min(1.0, exp((-dEdata-dErep)/temp))) {
 	nucpos[inuc] = nxt;
     }
   } else if (mode == 1) { // Add a nucleosome
@@ -119,7 +119,7 @@ void NucPosMCMC::update() {
       dErep += model.erep(dpos);
     }
     if (p < std::min(1.0, static_cast<double>(npos)/(nnuc+1.0)*
-		     exp((model.mu()-eseq[pos]-dErep)/temp))) {
+		     exp((model.mu()-edata[pos]-dErep)/temp))) {
       nucpos.insert(itup, pos);
     }
   } else if (mode == 2 && nnuc > 0) { // Remove a nucleosome
@@ -141,7 +141,7 @@ void NucPosMCMC::update() {
       dErep -= model.erep(dpos);
     }
     if (p < std::min(1.0, nnuc/static_cast<double>(npos)*
-		     exp((-model.mu()+eseq[pos]-dErep)/temp))) {
+		     exp((-model.mu()+edata[pos]-dErep)/temp))) {
       nucpos.erase(nucpos.begin()+inuc);
     }
   }
@@ -186,26 +186,26 @@ const vector<int>& NucPosMCMC::getNucPos() const {
 }
 
 double NucPosMCMC::getEnergy() const {
-  double totalEseq = 0.0;
+  double totalEdata = 0.0;
   double totalErep = 0.0;
-  const vector<double>& eseq = model.eseq();
+  const vector<double>& edata = model.edata();
   for (size_t i = 0; i < nucpos.size(); i++) {
     int pos = nucpos[i];
-    totalEseq += eseq[pos];
+    totalEdata += edata[pos];
     if (i > 0) {
       int dpos = nucpos[i]-nucpos[i-1];
       if (dpos >= model.nucbp()) totalErep += model.erep(dpos);
     }
   }
-  return totalEseq + totalErep - model.mu()*nucpos.size();
+  return totalEdata + totalErep - model.mu()*nucpos.size();
 }
 
 double NucPosMCMC::getTemp() const {
   return temp;
 }
 
-const vector<double>& NucPosMCMC::getSeqEnergy() const {
-  return model.eseq();
+const vector<double>& NucPosMCMC::getDataEnergy() const {
+  return model.edata();
 }
 
 const NucPosMCMC::Params& NucPosMCMC::getParams() const {

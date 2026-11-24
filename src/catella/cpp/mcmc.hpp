@@ -32,7 +32,7 @@ public:
   explicit NucPosMCMC(const Params& params);
   ~NucPosMCMC();
   void setEnergy(std::string dataFile, double emax);
-  void setEnergy(const std::vector<double>& eseq, double emax);
+  void setEnergy(const std::vector<double>& edata, double emax);
   void update();
   void reset();
   void output(lint time);
@@ -40,7 +40,7 @@ public:
   const std::vector<int>& getNucPos() const;
   double getEnergy() const;
   double getTemp() const;
-  const std::vector<double>& getSeqEnergy() const;
+  const std::vector<double>& getDataEnergy() const;
   const Params& getParams() const;
   void addTracker(std::shared_ptr<Tracker> tracker);
 

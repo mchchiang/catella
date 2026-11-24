@@ -22,7 +22,7 @@ public:
   ~NucPosTM();
 
   void setEnergy(std::string dataFile, double emax);
-  void setEnergy(const std::vector<double>& eseq, double emax);
+  void setEnergy(const std::vector<double>& edata, double emax);
 
   // Runs the forward-backward solve. Call before any query method
   // below, and again after any setEnergy call.
@@ -60,7 +60,7 @@ public:
   std::vector<double> getLinkerHist(int lmax, int xlo = 0,
 				    int xhi = -1) const;
 
-  const std::vector<double>& getSeqEnergy() const;
+  const std::vector<double>& getDataEnergy() const;
 
   // Re-seeds the sampling RNG from the original seed.
   void reset();

@@ -1,7 +1,7 @@
 // model.hpp
 //
 // The shared physical description of the nucleosome positioning
-// Hamiltonian: per-site data energy (eseq) and the nearest-neighbor
+// Hamiltonian: per-site data energy (edata) and the nearest-neighbor
 // WCA-style linker repulsion table (erep). Both the MCMC sampler
 // (NucPosMCMC, mcmc.hpp) and the exact transfer-matrix solver
 // (NucPosTM, tm.hpp) hold a NucPosModel member and delegate all
@@ -31,7 +31,7 @@ public:
   ~NucPosModel();
 
   void setEnergy(std::string dataFile, double emax);
-  void setEnergy(const std::vector<double>& eseq, double emax);
+  void setEnergy(const std::vector<double>& edata, double emax);
   void resetEnergy();
 
   int nucbp() const;
@@ -40,7 +40,7 @@ public:
   double elink() const;
   double mu() const;
   int npos() const;
-  const std::vector<double>& eseq() const;
+  const std::vector<double>& edata() const;
 
   // Repulsion energy for a pair of nucleosomes separated by gap (the
   // distance between their left-aligned start positions). gap must be

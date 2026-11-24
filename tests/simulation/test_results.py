@@ -25,7 +25,7 @@ from catella.simulation.results import (
 
 def _make_settings(**overrides):
     defaults = {
-        "nucbp": 147,
+        "lnuc": 147,
         "llink": 20,
         "elink": 1.0,
         "mu": -1.0,
@@ -347,12 +347,12 @@ class TestFindIncompleteRuns:
 class TestSimTMData:
     def test_requires_internal_flag(self):
         with pytest.raises(TypeError):
-            SimTMData(nucbp=1, nbp=1, llink=1, elink=1.0, mu=1.0, seed=1)
+            SimTMData(lnuc=1, nbp=1, llink=1, elink=1.0, mu=1.0, seed=1)
 
 
 def _tm_fields(**overrides):
     values = {
-        "nucbp": 147,
+        "lnuc": 147,
         "nbp": 40,
         "llink": 20,
         "elink": 1.0,
@@ -368,7 +368,7 @@ def _tm_fields(**overrides):
 
 def _mcmc_fields(**overrides):
     values = {
-        "nucbp": 147,
+        "lnuc": 147,
         "nbp": 40,
         "llink": 20,
         "elink": 1.0,
@@ -386,7 +386,7 @@ def _mcmc_fields(**overrides):
 class TestInitFields:
     def test_fields_set_from_unprefixed_names(self):
         sample = SimTMData._create(**_tm_fields())
-        assert sample.nucbp == 147
+        assert sample.lnuc == 147
         assert sample.logz == pytest.approx(2.0)
         np.testing.assert_array_equal(sample.position, [1, 5])
 
@@ -397,7 +397,7 @@ class TestInitFields:
 
 class TestCheckRunParams:
     @pytest.mark.parametrize("cls", [SimMCMCData, SimTMData])
-    @pytest.mark.parametrize("name", ["nucbp", "nbp", "seed"])
+    @pytest.mark.parametrize("name", ["lnuc", "nbp", "seed"])
     def test_non_positive_raises(self, cls, name):
         make = _mcmc_fields if cls is SimMCMCData else _tm_fields
         with pytest.raises(ValueError, match="must be positive"):
@@ -417,14 +417,14 @@ class TestPublicRepr:
     def test_mcmc_names_public_fields(self):
         text = repr(SimMCMCData._create(**_mcmc_fields()))
         assert text == (
-            "SimMCMCData(nucbp, nbp, llink, elink, mu, seed, time, "
+            "SimMCMCData(lnuc, nbp, llink, elink, mu, seed, time, "
             "energy, position, temp)"
         )
 
     def test_tm_names_public_fields(self):
         text = repr(SimTMData._create(**_tm_fields()))
         assert text == (
-            "SimTMData(nucbp, nbp, llink, elink, mu, seed, position, "
+            "SimTMData(lnuc, nbp, llink, elink, mu, seed, position, "
             "energy, logz)"
         )
 
@@ -433,15 +433,15 @@ class TestLlinkValidation:
     @pytest.mark.parametrize("cls", [SimMCMCData, SimTMData])
     def test_negative_llink_raises(self, cls):
         with pytest.raises(ValueError, match="llink must be non-negative"):
-            cls._create(nucbp=1, nbp=1, llink=-1, seed=1)
+            cls._create(lnuc=1, nbp=1, llink=-1, seed=1)
 
     @pytest.mark.parametrize("cls", [SimMCMCData, SimTMData])
     @pytest.mark.parametrize(
         "kwargs",
         [
-            {"nucbp": 0, "nbp": 1, "seed": 1},
-            {"nucbp": 1, "nbp": 0, "seed": 1},
-            {"nucbp": 1, "nbp": 1, "seed": 0},
+            {"lnuc": 0, "nbp": 1, "seed": 1},
+            {"lnuc": 1, "nbp": 0, "seed": 1},
+            {"lnuc": 1, "nbp": 1, "seed": 0},
         ],
     )
     def test_other_values_must_be_positive(self, cls, kwargs):
@@ -455,7 +455,7 @@ class TestWriteTMSamples:
         positions = [np.array([5, 20]), np.array([], dtype=int), np.array([7])]
         _write_tm_samples(
             out_file,
-            nucbp=2,
+            lnuc=2,
             nbp=50,
             llink=3,
             elink=1.0,
@@ -471,7 +471,7 @@ class TestWriteTMSamples:
             assert sample.energy == pytest.approx(float(i))
             assert sample.seed == 100 + i
             assert sample.logz == pytest.approx(9.87)
-            assert sample.nucbp == 2
+            assert sample.lnuc == 2
             assert sample.nbp == 50
             assert sample.llink == 3
             assert sample.elink == pytest.approx(1.0)
@@ -481,7 +481,7 @@ class TestWriteTMSamples:
         out_file = tmp_path / "mol.h5"
         _write_tm_samples(
             out_file,
-            nucbp=2,
+            lnuc=2,
             nbp=50,
             llink=3,
             elink=1.0,
@@ -498,7 +498,7 @@ class TestWriteTMSamples:
         with pytest.raises(ValueError):
             _write_tm_samples(
                 tmp_path / "mol.h5",
-                nucbp=2,
+                lnuc=2,
                 nbp=50,
                 llink=3,
                 elink=1.0,
@@ -523,7 +523,7 @@ def _mcmc_values():
 def _write_mcmc_file(path, values):
     with h5py.File(path, "w") as f:
         _write_mcmc_params(
-            f, nucbp=147, nbp=500, llink=20, elink=1.5, mu=-1.0, seed=42
+            f, lnuc=147, nbp=500, llink=20, elink=1.5, mu=-1.0, seed=42
         )
         _write_mcmc_data(f, values)
 
@@ -535,7 +535,7 @@ class TestWriteMCMCParams:
         with h5py.File(path, "r") as f:
             attrs = f["params"].attrs
             expected = {
-                "nucbp": (147, np.int32),
+                "lnuc": (147, np.int32),
                 "nbp": (500, np.int32),
                 "llink": (20, np.int32),
                 "elink": (1.5, np.float64),
@@ -550,7 +550,7 @@ class TestWriteMCMCParams:
         path = tmp_path / "run.h5"
         with h5py.File(path, "w") as f:
             _write_mcmc_params(
-                f, nucbp=1, nbp=1, llink=1, elink=0.0, mu=0.0, seed=2**63
+                f, lnuc=1, nbp=1, llink=1, elink=0.0, mu=0.0, seed=2**63
             )
         with h5py.File(path, "r") as f:
             assert int(f["params"].attrs["seed"]) == 2**63
@@ -596,7 +596,7 @@ class TestWriteMCMCData:
         values = _mcmc_values()
         _write_mcmc_file(path, values)
         data = SimMCMCData.load(path)
-        assert data.nucbp == 147
+        assert data.lnuc == 147
         assert data.nbp == 500
         assert data.llink == 20
         assert data.seed == 42
@@ -660,7 +660,7 @@ class TestTMDataset:
         combined.parent.mkdir(parents=True, exist_ok=True)
         _write_tm_samples(
             combined,
-            nucbp=dataset.settings["nucbp"],
+            lnuc=dataset.settings["lnuc"],
             nbp=dataset.nbp[region],
             llink=dataset.settings["llink"],
             elink=dataset.settings["elink"],

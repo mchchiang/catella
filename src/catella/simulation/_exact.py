@@ -199,7 +199,7 @@ def _build_tm(settings, nbp, edata):
         The solved model.
     """
     tm = NucPosTM(
-        settings.nucbp,
+        settings.lnuc,
         nbp,
         settings.llink,
         settings.elink,
@@ -254,7 +254,7 @@ def _run_tm_batch(job):
     """
     results = []
     for row in job.edata:
-        if np.isnan(_start_positions(row, job.settings.nucbp)).all():
+        if np.isnan(_start_positions(row, job.settings.lnuc)).all():
             results.append(None)
             continue
         tm = _build_tm(job.settings, job.nbp, row)

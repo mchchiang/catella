@@ -42,7 +42,7 @@ def _resolve_llinks(llinks):
 def _log_z(settings, llink, energy, nbp):
     """Log partition function of one fiber at temperature 1."""
     model = NucPosTM(
-        settings.nucbp, nbp, llink, settings.elink, settings.mu, 1
+        settings.lnuc, nbp, llink, settings.elink, settings.mu, 1
     )
     model.setEnergy(energy, settings.emax)
     model.solve(1.0)
@@ -50,7 +50,7 @@ def _log_z(settings, llink, energy, nbp):
 
 
 def _region_rows(
-    arr, keep, max_nmol, rng, batch_size, nucbp, region, fill_nan
+    arr, keep, max_nmol, rng, batch_size, lnuc, region, fill_nan
 ):
     """
     Rows of one region to use: kept, with data at the nucleosome
@@ -60,7 +60,7 @@ def _region_rows(
     usable = []
     for start, stop in _row_batches(0, arr.shape[0], batch_size):
         block = np.asarray(arr[start:stop, :], dtype=np.float64)
-        _, no_data = _prepare_rows(block, nucbp, region, fill_nan)
+        _, no_data = _prepare_rows(block, lnuc, region, fill_nan)
         has_data = ~no_data
         if keep is not None:
             has_data &= keep[start:stop]
@@ -103,7 +103,7 @@ def _chunk_jobs(exp, settings, candidates, prob_name, selected, fill_nan):
         for start in range(0, len(rows), _CHUNK_NMOL):
             chunk = rows[start : start + _CHUNK_NMOL]
             block = np.asarray(arr[chunk, :], dtype=np.float64)
-            block, _ = _prepare_rows(block, settings.nucbp, region, fill_nan)
+            block, _ = _prepare_rows(block, settings.lnuc, region, fill_nan)
             yield region, block, log_z0
 
 
@@ -156,7 +156,7 @@ def _llink_evidence(
     exp : MethPrintExperiment
         The experiment; `prob_name` must be in `exp.analysis[region]`.
     settings : str or Path or SimSettings
-        Provides `nucbp`, `elink`, `mu` and `emax`. `llink` is ignored.
+        Provides `lnuc`, `elink`, `mu` and `emax`. `llink` is ignored.
     llinks : iterable of int, default range(0, 65, 5)
         Candidate linker lengths (bp).
     prob_name : str, default "meth_prob"
@@ -230,7 +230,7 @@ def _llink_evidence(
             max_nmol,
             rng,
             batch_size,
-            settings.nucbp,
+            settings.lnuc,
             region,
             fill_nan,
         )

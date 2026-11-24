@@ -16,7 +16,7 @@ from scipy.special import logit
 
 def _make_settings(**overrides):
     defaults = {
-        "nucbp": 147,
+        "lnuc": 147,
         "llink": 20,
         "elink": 1.0,
         "mu": -1.0,
@@ -102,7 +102,7 @@ class TestRunJob:
         with h5py.File(tmp_path / "out.h5", "r") as f:
             assert set(f["data"]) == {"time", "energy"}
             assert set(f["params"].attrs) == {
-                "nucbp",
+                "lnuc",
                 "nbp",
                 "llink",
                 "elink",
@@ -120,7 +120,7 @@ class TestRegionNames:
                 regions=name,
                 nsim=1,
                 method="tm",
-                settings=_make_settings(nucbp=20, llink=0),
+                settings=_make_settings(lnuc=20, llink=0),
                 meth_prob={name: _make_meth_prob(nmol=1, nbp=100)},
                 out_dir=out_dir,
                 seed=1,
@@ -134,7 +134,7 @@ class TestRegionNames:
                 regions=list(probs),
                 nsim=1,
                 method="tm",
-                settings=_make_settings(nucbp=20, llink=0),
+                settings=_make_settings(lnuc=20, llink=0),
                 meth_prob=probs,
                 out_dir=tmp_path / "sim",
                 seed=1,
@@ -155,7 +155,7 @@ class TestPerRegionLlink:
             regions=self.REGIONS,
             nsim=nsim,
             method=method,
-            settings=_make_settings(nucbp=20, llink=llink),
+            settings=_make_settings(lnuc=20, llink=llink),
             meth_prob=self._probs(),
             out_dir=out_dir,
             seed=1,
@@ -634,7 +634,7 @@ class TestSimManagerRerun:
 
 def _make_tm_settings(**overrides):
     defaults = {
-        "nucbp": 3,
+        "lnuc": 3,
         "llink": 2,
         "elink": 1.0,
         "mu": 0.5,
@@ -670,7 +670,7 @@ class TestRunTMJob:
         for run, s in enumerate((4, 5, 6)):
             sample = _read_tm_sample(out_file, run)
             assert sample.seed == s
-            assert sample.nucbp == 3
+            assert sample.lnuc == 3
             assert sample.nbp == 20
 
     def test_samples_match_fresh_solve_per_seed(self, tmp_path):
@@ -681,7 +681,7 @@ class TestRunTMJob:
         edata = np.frombuffer(p.edata, dtype=np.float64).tolist()
         for run, s in enumerate(p.seeds):
             tm = NucPosTM(
-                settings.nucbp,
+                settings.lnuc,
                 len(edata),
                 settings.llink,
                 settings.elink,
@@ -782,7 +782,7 @@ class TestSimManagerRunTM:
 
         sample = dataset.raw["chr1", 0, 1]
         assert isinstance(sample, SimTMData)
-        assert sample.nucbp == 3
+        assert sample.lnuc == 3
         assert sample.nbp == 30
 
         # Temp per-run files should be cleaned up after consolidation.
@@ -811,7 +811,7 @@ class TestSimManagerRunTM:
         loaded = SimDataset.load(dataset._dataset_file)
         assert loaded.method == "tm"
         assert loaded.nsim == 2
-        assert loaded.raw["chr1", 0, 0].nucbp == 3
+        assert loaded.raw["chr1", 0, 0].lnuc == 3
 
 
 class TestRerunTM:
@@ -884,10 +884,10 @@ class TestRerunTM:
         )
 
 
-def _no_data_meth_prob(nmol=3, nbp=400, nucbp=147):
+def _no_data_meth_prob(nmol=3, nbp=400, lnuc=147):
     meth_prob = _make_meth_prob(nmol=nmol, nbp=nbp)
     meth_prob[1] = np.nan
-    meth_prob[:, nbp - nucbp + 1 :] = np.nan
+    meth_prob[:, nbp - lnuc + 1 :] = np.nan
     return meth_prob
 
 
@@ -897,7 +897,7 @@ def _run_no_data(tmp_path, method="mcmc", nsim=2, name="ds"):
         meth_prob = _no_data_meth_prob()
     else:
         settings = _make_tm_settings()
-        meth_prob = _no_data_meth_prob(nbp=30, nucbp=3)
+        meth_prob = _no_data_meth_prob(nbp=30, lnuc=3)
     dataset = SimManager(nworker=1, verbose=False).run(
         regions="chr1",
         nsim=nsim,
@@ -1086,7 +1086,7 @@ def _llink_exp(linker=10, nmol=50, nbp=200):
 
 def _llink_settings():
     return SimSettings(
-        nucbp=5, llink=99, elink=25.0, mu=0.0, end_temp=1.0, emax=100.0
+        lnuc=5, llink=99, elink=25.0, mu=0.0, end_temp=1.0, emax=100.0
     )
 
 

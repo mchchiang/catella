@@ -56,7 +56,7 @@ from catella.simulation.results import SimDataset
 from catella.utils import IndexType
 
 
-def _prepare_meth_prob(meth_prob, regions, nucbp, fill_nan=None):
+def _prepare_meth_prob(meth_prob, regions, lnuc, fill_nan=None):
     """
     Normalize `meth_prob`, find the molecules with no data, and fill
     the partly-nan ones.
@@ -67,7 +67,7 @@ def _prepare_meth_prob(meth_prob, regions, nucbp, fill_nan=None):
         The methylation probability, as passed to `SimManager.run`.
     regions : sequence of str
         The regions to select.
-    nucbp : int
+    lnuc : int
         The nucleosome footprint size.
     fill_nan : None, "mean", or float, default None
         See `SimManager.run`.
@@ -89,7 +89,7 @@ def _prepare_meth_prob(meth_prob, regions, nucbp, fill_nan=None):
     no_data = {}
     for region in regions:
         meth_prob[region], no_data[region] = _prepare_rows(
-            meth_prob[region], nucbp, region, fill_nan
+            meth_prob[region], lnuc, region, fill_nan
         )
     return meth_prob, no_data
 
@@ -116,7 +116,7 @@ def _rerun_meth_prob(dataset, meth_prob):
         If the molecules with no data differ from `dataset.no_data`.
     """
     meth_prob, no_data = _prepare_meth_prob(
-        meth_prob, dataset.regions, dataset.settings["nucbp"], dataset.nan_fill
+        meth_prob, dataset.regions, dataset.settings["lnuc"], dataset.nan_fill
     )
     for region in dataset.regions:
         if not np.array_equal(no_data[region], dataset.no_data[region]):
@@ -211,7 +211,7 @@ class SimManager:
             (`method='tm'`; may be 0, since the exact occupancy/mean-N/
             variance quantities require no samples at all).
         settings : str or Path or SimSettings
-            The physical constants and Monte Carlo protocol (e.g., nucbp,
+            The physical constants and Monte Carlo protocol (e.g., lnuc,
             llink, mu) to apply to all runs in this batch. These can be
             read from a configuration file. `llink` can be a mapping of
             region to value, which must cover all of `regions`.
@@ -219,7 +219,7 @@ class SimManager:
             The probability of methylation. If multiple regions are
             provided, this must be a mapping of {region_name: data}. Data can
             be NumPy arrays or Pandas DataFrames. Molecules that are nan at
-            every nucleosome start position (the first `nbp - nucbp + 1`
+            every nucleosome start position (the first `nbp - lnuc + 1`
             base pairs; e.g., molecules masked by `filter_dropout`) have
             no data and are not simulated; see `SimDataset.no_data`. Nan
             beyond the last start position is ignored.
@@ -290,7 +290,7 @@ class SimManager:
         _check_region_names(regions)
         settings = _resolve_settings(settings)
         meth_prob, no_data = _prepare_meth_prob(
-            meth_prob, regions, settings.nucbp, fill_nan
+            meth_prob, regions, settings.lnuc, fill_nan
         )
         mols = _normalize_mols(mols, regions)
         nmol = {region: meth_prob[region].shape[0] for region in regions}
@@ -466,7 +466,7 @@ class SimManager:
             in `exp.analysis[region]` for each region.
         settings : str or Path or SimSettings
             A settings object, or a path to a settings file. Provides
-            `nucbp`, `elink`, `mu` and `emax`, which should match those
+            `lnuc`, `elink`, `mu` and `emax`, which should match those
             used for sampling. `llink` is ignored.
         llinks : iterable of int, default range(0, 65, 5)
             Candidate linker lengths (bp).
@@ -772,7 +772,7 @@ class SimManager:
             cool_option = SimSettings._cool_map[settings.cool_option]
             # Create the cpp backend Monte Carlo simulation model
             model = NucPosMCMC(
-                settings.nucbp,
+                settings.lnuc,
                 nbp,
                 settings.llink,
                 settings.elink,
@@ -787,7 +787,7 @@ class SimManager:
             with h5py.File(p.out_file, "w") as f:
                 _write_mcmc_params(
                     f,
-                    nucbp=settings.nucbp,
+                    lnuc=settings.lnuc,
                     nbp=nbp,
                     llink=settings.llink,
                     elink=settings.elink,
@@ -814,7 +814,7 @@ class SimManager:
             edata_list = np.frombuffer(p.edata, dtype=np.float64).tolist()
             nbp = len(edata_list)
             model = NucPosTM(
-                settings.nucbp,
+                settings.lnuc,
                 nbp,
                 settings.llink,
                 settings.elink,
@@ -832,7 +832,7 @@ class SimManager:
                 energies.append(energy)
             _write_tm_samples(
                 p.out_file,
-                nucbp=settings.nucbp,
+                lnuc=settings.lnuc,
                 nbp=nbp,
                 llink=settings.llink,
                 elink=settings.elink,

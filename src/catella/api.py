@@ -570,7 +570,7 @@ def estimate_llink(
         `exp.analysis[region]` for each region.
     settings : str or Path or SimSettings
         A settings object, or a path to a settings file. Provides
-        `nucbp`, `elink`, `mu` and `emax`, which should match those used
+        `lnuc`, `elink`, `mu` and `emax`, which should match those used
         for sampling. `llink` is ignored.
     llinks : iterable of int, default range(0, 65, 5)
         Candidate linker lengths (bp).

@@ -26,7 +26,7 @@ from scipy.special import logit
 
 def _make_settings(**overrides):
     defaults = {
-        "nucbp": 147,
+        "lnuc": 147,
         "llink": 20,
         "elink": 1.0,
         "mu": -1.0,

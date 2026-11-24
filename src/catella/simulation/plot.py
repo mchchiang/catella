@@ -110,7 +110,7 @@ def _run_list(runs, nsim):
     return values
 
 
-def _footprints(configs, nbp, nucbp):
+def _footprints(configs, nbp, lnuc):
     """
     Stack configurations into an int8 footprint matrix.
 
@@ -120,7 +120,7 @@ def _footprints(configs, nbp, nucbp):
         Nucleosome start positions per row; None for no data.
     nbp : int
         The number of base pairs.
-    nucbp : int
+    lnuc : int
         The nucleosome footprint size.
 
     Returns
@@ -128,7 +128,7 @@ def _footprints(configs, nbp, nucbp):
     np.ndarray
         int8, (len(configs), nbp): 1 covered, 0 linker, -1 no data.
     """
-    nuc_map = NucFiberMap(nbp=nbp, nucbp=nucbp)
+    nuc_map = NucFiberMap(nbp=nbp, lnuc=lnuc)
     out = np.full((len(configs), nbp), -1, dtype=np.int8)
     for i, starts in enumerate(configs):
         if starts is not None:
@@ -472,7 +472,7 @@ class SimPlot:
             if downsample_how == "stride":
                 idx = idx[:: _stride_step(len(idx), max_rows)]
             _warn_if_large(_shown_rows(len(idx), max_rows), nbp, hint)
-            matrix = NucFiberMap(nbp=nbp, nucbp=data.nucbp).stack(
+            matrix = NucFiberMap(nbp=nbp, lnuc=data.lnuc).stack(
                 [data.position[i] for i in idx]
             )
             matrix = _merge_rows(matrix, max_rows, downsample_how)
@@ -501,7 +501,7 @@ class SimPlot:
                 )[0]
                 for r in run_ids
             ]
-            matrix = _footprints(configs, nbp, dataset.settings["nucbp"])
+            matrix = _footprints(configs, nbp, dataset.settings["lnuc"])
             matrix = _merge_rows(matrix, max_rows, downsample_how)
             extent_y = None
             unit = "run" if dataset.method == "mcmc" else "sample"
@@ -770,7 +770,7 @@ class SimPlot:
         configs = SimAnalysis().extract_config(
             dataset, region=region, name=name, run=run, time=time, mols=mol_ids
         )
-        matrix = _footprints(configs, nbp, dataset.settings["nucbp"])
+        matrix = _footprints(configs, nbp, dataset.settings["lnuc"])
         mean = None
         if plot_mean:
             calls = np.where(matrix < 0, np.nan, matrix.astype(float))
@@ -898,7 +898,7 @@ class SimPlot:
                 emax = min(np.nanmax(edata), dataset.settings["emax"])
             if np.isfinite(emin) and np.isfinite(emax):
                 edata_ax.set_ylim(emin, emax)
-            lnuc = dataset.settings["nucbp"]
+            lnuc = dataset.settings["lnuc"]
             edata = CoordsTransform(lnuc=lnuc).left_to_center_aligned(edata)
             edata[: lnuc // 2] = np.nan
             edata[len(edata) - lnuc // 2 :] = np.nan
@@ -1196,7 +1196,7 @@ class SimPlot:
                 emax = min(np.nanmax(edata), dataset.settings["emax"])
             if np.isfinite(emin) and np.isfinite(emax):
                 edata_ax.set_ylim(emin, emax)
-            lnuc = dataset.settings["nucbp"]
+            lnuc = dataset.settings["lnuc"]
             trans = CoordsTransform(lnuc=lnuc)
             edata = trans.left_to_center_aligned(edata)
             edata[: lnuc // 2] = np.nan

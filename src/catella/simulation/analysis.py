@@ -183,7 +183,7 @@ def _check_window(window):
     )
 
 
-def _linker_window(window, region, nbp, nucbp, trim):
+def _linker_window(window, region, nbp, lnuc, trim):
     """
     Return the window of a region in which linkers are counted.
 
@@ -196,7 +196,7 @@ def _linker_window(window, region, nbp, nucbp, trim):
         The region.
     nbp : int
         The number of base pairs of the region.
-    nucbp : int
+    lnuc : int
         The nucleosome footprint size.
     trim : int
         The number of base pairs removed from each end of the window.
@@ -221,7 +221,7 @@ def _linker_window(window, region, nbp, nucbp, trim):
             f"'{region}', got ({xlo}, {xhi})"
         )
     xlo, xhi = xlo + trim, xhi - trim
-    if xhi - xlo < 2 * nucbp:
+    if xhi - xlo < 2 * lnuc:
         raise ValueError(
             "window after trim must hold two nucleosomes for region "
             f"'{region}', got ({xlo}, {xhi})"
@@ -364,7 +364,7 @@ class NucFiberMap:
     along a DNA fiber of fixed length.
     """
 
-    nucbp: int
+    lnuc: int
     """The footprint size (in base pairs) of a single nucleosome."""
 
     nbp: int
@@ -397,7 +397,7 @@ class NucFiberMap:
         """
         diff = np.zeros(self.nbp + 1, dtype=np.int32)
         starts = nucpos[(nucpos >= 0) & (nucpos < self.nbp)]
-        ends = (starts + self.nucbp).clip(max=self.nbp)
+        ends = (starts + self.lnuc).clip(max=self.nbp)
         np.add.at(diff, starts, 1)
         np.add.at(diff, ends, -1)
         return (np.cumsum(diff)[:-1] > 0).astype(np.int8)
@@ -435,7 +435,7 @@ class NucFiberMap:
         diff = np.zeros(self.nbp + 1, dtype=np.int32)
         for nucpos in samples:
             starts = nucpos[(nucpos >= 0) & (nucpos < self.nbp)]
-            ends = (starts + self.nucbp).clip(max=self.nbp)
+            ends = (starts + self.lnuc).clip(max=self.nbp)
             np.add.at(diff, starts, 1)
             np.add.at(diff, ends, -1)
         occup = np.cumsum(diff)[:-1]
@@ -471,7 +471,7 @@ class NucFiberMap:
         for i, nucpos in enumerate(sample_list):
             diff = np.zeros(self.nbp + 1, dtype=np.int32)
             starts = nucpos[(nucpos >= 0) & (nucpos < self.nbp)]
-            ends = (starts + self.nucbp).clip(max=self.nbp)
+            ends = (starts + self.lnuc).clip(max=self.nbp)
             np.add.at(diff, starts, 1)
             np.add.at(diff, ends, -1)
             matrix[i, :] = (np.cumsum(diff)[:-1] > 0).astype(np.int8)
@@ -612,7 +612,7 @@ class SimAnalysis:
         self, dataset, *, time, regions, name, record_time, batch_size
     ):
         nuc_map = {
-            region: NucFiberMap(dataset.settings["nucbp"], dataset.nbp[region])
+            region: NucFiberMap(dataset.settings["lnuc"], dataset.nbp[region])
             for region in regions
         }
         if time is None:
@@ -963,7 +963,7 @@ class SimAnalysis:
         Calculate the exact linker-length histogram of each molecule.
 
         A linker is the DNA between two consecutive nucleosomes, of length
-        `b - a - nucbp` for nucleosomes starting at `a` and `b`; the
+        `b - a - lnuc` for nucleosomes starting at `a` and `b`; the
         stretches between the fiber ends and the outermost nucleosomes
         are not linkers. For each molecule, the expected number of
         linkers of each length under the posterior is computed exactly
@@ -1034,10 +1034,10 @@ class SimAnalysis:
         _check_nworker(dataset, nworker)
         batch_size = _resolve_batch_size(dataset, batch_size)
         regions = _normalize_regions(regions, default_regions=dataset.regions)
-        nucbp = dataset.settings["nucbp"]
+        lnuc = dataset.settings["lnuc"]
         windows = {
             region: _linker_window(
-                window, region, dataset.nbp[region], nucbp, trim
+                window, region, dataset.nbp[region], lnuc, trim
             )
             for region in regions
         }
@@ -1512,7 +1512,7 @@ class SimAnalysis:
         """
         configs = self.extract_config(dataset, region=region, name=name)
         nbp = dataset.nbp[region]
-        nuc_map = NucFiberMap(nbp=nbp, nucbp=dataset.settings["nucbp"])
+        nuc_map = NucFiberMap(nbp=nbp, lnuc=dataset.settings["lnuc"])
         out = H5Array.create(
             (len(configs), nbp), dtype=np.float32, dir=tmp_dir
         )

@@ -17,7 +17,7 @@ from catella.simulation.config import SimSettings
 _MAX_CHUNK_SIZE = 1024
 
 # Physical parameters stored as attrs on the '/params' group of a run file
-_PARAM_NAMES = ("nucbp", "nbp", "llink", "elink", "mu")
+_PARAM_NAMES = ("lnuc", "nbp", "llink", "elink", "mu")
 
 
 def _read_attrs(group, names):
@@ -41,13 +41,17 @@ def _read_attrs(group, names):
     KeyError
         If an attr is missing.
     """
-    return {name: group.attrs[name] for name in names}
+    attrs = dict(group.attrs)
+    # Old files stored the nucleosome footprint as 'nucbp'
+    if "lnuc" not in attrs and "nucbp" in attrs:
+        attrs["lnuc"] = attrs["nucbp"]
+    return {name: attrs[name] for name in names}
 
 
 def _write_tm_samples(
     out_file: str | Path,
     *,
-    nucbp: int,
+    lnuc: int,
     nbp: int,
     llink: int,
     elink: float,
@@ -67,7 +71,7 @@ def _write_tm_samples(
     ----------
     out_file : str or Path
         Destination HDF5 file.
-    nucbp, nbp, llink, elink, mu : int or float
+    lnuc, nbp, llink, elink, mu : int or float
         Physical parameters, stored as attrs on '/params'.
     logz : float
         The log partition function for this molecule.
@@ -91,7 +95,7 @@ def _write_tm_samples(
     flat, offset = _pack_jagged(positions)
     with h5py.File(out_file, "w") as f:
         gparams = f.create_group("params")
-        gparams.attrs["nucbp"] = nucbp
+        gparams.attrs["lnuc"] = lnuc
         gparams.attrs["nbp"] = nbp
         gparams.attrs["llink"] = llink
         gparams.attrs["elink"] = elink
@@ -108,7 +112,7 @@ def _write_tm_samples(
 def _write_mcmc_params(
     h5file: h5py.File,
     *,
-    nucbp: int,
+    lnuc: int,
     nbp: int,
     llink: int,
     elink: float,
@@ -125,7 +129,7 @@ def _write_mcmc_params(
     ----------
     h5file : h5py.File
         The run's HDF5 file, open for writing.
-    nucbp, nbp, llink : int
+    lnuc, nbp, llink : int
         Nucleosome size, fiber length, and linker length in base pairs.
     elink, mu : float
         Linker repulsion energy and chemical potential.
@@ -133,7 +137,7 @@ def _write_mcmc_params(
         The seed of the run.
     """
     g = h5file.create_group("params")
-    g.attrs["nucbp"] = np.int32(nucbp)
+    g.attrs["lnuc"] = np.int32(lnuc)
     g.attrs["nbp"] = np.int32(nbp)
     g.attrs["llink"] = np.int32(llink)
     g.attrs["elink"] = np.float64(elink)
@@ -187,7 +191,7 @@ def _read_mcmc_file(sim_file):
     Returns
     -------
     dict of str to Any
-        The parameters ('nucbp', 'nbp', 'llink', 'elink', 'mu', 'seed')
+        The parameters ('lnuc', 'nbp', 'llink', 'elink', 'mu', 'seed')
         and observables ('time', 'energy', 'temp' as arrays, 'position'
         as a tuple of arrays, one per frame). A missing 'time', 'energy',
         or 'temp' observable is nan.
@@ -345,6 +349,9 @@ def _read_settings(group):
         The settings.
     """
     attrs = dict(group.attrs.items())
+    # Old files stored the nucleosome footprint as 'nucbp'
+    if "nucbp" in attrs:
+        attrs["lnuc"] = attrs.pop("nucbp")
     if isinstance(attrs["llink"], str):
         attrs["llink"] = json.loads(attrs["llink"])
     return SimSettings(**attrs)

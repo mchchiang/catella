@@ -56,7 +56,7 @@ def _write_fasta(path, records):
 
 def _settings_dict(**overrides):
     defaults = {
-        "nucbp": 5,
+        "lnuc": 5,
         "llink": 2,
         "elink": 1.0,
         "mu": -1.0,

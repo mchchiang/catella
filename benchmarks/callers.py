@@ -574,7 +574,7 @@ def run_catella(
         raise ValueError(f"llink must be an integer or 'ml', got {llink!r}")
     optional = {"elink": elink, "emax": emax}
     settings = SimSettings(
-        nucbp=147,
+        lnuc=147,
         llink=0 if fit else llink,
         mu=mu,
         end_temp=1.0,

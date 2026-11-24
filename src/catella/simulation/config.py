@@ -22,7 +22,7 @@ class SimSettings:
     method='tm'.
     """
 
-    nucbp: int
+    lnuc: int
     """The number of base pairs occupied by a single nucleosome."""
 
     llink: int | Mapping[str, int]
@@ -132,7 +132,8 @@ class SimSettings:
         .. note::
 
            The input file must be a mapping where keys correspond exactly
-           to the field names defined in this class (e.g., 'nucbp', 'mu').
+           to the field names defined in this class (e.g., 'lnuc', 'mu';
+           the older name 'nucbp' is also read).
            Values are scalars, except that `llink` can be a mapping of
            region to value. YAML support requires the `PyYAML` package
            to be installed.
@@ -151,6 +152,9 @@ class SimSettings:
                 raise ValueError(
                     f"unsupported file format: {config_file.suffix}"
                 )
+        # Old settings files named the nucleosome footprint 'nucbp'
+        if "nucbp" in data and "lnuc" not in data:
+            data["lnuc"] = data.pop("nucbp")
         # YAML reads a region named 601 as an integer key
         if isinstance(data.get("llink"), Mapping):
             data["llink"] = {str(k): v for k, v in data["llink"].items()}

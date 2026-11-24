@@ -21,7 +21,7 @@ from catella_cpp import Dump
 
 def _make_settings(**overrides):
     defaults = {
-        "nucbp": 147,
+        "lnuc": 147,
         "llink": 20,
         "elink": 1.0,
         "mu": -1.0,
@@ -89,7 +89,7 @@ class TestNormalizeMethProb:
 
 
 class TestStartPositions:
-    def test_keeps_first_nbp_minus_nucbp_plus_one_columns(self):
+    def test_keeps_first_nbp_minus_lnuc_plus_one_columns(self):
         block = np.arange(20.0).reshape(2, 10)
         assert _start_positions(block, 4).shape == (2, 7)
 
@@ -223,17 +223,17 @@ class TestResolveSettings:
     def test_loads_from_path(self, tmp_path):
         path = tmp_path / "settings.json"
         path.write_text(
-            '{"nucbp": 147, "llink": 20, "elink": 1.0, "mu": -1.0, '
+            '{"lnuc": 147, "llink": 20, "elink": 1.0, "mu": -1.0, '
             '"end_temp": 0.1, "emax": 5.0}'
         )
         out = _resolve_settings(path)
         assert isinstance(out, SimSettings)
-        assert out.nucbp == 147
+        assert out.lnuc == 147
         assert _resolve_settings(str(path)) == out
 
     def test_invalid_type_raises(self):
         with pytest.raises(TypeError):
-            _resolve_settings({"nucbp": 147})
+            _resolve_settings({"lnuc": 147})
 
 
 class TestCheckLlink:

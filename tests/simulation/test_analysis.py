@@ -17,7 +17,7 @@ from catella_cpp import NucPosTM
 
 def _make_settings(**overrides):
     defaults = {
-        "nucbp": 147,
+        "lnuc": 147,
         "llink": 20,
         "elink": 1.0,
         "mu": -1.0,
@@ -341,7 +341,7 @@ def _calls_dataset(tmp_path, nmol=8, nbp=30):
 
 def _footprint_matrix(dataset, name):
     nbp = dataset.nbp["chr1"]
-    nuc_map = NucFiberMap(nbp=nbp, nucbp=dataset.settings["nucbp"])
+    nuc_map = NucFiberMap(nbp=nbp, lnuc=dataset.settings["lnuc"])
     configs = SimAnalysis().extract_config(dataset, region="chr1", name=name)
     return np.array(
         [
@@ -435,7 +435,7 @@ class TestSortByConfig:
 
 def _make_tm_settings(**overrides):
     defaults = {
-        "nucbp": 3,
+        "lnuc": 3,
         "llink": 2,
         "elink": 1.0,
         "mu": 0.5,
@@ -462,17 +462,17 @@ def _make_tm_dataset(tmp_path, *, nmol=3, nbp=20, seed=1, nsim=0, **kwargs):
     )
 
 
-def _brute_force_occup_meann(nucbp, llink, elink, mu, edata, temp=1.0):
+def _brute_force_occup_meann(lnuc, llink, elink, mu, edata, temp=1.0):
     """Minimal brute-force reference, matching the one in
     test_tm_bruteforce.py, duplicated here per this file's existing
     convention of self-contained helpers."""
     import math
 
     nbp = len(edata)
-    npos = nbp - nucbp + 1
+    npos = nbp - lnuc + 1
 
     def erep(gap):
-        i = gap - nucbp
+        i = gap - lnuc
         if i >= llink:
             return 0.0
         sr6 = (llink / (i + 1.0)) ** 6 - 1.0
@@ -494,14 +494,14 @@ def _brute_force_occup_meann(nucbp, llink, elink, mu, edata, temp=1.0):
                 start_weight[x] += w
             return
         recurse(idx + 1, placed)
-        if not placed or idx - placed[-1] >= nucbp:
+        if not placed or idx - placed[-1] >= lnuc:
             recurse(idx + 1, [*placed, idx])
 
     recurse(0, [])
     start_prob = [w / total_weight for w in start_weight]
     occup = [0.0] * nbp
     for x in range(npos):
-        for y in range(x, min(x + nucbp, nbp)):
+        for y in range(x, min(x + lnuc, nbp)):
             occup[y] += start_prob[x]
     mean_n = sum(start_prob)
     return np.array(occup), mean_n
@@ -599,7 +599,7 @@ class TestComputeOccupTM:
         for mol in range(2):
             edata = dataset.edata["chr1"][mol]
             expected_occup, _ = _brute_force_occup_meann(
-                settings.nucbp,
+                settings.lnuc,
                 settings.llink,
                 settings.elink,
                 settings.mu,
@@ -702,7 +702,7 @@ class TestComputeMeanNnucTM:
         for mol in range(2):
             edata = dataset.edata["chr1"][mol]
             _, expected_mean = _brute_force_occup_meann(
-                settings.nucbp,
+                settings.lnuc,
                 settings.llink,
                 settings.elink,
                 settings.mu,
@@ -729,17 +729,17 @@ class TestComputeVarNnuc:
         df = dataset.analysis["chr1"]["var_nnuc"]
 
         edata = dataset.edata["chr1"][0]
-        nucbp, llink, elink, mu = (
-            settings.nucbp,
+        lnuc, llink, elink, mu = (
+            settings.lnuc,
             settings.llink,
             settings.elink,
             settings.mu,
         )
         nbp = len(edata)
-        npos = nbp - nucbp + 1
+        npos = nbp - lnuc + 1
 
         def erep(gap):
-            i = gap - nucbp
+            i = gap - lnuc
             if i >= llink:
                 return 0.0
             sr6 = (llink / (i + 1.0)) ** 6 - 1.0
@@ -763,7 +763,7 @@ class TestComputeVarNnuc:
                 mean_n2_num += w * n * n
                 return
             recurse(idx + 1, placed)
-            if not placed or idx - placed[-1] >= nucbp:
+            if not placed or idx - placed[-1] >= lnuc:
                 recurse(idx + 1, [*placed, idx])
 
         recurse(0, [])
@@ -799,7 +799,7 @@ class TestComputeVarOccup:
 
 def _direct_tm(dataset, mol, settings):
     tm = NucPosTM(
-        settings.nucbp,
+        settings.lnuc,
         dataset.nbp["chr1"],
         settings.llink,
         settings.elink,

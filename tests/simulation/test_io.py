@@ -26,7 +26,7 @@ from catella_cpp import Dump
 
 def _make_settings(**overrides):
     defaults = {
-        "nucbp": 147,
+        "lnuc": 147,
         "llink": 20,
         "elink": 1.0,
         "mu": -1.0,
@@ -71,12 +71,18 @@ class TestReadAttrs:
         ):
             _read_attrs(f.create_group("g"), ["a"])
 
+    def test_old_nucbp_attr_is_read_as_lnuc(self, tmp_path):
+        with h5py.File(tmp_path / "f.h5", "w") as f:
+            g = f.create_group("g")
+            g.attrs["nucbp"] = 147
+            assert _read_attrs(g, ["lnuc"]) == {"lnuc": 147}
+
 
 class TestReadMCMCFile:
     def _write(self, path, values):
         with h5py.File(path, "w") as f:
             _write_mcmc_params(
-                f, nucbp=147, nbp=40, llink=20, elink=1.0, mu=-1.0, seed=9
+                f, lnuc=147, nbp=40, llink=20, elink=1.0, mu=-1.0, seed=9
             )
             _write_mcmc_data(f, values)
 
@@ -94,7 +100,7 @@ class TestReadMCMCFile:
             },
         )
         out = _read_mcmc_file(path)
-        assert out["nucbp"] == 147
+        assert out["lnuc"] == 147
         assert out["seed"] == 9
         np.testing.assert_array_equal(out["time"], [0, 1])
         np.testing.assert_array_equal(out["temp"], [1.0, 0.5])
@@ -122,7 +128,7 @@ class TestReadTMFile:
         path = tmp_path / "tm.h5"
         _write_tm_samples(
             path,
-            nucbp=147,
+            lnuc=147,
             nbp=300,
             llink=10,
             elink=1.0,
@@ -137,7 +143,7 @@ class TestReadTMFile:
         assert arrays["logz"] == pytest.approx(12.5)
 
         sample = _tm_sample_fields(arrays, 1)
-        assert sample["nucbp"] == 147
+        assert sample["lnuc"] == 147
         assert sample["mu"] == pytest.approx(-2.0)
         assert sample["seed"] == 22
         assert sample["energy"] == pytest.approx(-1.5)
@@ -177,6 +183,15 @@ class TestSettings:
         with h5py.File(tmp_path / "f.h5", "w") as f:
             _write_settings(f.create_group("s"), settings)
             assert _read_settings(f["s"]) == settings
+
+    def test_old_nucbp_attr_is_read_as_lnuc(self, tmp_path):
+        settings = _make_settings()
+        with h5py.File(tmp_path / "f.h5", "w") as f:
+            g = f.create_group("s")
+            _write_settings(g, settings)
+            g.attrs["nucbp"] = g.attrs["lnuc"]
+            del g.attrs["lnuc"]
+            assert _read_settings(g) == settings
 
     def test_none_fields_skipped(self, tmp_path):
         settings = _make_settings(start_temp=None)

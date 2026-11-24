@@ -147,9 +147,11 @@ fields exactly (unknown keys raise ``TypeError``):
    * - Field
      - Type
      - Description
-   * - ``nucbp``
+   * - ``lnuc``
      - int
-     - Base pairs occupied by one bound nucleosome (e.g. 147).
+     - Base pairs occupied by one bound nucleosome (e.g. 147); should
+       equal the ``lnuc`` used for the probabilities. Named ``nucbp``
+       in older files (still read).
    * - ``llink``
      - int or mapping
      - Soft minimum linker DNA length (bp) between nucleosomes, enforced by
@@ -356,7 +358,8 @@ Each per-run raw file (``SimData``, written by ``SimManager``) has:
 
 .. code-block:: text
 
-   /params   group (attrs only): nucbp, nbp, llink, elink, mu, seed
+   /params   group (attrs only): lnuc, nbp, llink, elink, mu, seed
+             (lnuc is nucbp in older files)
    /data     group
        time              1D array, recorded sweep/time points
        energy            1D float array, total energy at each point

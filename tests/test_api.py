@@ -20,7 +20,7 @@ from scipy.special import logit
 
 def _settings():
     return SimSettings(
-        nucbp=5,
+        lnuc=5,
         llink=2,
         elink=1.0,
         mu=-1.0,
@@ -695,7 +695,7 @@ class TestEstimateLlink:
 
     def _settings(self):
         return SimSettings(
-            nucbp=5, llink=99, elink=25.0, mu=0.0, end_temp=1.0, emax=100.0
+            lnuc=5, llink=99, elink=25.0, mu=0.0, end_temp=1.0, emax=100.0
         )
 
     def test_is_exported(self):

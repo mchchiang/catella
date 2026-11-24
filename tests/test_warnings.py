@@ -22,7 +22,7 @@ def _llink_exp(linker=10, nmol=50, nbp=200):
 
 def _llink_settings():
     return SimSettings(
-        nucbp=5, llink=99, elink=25.0, mu=0.0, end_temp=1.0, emax=100.0
+        lnuc=5, llink=99, elink=25.0, mu=0.0, end_temp=1.0, emax=100.0
     )
 
 

@@ -75,7 +75,7 @@ def _normalize_meth_prob(meth_prob, regions):
     return out
 
 
-def _start_positions(block, nucbp):
+def _start_positions(block, lnuc):
     """
     Return the columns of `block` where a nucleosome can start.
 
@@ -83,16 +83,16 @@ def _start_positions(block, nucbp):
     ----------
     block : np.ndarray
         2D array, molecules by base pairs.
-    nucbp : int
+    lnuc : int
         The nucleosome footprint size.
 
     Returns
     -------
     np.ndarray
-        The first `nbp - nucbp + 1` columns, or all columns if the
+        The first `nbp - lnuc + 1` columns, or all columns if the
         molecules are shorter than a nucleosome.
     """
-    npos = block.shape[-1] - nucbp + 1
+    npos = block.shape[-1] - lnuc + 1
     return block[..., :npos] if npos > 0 else block
 
 
@@ -123,7 +123,7 @@ def _check_fill_nan(fill_nan):
         )
 
 
-def _prepare_rows(block, nucbp, region, fill_nan=None):
+def _prepare_rows(block, lnuc, region, fill_nan=None):
     """
     Find the molecules of `block` with no data and fill the others.
 
@@ -136,7 +136,7 @@ def _prepare_rows(block, nucbp, region, fill_nan=None):
     ----------
     block : np.ndarray
         2D methylation probability, molecules by base pairs.
-    nucbp : int
+    lnuc : int
         The nucleosome footprint size.
     region : str
         The region of `block`, for error messages.
@@ -160,9 +160,9 @@ def _prepare_rows(block, nucbp, region, fill_nan=None):
         some but not all start positions.
     """
     _check_fill_nan(fill_nan)
-    nan = np.isnan(_start_positions(block, nucbp))
+    nan = np.isnan(_start_positions(block, lnuc))
     no_data = nan.all(axis=1)
-    if block.shape[1] < nucbp:
+    if block.shape[1] < lnuc:
         return block, no_data
     partial = np.flatnonzero(nan.any(axis=1) & ~no_data)
     if not partial.size:
@@ -176,7 +176,7 @@ def _prepare_rows(block, nucbp, region, fill_nan=None):
             "them upstream (e.g., fill_edge or nan_method)"
         )
     block = np.array(block, dtype=np.float64)
-    starts = _start_positions(block, nucbp)
+    starts = _start_positions(block, lnuc)
     sub = starts[partial]
     if isinstance(fill_nan, str):
         value = np.nanmean(sub, axis=1, keepdims=True)

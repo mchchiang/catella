@@ -19,7 +19,7 @@ from tests.simulation.test_tm_bruteforce import _brute_force
 
 def _settings(**overrides):
     values = {
-        "nucbp": 20,
+        "lnuc": 20,
         "llink": 7,
         "elink": 25.0,
         "mu": 0.0,
@@ -39,12 +39,12 @@ def _exp(arrays):
     return exp
 
 
-def _planted(nmol, linker, nucbp=20, nbp=600, seed=0):
+def _planted(nmol, linker, lnuc=20, nbp=600, seed=0):
     rng = np.random.default_rng(seed)
     energy = np.full((nmol, nbp), 5.0) + rng.normal(0, 0.1, (nmol, nbp))
     for i in range(nmol):
-        start = int(rng.integers(0, nucbp + linker))
-        energy[i, start : nbp - nucbp + 1 : nucbp + linker] = -20.0
+        start = int(rng.integers(0, lnuc + linker))
+        energy[i, start : nbp - lnuc + 1 : lnuc + linker] = -20.0
     return expit(energy)
 
 
@@ -56,17 +56,17 @@ class TestEvidence:
     @pytest.mark.parametrize("llink", [0, 1, 2, 3])
     def test_matches_enumeration(self, llink):
         rng = np.random.default_rng(llink)
-        nucbp, elink, mu = 3, 1.5, 0.5
+        lnuc, elink, mu = 3, 1.5, 0.5
         energies = rng.normal(0, 1, (3, 14))
         table = _llink_evidence(
             _exp({"c": expit(energies)}),
-            _settings(nucbp=nucbp, elink=elink, mu=mu),
+            _settings(lnuc=lnuc, elink=elink, mu=mu),
             llinks=[llink],
         )
         zero = [0.0] * 14
         want = sum(
-            _brute_force(nucbp, llink, elink, mu, e.tolist())[0]
-            - _brute_force(nucbp, llink, elink, mu, zero)[0]
+            _brute_force(lnuc, llink, elink, mu, e.tolist())[0]
+            - _brute_force(lnuc, llink, elink, mu, zero)[0]
             for e in energies
         )
         assert table["evidence"].iloc[0] == pytest.approx(want)
@@ -210,7 +210,7 @@ class TestEvidence:
         path.write_text(
             json.dumps(
                 {
-                    "nucbp": 20,
+                    "lnuc": 20,
                     "llink": 7,
                     "elink": 25.0,
                     "mu": 0.0,

@@ -257,7 +257,7 @@ def _compute_edata(settings, meth_prob, regions):
     for region in regions:
         prob = meth_prob[region]
         model = NucPosMCMC(
-            settings.nucbp,
+            settings.lnuc,
             prob.shape[1],
             settings.for_region(region).llink,
             settings.elink,

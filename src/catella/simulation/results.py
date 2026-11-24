@@ -39,13 +39,13 @@ from catella.simulation.config import SimSettings
 MAX_OPEN_FILES = Semaphore(500)
 
 
-def _check_run_params(nucbp, nbp, llink, seed):
+def _check_run_params(lnuc, nbp, llink, seed):
     """
     Check the physical parameters and seed of a run.
 
     Parameters
     ----------
-    nucbp, nbp : int
+    lnuc, nbp : int
         The nucleosome size and fiber length in base pairs.
     llink : int
         The linker length in base pairs.
@@ -55,11 +55,11 @@ def _check_run_params(nucbp, nbp, llink, seed):
     Raises
     ------
     ValueError
-        If `nucbp`, `nbp`, or `seed` is not positive, or `llink` is
+        If `lnuc`, `nbp`, or `seed` is not positive, or `llink` is
         negative.
     """
-    if nucbp <= 0 or nbp <= 0 or seed <= 0:
-        raise ValueError("nucbp, nbp, and seed must be positive")
+    if lnuc <= 0 or nbp <= 0 or seed <= 0:
+        raise ValueError("lnuc, nbp, and seed must be positive")
     if llink < 0:
         raise ValueError(f"llink must be non-negative, got {llink}")
 
@@ -76,7 +76,7 @@ def _public_repr(obj):
     Returns
     -------
     str
-        For example "SimTMData(nucbp, nbp, ...)".
+        For example "SimTMData(lnuc, nbp, ...)".
     """
     cls = type(obj)
     names = [name for name in cls.__slots__ if not name.startswith("_")]
@@ -104,7 +104,7 @@ class SimMCMCData:
        HDF5 files.
     """
 
-    nucbp: int
+    lnuc: int
     """The number of base pairs occupied by a single nucleosome."""
 
     nbp: int
@@ -301,7 +301,7 @@ class SimMCMCData:
     @classmethod
     def _create(cls, **kwargs) -> Self:
         _check_run_params(
-            kwargs["nucbp"], kwargs["nbp"], kwargs["llink"], kwargs["seed"]
+            kwargs["lnuc"], kwargs["nbp"], kwargs["llink"], kwargs["seed"]
         )
         obs = ("time", "energy", "position", "temp")
         if len({len(kwargs[name]) for name in obs}) > 1:
@@ -328,7 +328,7 @@ class SimTMData:
        :attr:`SimDataset.raw`.
     """
 
-    nucbp: int
+    lnuc: int
     """The number of base pairs occupied by a single nucleosome."""
 
     nbp: int
@@ -376,7 +376,7 @@ class SimTMData:
     @classmethod
     def _create(cls, **kwargs) -> Self:
         _check_run_params(
-            kwargs["nucbp"], kwargs["nbp"], kwargs["llink"], kwargs["seed"]
+            kwargs["lnuc"], kwargs["nbp"], kwargs["llink"], kwargs["seed"]
         )
         return cls(**kwargs, _internal=True)
 

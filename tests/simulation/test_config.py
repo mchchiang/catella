@@ -9,7 +9,7 @@ from catella.simulation.config import SimSettings
 
 def _values(**overrides):
     values = {
-        "nucbp": 20,
+        "lnuc": 20,
         "llink": 7,
         "elink": 25.0,
         "mu": 0.0,
@@ -104,3 +104,10 @@ class TestLoad:
         path = tmp_path / "settings.json"
         path.write_text(json.dumps(_values()))
         assert SimSettings.load(path).llink == 7
+
+    def test_old_nucbp_key_is_read_as_lnuc(self, tmp_path):
+        values = _values()
+        values["nucbp"] = values.pop("lnuc")
+        path = tmp_path / "settings.json"
+        path.write_text(json.dumps(values))
+        assert SimSettings.load(path).lnuc == 20

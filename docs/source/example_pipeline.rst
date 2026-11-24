@@ -85,7 +85,7 @@ commentary. See :doc:`tutorials/tut01_meth_prob` and
                                             percentile=99.0)
 
    # Set simulation parameters
-   settings = SimSettings(nucbp=147,
+   settings = SimSettings(lnuc=147,
                           llink=50,
 			  elink=25.0,
 			  mu=0.0,

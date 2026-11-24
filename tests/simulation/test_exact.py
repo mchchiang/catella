@@ -23,7 +23,7 @@ from catella_cpp import NucPosTM
 
 def _make_tm_settings(**overrides):
     defaults = {
-        "nucbp": 3,
+        "lnuc": 3,
         "llink": 2,
         "elink": 1.0,
         "mu": 0.5,

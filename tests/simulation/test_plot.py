@@ -20,7 +20,7 @@ from catella.simulation.plot import SimPlot, _merge_rows
 
 def _make_settings(**overrides):
     defaults = {
-        "nucbp": 147,
+        "lnuc": 147,
         "llink": 20,
         "elink": 1.0,
         "mu": -1.0,
@@ -672,7 +672,7 @@ def _mcmc_dataset(tmp_path, nmol=2, nsim=3):
 
 def _tm_dataset(tmp_path, nsim=4, name="tm"):
     settings = SimSettings(
-        nucbp=3, llink=2, elink=1.0, mu=0.5, end_temp=1.0, emax=5.0
+        lnuc=3, llink=2, elink=1.0, mu=0.5, end_temp=1.0, emax=5.0
     )
     meth_prob = np.random.default_rng(8).random((2, 20))
     meth_prob[1] = np.nan
@@ -693,7 +693,7 @@ def _image():
 
 def _footprint(dataset, starts):
     nuc_map = NucFiberMap(
-        nbp=dataset.nbp["chr1"], nucbp=dataset.settings["nucbp"]
+        nbp=dataset.nbp["chr1"], lnuc=dataset.settings["lnuc"]
     )
     return nuc_map.project(np.asarray(starts))
 
@@ -844,7 +844,7 @@ class TestPlotSamples:
 
 def _tm_calls_dataset(tmp_path, nmol=5, nsim=0):
     settings = SimSettings(
-        nucbp=3, llink=2, elink=1.0, mu=0.5, end_temp=1.0, emax=5.0
+        lnuc=3, llink=2, elink=1.0, mu=0.5, end_temp=1.0, emax=5.0
     )
     meth_prob = np.random.default_rng(9).random((nmol, 20))
     meth_prob[1] = np.nan
@@ -1196,7 +1196,7 @@ class TestPlotConfigMean:
 
 def _tm_two_region_dataset(tmp_path):
     settings = SimSettings(
-        nucbp=3, llink=2, elink=1.0, mu=0.5, end_temp=1.0, emax=5.0
+        lnuc=3, llink=2, elink=1.0, mu=0.5, end_temp=1.0, emax=5.0
     )
     rng = np.random.default_rng(9)
     chr1 = rng.random((5, 20))
@@ -1222,7 +1222,7 @@ def _config_rows(dataset, region, mols=None):
     configs = SimAnalysis().extract_config(
         dataset, region=region, name="bm", mols=mols
     )
-    nuc_map = NucFiberMap(nbp=dataset.nbp[region], nucbp=3)
+    nuc_map = NucFiberMap(nbp=dataset.nbp[region], lnuc=3)
     return np.array(
         [
             np.full(dataset.nbp[region], -1, dtype=np.int8)

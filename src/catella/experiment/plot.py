@@ -287,10 +287,8 @@ class MethPlot:
                 link, sel = link_mat[region], mols[region]
                 if raw_which is not None:
                     if link is not None:
-                        mol_id = getattr(
-                            exp.raw[region], f"{raw_which}_mol_id"
-                        )
-                        nmol = 0 if mol_id is None else len(mol_id)
+                        source = exp.raw[region].sources.get(raw_which)
+                        nmol = 0 if source is None else source.nmol
                         link, sel = _leaf_order(link, nmol, sel)
                     matrix = exp.to_dense(
                         region, which=raw_which, mols=sel, mask_name=mask_name

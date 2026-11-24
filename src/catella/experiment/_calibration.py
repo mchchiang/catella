@@ -650,7 +650,7 @@ def _region_calibration(
     raw = exp.raw[region]
     ctx = _fold_contexts(exp, region, channels)
     assay = _strand_assay_masks(exp, region, ctx)
-    has_controls = raw.meth_data is not None and raw.unmeth_data is not None
+    has_controls = raw.meth is not None and raw.unmeth is not None
     if norm_by_strand:
         _check_mapped_strands(raw, has_controls)
 

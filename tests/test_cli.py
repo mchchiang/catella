@@ -178,9 +178,9 @@ class TestLoadRaw:
             chromsize=chromsize, test_file=test_file, max_nmol=3, seed=7
         )
         got = MethPrintExperiment.load(cli_out)
-        assert len(got.raw["chr1"].test_mol_id) == 3
-        assert sorted(got.raw["chr1"].test_mol_id) == sorted(
-            expected.raw["chr1"].test_mol_id
+        assert len(got.raw["chr1"].test.mol_id) == 3
+        assert sorted(got.raw["chr1"].test.mol_id) == sorted(
+            expected.raw["chr1"].test.mol_id
         )
 
     def test_balance_strand_matches_api(self, tmp_path):
@@ -218,9 +218,9 @@ class TestLoadRaw:
             seed=7,
         )
         got = MethPrintExperiment.load(cli_out)
-        mol_ids = got.raw["chr1"].test_mol_id
+        mol_ids = got.raw["chr1"].test.mol_id
         assert sum(int(m[1:]) % 2 for m in mol_ids) == 2
-        assert sorted(mol_ids) == sorted(expected.raw["chr1"].test_mol_id)
+        assert sorted(mol_ids) == sorted(expected.raw["chr1"].test.mol_id)
 
     def test_regions_restricts_loaded_regions(self, tmp_path):
         rows = _make_test_rows(nmol=5, nbp=30)

@@ -231,23 +231,30 @@ top-level attributes, ``mtase`` (comma-joined channel labels), ``wrap``
 .. code-block:: text
 
    /raw_data/<region>/metadata     group; attrs: chrom (the region
-                                    name), nbp; optional "refseq"
-                                    dataset (str)
+                                    name), nbp, ref_chrom, ref_start,
+                                    ref_end, ref_strand; optional
+                                    "refseq" dataset (str)
    /raw_data/<region>/data/
        test_mol_id                 string dataset, one entry per
                                     test-channel molecule
        test_data                   save_df sub-group: columns
                                     mol_index, pos, strand, mod_qual,
                                     mod_code
-       unmeth_mol_id, unmeth_data   same shape, optional
-       meth_mol_id, meth_data       same shape, optional
+       test_mol_start, test_mol_end  optional int64, read extent per
+                                    molecule
+       test_gaps, test_gap_offset  optional int64, internal gaps
+                                    (n_gap, 2) and per-molecule offsets
+       unmeth_*, meth_*             same datasets, optional
    /analysis/<region>/<key>         H5Array dataset or save_df sub-group
    /global_analysis/<key>           H5Array dataset or save_df sub-group
 
 Raw per-source tables (``test_data``/``meth_data``/``unmeth_data``)
 have columns ``mol_index`` (row position in ``*_mol_id``), ``pos``
 (bp position, folded if ``wrap``), ``strand``, ``mod_qual`` (the
-confidence score :math:`q_x`), and ``mod_code``.
+confidence score :math:`q_x`), and ``mod_code``. In Python, each source
+is a ``SourceData`` (``exp.raw[region].test``, ``.unmeth``, ``.meth``,
+or ``exp.raw[region].sources[name]``) with ``mol_id``, ``data``,
+``mol_start``, ``mol_end``, ``gaps`` and ``gap_offset``.
 
 Common ``analysis[region]`` keys produced by the processing pipeline:
 

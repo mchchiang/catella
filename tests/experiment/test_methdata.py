@@ -11,6 +11,7 @@ from catella.experiment.methdata import (
     LazyRawDataMap,
     MethPrintData,
     MethPrintExperiment,
+    SourceData,
 )
 from catella.h5_array import H5Array
 
@@ -145,8 +146,8 @@ class TestSaveToExistingFile:
         new.save(path)
 
         loaded = MethPrintExperiment.load(path)
-        assert list(loaded.raw["chr1"].test_mol_id) == list(
-            new._raw_data["chr1"].test_mol_id
+        assert list(loaded.raw["chr1"].test.mol_id) == list(
+            new._raw_data["chr1"].test.mol_id
         )
 
     def test_resaving_same_file_skips_rewriting_raw_data(self, tmp_path):
@@ -518,3 +519,108 @@ class TestToDense:
             _TO_DENSE_ROWS, range(_TO_DENSE_NMOL), _TO_DENSE_NBP
         )
         np.testing.assert_array_equal(out.to_numpy(), expected)
+
+
+def _calls(nmol):
+    return pd.DataFrame(
+        {
+            "mol_index": np.arange(nmol),
+            "pos": np.zeros(nmol, dtype=int),
+            "strand": ["+"] * nmol,
+            "mod_qual": np.full(nmol, 0.5),
+            "mod_code": ["a"] * nmol,
+        }
+    )
+
+
+def _ids(nmol):
+    return np.array([f"m{i}" for i in range(nmol)], dtype=object)
+
+
+class TestSourceData:
+    def test_nmol_and_fields(self):
+        src = SourceData._create(
+            mol_id=_ids(2),
+            data=_calls(2),
+            mol_start=np.array([0, 3]),
+            mol_end=np.array([5, 9]),
+        )
+        assert src.nmol == 2
+        assert src.mol_end.tolist() == [5, 9]
+        assert src.gaps is None
+
+    def test_arrays_are_read_only(self):
+        src = SourceData._create(mol_id=_ids(1), data=_calls(1))
+        with pytest.raises(ValueError):
+            src.mol_id[0] = "x"
+
+    def test_extent_length_mismatch_raises(self):
+        with pytest.raises(ValueError, match="mol_start has length 1"):
+            SourceData._create(
+                name="test",
+                mol_id=_ids(2),
+                data=_calls(2),
+                mol_start=np.array([0]),
+                mol_end=np.array([5, 9]),
+            )
+
+    def test_gaps_without_offset_raises(self):
+        with pytest.raises(ValueError, match="both be given"):
+            SourceData._create(
+                mol_id=_ids(1),
+                data=_calls(1),
+                gaps=np.zeros((0, 2), dtype=np.int64),
+            )
+
+    def test_gap_offset_must_fit(self):
+        with pytest.raises(ValueError, match="gap_offset must have length 3"):
+            SourceData._create(
+                mol_id=_ids(2),
+                data=_calls(2),
+                gaps=np.array([[1, 3]]),
+                gap_offset=np.array([0, 1]),
+            )
+
+    def test_direct_instantiation_raises(self):
+        with pytest.raises(TypeError, match="built by MethPrintData"):
+            SourceData(mol_id=_ids(1), data=_calls(1))
+
+
+class TestMethPrintDataSources:
+    def _raw(self, **controls):
+        kwargs = {"test_mol_id": _ids(2), "test_data": _calls(2)}
+        for name in controls:
+            kwargs[f"{name}_mol_id"] = _ids(1)
+            kwargs[f"{name}_data"] = _calls(1)
+        return MethPrintData._create(region="r", nbp=10, **kwargs)
+
+    def test_test_only(self):
+        raw = self._raw()
+        assert list(raw.sources) == ["test"]
+        assert raw.unmeth is None
+        assert raw.meth is None
+        assert raw.test.nmol == 2
+
+    def test_canonical_order(self):
+        raw = self._raw(meth=True, unmeth=True)
+        assert list(raw.sources) == ["test", "unmeth", "meth"]
+        assert raw.sources["meth"].nmol == 1
+
+    def test_missing_control_is_key_error(self):
+        with pytest.raises(KeyError):
+            self._raw().sources["meth"]
+
+    def test_sources_is_read_only(self):
+        raw = self._raw()
+        with pytest.raises(TypeError):
+            raw.sources["meth"] = raw.test
+
+    def test_save_load_round_trip(self, tmp_path):
+        raw = self._raw(unmeth=True)
+        with h5py.File(tmp_path / "f.h5", "w") as h5:
+            raw._save(h5.create_group("raw_data"))
+        with h5py.File(tmp_path / "f.h5", "r") as h5:
+            loaded = MethPrintData._load(h5["raw_data"], "r")
+        assert list(loaded.sources) == ["test", "unmeth"]
+        assert loaded.test.mol_id.tolist() == ["m0", "m1"]
+        pd.testing.assert_frame_equal(loaded.unmeth.data, raw.unmeth.data)

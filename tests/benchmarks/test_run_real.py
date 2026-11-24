@@ -149,10 +149,10 @@ class TestUnwrapCalls:
             tmp_dir=tmp_path,
         )
         raw = exp.raw["fib"]
-        ids = np.asarray(raw.test_mol_id)
-        theirs = raw.test_data.assign(
-            mol_id=ids[raw.test_data["mol_index"].to_numpy(dtype=int)],
-            pos=raw.test_data["pos"].astype(int),
+        ids = np.asarray(raw.test.mol_id)
+        theirs = raw.test.data.assign(
+            mol_id=ids[raw.test.data["mol_index"].to_numpy(dtype=int)],
+            pos=raw.test.data["pos"].astype(int),
         )
         ours = run_real.unwrap_calls(
             table.drop(columns="chrom"), doubled

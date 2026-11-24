@@ -15,10 +15,8 @@ _UNMAPPED_STRAND_MSG = (
 
 def _mol_strand(exp, region, which):
     """Per-molecule strand labels ('+'/'-'/'.') of `which`."""
-    raw = exp.raw[region]
-    return _strand_of_mol(
-        getattr(raw, f"{which}_data"), len(getattr(raw, f"{which}_mol_id"))
-    )
+    source = exp.raw[region].sources[which]
+    return _strand_of_mol(source.data, source.nmol)
 
 
 def _check_mapped_strands(raw, has_controls):
@@ -28,7 +26,7 @@ def _check_mapped_strands(raw, has_controls):
     """
     sources = ("test", "meth", "unmeth") if has_controls else ("test",)
     for src in sources:
-        if (getattr(raw, f"{src}_data")["strand"] == ".").any():
+        if (raw.sources[src].data["strand"] == ".").any():
             raise ValueError(_UNMAPPED_STRAND_MSG)
 
 
@@ -289,12 +287,10 @@ def _iter_read_sites(
         If `span` is "read" and `which` has no stored read extents.
     """
     raw = exp.raw[region]
+    source = raw.sources[which]
     extent = None
     if span == "read":
-        extent = (
-            getattr(raw, f"{which}_mol_start"),
-            getattr(raw, f"{which}_mol_end"),
-        )
+        extent = (source.mol_start, source.mol_end)
         if extent[0] is None or extent[1] is None:
             raise ValueError(
                 f"span='read' requires read extents, but '{which}' on "
@@ -309,11 +305,9 @@ def _iter_read_sites(
     code = np.where(labels_all == "+", 0, np.where(labels_all == "-", 1, 2))
     stacked = np.stack([assay["+"], assay["-"], assay["."]])
     ctx_ok = ctx != NONE
-    gaps = getattr(raw, f"{which}_gaps")
-    gap_offset = getattr(raw, f"{which}_gap_offset")
-    dense = _dense_batches(
-        getattr(raw, f"{which}_data"), len(keep_all), raw.nbp, batch_size
-    )
+    gaps = source.gaps
+    gap_offset = source.gap_offset
+    dense = _dense_batches(source.data, len(keep_all), raw.nbp, batch_size)
     for start, stop, batch in dense:
         ext = None
         if extent is not None:

@@ -100,12 +100,12 @@ class TestBasicIngestion:
 
         raw1 = exp.raw["chr1"]
         assert raw1.nbp == 100
-        assert sorted(raw1.test_mol_id) == ["m0", "m1", "m2"]
-        assert set(raw1.test_data["pos"]) == {10, 20, 30}
+        assert sorted(raw1.test.mol_id) == ["m0", "m1", "m2"]
+        assert set(raw1.test.data["pos"]) == {10, 20, 30}
 
         raw2 = exp.raw["chr2"]
         assert raw2.nbp == 50
-        assert sorted(raw2.test_mol_id) == ["m0", "m1"]
+        assert sorted(raw2.test.mol_id) == ["m0", "m1"]
         exp.close()
 
     def test_pos_and_mol_index_are_integers_after_reload(self, tmp_path):
@@ -117,7 +117,7 @@ class TestBasicIngestion:
         exp = MethPrintExperiment.load_raw(
             chromsize=chromsize, test_file=test_file
         )
-        df = exp.raw["chr1"].test_data
+        df = exp.raw["chr1"].test.data
         assert np.issubdtype(df["pos"].dtype, np.integer)
         assert np.issubdtype(df["mol_index"].dtype, np.integer)
 
@@ -125,7 +125,7 @@ class TestBasicIngestion:
         exp.save(saved)
         exp.close()
         reloaded = MethPrintExperiment.load(saved)
-        df = reloaded.raw["chr1"].test_data
+        df = reloaded.raw["chr1"].test.data
         assert np.issubdtype(df["pos"].dtype, np.integer)
         assert np.issubdtype(df["mol_index"].dtype, np.integer)
         assert set(df["pos"]) == {10, 20}
@@ -146,7 +146,7 @@ class TestBasicIngestion:
         exp = MethPrintExperiment.load_raw(
             chromsize=chromsize, test_file=test_file
         )
-        codes = exp.raw["chr1"].test_data["mod_code"].tolist()
+        codes = exp.raw["chr1"].test.data["mod_code"].tolist()
         assert sorted(codes) == ["76792", "a"]
         exp.close()
 
@@ -163,7 +163,7 @@ class TestBasicIngestion:
             chromsize=chromsize, test_file=test_file
         )
         assert set(exp.regions) == {"601", "1"}
-        assert sorted(exp.raw["601"].test_mol_id) == ["m0", "m1"]
+        assert sorted(exp.raw["601"].test.mol_id) == ["m0", "m1"]
         assert exp.raw["1"].nbp == 50
         exp.close()
 
@@ -185,12 +185,12 @@ class TestBasicIngestion:
 
         a = (
             exp_a.raw["chr1"]
-            .test_data.sort_values(["mol_index", "pos"])
+            .test.data.sort_values(["mol_index", "pos"])
             .reset_index(drop=True)
         )
         b = (
             exp_b.raw["chr1"]
-            .test_data.sort_values(["mol_index", "pos"])
+            .test.data.sort_values(["mol_index", "pos"])
             .reset_index(drop=True)
         )
         np.testing.assert_array_equal(
@@ -230,13 +230,13 @@ class TestDownsamplingAndWrap:
 
         for region in ("chr1", "chr2"):
             raw = exp.raw[region]
-            assert np.array_equal(np.sort(legacy_ids[region]), raw.test_mol_id)
+            assert np.array_equal(np.sort(legacy_ids[region]), raw.test.mol_id)
             l = (
                 legacy_dfs[region]
                 .sort_values(["mol_index", "pos"])
                 .reset_index(drop=True)
             )
-            n = raw.test_data.sort_values(["mol_index", "pos"]).reset_index(
+            n = raw.test.data.sort_values(["mol_index", "pos"]).reset_index(
                 drop=True
             )
             np.testing.assert_array_equal(
@@ -266,7 +266,7 @@ class TestDownsamplingAndWrap:
         )
         raw = exp.raw["chr1"]
         assert raw.nbp == 50
-        positions = sorted(raw.test_data["pos"].tolist())
+        positions = sorted(raw.test.data["pos"].tolist())
         # upos=10 stays 10 (below threshold); upos=90 -> 100-90-1=9
         assert positions == [9, 10]
         exp.close()
@@ -290,7 +290,7 @@ class TestDownsamplingAndWrap:
 
 
 def _strand_counts(raw):
-    df = raw.test_data
+    df = raw.test.data
     first = df.groupby("mol_index")["strand"].first()
     return first.value_counts().to_dict()
 
@@ -367,7 +367,7 @@ class TestBalanceStrand:
             balance_strand=True,
         )
         raw = exp.raw["chr1"]
-        assert not any(m.startswith("u") for m in raw.test_mol_id)
+        assert not any(m.startswith("u") for m in raw.test.mol_id)
         assert _strand_counts(raw) == {"+": 5, "-": 5}
         exp.close()
 
@@ -383,7 +383,7 @@ class TestBalanceStrand:
         exp_a = MethPrintExperiment.load_raw(**kwargs)
         exp_b = MethPrintExperiment.load_raw(**kwargs)
         assert np.array_equal(
-            exp_a.raw["chr1"].test_mol_id, exp_b.raw["chr1"].test_mol_id
+            exp_a.raw["chr1"].test.mol_id, exp_b.raw["chr1"].test.mol_id
         )
         exp_a.close()
         exp_b.close()
@@ -402,7 +402,7 @@ class TestBalanceStrand:
         raw = exp_wrap.raw["chr1"]
         assert _strand_counts(raw) == {"+": 5, "-": 5}
         assert np.array_equal(
-            exp_plain.raw["chr1"].test_mol_id, raw.test_mol_id
+            exp_plain.raw["chr1"].test.mol_id, raw.test.mol_id
         )
         exp_plain.close()
         exp_wrap.close()
@@ -420,7 +420,7 @@ class TestBalanceStrand:
                 max_nmol=10,
                 balance_strand=True,
             )
-        assert len(exp.raw["chr1"].test_mol_id) == 0
+        assert len(exp.raw["chr1"].test.mol_id) == 0
         assert len(exp.qc()) == 1
         exp.close()
 
@@ -458,8 +458,8 @@ class TestCanonicalCallFiltering:
             chromsize=chromsize, test_file=test_file
         )
         raw = exp.raw["chr1"]
-        assert sorted(raw.test_data["pos"]) == [1, 3]
-        assert "-" not in raw.test_data["mod_code"].to_numpy()
+        assert sorted(raw.test.data["pos"]) == [1, 3]
+        assert "-" not in raw.test.data["mod_code"].to_numpy()
         exp.close()
 
     def test_all_canonical_leaves_molecule_with_no_rows(self, tmp_path):
@@ -473,7 +473,7 @@ class TestCanonicalCallFiltering:
             chromsize=chromsize, test_file=test_file
         )
         raw = exp.raw["chr1"]
-        assert len(raw.test_data) == 0
+        assert len(raw.test.data) == 0
         exp.close()
 
 
@@ -500,7 +500,7 @@ class TestOutOfBoundsRows:
         kwargs = self._setup(tmp_path, with_fasta)
         with pytest.warns(UserWarning, match="dropped 2 row"):
             exp = MethPrintExperiment.load_raw(**kwargs)
-        assert exp.raw["chr1"].test_data["pos"].tolist() == [1]
+        assert exp.raw["chr1"].test.data["pos"].tolist() == [1]
         exp.close()
 
     def test_no_warning_when_in_bounds(self, tmp_path, recwarn):
@@ -541,8 +541,8 @@ class TestNonPrimaryRows:
         with pytest.warns(UserWarning, match="dropped 2 row"):
             exp = self._load(tmp_path, rows)
         raw = exp.raw["chr1"]
-        assert raw.test_data["pos"].tolist() == [10, 20]
-        assert raw.test_mol_end.tolist() == [21]
+        assert raw.test.data["pos"].tolist() == [10, 20]
+        assert raw.test.mol_end.tolist() == [21]
         exp.close()
 
     def test_molecule_with_only_supplementary_rows_not_kept(self, tmp_path):
@@ -552,7 +552,7 @@ class TestNonPrimaryRows:
         ]
         with pytest.warns(UserWarning, match="supplementary"):
             exp = self._load(tmp_path, rows)
-        assert list(exp.raw["chr1"].test_mol_id) == ["m0"]
+        assert list(exp.raw["chr1"].test.mol_id) == ["m0"]
         exp.close()
 
     def test_no_warning_for_primary_rows(self, tmp_path, recwarn):
@@ -561,7 +561,7 @@ class TestNonPrimaryRows:
             ("m1", 50, "chr1", "-", 0.8, "a", 16),
         ]
         exp = self._load(tmp_path, rows)
-        assert sorted(exp.raw["chr1"].test_mol_id) == ["m0", "m1"]
+        assert sorted(exp.raw["chr1"].test.mol_id) == ["m0", "m1"]
         exp.close()
         assert not [w for w in recwarn if "supplementary" in str(w.message)]
 
@@ -586,8 +586,8 @@ class TestColidx:
             chromsize=chromsize, test_file=test_file, colidx=colidx
         )
         raw = exp.raw["chr1"]
-        assert list(raw.test_mol_id) == ["mol1"]
-        assert sorted(raw.test_data["pos"].tolist()) == [5, 6]
+        assert list(raw.test.mol_id) == ["mol1"]
+        assert sorted(raw.test.data["pos"].tolist()) == [5, 6]
         exp.close()
 
 
@@ -672,7 +672,7 @@ class TestRegionSelection:
             chromsize=chromsize, test_file=file_b, **kwargs
         )
         assert np.array_equal(
-            exp_a.raw["chr1"].test_mol_id, exp_b.raw["chr1"].test_mol_id
+            exp_a.raw["chr1"].test.mol_id, exp_b.raw["chr1"].test.mol_id
         )
         exp_a.close()
         exp_b.close()
@@ -927,7 +927,7 @@ class TestStrandConsistency:
             fasta_file=fasta_file,
             mtase="A",
         )
-        assert sorted(exp.raw["chr1"].test_data["pos"].tolist()) == [0, 1]
+        assert sorted(exp.raw["chr1"].test.data["pos"].tolist()) == [0, 1]
         exp.close()
 
     def test_respects_dinucleotide_context(self, tmp_path):
@@ -946,7 +946,7 @@ class TestStrandConsistency:
             fasta_file=fasta_file,
             mtase="CG",
         )
-        assert len(exp.raw["chr1"].test_data) == 0
+        assert len(exp.raw["chr1"].test.data) == 0
         exp.close()
 
     def test_unmapped_strand_rows_kept(self, tmp_path):
@@ -965,7 +965,7 @@ class TestStrandConsistency:
             fasta_file=fasta_file,
             mtase="A",
         )
-        assert len(exp.raw["chr1"].test_data) == 1
+        assert len(exp.raw["chr1"].test.data) == 1
         exp.close()
 
     def test_no_mtase_skips_filtering(self, tmp_path):
@@ -981,7 +981,7 @@ class TestStrandConsistency:
         exp = MethPrintExperiment.load_raw(
             chromsize=chromsize, test_file=test_file, fasta_file=fasta_file
         )
-        assert len(exp.raw["chr1"].test_data) == 1
+        assert len(exp.raw["chr1"].test.data) == 1
         exp.close()
 
     def test_composes_with_wrap_using_unfolded_position(self, tmp_path):
@@ -1002,8 +1002,8 @@ class TestStrandConsistency:
             wrap=True,
         )
         raw = exp.raw["chr1"]
-        assert len(raw.test_data) == 1
-        assert raw.test_data["pos"].iloc[0] == 2  # folded: 8-5-1=2
+        assert len(raw.test.data) == 1
+        assert raw.test.data["pos"].iloc[0] == 2  # folded: 8-5-1=2
         exp.close()
 
     def test_ignore_strand_keeps_row_valid_on_opposite_strand(self, tmp_path):
@@ -1023,7 +1023,7 @@ class TestStrandConsistency:
             mtase="A",
             ignore_strand=True,
         )
-        assert len(exp.raw["chr1"].test_data) == 1
+        assert len(exp.raw["chr1"].test.data) == 1
         exp.close()
 
     def test_ignore_strand_still_drops_row_invalid_on_both_strands(
@@ -1045,7 +1045,7 @@ class TestStrandConsistency:
             mtase="A",
             ignore_strand=True,
         )
-        assert len(exp.raw["chr1"].test_data) == 0
+        assert len(exp.raw["chr1"].test.data) == 0
         exp.close()
 
     def test_ignore_strand_defaults_to_false(self, tmp_path):
@@ -1064,7 +1064,7 @@ class TestStrandConsistency:
             fasta_file=fasta_file,
             mtase="A",
         )
-        assert len(exp.raw["chr1"].test_data) == 0
+        assert len(exp.raw["chr1"].test.data) == 0
         exp.close()
 
 
@@ -1340,16 +1340,11 @@ def _raw_snapshot(exp, regions):
     for region in regions:
         raw = exp.raw[region]
         snapshot[region] = {}
-        for src in ("test", "unmeth", "meth"):
-            mol_id = getattr(raw, f"{src}_mol_id")
-            if mol_id is None:
-                continue
-            data = (
-                getattr(raw, f"{src}_data")
-                .sort_values(["mol_index", "pos"])
-                .reset_index(drop=True)
+        for src, source in raw.sources.items():
+            data = source.data.sort_values(["mol_index", "pos"]).reset_index(
+                drop=True
             )
-            snapshot[region][src] = (sorted(mol_id), data)
+            snapshot[region][src] = (sorted(source.mol_id), data)
     return snapshot
 
 
@@ -1488,10 +1483,8 @@ def _extent_setup(tmp_path, rows, header=_HEADER, sizes=None, name="t"):
 
 
 def _extent(raw, src="test"):
-    return (
-        getattr(raw, f"{src}_mol_start").tolist(),
-        getattr(raw, f"{src}_mol_end").tolist(),
-    )
+    source = raw.sources[src]
+    return source.mol_start.tolist(), source.mol_end.tolist()
 
 
 class TestReadExtents:
@@ -1528,7 +1521,7 @@ class TestReadExtents:
         exp = MethPrintExperiment.load_raw(chromsize=chromsize, test_file=f)
         raw = exp.raw["chr1"]
         assert _extent(raw) == ([5, 70], [51, 71])
-        assert raw.test_data["pos"].tolist() == [20]
+        assert raw.test.data["pos"].tolist() == [20]
         exp.close()
 
     def test_clipped_to_region(self, tmp_path):
@@ -1587,8 +1580,8 @@ class TestReadExtents:
             chromsize=chromsize, test_file=f, wrap=True
         )
         raw = exp.raw["chr1"]
-        assert raw.test_mol_start is None
-        assert raw.test_mol_end is None
+        assert raw.test.mol_start is None
+        assert raw.test.mol_end is None
         exp.close()
 
     def test_multi_file_stores_each_source(self, tmp_path):
@@ -1606,7 +1599,7 @@ class TestReadExtents:
         raw = exp.raw["chr1"]
         assert _extent(raw) == ([10], [40])
         assert _extent(raw, "unmeth") == ([45], [95])
-        assert raw.meth_mol_start is None
+        assert raw.meth is None
         exp.close()
 
     def test_save_load_roundtrip(self, tmp_path):
@@ -1622,7 +1615,7 @@ class TestReadExtents:
         reloaded = MethPrintExperiment.load(saved)
         raw = reloaded.raw["chr1"]
         assert _extent(raw) == ([10, 55], [40, 90])
-        assert raw.test_mol_start.dtype == np.int64
+        assert raw.test.mol_start.dtype == np.int64
         reloaded.close()
 
     def test_old_file_without_extents_loads(self, tmp_path):
@@ -1640,9 +1633,9 @@ class TestReadExtents:
             del gdata["test_mol_end"]
         reloaded = MethPrintExperiment.load(saved)
         raw = reloaded.raw["chr1"]
-        assert raw.test_mol_start is None
-        assert raw.test_mol_end is None
-        assert list(raw.test_mol_id) == ["m0"]
+        assert raw.test.mol_start is None
+        assert raw.test.mol_end is None
+        assert list(raw.test.mol_id) == ["m0"]
         reloaded.close()
 
 
@@ -1663,10 +1656,8 @@ def _gap_rows():
 
 
 def _gaps(raw, src="test"):
-    return (
-        getattr(raw, f"{src}_gaps").tolist(),
-        getattr(raw, f"{src}_gap_offset").tolist(),
-    )
+    source = raw.sources[src]
+    return source.gaps.tolist(), source.gap_offset.tolist()
 
 
 class TestInternalGaps:
@@ -1689,7 +1680,7 @@ class TestInternalGaps:
         exp = self._load(tmp_path, rows)
         raw = exp.raw["chr1"]
         assert _gaps(raw) == ([[11, 50]], [0, 1, 1])
-        assert 50 not in raw.test_data["pos"].tolist()
+        assert 50 not in raw.test.data["pos"].tolist()
         exp.close()
 
     def test_min_gap_threshold(self, tmp_path):
@@ -1700,8 +1691,8 @@ class TestInternalGaps:
     def test_min_gap_none_records_nothing(self, tmp_path):
         exp = self._load(tmp_path, min_gap=None)
         raw = exp.raw["chr1"]
-        assert raw.test_gaps is None
-        assert raw.test_gap_offset is None
+        assert raw.test.gaps is None
+        assert raw.test.gap_offset is None
         exp.close()
 
     @pytest.mark.parametrize("bad", [0, -5, 2.5, True, "20"])
@@ -1712,12 +1703,12 @@ class TestInternalGaps:
     def test_no_read_position_column_records_nothing(self, tmp_path):
         rows = [r[:1] + r[2:] for r in _gap_rows()]
         exp = self._load(tmp_path, rows, header=_HEADER)
-        assert exp.raw["chr1"].test_gaps is None
+        assert exp.raw["chr1"].test.gaps is None
         exp.close()
 
     def test_none_with_wrap(self, tmp_path):
         exp = self._load(tmp_path, wrap=True)
-        assert exp.raw["chr1"].test_gaps is None
+        assert exp.raw["chr1"].test.gaps is None
         exp.close()
 
     def test_unordered_molecule_warns(self, tmp_path):
@@ -1749,7 +1740,7 @@ class TestInternalGaps:
         raw = reloaded.raw["chr1"]
         assert _gaps(raw) == ([[15, 60]], [0, 1, 1])
         assert _gaps(raw, "unmeth") == ([[6, 70]], [0, 1])
-        assert raw.meth_gaps is None
+        assert raw.meth is None
         reloaded.close()
 
 

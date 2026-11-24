@@ -115,7 +115,7 @@ def _score_test_reads(
 
     raw = exp.raw[region]
     out = H5Array.create(
-        (len(raw.test_mol_id), raw.nbp), dtype=np.float64, dir=tmp_dir
+        (raw.test.nmol, raw.nbp), dtype=np.float64, dir=tmp_dir
     )
     batches = _iter_read_sites(
         exp,

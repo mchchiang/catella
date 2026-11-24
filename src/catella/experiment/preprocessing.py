@@ -158,18 +158,18 @@ class MethPrintAnalysis:
         for region in exp.regions:
             raw = exp.raw[region]
             for src in ("test", "meth", "unmeth"):
-                df = getattr(raw, f"{src}_data")
-                if df is None:
+                if src not in raw.sources:
                     continue
+                source = raw.sources[src]
                 keep = (
                     exp.is_kept(region, which=src, mask_name=mask_name)
                     if mask_name is not None
                     else None
                 )
                 exp.analysis[region][f"{src}_{name}"] = _smooth_source(
-                    df,
+                    source.data,
                     raw.nbp,
-                    len(getattr(raw, f"{src}_mol_id")),
+                    source.nmol,
                     keep,
                     **smooth_kwargs,
                 )
@@ -302,9 +302,7 @@ class MethPrintAnalysis:
 
         for region in exp.regions:
             raw = exp.raw[region]
-            has_controls = (
-                raw.meth_data is not None and raw.unmeth_data is not None
-            )
+            has_controls = raw.meth is not None and raw.unmeth is not None
             srcs = ("test", "meth", "unmeth") if has_controls else ("test",)
             arrs = {
                 src: _masked_smoothed(
@@ -319,7 +317,7 @@ class MethPrintAnalysis:
                     _check_mapped_strands(raw, has_controls)
                     labels = {
                         src: _strand_of_mol(
-                            getattr(raw, f"{src}_data"), arrs[src].shape[0]
+                            raw.sources[src].data, arrs[src].shape[0]
                         )
                         for src in srcs
                     }

@@ -1960,7 +1960,7 @@ class TestModelProbQThres:
 
     def test_does_not_modify_raw_scores(self):
         exp = self._run(q_thres=0.5)
-        qual = exp.raw["chr1"].test_data["mod_qual"].to_numpy()
+        qual = exp.raw["chr1"].test.data["mod_qual"].to_numpy()
         assert ((qual > 0.0) & (qual < 1.0)).any()
 
     @pytest.mark.parametrize("q_thres", [0.0, -0.1, 1.5])
@@ -2643,11 +2643,10 @@ class TestModelProbMissingCalls:
     def _with_extents(self, exp, extent_of):
         raw = exp.raw["chr1"]
         kwargs = {}
-        for src in ("test", "meth", "unmeth"):
-            mol_id = getattr(raw, f"{src}_mol_id")
-            kwargs[f"{src}_mol_id"] = mol_id
-            kwargs[f"{src}_data"] = getattr(raw, f"{src}_data")
-            start, end = extent_of(len(mol_id), raw.nbp)
+        for src, source in raw.sources.items():
+            kwargs[f"{src}_mol_id"] = source.mol_id
+            kwargs[f"{src}_data"] = source.data
+            start, end = extent_of(source.nmol, raw.nbp)
             kwargs[f"{src}_mol_start"] = start
             kwargs[f"{src}_mol_end"] = end
         new_raw = MethPrintData._create(
@@ -2707,12 +2706,12 @@ class TestModelProbMissingCalls:
             region="chr1",
             nbp=raw.nbp,
             refseq=raw.refseq,
-            test_mol_id=raw.test_mol_id,
-            test_data=edit(raw.test_data),
-            meth_mol_id=raw.meth_mol_id,
-            meth_data=raw.meth_data,
-            unmeth_mol_id=raw.unmeth_mol_id,
-            unmeth_data=raw.unmeth_data,
+            test_mol_id=raw.test.mol_id,
+            test_data=edit(raw.test.data),
+            meth_mol_id=raw.meth.mol_id,
+            meth_data=raw.meth.data,
+            unmeth_mol_id=raw.unmeth.mol_id,
+            unmeth_data=raw.unmeth.data,
         )
         return MethPrintExperiment._create(_raw_data={"chr1": new_raw})
 

@@ -602,7 +602,7 @@ def run_catella(
     catella.compute_occup(sim)
     occ = np.asarray(sim.analysis[region]["occup"][:], dtype=np.float32)
     count = np.asarray(sim.analysis[region]["mean_nnuc"][:]).ravel()
-    mol_ids = np.asarray(exp.raw[region].test_mol_id)
+    mol_ids = np.asarray(exp.raw[region].test.mol_id)
     return Calls(
         mol_ids, occ, count, llink=settings.llink, fit_time=fit_time
     )

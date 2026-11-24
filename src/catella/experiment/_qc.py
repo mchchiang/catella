@@ -75,9 +75,9 @@ def _source_stats(exp, region, src, site_masks, percentiles, mask_name):
         `exp.ignore_strand`), `frac_masked`, and `dropout` (percentiles
         per channel name, plus "all" pooled).
     """
-    raw = exp.raw[region]
-    df = getattr(raw, f"{src}_data")
-    nmol_all = len(getattr(raw, f"{src}_mol_id"))
+    source = exp.raw[region].sources[src]
+    df = source.data
+    nmol_all = source.nmol
     keep = exp.is_kept(region, which=src, mask_name=mask_name)
     strand = _strand_of_mol(df, nmol_all)
     kept = strand[keep]
@@ -218,9 +218,9 @@ def _region_qc_rows(exp, region, codes, percentiles, mask_name, batch_size):
             f"no refseq available for region '{region}'; "
             "required to determine methylatable positions"
         )
-    if raw.test_data is None:
+    if raw.test is None:
         raise ValueError(f"no 'test' data available for region '{region}'")
-    sources = [s for s in _QC_SOURCES if getattr(raw, f"{s}_data") is not None]
+    sources = [s for s in _QC_SOURCES if s in raw.sources]
 
     site_masks = _channel_site_masks(raw.refseq, codes)
     if exp.wrap:

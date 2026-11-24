@@ -55,11 +55,7 @@ def _resolve_sources(raw, which):
     """
     if which is not None:
         return [which]
-    return [
-        src
-        for src in ("test", "meth", "unmeth")
-        if getattr(raw, f"{src}_data") is not None
-    ]
+    return [src for src in ("test", "meth", "unmeth") if src in raw.sources]
 
 
 def _channel_site_masks(refseq, channels):

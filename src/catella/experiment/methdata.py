@@ -60,6 +60,104 @@ _DENSE_BYTES_PER_CELL = 72
 _DENSE_WARN_BYTES = 10**9
 
 
+# Data sources of an experiment, in their canonical order
+_SOURCE_NAMES = ("test", "unmeth", "meth")
+
+
+@_add_frozen_properties
+@dataclass(frozen=True, slots=True, init=False, eq=False)
+class SourceData:
+    """
+    Raw molecules and calls of one data source (test, unmeth or meth).
+
+    .. note::
+       Built by `MethPrintData`; not meant to be created directly.
+    """
+
+    _frozen_mol_id: np.ndarray = field(
+        metadata={"doc": "np.ndarray: Read id of each molecule."}
+    )
+
+    _frozen_data: pd.DataFrame = field(
+        metadata={
+            "doc": "pd.DataFrame: Calls, with columns `mol_index`, `pos`, "
+            "`strand`, `mod_qual` and `mod_code`."
+        }
+    )
+
+    _frozen_mol_start: np.ndarray | None = field(
+        metadata={
+            "doc": "np.ndarray: Start (bp) of each molecule's read "
+            "extent, or None if not recorded."
+        }
+    )
+
+    _frozen_mol_end: np.ndarray | None = field(
+        metadata={
+            "doc": "np.ndarray: End (bp, exclusive) of each molecule's "
+            "read extent, or None if not recorded."
+        }
+    )
+
+    _frozen_gaps: np.ndarray | None = field(
+        metadata={
+            "doc": "np.ndarray: Internal gaps, shape (n_gap, 2), grouped "
+            "by molecule, or None if not recorded."
+        }
+    )
+
+    _frozen_gap_offset: np.ndarray | None = field(
+        metadata={
+            "doc": "np.ndarray: Length nmol + 1; the gaps of molecule i "
+            "are `gaps[gap_offset[i]:gap_offset[i + 1]]`, or None."
+        }
+    )
+
+    def __init__(self, **kwargs: Any):
+        _init_frozen_fields(
+            self, kwargs, "SourceData is built by MethPrintData"
+        )
+
+    @property
+    def nmol(self) -> int:
+        """Number of molecules."""
+        return len(self._frozen_mol_id)
+
+    @classmethod
+    def _create(cls, name="source", **kwargs) -> Self:
+        """
+        Build and check one source.
+
+        Raises
+        ------
+        ValueError
+            If the per-molecule arrays do not match the number of
+            molecules, or `gaps`/`gap_offset` do not fit together.
+        """
+        obj = cls(**kwargs, _internal=True)
+        nmol = obj.nmol
+        for key in ("mol_start", "mol_end"):
+            arr = getattr(obj, f"_frozen_{key}")
+            if arr is not None and len(arr) != nmol:
+                raise ValueError(
+                    f"{name} {key} has length {len(arr)}, expected {nmol}"
+                )
+        gaps, offset = obj._frozen_gaps, obj._frozen_gap_offset
+        if (gaps is None) != (offset is None):
+            raise ValueError(
+                f"{name} gaps and gap_offset must both be given or both "
+                "be None"
+            )
+        if offset is not None and (
+            len(offset) != nmol + 1 or offset[-1] != len(gaps)
+        ):
+            raise ValueError(
+                f"{name} gap_offset must have length {nmol + 1} and end at "
+                f"{len(gaps)}"
+            )
+        return obj
+
+
 @_add_frozen_properties
 @dataclass(frozen=True, slots=True, init=False, eq=False)
 class MethPrintData:
@@ -98,138 +196,45 @@ class MethPrintData:
         }
     )
 
-    _frozen_test_mol_id: np.ndarray = field(
+    _frozen_test: SourceData = field(
+        metadata={"doc": "SourceData: The test (chromatin) molecules."}
+    )
+
+    _frozen_unmeth: SourceData | None = field(
         metadata={
-            "doc": "np.ndarray: Array of molecule identifiers for the "
-            "test samples."
+            "doc": "SourceData: The unmethylated control molecules, or "
+            "None if not given."
         }
     )
 
-    _frozen_test_data: pd.DataFrame = field(
+    _frozen_meth: SourceData | None = field(
         metadata={
-            "doc": "pd.DataFrame: Raw methylation quality scores for "
-            "test samples."
-        }
-    )
-
-    _frozen_unmeth_mol_id: np.ndarray | None = field(
-        metadata={
-            "doc": "np.ndarray: Array of molecule identifiers for "
-            "unmethylated controls."
-        }
-    )
-
-    _frozen_unmeth_data: pd.DataFrame | None = field(
-        metadata={
-            "doc": "pd.DataFrame: Raw methylation quality scores for "
-            "unmethylated controls."
-        }
-    )
-
-    _frozen_meth_mol_id: np.ndarray | None = field(
-        metadata={
-            "doc": "np.ndarray: Array of molecule identifiers for "
-            "methylated controls."
-        }
-    )
-
-    _frozen_meth_data: pd.DataFrame | None = field(
-        metadata={
-            "doc": "pd.DataFrame: Raw methylation quality scores for "
-            "methylated controls."
-        }
-    )
-
-    _frozen_test_mol_start: np.ndarray | None = field(
-        metadata={
-            "doc": "np.ndarray: Start (bp, inclusive) of each test "
-            "molecule's read extent, or None if not recorded."
-        }
-    )
-
-    _frozen_test_mol_end: np.ndarray | None = field(
-        metadata={
-            "doc": "np.ndarray: End (bp, exclusive) of each test "
-            "molecule's read extent, or None if not recorded."
-        }
-    )
-
-    _frozen_unmeth_mol_start: np.ndarray | None = field(
-        metadata={
-            "doc": "np.ndarray: Start (bp, inclusive) of each "
-            "unmethylated control's read extent, or None."
-        }
-    )
-
-    _frozen_unmeth_mol_end: np.ndarray | None = field(
-        metadata={
-            "doc": "np.ndarray: End (bp, exclusive) of each "
-            "unmethylated control's read extent, or None."
-        }
-    )
-
-    _frozen_meth_mol_start: np.ndarray | None = field(
-        metadata={
-            "doc": "np.ndarray: Start (bp, inclusive) of each "
-            "methylated control's read extent, or None."
-        }
-    )
-
-    _frozen_meth_mol_end: np.ndarray | None = field(
-        metadata={
-            "doc": "np.ndarray: End (bp, exclusive) of each "
-            "methylated control's read extent, or None."
-        }
-    )
-
-    _frozen_test_gaps: np.ndarray | None = field(
-        metadata={
-            "doc": "np.ndarray: Internal gaps (deletions) of the test "
-            "molecules, shape (n_gap, 2), half-open [start, end), "
-            "grouped by molecule (see `test_gap_offset`), or None if "
-            "not recorded."
-        }
-    )
-
-    _frozen_test_gap_offset: np.ndarray | None = field(
-        metadata={
-            "doc": "np.ndarray: Length nmol + 1; the gaps of test "
-            "molecule i are `test_gaps[offset[i]:offset[i + 1]]`, or "
-            "None."
-        }
-    )
-
-    _frozen_unmeth_gaps: np.ndarray | None = field(
-        metadata={
-            "doc": "np.ndarray: Internal gaps of the unmethylated "
-            "controls (see `test_gaps`), or None."
-        }
-    )
-
-    _frozen_unmeth_gap_offset: np.ndarray | None = field(
-        metadata={
-            "doc": "np.ndarray: Gap offsets of the unmethylated "
-            "controls (see `test_gap_offset`), or None."
-        }
-    )
-
-    _frozen_meth_gaps: np.ndarray | None = field(
-        metadata={
-            "doc": "np.ndarray: Internal gaps of the methylated "
-            "controls (see `test_gaps`), or None."
-        }
-    )
-
-    _frozen_meth_gap_offset: np.ndarray | None = field(
-        metadata={
-            "doc": "np.ndarray: Gap offsets of the methylated controls "
-            "(see `test_gap_offset`), or None."
+            "doc": "SourceData: The methylated control molecules, or "
+            "None if not given."
         }
     )
 
     def __init__(self, **kwargs: Any):
         _init_frozen_fields(
             self, kwargs, "use MethPrintData._load() to instantiate this class"
+        )
+
+    @property
+    def sources(self) -> Mapping[str, SourceData]:
+        """
+        The sources present, by name, in the order test, unmeth, meth.
+
+        Returns
+        -------
+        Mapping of str to SourceData
+            Read-only; a control that was not given is absent.
+        """
+        return MappingProxyType(
+            {
+                name: getattr(self, f"_frozen_{name}")
+                for name in _SOURCE_NAMES
+                if getattr(self, f"_frozen_{name}") is not None
+            }
         )
 
     def _save(self, group):
@@ -243,15 +248,13 @@ class MethPrintData:
             gmeta.create_dataset("refseq", data=self._frozen_refseq, dtype=dt)
         gdata = gregion.create_group("data")
 
-        for name in ("test", "unmeth", "meth"):
-            mol_id = getattr(self, f"_frozen_{name}_mol_id")
-            df = getattr(self, f"_frozen_{name}_data")
-            if mol_id is None or df is None:
-                continue
-            gdata.create_dataset(name + "_mol_id", data=mol_id, dtype=dt)
-            h5_utils.save_df(name + "_data", df, gdata)
+        for name, src in self.sources.items():
+            gdata.create_dataset(
+                name + "_mol_id", data=src._frozen_mol_id, dtype=dt
+            )
+            h5_utils.save_df(name + "_data", src._frozen_data, gdata)
             for key in _PER_MOL_KEYS:
-                arr = getattr(self, f"_frozen_{name}_{key}")
+                arr = getattr(src, f"_frozen_{key}")
                 if arr is not None:
                     gdata.create_dataset(f"{name}_{key}", data=arr)
 
@@ -266,34 +269,43 @@ class MethPrintData:
         refseq = gmeta["refseq"].asstr()[()] if "refseq" in gmeta else None
         coords = _read_coords(gmeta, region)
 
-        def load_data(name, gdata):
-            id_name = name + "_mol_id"
-            data_name = name + "_data"
-            if id_name in gdata and data_name in gdata:
-                mol_id = gdata[id_name].asstr()[()]
-                df = h5_utils.load_df(data_name, gdata)
-                return mol_id, df
-            return None, None
-
         gdata = gregion["data"]
         kwargs = {}
-        for name in ("test", "unmeth", "meth"):
-            mol_id, df = load_data(name, gdata)
-            kwargs[f"{name}_mol_id"] = mol_id
-            kwargs[f"{name}_data"] = df
+        for name in _SOURCE_NAMES:
+            if f"{name}_mol_id" not in gdata or f"{name}_data" not in gdata:
+                continue
+            kwargs[f"{name}_mol_id"] = gdata[f"{name}_mol_id"].asstr()[()]
+            kwargs[f"{name}_data"] = h5_utils.load_df(f"{name}_data", gdata)
             for key in _PER_MOL_KEYS:
-                ds = f"{name}_{key}"
-                if mol_id is not None and ds in gdata:
-                    kwargs[ds] = gdata[ds][()].astype(np.int64)
+                if f"{name}_{key}" in gdata:
+                    kwargs[f"{name}_{key}"] = gdata[f"{name}_{key}"][
+                        ()
+                    ].astype(np.int64)
         return cls._create(
             region=region, nbp=nbp, refseq=refseq, coords=coords, **kwargs
         )
 
     @classmethod
     def _create(cls, **kwargs) -> Self:
-        # Some validation
+        """
+        Build from flat keyword arguments.
+
+        Besides `region`, `nbp`, `refseq` and `coords`, each source is
+        given as `{source}_mol_id`, `{source}_data` and, optionally,
+        `{source}_mol_start`, `{source}_mol_end`, `{source}_gaps` and
+        `{source}_gap_offset`; a source without `mol_id` and `data` is
+        absent.
+        """
         if kwargs.get("nbp") <= 0:
             raise ValueError("nbp must be positive")
+        for name in _SOURCE_NAMES:
+            fields_ = {
+                key: kwargs.pop(f"{name}_{key}", None)
+                for key in ("mol_id", "data", *_PER_MOL_KEYS)
+            }
+            if fields_["mol_id"] is None or fields_["data"] is None:
+                continue
+            kwargs[name] = SourceData._create(name=name, **fields_)
         return cls(**kwargs, _internal=True)
 
     def __repr__(self):
@@ -1135,12 +1147,12 @@ class MethPrintExperiment:
             )
 
         raw = self.raw[region]
-        df = getattr(raw, f"{which}_data")
-        mol_id = getattr(raw, f"{which}_mol_id")
-        if df is None or mol_id is None:
+        source = raw.sources.get(which)
+        if source is None:
             raise ValueError(
                 f"no '{which}' data available for region '{region}'"
             )
+        df, mol_id = source.data, source.mol_id
         nbp = raw.nbp
         all_pos = pd.Index(range(nbp))
 
@@ -1393,15 +1405,14 @@ class MethPrintExperiment:
             names = list(masks)
 
             for src in sources:
-                df = getattr(raw, f"{src}_data")
-                mol_id = getattr(raw, f"{src}_mol_id")
-                if df is None or mol_id is None:
+                source = raw.sources.get(src)
+                if source is None:
                     raise ValueError(
                         f"no '{src}' data available for region '{region}'"
                     )
                 cov = _site_coverage(
-                    df,
-                    len(mol_id),
+                    source.data,
+                    source.nmol,
                     masks,
                     unmapped_strand,
                     ignore_strand=self._ignore_strand,
@@ -1463,7 +1474,7 @@ class MethPrintExperiment:
             `region`.
         """
         if mask_name is None:
-            nmol = len(getattr(self.raw[region], f"{which}_mol_id"))
+            nmol = self.raw[region].sources[which].nmol
             return np.ones(nmol, dtype=bool)
         key = f"{which}_{mask_name}"
         if key not in self.analysis[region]:
@@ -1544,15 +1555,14 @@ class MethPrintExperiment:
             names = list(masks)
 
             for src in sources:
-                df = getattr(raw, f"{src}_data")
-                mol_id = getattr(raw, f"{src}_mol_id")
-                if df is None or mol_id is None:
+                source = raw.sources.get(src)
+                if source is None:
                     raise ValueError(
                         f"no '{src}' data available for region '{region}'"
                     )
                 cov = _site_coverage(
-                    df,
-                    len(mol_id),
+                    source.data,
+                    source.nmol,
                     masks,
                     unmapped_strand,
                     ignore_strand=self._ignore_strand,

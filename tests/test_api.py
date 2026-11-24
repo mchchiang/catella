@@ -212,7 +212,7 @@ class TestLoadRaw:
         exp = catella.load_raw(chromsize=chromsize, test_file=test_file)
 
         assert exp.regions == ("chr1",)
-        assert sorted(exp.raw["chr1"].test_mol_id) == ["m0", "m1"]
+        assert sorted(exp.raw["chr1"].test.mol_id) == ["m0", "m1"]
 
     def test_regions_forwarded(self, tmp_path):
         test_file = tmp_path / "test.tsv"

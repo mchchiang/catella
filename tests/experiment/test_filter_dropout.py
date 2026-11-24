@@ -131,7 +131,7 @@ class TestAContext:
         ]
         exp = _load(tmp_path, "AT", rows, mtase="A")
         exp.filter_dropout(which="test", thres_max=0.2)
-        mol_id = exp.raw["chr1"].test_mol_id
+        mol_id = exp.raw["chr1"].test.mol_id
         mask = exp.analysis["chr1"]["test_dropout_mask"]
         keep = dict(zip(mol_id, mask["keep"]))
         assert keep["plus_at_A"] == True
@@ -152,7 +152,7 @@ class TestDinucleotideContext:
         ]
         exp = _load(tmp_path, "CG", rows, mtase="CG")
         exp.filter_dropout(which="test", thres_max=0.2)
-        mol_id = exp.raw["chr1"].test_mol_id
+        mol_id = exp.raw["chr1"].test.mol_id
         keep = dict(
             zip(mol_id, exp.analysis["chr1"]["test_dropout_mask"]["keep"])
         )
@@ -172,7 +172,7 @@ class TestDinucleotideContext:
         ]
         exp = _load(tmp_path, "GC", rows, mtase="GC")
         exp.filter_dropout(which="test", thres_max=0.2)
-        mol_id = exp.raw["chr1"].test_mol_id
+        mol_id = exp.raw["chr1"].test.mol_id
         keep = dict(
             zip(mol_id, exp.analysis["chr1"]["test_dropout_mask"]["keep"])
         )
@@ -255,7 +255,7 @@ class TestThresholdRange:
         # dropout fractions: mol_none=1.0, mol_mid=0.5, mol_high=0.125,
         # mol_full=0.0
         exp.filter_dropout(which="test", thres_min=0.2, thres_max=0.8)
-        mol_id = exp.raw["chr1"].test_mol_id
+        mol_id = exp.raw["chr1"].test.mol_id
         keep = dict(
             zip(mol_id, exp.analysis["chr1"]["test_dropout_mask"]["keep"])
         )
@@ -268,7 +268,7 @@ class TestThresholdRange:
     def test_range_bounds_are_inclusive(self, tmp_path):
         exp = self._make(tmp_path)
         exp.filter_dropout(which="test", thres_min=0.125, thres_max=0.5)
-        mol_id = exp.raw["chr1"].test_mol_id
+        mol_id = exp.raw["chr1"].test.mol_id
         keep = dict(
             zip(mol_id, exp.analysis["chr1"]["test_dropout_mask"]["keep"])
         )
@@ -602,7 +602,7 @@ class TestIsKept:
         assert got.dtype == bool
         stored = exp.analysis["chr1"]["test_dropout_mask"]["keep"]
         np.testing.assert_array_equal(got, stored.to_numpy().astype(bool))
-        mol_id = list(exp.raw["chr1"].test_mol_id)
+        mol_id = list(exp.raw["chr1"].test.mol_id)
         assert got[mol_id.index("mol_mid")]
         assert not got[mol_id.index("mol_full")]
         exp.close()
@@ -620,7 +620,7 @@ class TestIsKept:
         exp = self._make(tmp_path)
         got = exp.is_kept("chr1", mask_name=None)
         assert got.dtype == bool
-        assert got.tolist() == [True] * len(exp.raw["chr1"].test_mol_id)
+        assert got.tolist() == [True] * len(exp.raw["chr1"].test.mol_id)
         exp.close()
 
     def test_missing_flags_raise(self, tmp_path):

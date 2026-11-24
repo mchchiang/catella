@@ -1989,3 +1989,23 @@ class TestIntervalRegions:
     def test_wrap_raises(self, tmp_path):
         with pytest.raises(ValueError, match="require wrap=False"):
             self._load(tmp_path, wrap=True)
+
+    def test_region_without_reads_dropped(self, tmp_path):
+        regions = [*_INTERVALS, ("chr2", 40, 50, "E")]
+        with pytest.warns(UserWarning, match="dropped 1 region.*'E'"):
+            exp = self._load(tmp_path, regions=regions)
+        assert exp.regions == ("A", "B")
+        exp.close()
+
+    def test_region_without_control_dropped(self, tmp_path):
+        ctrl = tmp_path / "unmeth.tsv"
+        _write_tsv(ctrl, _make_rows("chr1", ["u0"], [15]))
+        with pytest.warns(UserWarning, match="dropped 1 region.*'B'"):
+            exp = self._load(tmp_path, unmeth_file=ctrl)
+        assert exp.regions == ("A",)
+        assert exp.raw["A"].unmeth.mol_id.tolist() == ["u0"]
+        exp.close()
+
+    def test_no_region_kept_raises(self, tmp_path):
+        with pytest.raises(ValueError, match="no region has molecules"):
+            self._load(tmp_path, regions=[("chr2", 40, 50, "E")])

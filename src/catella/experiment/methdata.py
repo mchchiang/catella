@@ -47,6 +47,7 @@ from catella.experiment._ingest import (
     _PER_MOL_KEYS,
     _ingest_into,
     _ingest_sources,
+    _keep_regions,
     _load_refseqs,
     _load_region_refseqs,
     _merge_staging,
@@ -693,7 +694,8 @@ class MethPrintExperiment:
             a region is longer than 1 Mb, if a region name is not
             safe as a file name, if `regions` gives intervals with
             `wrap` True, or if an interval's chromosome is not in
-            `chromsize` or its end is past the chromosome's end.
+            `chromsize` or its end is past the chromosome's end, or
+            if no interval region has molecules in every given file.
         TypeError
             If `regions` has an unsupported type or mixes names and
             tuples.
@@ -709,6 +711,8 @@ class MethPrintExperiment:
             `flag` column, present with `--allow-non-primary`); those
             rows are dropped. Also if some molecules' rows are not
             ordered along the reference; those get no internal gaps.
+            Also if interval regions are dropped for lacking molecules
+            in some given file.
 
         Notes
         -----
@@ -816,12 +820,20 @@ class MethPrintExperiment:
                         if max_nmol is None
                         else np.random.default_rng(seed)
                     )
-                    _ingest_into(graw, *files[0], rng=rng, **ingest_kwargs)
+                    found = _ingest_into(
+                        graw, *files[0], rng=rng, **ingest_kwargs
+                    )
+                    if kind == "regions":
+                        _keep_regions([found], sizes)
                 else:
                     ingested = _ingest_sources(
                         files, nworker=nworker, seed=seed, **ingest_kwargs
                     )
-                    _merge_staging(graw, ingested)
+                    keep = None
+                    if kind == "regions":
+                        found = [r for _, r, _ in ingested]
+                        keep = _keep_regions(found, sizes)
+                    _merge_staging(graw, ingested, keep)
         except BaseException:
             shutil.rmtree(tmp_dir, ignore_errors=True)
             raise

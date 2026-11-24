@@ -8,6 +8,7 @@ import pytest
 from catella.experiment._ingest import (
     _ensure_fasta_index,
     _GapTracker,
+    _keep_regions,
     _load_refseqs,
     _read_chromsize,
     _resolve_modkit_schema,
@@ -323,3 +324,24 @@ class TestEnsureFastaIndex:
             "r.fa",
             "r.fa.fai",
         ]
+
+
+class TestKeepRegions:
+    def test_keeps_regions_in_every_file(self, recwarn):
+        keep = _keep_regions([{"a", "b"}, {"a", "b", "c"}], ["a", "b"])
+        assert keep == {"a", "b"}
+        assert not recwarn
+
+    def test_drops_with_warning(self):
+        with pytest.warns(UserWarning, match="dropped 1 region.*'b'"):
+            keep = _keep_regions([{"a", "b"}, {"a"}], ["a", "b"])
+        assert keep == {"a"}
+
+    def test_long_list_truncated(self):
+        requested = ["k", *(f"r{i}" for i in range(7))]
+        with pytest.warns(UserWarning, match=r"'r4', \.\.\. \(\+2 more\)"):
+            _keep_regions([{"k"}], requested)
+
+    def test_none_kept_raises(self):
+        with pytest.raises(ValueError, match="no region has molecules"):
+            _keep_regions([{"a"}, {"b"}], ["a", "b"])

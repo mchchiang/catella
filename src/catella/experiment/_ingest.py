@@ -1691,7 +1691,48 @@ def _ingest_sources(files, *, nworker, seed, **kwargs):
     return [ingest(task) for task in tasks]
 
 
-def _merge_staging(graw, ingested):
+def _keep_regions(found, requested):
+    """
+    Regions with molecules in every given file; the others are dropped.
+
+    Parameters
+    ----------
+    found : list of set of str
+        Regions found in each file.
+    requested : iterable of str
+        Regions asked for.
+
+    Returns
+    -------
+    set of str
+        The regions to keep.
+
+    Raises
+    ------
+    ValueError
+        If no region is kept.
+
+    Warns
+    -----
+    UserWarning
+        If some requested regions are dropped.
+    """
+    keep = set(requested).intersection(*found)
+    dropped = sorted(set(requested) - keep)
+    if not keep:
+        raise ValueError("no region has molecules in every given file")
+    if dropped:
+        names = ", ".join(repr(r) for r in dropped[:5])
+        if len(dropped) > 5:
+            names += f", ... (+{len(dropped) - 5} more)"
+        _warn(
+            f"dropped {len(dropped)} region(s) without molecules in every "
+            f"given file: {names}"
+        )
+    return keep
+
+
+def _merge_staging(graw, ingested, regions=None):
     """
     Copy every source's private staging data into `graw`, then remove
     the private files.
@@ -1702,22 +1743,28 @@ def _merge_staging(graw, ingested):
         The `raw_data` group of the shared staging file.
     ingested : list of (str, set of str, str)
         From `_ingest_sources`, test first.
+    regions : set of str, optional
+        Regions to copy (see `_keep_regions`). If None, every source
+        must cover the same regions.
 
     Raises
     ------
     ValueError
-        If a control file covers different regions than the test file.
+        If `regions` is None and a control file covers different
+        regions than the test file.
     """
-    test_regions = ingested[0][1]
-    for name, regions_found, _ in ingested[1:]:
-        if regions_found != test_regions:
-            raise ValueError(
-                f"different number of regions in test and {name} datasets"
-            )
+    if regions is None:
+        regions = ingested[0][1]
+        for name, regions_found, _ in ingested[1:]:
+            if regions_found != regions:
+                raise ValueError(
+                    f"different number of regions in test and {name} "
+                    "datasets"
+                )
 
     handles = {name: h5py.File(path, "r") for name, _, path in ingested}
     try:
-        for region in sorted(test_regions):
+        for region in sorted(regions):
             gregion = graw.create_group(region)
             handles["test"].copy(
                 f"raw_data/{region}/metadata", gregion, name="metadata"

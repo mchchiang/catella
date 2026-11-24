@@ -15,7 +15,7 @@ from catella_cpp import NucPosMCMC, NucPosTM
 from scipy.special import logit
 
 from catella._batches import _row_batches
-from catella._regions import _normalize_regions
+from catella._regions import _check_region_names, _normalize_regions
 from catella.experiment.methdata import MethPrintExperiment
 from catella.simulation._inputs import (
     _check_llink,
@@ -278,9 +278,10 @@ class SimManager:
         ValueError
             If the requested `out_types` are not recognized, if an
             `llink` value of a mapping is not a non-negative integer, if
-            `fill_nan` is invalid, or if `fill_nan` is None and a molecule
+            `fill_nan` is invalid, if `fill_nan` is None and a molecule
             of `meth_prob` is nan at some but not all nucleosome start
-            positions.
+            positions, or if a region name is not safe as a directory
+            name.
         KeyError
             If a mapping `llink` lacks a region of `regions`.
         FileExistsError
@@ -291,6 +292,7 @@ class SimManager:
             raise ValueError("'method' must be 'mcmc' or 'tm'")
 
         regions = _normalize_regions(regions)
+        _check_region_names(regions)
         settings = _resolve_settings(settings)
         meth_prob, no_data = _prepare_meth_prob(
             meth_prob, regions, settings.nucbp, fill_nan

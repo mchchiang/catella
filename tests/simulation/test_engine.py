@@ -111,6 +111,36 @@ class TestRunJob:
             }
 
 
+class TestRegionNames:
+    @pytest.mark.parametrize("name", ["..", "a/b", "chr1:5-9", " a"])
+    def test_unsafe_name_raises_before_writing(self, tmp_path, name):
+        out_dir = tmp_path / "sim"
+        with pytest.raises(ValueError, match="region name"):
+            SimManager(nworker=1, verbose=False).run(
+                regions=name,
+                nsim=1,
+                method="tm",
+                settings=_make_settings(nucbp=20, llink=0),
+                meth_prob={name: _make_meth_prob(nmol=1, nbp=100)},
+                out_dir=out_dir,
+                seed=1,
+            )
+        assert not out_dir.exists()
+
+    def test_case_insensitive_duplicates_raise(self, tmp_path):
+        probs = {r: _make_meth_prob(nmol=1, nbp=100) for r in ("Sox2", "SOX2")}
+        with pytest.raises(ValueError, match="unique ignoring case"):
+            SimManager(nworker=1, verbose=False).run(
+                regions=list(probs),
+                nsim=1,
+                method="tm",
+                settings=_make_settings(nucbp=20, llink=0),
+                meth_prob=probs,
+                out_dir=tmp_path / "sim",
+                seed=1,
+            )
+
+
 class TestPerRegionLlink:
     REGIONS = ("a", "b")
 

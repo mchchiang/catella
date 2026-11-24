@@ -566,6 +566,59 @@ class TestNonPrimaryRows:
         assert not [w for w in recwarn if "supplementary" in str(w.message)]
 
 
+class TestLoadRawChecks:
+    def _files(self, tmp_path, sizes):
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, _make_rows(next(iter(sizes)), ["m0"], [1]))
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, sizes)
+        return chromsize, test_file
+
+    def test_positional_arguments_rejected(self, tmp_path):
+        chromsize, test_file = self._files(tmp_path, {"chr1": 100})
+        with pytest.raises(TypeError):
+            MethPrintExperiment.load_raw(chromsize, test_file)
+
+    def test_chrom_over_1_mb_raises(self, tmp_path):
+        chromsize, test_file = self._files(tmp_path, {"chr1": 2000000})
+        with pytest.raises(ValueError, match="pass regions="):
+            MethPrintExperiment.load_raw(
+                chromsize=chromsize, test_file=test_file
+            )
+
+    def test_chrom_over_100_kb_warns(self, tmp_path):
+        chromsize, test_file = self._files(tmp_path, {"chr1": 200000})
+        with pytest.warns(UserWarning, match="longer than 100000 bp"):
+            exp = MethPrintExperiment.load_raw(
+                chromsize=chromsize, test_file=test_file
+            )
+        exp.close()
+
+    def test_unsafe_chrom_name_raises(self, tmp_path):
+        chromsize, test_file = self._files(tmp_path, {"chr1:alt": 100})
+        with pytest.raises(ValueError, match="must not contain"):
+            MethPrintExperiment.load_raw(
+                chromsize=chromsize, test_file=test_file
+            )
+
+    def test_length_checked_before_names(self, tmp_path):
+        sizes = {"chr1": 100, "HLA-A*01:01": 2000000}
+        chromsize, test_file = self._files(tmp_path, sizes)
+        with pytest.raises(ValueError, match="pass regions="):
+            MethPrintExperiment.load_raw(
+                chromsize=chromsize, test_file=test_file
+            )
+
+    def test_selected_regions_only_are_checked(self, tmp_path):
+        sizes = {"chr1": 100, "HLA-A*01:01": 2000000}
+        chromsize, test_file = self._files(tmp_path, sizes)
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file, regions=["chr1"]
+        )
+        assert exp.regions == ("chr1",)
+        exp.close()
+
+
 class TestColidx:
     def test_headerless_file_with_colidx(self, tmp_path):
         # File columns: extra, region, upos, strand, mod_qual, mod_code, mol_id

@@ -25,7 +25,11 @@ from catella._analysis_io import (
 )
 from catella._batches import _row_batches
 from catella._dataclasses import _add_frozen_properties, _init_frozen_fields
-from catella._regions import Region
+from catella._regions import (
+    Region,
+    _check_region_lengths,
+    _check_region_names,
+)
 from catella._warnings import _warn
 from catella.containers import DataFrameMap, FixedKeyMap
 from catella.experiment._contexts import _resolve_channels
@@ -549,6 +553,7 @@ class MethPrintExperiment:
     @classmethod
     def load_raw(
         cls,
+        *,
         chromsize: str | Path,
         test_file: str | Path,
         unmeth_file: str | Path | None = None,
@@ -675,13 +680,16 @@ class MethPrintExperiment:
             contains an unknown or duplicate label, or if
             `balance_strand` is True and `max_nmol` is None or less
             than 2, if `colidx` has neither 6 nor 8 entries, if
-            `min_gap` is neither None nor a positive integer, or if
-            `gaps_bed` is given with `wrap` True or `min_gap` None.
+            `min_gap` is neither None nor a positive integer, if
+            `gaps_bed` is given with `wrap` True or `min_gap` None, if
+            a region is longer than 1 Mb, or if a region name is not
+            safe as a file name.
 
         Warns
         -----
         UserWarning
-            If `balance_strand` is True and a region has fewer
+            If a region is longer than 100 kb. If `balance_strand` is
+            True and a region has fewer
             than `max_nmol // 2` molecules on either strand, or if
             rows have a `ref_position` outside the region or come
             from secondary or supplementary alignments (per Modkit's
@@ -692,12 +700,13 @@ class MethPrintExperiment:
         Notes
         -----
         Unless `wrap` is True, each molecule's read extent is stored as
-        `MethPrintData.{src}_mol_start`/`{src}_mol_end`, from the
+        `mol_start`/`mol_end` of its source (e.g.
+        `exp.raw[region].test.mol_start`), from the
         `alignment_start`/`alignment_end` columns, or else from its
         first and last row.
 
         Internal gaps (deletions, which leave no rows) are stored as
-        `{src}_gaps`/`{src}_gap_offset`. They are inferred from the
+        `gaps`/`gap_offset` of each source. They are inferred from the
         `forward_read_position` column: a net deletion of at least
         `min_gap` between consecutive rows marks the stretch between
         them as a gap.
@@ -728,6 +737,8 @@ class MethPrintExperiment:
                 )
         mtase = _normalize_mtase(mtase)
         full_sizes, sizes = _read_chromsize(chromsize, wrap, regions)
+        _check_region_lengths(sizes)
+        _check_region_names(list(sizes))
         refseq_by_region = _load_refseqs(fasta_file, full_sizes)
 
         tmp_dir = h5_utils.fresh_tmp_dir(base_dir=tmp_dir)

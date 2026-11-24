@@ -10,9 +10,15 @@ from typing import NamedTuple
 
 import numpy as np
 
+from catella._warnings import _warn
+
 # Region names become HDF5 group names and simulation run path components
 _UNSAFE_NAME_CHARS = '/\\:*?"<>|'
 _MAX_NAME_LEN = 100
+# Dense per-molecule arrays scale with region length: warn above
+# _WARN_REGION_BP, refuse above _MAX_REGION_BP (beyond realistic reads)
+_WARN_REGION_BP = 100000
+_MAX_REGION_BP = 1000000
 _VALID_STRANDS = ("+", "-", ".")
 # BED lines that carry no interval
 _BED_HEADER_PREFIXES = ("#", "track", "browser")
@@ -62,6 +68,42 @@ def _check_region_names(names):
                 f"{seen[key]!r} and {name!r}"
             )
         seen[key] = name
+
+
+def _check_region_lengths(lengths):
+    """
+    Check that regions are short enough for dense per-molecule arrays.
+
+    Parameters
+    ----------
+    lengths : dict of str to int
+        Region name -> stored length (bp).
+
+    Raises
+    ------
+    ValueError
+        If a region is longer than 1 Mb.
+
+    Warns
+    -----
+    UserWarning
+        If a region is longer than 100 kb.
+    """
+    too_long = {r: n for r, n in lengths.items() if n > _MAX_REGION_BP}
+    if too_long:
+        region, nbp = next(iter(too_long.items()))
+        raise ValueError(
+            f"region {region!r} is {nbp} bp; catella analyzes regions of "
+            f"at most {_MAX_REGION_BP} bp, so pass regions= to select "
+            "shorter ones"
+        )
+    long = [r for r, n in lengths.items() if n > _WARN_REGION_BP]
+    if long:
+        _warn(
+            f"{len(long)} region(s) longer than {_WARN_REGION_BP} bp (e.g. "
+            f"{long[0]!r}); memory and time grow with region length, so "
+            "lower batch_size if needed"
+        )
 
 
 def _normalize_regions(

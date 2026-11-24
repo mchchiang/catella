@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 from catella._regions import (
     Region,
+    _check_region_lengths,
     _check_region_names,
     _make_region,
     _normalize_regions,
@@ -99,6 +100,24 @@ class TestCheckRegionNames:
     def test_case_insensitive_duplicate_raises(self):
         with pytest.raises(ValueError, match="unique ignoring case"):
             _check_region_names(["Sox2", "SOX2"])
+
+
+class TestCheckRegionLengths:
+    def test_short_regions_pass_silently(self, recwarn):
+        _check_region_lengths({"a": 5000, "b": 100000})
+        assert not recwarn
+
+    def test_over_100_kb_warns(self):
+        with pytest.warns(UserWarning, match="1 region"):
+            _check_region_lengths({"a": 5000, "b": 100001})
+
+    def test_over_1_mb_raises(self):
+        with pytest.raises(ValueError, match="'chr1' is 248956422 bp"):
+            _check_region_lengths({"chr1": 248956422})
+
+    def test_exactly_1_mb_warns_only(self):
+        with pytest.warns(UserWarning):
+            _check_region_lengths({"a": 1000000})
 
 
 class TestMakeRegion:

@@ -462,13 +462,13 @@ def _make_tm_dataset(tmp_path, *, nmol=3, nbp=20, seed=1, nsim=0, **kwargs):
     )
 
 
-def _brute_force_occup_meann(nucbp, llink, elink, mu, eseq, temp=1.0):
+def _brute_force_occup_meann(nucbp, llink, elink, mu, edata, temp=1.0):
     """Minimal brute-force reference, matching the one in
     test_tm_bruteforce.py, duplicated here per this file's existing
     convention of self-contained helpers."""
     import math
 
-    nbp = len(eseq)
+    nbp = len(edata)
     npos = nbp - nucbp + 1
 
     def erep(gap):
@@ -486,7 +486,7 @@ def _brute_force_occup_meann(nucbp, llink, elink, mu, eseq, temp=1.0):
         if idx == npos:
             w = 1.0
             for i, x in enumerate(placed):
-                w *= math.exp(-(eseq[x] - mu) / temp)
+                w *= math.exp(-(edata[x] - mu) / temp)
                 if i > 0:
                     w *= math.exp(-erep(x - placed[i - 1]) / temp)
             total_weight += w
@@ -597,13 +597,13 @@ class TestComputeOccupTM:
         ana.compute_occup(dataset=dataset)
         occup_arr = dataset.analysis["chr1"]["occup"].to_numpy()
         for mol in range(2):
-            eseq = dataset.eseq["chr1"][mol]
+            edata = dataset.edata["chr1"][mol]
             expected_occup, _ = _brute_force_occup_meann(
                 settings.nucbp,
                 settings.llink,
                 settings.elink,
                 settings.mu,
-                eseq,
+                edata,
                 temp=settings.end_temp,
             )
             np.testing.assert_allclose(
@@ -616,7 +616,7 @@ class TestComputeOccupTM:
         with pytest.raises(ValueError):
             ana.compute_occup(dataset=dataset, time=5)
 
-    def test_requires_eseq(self, tmp_path):
+    def test_requires_edata(self, tmp_path):
         rng = np.random.default_rng(1)
         meth_prob = rng.random((2, 16))
         manager = SimManager(nworker=1, verbose=False)
@@ -626,9 +626,9 @@ class TestComputeOccupTM:
             method="tm",
             settings=_make_tm_settings(),
             meth_prob=meth_prob,
-            out_dir=tmp_path / "no_eseq",
+            out_dir=tmp_path / "no_edata",
             seed=1,
-            store_eseq=False,
+            store_edata=False,
         )
         ana = SimAnalysis()
         with pytest.raises(ValueError):
@@ -700,13 +700,13 @@ class TestComputeMeanNnucTM:
         ana.compute_mean_nnuc(dataset=dataset)
         df = dataset.analysis["chr1"]["mean_nnuc"]
         for mol in range(2):
-            eseq = dataset.eseq["chr1"][mol]
+            edata = dataset.edata["chr1"][mol]
             _, expected_mean = _brute_force_occup_meann(
                 settings.nucbp,
                 settings.llink,
                 settings.elink,
                 settings.mu,
-                eseq,
+                edata,
                 temp=settings.end_temp,
             )
             assert df.iloc[mol, 0] == pytest.approx(expected_mean, rel=1e-6)
@@ -728,14 +728,14 @@ class TestComputeVarNnuc:
         ana.compute_var_nnuc(dataset=dataset)
         df = dataset.analysis["chr1"]["var_nnuc"]
 
-        eseq = dataset.eseq["chr1"][0]
+        edata = dataset.edata["chr1"][0]
         nucbp, llink, elink, mu = (
             settings.nucbp,
             settings.llink,
             settings.elink,
             settings.mu,
         )
-        nbp = len(eseq)
+        nbp = len(edata)
         npos = nbp - nucbp + 1
 
         def erep(gap):
@@ -754,7 +754,7 @@ class TestComputeVarNnuc:
             if idx == npos:
                 w = 1.0
                 for i, x in enumerate(placed):
-                    w *= math.exp(-(eseq[x] - mu))
+                    w *= math.exp(-(edata[x] - mu))
                     if i > 0:
                         w *= math.exp(-erep(x - placed[i - 1]))
                 total_weight += w
@@ -806,7 +806,7 @@ def _direct_tm(dataset, mol, settings):
         settings.mu,
         1,
     )
-    tm.setEnergy(dataset.eseq["chr1"][mol].tolist(), settings.emax)
+    tm.setEnergy(dataset.edata["chr1"][mol].tolist(), settings.emax)
     tm.solve(settings.end_temp)
     return tm
 
@@ -924,7 +924,7 @@ class TestComputeConfigs:
     @pytest.mark.parametrize(
         "method", ["compute_most_likely_config", "compute_best_match_config"]
     )
-    def test_requires_eseq(self, tmp_path, method):
+    def test_requires_edata(self, tmp_path, method):
         rng = np.random.default_rng(1)
         manager = SimManager(nworker=1, verbose=False)
         dataset = manager.run(
@@ -933,9 +933,9 @@ class TestComputeConfigs:
             method="tm",
             settings=_make_tm_settings(),
             meth_prob=rng.random((2, 16)),
-            out_dir=tmp_path / "no_eseq",
+            out_dir=tmp_path / "no_edata",
             seed=1,
-            store_eseq=False,
+            store_edata=False,
         )
         ana = SimAnalysis()
         with pytest.raises(ValueError):

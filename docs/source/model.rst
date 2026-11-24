@@ -748,7 +748,7 @@ write
 with :math:`E^{\text{data}}(x)` the one-body energy described above (note
 that we have dropped the molecule index :math:`\alpha` for notational
 compactness, but :math:`E^{\text{data}}` is always defined per molecule;
-it is stored as `eseq` in the package). We use this same formula
+it is stored as `edata` in the package). We use this same formula
 regardless of which likelihood model is used. The motivation is to
 standardize how the two likelihood models enter the Hamiltonian, so that
 both produce one-body energies of the same form and can be swapped

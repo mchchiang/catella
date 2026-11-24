@@ -139,9 +139,9 @@ def _panel_grid(
         optional dendrogram) followed by that of the colorbar or legend.
     dendrogram : bool
         Whether the second column of a panel holds a dendrogram.
-    extra_rows : sequence of {"mean", "eseq"}, default ()
+    extra_rows : sequence of {"mean", "edata"}, default ()
         Rows below each heatmap, top to bottom: "mean" for the mean
-        across molecules, "eseq" for the sequence energy.
+        across molecules, "edata" for the data energy.
     scale_w, scale_h : float, default 1.0
         Factors applied to the default figure width and height, per
         panel column and per panel row.
@@ -153,7 +153,7 @@ def _panel_grid(
     panels : list of dict
         Per panel, the axes "hm_ax", "dend_ax" (None without a
         dendrogram), "side_ax" (the top-right cell of the last column,
-        the same for all panels), "mean_ax" and "seq_ax" (None without
+        the same for all panels), "mean_ax" and "edata_ax" (None without
         that row), and its grid column "col".
     """
     if nregion > _MAX_PANELS:
@@ -202,7 +202,7 @@ def _panel_grid(
             "dend_ax": cells[1] if dendrogram else None,
             "side_ax": side_ax,
             "mean_ax": extra["mean"][0] if "mean" in extra else None,
-            "seq_ax": extra["eseq"][0] if "eseq" in extra else None,
+            "edata_ax": extra["edata"][0] if "edata" in extra else None,
             "col": c,
         }
         for row in extra.values():
@@ -214,7 +214,7 @@ def _panel_grid(
 
 def _row_axes(panel):
     """The heatmap, mean and energy axes of `panel` that exist."""
-    keys = ("hm_ax", "mean_ax", "seq_ax")
+    keys = ("hm_ax", "mean_ax", "edata_ax")
     return [panel[k] for k in keys if panel[k] is not None]
 
 

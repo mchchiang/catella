@@ -123,7 +123,7 @@ class TestPlotOccupMolsSlicing:
         assert img.shape[0] == len(mols)
         np.testing.assert_allclose(np.asarray(img), occup[mols])
 
-    def test_mols_with_plot_eseq_does_not_raise(self, tmp_path):
+    def test_mols_with_plot_edata_does_not_raise(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=6, nbp=20)
         ana = SimAnalysis()
         ana.compute_occup(dataset=dataset, batch_size=2)
@@ -132,16 +132,16 @@ class TestPlotOccupMolsSlicing:
             regions="chr1",
             dataset=dataset,
             mols=[1, 3],
-            plot_eseq=True,
+            plot_edata=True,
             show=False,
         )
 
         img = plt.gcf().axes[0].images[0].get_array()
         assert img.shape[0] == 2
 
-    def test_plot_eseq_handles_nan_from_missing_coverage(self, tmp_path):
+    def test_plot_edata_handles_nan_from_missing_coverage(self, tmp_path):
         # A genomic position with no coverage (NaN in meth_prob) propagates
-        # NaN into eseq at that position for every molecule; the y-limit
+        # NaN into edata at that position for every molecule; the y-limit
         # calculation must tolerate that instead of crashing.
         rng = np.random.default_rng(3)
         meth_prob = rng.random((6, 20))
@@ -157,14 +157,14 @@ class TestPlotOccupMolsSlicing:
         )
         ana = SimAnalysis()
         ana.compute_occup(dataset=dataset, batch_size=2)
-        assert np.isnan(dataset.eseq["chr1"][:, 5]).all()
+        assert np.isnan(dataset.edata["chr1"][:, 5]).all()
 
         SimPlot().plot_occup(
-            regions="chr1", dataset=dataset, plot_eseq=True, show=False
+            regions="chr1", dataset=dataset, plot_edata=True, show=False
         )
 
-    def test_plot_eseq_skips_ylim_when_all_nan(self, tmp_path):
-        # If every selected molecule has no coverage at all, the eseq
+    def test_plot_edata_skips_ylim_when_all_nan(self, tmp_path):
+        # If every selected molecule has no coverage at all, the edata
         # average is all-NaN; set_ylim must be skipped instead of
         # raising "Axis limits cannot be NaN or Inf".
         rng = np.random.default_rng(4)
@@ -181,18 +181,18 @@ class TestPlotOccupMolsSlicing:
         )
         ana = SimAnalysis()
         ana.compute_occup(dataset=dataset, batch_size=2)
-        assert np.isnan(dataset.eseq["chr1"][0, :]).all()
+        assert np.isnan(dataset.edata["chr1"][0, :]).all()
 
         SimPlot().plot_occup(
-            regions="chr1", dataset=dataset, mols=[0], plot_eseq=True,
+            regions="chr1", dataset=dataset, mols=[0], plot_edata=True,
             show=False,
         )
 
-        seq_ax = plt.gcf().axes[2]
-        assert np.isfinite(seq_ax.get_ylim()).all()
+        edata_ax = plt.gcf().axes[2]
+        assert np.isfinite(edata_ax.get_ylim()).all()
 
-    def test_plot_eseq_ylim_matches_full_data_range(self, tmp_path):
-        # emin/emax must span the actual eseq range rather than a
+    def test_plot_edata_ylim_matches_full_data_range(self, tmp_path):
+        # emin/emax must span the actual edata range rather than a
         # narrower window, otherwise real energy values get clipped
         # off the visible axis.
         dataset = _make_dataset(tmp_path, nmol=6, nbp=20)
@@ -200,13 +200,13 @@ class TestPlotOccupMolsSlicing:
         ana.compute_occup(dataset=dataset, batch_size=2)
 
         SimPlot().plot_occup(
-            regions="chr1", dataset=dataset, plot_eseq=True, show=False
+            regions="chr1", dataset=dataset, plot_edata=True, show=False
         )
 
-        seq_ax = plt.gcf().axes[2]
-        eseq_mean = np.nanmean(dataset.eseq["chr1"], axis=0)
+        edata_ax = plt.gcf().axes[2]
+        edata_mean = np.nanmean(dataset.edata["chr1"], axis=0)
         np.testing.assert_allclose(
-            seq_ax.get_ylim(), (np.nanmin(eseq_mean), np.nanmax(eseq_mean))
+            edata_ax.get_ylim(), (np.nanmin(edata_mean), np.nanmax(edata_mean))
         )
 
 
@@ -342,7 +342,7 @@ class TestPlotOccupMultiRegion:
     def test_ylabel_on_leftmost_panels_only(self, tmp_path):
         dataset = _make_region_dataset(tmp_path, 5)
         SimPlot().plot_occup(
-            dataset, regions=dataset.regions, plot_eseq=True, show=False
+            dataset, regions=dataset.regions, plot_edata=True, show=False
         )
         fig = plt.gcf()
         labels = [ax.get_ylabel() for ax in _heatmap_axes(fig)]
@@ -366,15 +366,15 @@ class TestPlotOccupMultiRegion:
             dataset,
             regions=["chr1", "chr2"],
             xscale=1,
-            plot_eseq=True,
+            plot_edata=True,
             sharex=True,
             show=False,
         )
         fig = plt.gcf()
         hm_axes = _heatmap_axes(fig)
         assert [ax.get_xlim() for ax in hm_axes] == [(0, 30), (0, 30)]
-        seq_axes = [ax for ax in fig.axes if ax.lines]
-        assert [ax.get_xlim() for ax in seq_axes] == [(0, 30), (0, 30)]
+        edata_axes = [ax for ax in fig.axes if ax.lines]
+        assert [ax.get_xlim() for ax in edata_axes] == [(0, 30), (0, 30)]
 
     def test_link_mat_dict_sorts_each_region(self, tmp_path):
         dataset = _make_two_region_dataset(tmp_path)
@@ -504,28 +504,28 @@ class TestPlotOccupMean:
         assert np.isnan(mean[3])
         assert mean[5] == pytest.approx(np.nanmean(occup[:, 5]))
 
-    def test_mean_above_eseq(self, tmp_path):
+    def test_mean_above_edata(self, tmp_path):
         dataset = _make_two_region_dataset(tmp_path)
         SimPlot().plot_occup(
             dataset,
             regions="chr1",
             plot_mean=True,
-            plot_eseq=True,
+            plot_edata=True,
             show=False,
         )
         fig = plt.gcf()
         hm_ax = _heatmap_axes(fig)[0]
         mean_ax = _mean_axes(fig)[0]
-        seq_ax = next(
+        edata_ax = next(
             ax for ax in fig.axes if ax.lines and ax is not mean_ax
         )
-        hm, mean, seq = _boxes([hm_ax, mean_ax, seq_ax])
+        hm, mean, seq = _boxes([hm_ax, mean_ax, edata_ax])
         assert hm.y0 > mean.y1 and mean.y0 > seq.y1
         assert not hm_ax.get_xaxis().get_visible()
         assert not mean_ax.get_xaxis().get_visible()
-        assert seq_ax.get_xlabel().startswith("Position")
+        assert edata_ax.get_xlabel().startswith("Position")
 
-    def test_mean_is_bottom_row_without_eseq(self, tmp_path):
+    def test_mean_is_bottom_row_without_edata(self, tmp_path):
         dataset = _make_two_region_dataset(tmp_path)
         SimPlot().plot_occup(
             dataset, regions="chr1", plot_mean=True, show=False
@@ -600,10 +600,10 @@ class TestPlotSamplesCmapOverride:
     "ignore:__array__ implementation doesn't accept a copy keyword"
     ":DeprecationWarning"
 )
-class TestPlotSamplesEseq:
-    def test_plot_eseq_handles_nan_from_missing_coverage(self, tmp_path):
+class TestPlotSamplesEdata:
+    def test_plot_edata_handles_nan_from_missing_coverage(self, tmp_path):
         # A genomic position with no coverage (NaN in meth_prob) propagates
-        # NaN into eseq for that molecule; the y-limit calculation must
+        # NaN into edata for that molecule; the y-limit calculation must
         # tolerate that instead of crashing.
         rng = np.random.default_rng(5)
         meth_prob = rng.random((2, 20))
@@ -617,10 +617,10 @@ class TestPlotSamplesEseq:
             out_dir=tmp_path / "dataset",
             seed=5,
         )
-        assert np.isnan(dataset.eseq["chr1"][:, 5]).all()
+        assert np.isnan(dataset.edata["chr1"][:, 5]).all()
 
         SimPlot().plot_samples(
-            dataset, region="chr1", mol=0, plot_eseq=True, show=False
+            dataset, region="chr1", mol=0, plot_edata=True, show=False
         )
 
     def test_no_data_molecule_raises_over_time(self, tmp_path):
@@ -640,20 +640,20 @@ class TestPlotSamplesEseq:
 
         with pytest.raises(ValueError, match="molecule 0 of region 'chr1'"):
             SimPlot().plot_samples(
-                dataset, region="chr1", mol=0, plot_eseq=True, show=False
+                dataset, region="chr1", mol=0, plot_edata=True, show=False
             )
 
-    def test_plot_eseq_ylim_matches_full_data_range(self, tmp_path):
+    def test_plot_edata_ylim_matches_full_data_range(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=2, nbp=20)
 
         SimPlot().plot_samples(
-            dataset, region="chr1", mol=0, plot_eseq=True, show=False
+            dataset, region="chr1", mol=0, plot_edata=True, show=False
         )
 
-        seq_ax = plt.gcf().axes[2]
-        eseq = dataset.eseq["chr1"][0, :]
+        edata_ax = plt.gcf().axes[2]
+        edata = dataset.edata["chr1"][0, :]
         np.testing.assert_allclose(
-            seq_ax.get_ylim(), (np.nanmin(eseq), np.nanmax(eseq))
+            edata_ax.get_ylim(), (np.nanmin(edata), np.nanmax(edata))
         )
 
 
@@ -826,19 +826,19 @@ class TestPlotSamples:
         with pytest.raises(ValueError, match="no samples stored"):
             SimPlot().plot_samples(dataset, region="chr1", mol=0, show=False)
 
-    def test_plot_eseq_without_stored_energy_raises(self, tmp_path):
+    def test_plot_edata_without_stored_energy_raises(self, tmp_path):
         dataset = SimManager(nworker=1, verbose=False).run(
             regions="chr1",
             nsim=1,
             settings=_make_settings(),
             meth_prob=np.random.default_rng(1).random((1, 20)),
-            out_dir=tmp_path / "no_eseq",
+            out_dir=tmp_path / "no_edata",
             seed=1,
-            store_eseq=False,
+            store_edata=False,
         )
-        with pytest.raises(ValueError, match="store_eseq=True"):
+        with pytest.raises(ValueError, match="store_edata=True"):
             SimPlot().plot_samples(
-                dataset, region="chr1", mol=0, plot_eseq=True, show=False
+                dataset, region="chr1", mol=0, plot_edata=True, show=False
             )
 
 
@@ -951,14 +951,14 @@ class TestPlotConfig:
         rows = _rows(dataset, configs)
         np.testing.assert_array_equal(_image()[1], rows[2:].max(axis=0))
 
-    def test_plot_eseq_averages_shown_molecules(self, tmp_path):
+    def test_plot_edata_averages_shown_molecules(self, tmp_path):
         dataset = _tm_calls_dataset(tmp_path)
         SimPlot().plot_config(
             dataset,
             regions="chr1",
             name="bm",
             mols=[0, 2],
-            plot_eseq=True,
+            plot_edata=True,
             show=False,
         )
         assert len(plt.gcf().axes) == 4
@@ -1156,27 +1156,27 @@ class TestPlotConfigMean:
             _mean_line(plt.gcf()), _expected_mean(self._rows(dataset))
         )
 
-    def test_mean_above_eseq(self, tmp_path):
+    def test_mean_above_edata(self, tmp_path):
         dataset = _tm_calls_dataset(tmp_path)
         SimPlot().plot_config(
             dataset,
             regions="chr1",
             name="bm",
             plot_mean=True,
-            plot_eseq=True,
+            plot_edata=True,
             show=False,
         )
         fig = plt.gcf()
         hm_ax = _heatmap_axes(fig)[0]
         mean_ax = _mean_axes(fig)[0]
-        seq_ax = next(
+        edata_ax = next(
             ax for ax in fig.axes if ax.lines and ax is not mean_ax
         )
-        hm, mean, seq = _boxes([hm_ax, mean_ax, seq_ax])
+        hm, mean, seq = _boxes([hm_ax, mean_ax, edata_ax])
         assert hm.y0 > mean.y1 and mean.y0 > seq.y1
         assert not hm_ax.get_xaxis().get_visible()
         assert not mean_ax.get_xaxis().get_visible()
-        assert seq_ax.get_xlabel().startswith("Position")
+        assert edata_ax.get_xlabel().startswith("Position")
 
     def test_several_regions(self, tmp_path):
         dataset = _tm_two_region_dataset(tmp_path)

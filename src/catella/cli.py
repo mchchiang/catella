@@ -752,9 +752,9 @@ def run(
     nworker: Annotated[
         int | None, typer.Option(help="Number of processes")
     ] = 1,
-    store_eseq: Annotated[
+    store_edata: Annotated[
         bool | None,
-        typer.Option(help="Store sequence-specific energy landscape"),
+        typer.Option(help="Store the data energy of each molecule"),
     ] = True,
     fill_nan: Annotated[
         str | None,
@@ -789,7 +789,7 @@ def run(
         seed=seed,
         mols=mols if mols is not None else slice(None),
         nworker=nworker,
-        store_eseq=store_eseq,
+        store_edata=store_edata,
         fill_nan=fill_nan,
         verbose=verbose,
     )
@@ -1165,8 +1165,8 @@ def plot_config(
         bool,
         typer.Option(help="Plot the share of molecules with a nucleosome"),
     ] = False,
-    plot_eseq: Annotated[
-        bool, typer.Option(help="Plot the mean sequence-specific energy")
+    plot_edata: Annotated[
+        bool, typer.Option(help="Plot the mean data energy")
     ] = False,
     link_mat_name: Annotated[
         str | None,
@@ -1211,7 +1211,7 @@ def plot_config(
         xscale=xscale,
         cmap=cmap,
         plot_mean=plot_mean,
-        plot_eseq=plot_eseq,
+        plot_edata=plot_edata,
         link_mat=link_mat,
         out_file=out_file,
         sharex=sharex,
@@ -1267,8 +1267,8 @@ def plot_occup(
     plot_mean: Annotated[
         bool, typer.Option(help="Plot the mean occupancy across molecules")
     ] = False,
-    plot_eseq: Annotated[
-        bool, typer.Option(help="Plot the sequence-specific binding energy")
+    plot_edata: Annotated[
+        bool, typer.Option(help="Plot the data energy")
     ] = False,
     link_mat_name: Annotated[
         str | None,
@@ -1308,7 +1308,7 @@ def plot_occup(
         xscale=xscale,
         cmap=cmap,
         plot_mean=plot_mean,
-        plot_eseq=plot_eseq,
+        plot_edata=plot_edata,
         link_mat=link_mat,
         sharex=sharex,
         show=show,

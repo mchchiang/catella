@@ -478,8 +478,8 @@ class SimDataset:
     _nbp: Mapping[str, int]
     _settings: SimSettings
     _method: str
-    _eseq: Mapping[str, np.ndarray]
-    _view_eseq: Mapping[str, np.ndarray]
+    _edata: Mapping[str, np.ndarray]
+    _view_edata: Mapping[str, np.ndarray]
     _out_type: Any
     _seed: int
     _seed_table: Mapping[str, np.ndarray]
@@ -511,7 +511,7 @@ class SimDataset:
         raw_dir: Path,
         dataset_file: Path,
         file_map: SimFileMapper,
-        eseq: Mapping[str, np.ndarray] | None,
+        edata: Mapping[str, np.ndarray] | None,
         method: str = "mcmc",
         out_type: Any | None = None,
         seed: int | None = None,
@@ -553,13 +553,15 @@ class SimDataset:
         obj._analysis = {region: DataFrameMap() for region in obj._regions}
         obj._global_analysis = DataFrameMap()
         obj._raw_accessor = cls.SimDataAccessor(obj)
-        obj._eseq = eseq
-        if obj._eseq is None:
-            obj._view_eseq = {region: np.nan for region in regions}
+        obj._edata = edata
+        if obj._edata is None:
+            obj._view_edata = {region: np.nan for region in regions}
         else:
-            obj._view_eseq = {region: obj._eseq[region] for region in regions}
+            obj._view_edata = {
+                region: obj._edata[region] for region in regions
+            }
             for region in regions:
-                obj._view_eseq[region].flags.writeable = False
+                obj._view_edata[region].flags.writeable = False
         obj._out_type = out_type
         obj._seed = seed
         obj._seed_table = seed_table
@@ -594,7 +596,7 @@ class SimDataset:
         settings: SimSettings,
         out_dir: str | Path,
         dataset_name: str = "results",
-        eseq: np.ndarray | Mapping[str, np.ndarray] | None = None,
+        edata: np.ndarray | Mapping[str, np.ndarray] | None = None,
         method: str = "mcmc",
         out_type: Any | None = None,
         seed: int | None = None,
@@ -634,8 +636,8 @@ class SimDataset:
             Name of the dataset HDF5 file storing the metadata and analysis of
             the simulation results. The file directory of this HDF5 file is
             `out_dir/{dataset_name}.h5` (e.g,. `out_dir/results.h5`).
-        eseq : np.ndarray or None, default None
-            The sequence-specific energy landscape derived from the
+        edata : np.ndarray or None, default None
+            The data energy of each molecule, derived from the
             methylation data.
         method : {"mcmc", "tm"}, default "mcmc"
             Which engine generated (or will generate) this dataset's raw
@@ -705,7 +707,7 @@ class SimDataset:
             nsim=nsim,
             nbp=nbp,
             settings=settings,
-            eseq=eseq,
+            edata=edata,
             raw_dir=raw_dir,
             dataset_file=dataset_file,
             file_map=file_map,
@@ -817,7 +819,7 @@ class SimDataset:
                 nmol=self._nmol,
                 nbp=self._nbp,
                 settings=self._settings,
-                eseq=self._eseq,
+                edata=self._edata,
                 out_type=self._out_type,
                 seed=self._seed,
                 seed_table=self._seed_table,
@@ -1296,7 +1298,7 @@ class SimDataset:
         return MappingProxyType(self._nbp)
 
     @property
-    def eseq(self) -> Mapping[str, np.ndarray]:
+    def edata(self) -> Mapping[str, np.ndarray]:
         """
         The seqeunce-specific energy landscape derived from the methylation
         data for each molecule in each region.
@@ -1308,21 +1310,21 @@ class SimDataset:
             the methylation data for those region molecules. This view is
             immutable; neither keys nor counts can be modified.
         """
-        return MappingProxyType(self._view_eseq)
+        return MappingProxyType(self._view_edata)
 
     @property
-    def has_eseq(self) -> bool:
+    def has_edata(self) -> bool:
         """
         Whether the dataset stores a per-molecule energy landscape.
 
         Returns
         -------
         bool
-            True if the dataset was created with `store_eseq=True`,
-            False otherwise (in which case `eseq` holds NaN
+            True if the dataset was created with `store_edata=True`,
+            False otherwise (in which case `edata` holds NaN
             placeholders, not real energy landscapes).
         """
-        return self._eseq is not None
+        return self._edata is not None
 
     @property
     def out_type(self) -> Any | None:

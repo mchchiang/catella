@@ -49,11 +49,11 @@ def _check_downsample(max_rows, how):
         raise ValueError(f"max_rows must be positive, got {max_rows}")
 
 
-def _check_eseq(dataset, plot_eseq):
+def _check_edata(dataset, plot_edata):
     """Check that the energies to plot are stored."""
-    if plot_eseq and not dataset.has_eseq:
+    if plot_edata and not dataset.has_edata:
         raise ValueError(
-            "plot_eseq requires stored energies; run with store_eseq=True"
+            "plot_edata requires stored energies; run with store_edata=True"
         )
 
 
@@ -344,7 +344,7 @@ class SimPlot:
         downsample_how: str = "stride",
         cmap: str | None = None,
         out_file: str | Path | None = None,
-        plot_eseq: bool = False,
+        plot_edata: bool = False,
         show: bool = True,
     ):
         """
@@ -405,9 +405,8 @@ class SimPlot:
         out_file : str or Path, optional
             Path to save the figure. Directories are created if they do
             not exist.
-        plot_eseq : bool, default False
-            Whether to plot the sequence-specific binding energy of `mol`
-            below the heatmap.
+        plot_edata : bool, default False
+            Whether to plot the data energy of `mol` below the heatmap.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
@@ -419,7 +418,7 @@ class SimPlot:
             with no data; if `tstart` or `tend` is used with
             `over="runs"`; if a TM dataset stores no samples; if `tend` <
             `tstart`; if `max_rows` or `downsample_how` is invalid; if a
-            scaling factor is not a power of 10; or if `plot_eseq` is True
+            scaling factor is not a power of 10; or if `plot_edata` is True
             and the dataset stores no energies.
 
         Warns
@@ -435,7 +434,7 @@ class SimPlot:
         """
         xpow = int(self._log10(xscale, "xscale"))
         _check_downsample(max_rows, downsample_how)
-        _check_eseq(dataset, plot_eseq)
+        _check_edata(dataset, plot_edata)
         if over is None:
             over = "time" if dataset.method == "mcmc" else "runs"
         if over not in ("time", "runs"):
@@ -509,12 +508,12 @@ class SimPlot:
             ylabel = _rows_label(unit, ntotal, matrix.shape[0])
             invert_y = False
 
-        eseq = dataset.eseq[region][mol, :] if plot_eseq else None
+        edata = dataset.edata[region][mol, :] if plot_edata else None
         fig, (panel,) = self._footprint_grid(
             1,
             binary=matrix.dtype == np.int8,
             dendrogram=False,
-            extra_rows=("eseq",) if plot_eseq else (),
+            extra_rows=("edata",) if plot_edata else (),
         )
         im = self._draw_footprints(
             panel,
@@ -526,8 +525,8 @@ class SimPlot:
             xpow=xpow,
             xscale=xscale,
             cmap=cmap,
-            eseq=eseq,
-            eseq_label=r"$E_{\text{seq}}$ [$k_BT$]",
+            edata=edata,
+            edata_label=r"$E^{\text{data}}$ [$k_BT$]",
         )
         self._footprint_side(fig, [panel], im, [matrix], cmap)
         panel["hm_ax"].set_title(region, pad=12)
@@ -549,7 +548,7 @@ class SimPlot:
         cmap: str | None = None,
         out_file: str | Path | None = None,
         plot_mean: bool = False,
-        plot_eseq: bool = False,
+        plot_edata: bool = False,
         link_mat: np.ndarray | dict | None = None,
         sharex: bool = False,
         show: bool = True,
@@ -608,9 +607,9 @@ class SimPlot:
             scale), i.e., the mean of their configurations. Molecules
             without data are ignored. Computed before `max_rows`
             merging, so each shown molecule counts once.
-        plot_eseq : bool, default False
-            Whether to plot the sequence-specific binding energy, averaged
-            over the shown molecules, below the heatmap (and below the
+        plot_edata : bool, default False
+            Whether to plot the data energy, averaged over the shown
+            molecules, below the heatmap (and below the
             mean, if both are plotted).
         link_mat : np.ndarray, pd.DataFrame, or dict, optional
             Linkage matrix of these molecules (as returned or stored by
@@ -631,7 +630,7 @@ class SimPlot:
         ------
         ValueError
             If `regions` is empty, if `max_rows` or `downsample_how` is
-            invalid, if `xscale` is not a power of 10, if `plot_eseq` is
+            invalid, if `xscale` is not a power of 10, if `plot_edata` is
             True and the dataset stores no energies, if `mols` or
             `link_mat` is not a dict with several regions, if `link_mat`
             is combined with `mols` or does not match the number of
@@ -664,7 +663,7 @@ class SimPlot:
         link_mat = _per_region(link_mat, regions, "link_mat")
         xpow = int(self._log10(xscale, "xscale"))
         _check_downsample(max_rows, downsample_how)
-        _check_eseq(dataset, plot_eseq)
+        _check_edata(dataset, plot_edata)
 
         def shown_rows(region):
             nrow = dataset.nmol[region] if mols[region] is None else len(
@@ -690,7 +689,7 @@ class SimPlot:
                 max_rows=max_rows,
                 downsample_how=downsample_how,
                 plot_mean=plot_mean,
-                plot_eseq=plot_eseq,
+                plot_edata=plot_edata,
                 link_mat=link_mat[region],
             )
             for region in regions
@@ -702,7 +701,7 @@ class SimPlot:
             dendrogram=any(d["link_mat"] is not None for d in data),
             extra_rows=[
                 name
-                for name, on in (("mean", plot_mean), ("eseq", plot_eseq))
+                for name, on in (("mean", plot_mean), ("edata", plot_edata))
                 if on
             ],
         )
@@ -717,8 +716,8 @@ class SimPlot:
                 xpow=xpow,
                 xscale=xscale,
                 cmap=cmap,
-                eseq=d["eseq"],
-                eseq_label=r"$\langle E_{\text{seq}} \rangle$ [$k_BT$]",
+                edata=d["edata"],
+                edata_label=r"$\langle E^{\text{data}} \rangle$ [$k_BT$]",
                 link_mat=d["link_mat"],
                 mean=d["mean"],
             )
@@ -741,7 +740,7 @@ class SimPlot:
         max_rows,
         downsample_how,
         plot_mean,
-        plot_eseq,
+        plot_edata,
         link_mat,
     ):
         """
@@ -753,7 +752,7 @@ class SimPlot:
             "matrix" (footprints, merged to `max_rows`), "mean" (share
             of the shown molecules with a nucleosome at each base,
             before merging and ignoring molecules without data, or
-            None), "eseq" (mean energy of the shown molecules, or None),
+            None), "edata" (mean energy of the shown molecules, or None),
             "ylabel", and "link_mat" (as a float array, or None).
         """
         mol_ids = (
@@ -780,11 +779,13 @@ class SimPlot:
                 mean = np.nanmean(calls, axis=0)
         matrix = _merge_rows(matrix, max_rows, downsample_how)
 
-        eseq = None
-        if plot_eseq:
+        edata = None
+        if plot_edata:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", category=RuntimeWarning)
-                eseq = np.nanmean(np.asarray(dataset.eseq[region])[mol_ids], 0)
+                edata = np.nanmean(
+                    np.asarray(dataset.edata[region])[mol_ids], 0
+                )
         ylabel = (
             _rows_label("molecule", ntotal, matrix.shape[0])
             if link_mat is None
@@ -793,7 +794,7 @@ class SimPlot:
         return {
             "matrix": matrix,
             "mean": mean,
-            "eseq": eseq,
+            "edata": edata,
             "ylabel": ylabel,
             "link_mat": link_mat,
         }
@@ -829,8 +830,8 @@ class SimPlot:
         xpow,
         xscale,
         cmap,
-        eseq,
-        eseq_label,
+        edata,
+        edata_label,
         link_mat=None,
         mean=None,
     ):
@@ -851,7 +852,7 @@ class SimPlot:
         """
         nbp = matrix.shape[1]
         hm_ax = panel["hm_ax"]
-        seq_ax = panel["seq_ax"]
+        edata_ax = panel["edata_ax"]
         if link_mat is not None:
             sch.dendrogram(
                 link_mat,
@@ -886,24 +887,24 @@ class SimPlot:
         if mean is not None:
             hm_ax.get_xaxis().set_visible(False)
             _draw_mean(panel["mean_ax"], mean, xscale=xscale)
-            if eseq is not None:
+            if edata is not None:
                 panel["mean_ax"].get_xaxis().set_visible(False)
 
-        if eseq is not None:
+        if edata is not None:
             hm_ax.get_xaxis().set_visible(False)
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", category=RuntimeWarning)
-                emin = max(np.nanmin(eseq), -dataset.settings["emax"])
-                emax = min(np.nanmax(eseq), dataset.settings["emax"])
+                emin = max(np.nanmin(edata), -dataset.settings["emax"])
+                emax = min(np.nanmax(edata), dataset.settings["emax"])
             if np.isfinite(emin) and np.isfinite(emax):
-                seq_ax.set_ylim(emin, emax)
+                edata_ax.set_ylim(emin, emax)
             lnuc = dataset.settings["nucbp"]
-            eseq = CoordsTransform(lnuc=lnuc).left_to_center_aligned(eseq)
-            eseq[: lnuc // 2] = np.nan
-            eseq[len(eseq) - lnuc // 2 :] = np.nan
-            seq_ax.plot(np.arange(0, nbp) / xscale, eseq)
-            seq_ax.set_ylabel(eseq_label)
-            seq_ax.set_xlim(0, nbp / xscale)
+            edata = CoordsTransform(lnuc=lnuc).left_to_center_aligned(edata)
+            edata[: lnuc // 2] = np.nan
+            edata[len(edata) - lnuc // 2 :] = np.nan
+            edata_ax.plot(np.arange(0, nbp) / xscale, edata)
+            edata_ax.set_ylabel(edata_label)
+            edata_ax.set_xlim(0, nbp / xscale)
 
         btm_ax = _row_axes(panel)[-1]
         btm_ax.set_xlabel(rf"Position $x$ [$10^{{{xpow}}}$ bp]")
@@ -960,7 +961,7 @@ class SimPlot:
         cmap: str | None = None,
         out_file: str | Path | None = None,
         plot_mean: bool = False,
-        plot_eseq: bool = False,
+        plot_edata: bool = False,
         link_mat: np.ndarray | dict | None = None,
         sharex: bool = False,
         show: bool = True,
@@ -988,7 +989,7 @@ class SimPlot:
             dataset.
         mols : iterable of int or dict, optional
             Molecule indices to display, restricting the heatmap (and,
-            if `plot_eseq` is True, the sequence-energy average) to
+            if `plot_edata` is True, the sequence-energy average) to
             this subset. If None (default), all molecules are shown.
             The y-axis reflects positions within this subset (0..n),
             not the original molecule indices. With several regions, a
@@ -1006,9 +1007,9 @@ class SimPlot:
             Whether to plot the mean occupancy across the shown
             molecules (one value per bp, on a 0 to 1 scale) below the
             heatmap.
-        plot_eseq : bool, default False
-            Whether to plot the underlying sequence-specific nucleosome binding
-            energy, averaged across all molecules, below the heatmap (and
+        plot_edata : bool, default False
+            Whether to plot the data energy, averaged across all
+            molecules, below the heatmap (and
             below the mean, if both are plotted).
         link_mat : np.ndarray, pd.DataFrame, or dict, optional
             Linkage matrix of these molecules (as returned or stored by
@@ -1058,7 +1059,7 @@ class SimPlot:
         sort_data = any(link_mat[r] is not None for r in regions)
         extra_rows = [
             name
-            for name, on in (("mean", plot_mean), ("eseq", plot_eseq))
+            for name, on in (("mean", plot_mean), ("edata", plot_edata))
             if on
         ]
         # The rightmost column is a dedicated, narrow slot for the
@@ -1083,7 +1084,7 @@ class SimPlot:
                 xscale=xscale,
                 xpow=xpow,
                 cmap=cmap,
-                plot_eseq=plot_eseq,
+                plot_edata=plot_edata,
                 link_mat=link_mat[region],
             )
         _colorbar(fig, panels, im, "Occupancy")
@@ -1104,7 +1105,7 @@ class SimPlot:
         xscale,
         xpow,
         cmap,
-        plot_eseq,
+        plot_edata,
         link_mat,
     ):
         """
@@ -1118,7 +1119,7 @@ class SimPlot:
             The heatmap, for the colorbar drawn by the caller.
         """
         hm_ax = panel["hm_ax"]
-        dend_ax, seq_ax = panel["dend_ax"], panel["seq_ax"]
+        dend_ax, edata_ax = panel["dend_ax"], panel["edata_ax"]
         mean_ax = panel["mean_ax"]
 
         # Retrieve the occupancy data
@@ -1160,14 +1161,14 @@ class SimPlot:
         )
         xpow_str = rf"$10^{{{xpow}}}$"
         hm_ax.set_xlim(0, nbp / xscale)
-        if plot_eseq or mean_ax is not None:
+        if plot_edata or mean_ax is not None:
             hm_ax.get_xaxis().set_visible(False)
         if mean_ax is not None:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", category=RuntimeWarning)
                 mean = np.nanmean(np.asarray(occup, dtype=float), axis=0)
             _draw_mean(mean_ax, mean, xscale=xscale)
-            if plot_eseq:
+            if plot_edata:
                 mean_ax.get_xaxis().set_visible(False)
         hm_ax.set_ylabel("Row (leaf order)" if sort_data else "Molecule index")
 
@@ -1183,26 +1184,26 @@ class SimPlot:
         if dend_ax is not None:
             dend_ax.axis("off")
 
-        # Plot the sequence energy if needed
-        if plot_eseq:
-            eseq_src = dataset.eseq[region]
+        # Plot the data energy if needed
+        if plot_edata:
+            edata_src = dataset.edata[region]
             if mols is not None:
-                eseq_src = np.asarray(eseq_src)[list(mols)]
+                edata_src = np.asarray(edata_src)[list(mols)]
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", category=RuntimeWarning)
-                eseq = np.nanmean(eseq_src, axis=0)
-                emin = max(np.nanmin(eseq), -dataset.settings["emax"])
-                emax = min(np.nanmax(eseq), dataset.settings["emax"])
+                edata = np.nanmean(edata_src, axis=0)
+                emin = max(np.nanmin(edata), -dataset.settings["emax"])
+                emax = min(np.nanmax(edata), dataset.settings["emax"])
             if np.isfinite(emin) and np.isfinite(emax):
-                seq_ax.set_ylim(emin, emax)
+                edata_ax.set_ylim(emin, emax)
             lnuc = dataset.settings["nucbp"]
             trans = CoordsTransform(lnuc=lnuc)
-            eseq = trans.left_to_center_aligned(eseq)
-            eseq[: lnuc // 2] = np.nan
-            eseq[len(eseq) - lnuc // 2 :] = np.nan
-            seq_ax.plot(np.arange(0, nbp) / xscale, eseq)
-            seq_ax.set_ylabel(r"$\langle E_{\text{seq}} \rangle$ [$k_BT$]")
-            seq_ax.set_xlim(0, nbp / xscale)
+            edata = trans.left_to_center_aligned(edata)
+            edata[: lnuc // 2] = np.nan
+            edata[len(edata) - lnuc // 2 :] = np.nan
+            edata_ax.plot(np.arange(0, nbp) / xscale, edata)
+            edata_ax.set_ylabel(r"$\langle E^{\text{data}} \rangle$ [$k_BT$]")
+            edata_ax.set_xlim(0, nbp / xscale)
 
         # Common x-axis label
         btm_ax = _row_axes(panel)[-1]

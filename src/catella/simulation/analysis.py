@@ -18,7 +18,7 @@ from catella.simulation._exact import (
     TMStat,
     _region_settings,
     _reject_time,
-    _require_eseq,
+    _require_edata,
     _require_tm,
     _tm_configs,
     _tm_per_bp,
@@ -578,7 +578,7 @@ class SimAnalysis:
         regions = _normalize_regions(regions, default_regions=dataset.regions)
         if dataset.method == "tm":
             _reject_time(time, record_time)
-            _require_eseq(dataset)
+            _require_edata(dataset)
             stats = [TMStat(name, "getOccup", per_bp=True)]
             if mean_nnuc_name is not None:
                 stats.append(TMStat(mean_nnuc_name, "getMeanN"))
@@ -704,7 +704,7 @@ class SimAnalysis:
         regions = _normalize_regions(regions, default_regions=dataset.regions)
         if dataset.method == "tm":
             _reject_time(time, record_time)
-            _require_eseq(dataset)
+            _require_edata(dataset)
             _tm_per_mol(
                 dataset, regions, name, NucPosTM.getMeanN, nworker=nworker
             )

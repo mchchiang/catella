@@ -6,8 +6,8 @@ from catella.simulation._jobs import (
     MCMCJob,
     TMJob,
     _check_seed_source,
-    _compute_eseq,
-    _eseq_bytes,
+    _compute_edata,
+    _edata_bytes,
     _iter_mcmc_jobs,
     _iter_selected,
     _iter_tm_jobs,
@@ -148,23 +148,23 @@ class TestRunSeeds:
         assert seeds == (_job_seed(42, 1, 1, 0), _job_seed(42, 1, 1, 1))
 
 
-class TestEseqBytes:
+class TestEdataBytes:
     def test_round_trip(self):
         row = np.array([0.2, 0.5, 0.8])
-        out = np.frombuffer(_eseq_bytes(row), dtype=np.float64)
+        out = np.frombuffer(_edata_bytes(row), dtype=np.float64)
         np.testing.assert_allclose(out, logit(row))
 
 
-class TestComputeEseq:
+class TestComputeEdata:
     def test_matches_model_per_molecule(self):
         settings = _make_settings()
         meth_prob = _meth_prob(nmol=2)
-        eseq = _compute_eseq(settings, meth_prob, ["chr2"])
-        assert list(eseq) == ["chr2"]
-        assert eseq["chr2"].shape == meth_prob["chr2"].shape
+        edata = _compute_edata(settings, meth_prob, ["chr2"])
+        assert list(edata) == ["chr2"]
+        assert edata["chr2"].shape == meth_prob["chr2"].shape
         model = NucPosMCMC(147, 30, 20, 1.0, -1.0, 0)
         model.setEnergy(logit(meth_prob["chr2"][1]), 5.0)
-        np.testing.assert_allclose(eseq["chr2"][1], model.getDataEnergy())
+        np.testing.assert_allclose(edata["chr2"][1], model.getDataEnergy())
 
 
 class TestIterSelected:
@@ -205,7 +205,7 @@ class TestIterMCMCJobs:
             assert job.settings == settings.for_region(region)
             assert job.out_type == Dump.OutputType.All
             assert job.out_file == dataset.mcmc_file(region, mol, run)
-            assert job.seq_energy == _eseq_bytes(meth_prob[region][mol, :])
+            assert job.edata == _edata_bytes(meth_prob[region][mol, :])
 
     def test_new_master_seed(self, tmp_path):
         dataset = _make_dataset(tmp_path)
@@ -251,7 +251,7 @@ class TestIterTMJobs:
         assert job.seeds == expected
         assert job.out_file == dataset.tm_file("chr2", 1)
         assert job.settings == settings.for_region("chr2")
-        assert job.seq_energy == _eseq_bytes(meth_prob["chr2"][1, :])
+        assert job.edata == _edata_bytes(meth_prob["chr2"][1, :])
 
     def test_new_master_seed(self, tmp_path):
         dataset = _make_dataset(tmp_path, nsim=2, method="tm")

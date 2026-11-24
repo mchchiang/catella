@@ -39,8 +39,8 @@ class TMBatchJob:
     nbp: int
     """The number of base pairs of each molecule."""
 
-    eseq: np.ndarray
-    """The binding energy of each molecule, shape (nmol_batch, nbp)."""
+    edata: np.ndarray
+    """The data energy of each molecule, shape (nmol_batch, nbp)."""
 
     getters: tuple[tuple[str, dict], ...]
     """The `(method_name, kwargs)` of each `NucPosTM` getter to call."""
@@ -92,9 +92,9 @@ class TMStat:
         return nbp if self.per_bp else self.ncol
 
 
-def _require_eseq(dataset):
+def _require_edata(dataset):
     """
-    Check that `dataset` stores the binding energy of each molecule.
+    Check that `dataset` stores the data energy of each molecule.
 
     Parameters
     ----------
@@ -106,10 +106,10 @@ def _require_eseq(dataset):
     ValueError
         If the dataset has no stored energy landscape.
     """
-    if not dataset.has_eseq:
+    if not dataset.has_edata:
         raise ValueError(
             "exact computation requires the per-molecule energy "
-            "landscape; recreate the dataset with store_eseq=True"
+            "landscape; recreate the dataset with store_edata=True"
         )
 
 
@@ -132,7 +132,7 @@ def _require_tm(dataset, caller):
     """
     if dataset.method != "tm":
         raise ValueError(f"{caller} requires a method='tm' dataset")
-    _require_eseq(dataset)
+    _require_edata(dataset)
 
 
 def _reject_time(time, record_time):
@@ -177,7 +177,7 @@ def _region_settings(dataset, region):
     return SimSettings(**dict(dataset.settings)).for_region(region)
 
 
-def _build_tm(settings, nbp, eseq):
+def _build_tm(settings, nbp, edata):
     """
     Build and solve the transfer matrix of one molecule.
 
@@ -190,8 +190,8 @@ def _build_tm(settings, nbp, eseq):
         The settings, resolved for the region of the molecule.
     nbp : int
         The number of base pairs of the molecule.
-    eseq : np.ndarray
-        The binding energy of each base pair.
+    edata : np.ndarray
+        The data energy of each base pair.
 
     Returns
     -------
@@ -206,7 +206,7 @@ def _build_tm(settings, nbp, eseq):
         settings.mu,
         1,
     )
-    tm.setEnergy(np.asarray(eseq, dtype=np.float64).tolist(), settings.emax)
+    tm.setEnergy(np.asarray(edata, dtype=np.float64).tolist(), settings.emax)
     tm.solve(settings.end_temp)
     return tm
 
@@ -218,7 +218,7 @@ def _solved_tm(dataset, region, mol):
     Parameters
     ----------
     dataset : SimDataset
-        The dataset holding the settings and binding energy.
+        The dataset holding the settings and data energy.
     region : str
         The region of the molecule.
     mol : int
@@ -232,7 +232,7 @@ def _solved_tm(dataset, region, mol):
     return _build_tm(
         _region_settings(dataset, region),
         dataset.nbp[region],
-        dataset.eseq[region][mol],
+        dataset.edata[region][mol],
     )
 
 
@@ -253,7 +253,7 @@ def _run_tm_batch(job):
         energy at every nucleosome start position), which is not solved.
     """
     results = []
-    for row in job.eseq:
+    for row in job.edata:
         if np.isnan(_start_positions(row, job.settings.nucbp)).all():
             results.append(None)
             continue
@@ -299,7 +299,7 @@ def _iter_tm_batches(dataset, regions, getters, batch_size, nworker):
     Parameters
     ----------
     dataset : SimDataset
-        The TM dataset holding the settings and binding energy.
+        The TM dataset holding the settings and data energy.
     regions : iterable of str
         The regions to process.
     getters : sequence of (str, dict)
@@ -332,14 +332,14 @@ def _iter_tm_batches(dataset, regions, getters, batch_size, nworker):
     def jobs():
         for region in regions:
             settings = _region_settings(dataset, region)
-            eseq = dataset.eseq[region]
+            edata = dataset.edata[region]
             for start in range(0, dataset.nmol[region], batch_size):
                 yield TMBatchJob(
                     region=region,
                     start=start,
                     settings=settings,
                     nbp=dataset.nbp[region],
-                    eseq=np.array(eseq[start : start + batch_size]),
+                    edata=np.array(edata[start : start + batch_size]),
                     getters=getters,
                 )
 

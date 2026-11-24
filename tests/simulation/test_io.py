@@ -189,14 +189,14 @@ class TestSettings:
 
 class TestMetadata:
     def test_round_trip(self, tmp_path):
-        eseq = {"c1": np.ones((3, 40)), "c2": np.zeros((1, 50))}
+        edata = {"c1": np.ones((3, 40)), "c2": np.zeros((1, 50))}
         seed_table = {
             "c1": np.arange(6, dtype=np.uint32).reshape(3, 2),
             "c2": np.array([[7, 8]], dtype=np.uint32),
         }
         kwargs = _metadata_kwargs(
             tmp_path,
-            eseq=eseq,
+            edata=edata,
             out_type=Dump.OutputType.All,
             seed=42,
             seed_table=seed_table,
@@ -212,17 +212,26 @@ class TestMetadata:
         assert meta["nmol"] == {"c1": 3, "c2": 1}
         assert meta["nbp"] == {"c1": 40, "c2": 50}
         assert meta["settings"] == kwargs["settings"]
-        np.testing.assert_array_equal(meta["eseq"]["c1"], eseq["c1"])
+        np.testing.assert_array_equal(meta["edata"]["c1"], edata["c1"])
         assert meta["out_type"] == Dump.OutputType.All
         assert meta["seed"] == 42
         np.testing.assert_array_equal(meta["seed_table"]["c2"], [[7, 8]])
+
+    def test_old_eseq_key_is_read_as_edata(self, tmp_path):
+        edata = {"c1": np.ones((3, 40)), "c2": np.zeros((1, 50))}
+        with h5py.File(tmp_path / "d.h5", "w") as f:
+            _write_metadata(f, **_metadata_kwargs(tmp_path, edata=edata))
+            f["metadata"].move("edata", "eseq")
+        with h5py.File(tmp_path / "d.h5", "r") as f:
+            meta = _read_metadata(f)
+        np.testing.assert_array_equal(meta["edata"]["c1"], edata["c1"])
 
     def test_optional_fields_default_to_none(self, tmp_path):
         with h5py.File(tmp_path / "d.h5", "w") as f:
             _write_metadata(f, **_metadata_kwargs(tmp_path))
         with h5py.File(tmp_path / "d.h5", "r") as f:
             meta = _read_metadata(f)
-        for name in ("eseq", "out_type", "seed", "seed_table"):
+        for name in ("edata", "out_type", "seed", "seed_table"):
             assert meta[name] is None
 
     def test_existing_metadata_only_updates_raw_dir_and_nsim(self, tmp_path):

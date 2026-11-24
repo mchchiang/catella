@@ -871,7 +871,7 @@ def run(
     out_types: str | Iterable[str] = "all",
     seed: int | None = None,
     mols: IndexType | Mapping[str, IndexType] = slice(None),
-    store_eseq: bool = True,
+    store_edata: bool = True,
     fill_nan: str | float | None = None,
     nworker: int = 1,
     verbose: bool = True,
@@ -917,9 +917,9 @@ def run(
         Seed for the random number generator to ensure reproducibility.
     mols : IndexType | Mapping[str, IndexType], default slice(None
         Specific molecule indices to subset for the simulation.
-    store_eseq : bool, default True
-        Whether to store the sequence-specific nucleosome binding energy
-        landscape derived from the methylation data to output dataset file.
+    store_edata : bool, default True
+        Whether to store the data energy of each molecule (derived from
+        the methylation data) in the output dataset file.
     fill_nan : {"mean"}, float, or None, default None
         How to treat a molecule that is nan at some but not all
         nucleosome start positions. If None (default), raise
@@ -958,7 +958,7 @@ def run(
         dataset_name=dataset_name,
         seed=seed,
         mols=mols,
-        store_eseq=store_eseq,
+        store_edata=store_edata,
         fill_nan=fill_nan,
     )
     return dataset
@@ -1354,7 +1354,7 @@ def plot_config(
     cmap: str | None = None,
     out_file: str | Path | None = None,
     plot_mean: bool = False,
-    plot_eseq: bool = False,
+    plot_edata: bool = False,
     link_mat: np.ndarray | pd.DataFrame | dict | None = None,
     sharex: bool = False,
     show: bool = True,
@@ -1411,9 +1411,9 @@ def plot_config(
         i.e., the mean of their configurations. Molecules without data
         are ignored. Computed before `max_rows` merging, so each shown
         molecule counts once.
-    plot_eseq : bool, default False
-        Whether to plot the sequence-specific binding energy, averaged
-        over the shown molecules, below the heatmap (and below the mean,
+    plot_edata : bool, default False
+        Whether to plot the data energy, averaged over the shown
+        molecules, below the heatmap (and below the mean,
         if both are plotted).
     link_mat : np.ndarray, pd.DataFrame, or dict, optional
         Linkage matrix of these molecules (as returned or stored by
@@ -1432,7 +1432,7 @@ def plot_config(
     ------
     ValueError
         If `regions` is empty, if `max_rows` or `downsample_how` is
-        invalid, if `xscale` is not a power of 10, if `plot_eseq` is True
+        invalid, if `xscale` is not a power of 10, if `plot_edata` is True
         and the dataset stores no energies, if `mols` or `link_mat` is
         not a dict with several regions, if `link_mat` is combined with
         `mols` or does not match the number of molecules, or for invalid
@@ -1462,7 +1462,7 @@ def plot_config(
         cmap=cmap,
         out_file=out_file,
         plot_mean=plot_mean,
-        plot_eseq=plot_eseq,
+        plot_edata=plot_edata,
         link_mat=link_mat,
         sharex=sharex,
         show=show,
@@ -1480,7 +1480,7 @@ def plot_occup(
     xscale: int = 1000,
     cmap: str | None = None,
     plot_mean: bool = False,
-    plot_eseq: bool = False,
+    plot_edata: bool = False,
     link_mat: np.ndarray | dict | None = None,
     sharex: bool = False,
     show: bool = True,
@@ -1510,7 +1510,7 @@ def plot_occup(
         This should match the `occup_name` used by `compute_occup`.
     mols : iterable of int or dict, optional
         Molecule indices to display, restricting the heatmap (and, if
-        `plot_eseq` is True, the sequence-energy average) to this
+        `plot_edata` is True, the sequence-energy average) to this
         subset. If None (default), all molecules are shown. With several
         regions, a dict keyed by region (regions not in it show all
         molecules).
@@ -1523,9 +1523,9 @@ def plot_occup(
     plot_mean : bool, default False
         Whether to plot the mean occupancy across the shown molecules
         (one value per bp, on a 0 to 1 scale) below the heatmap.
-    plot_eseq : bool, default False
-        Whether to plot the underlying sequence-specific nucleosome binding
-        energy, averaged across all molecules, below the heatmap (and
+    plot_edata : bool, default False
+        Whether to plot the data energy, averaged across all
+        molecules, below the heatmap (and
         below the mean, if both are plotted).
     link_mat : np.ndarray, pd.DataFrame, or dict, optional
         Linkage matrix of these molecules (as returned or stored by
@@ -1572,7 +1572,7 @@ def plot_occup(
         cmap=cmap,
         out_file=out_file,
         plot_mean=plot_mean,
-        plot_eseq=plot_eseq,
+        plot_edata=plot_edata,
         link_mat=link_mat,
         sharex=sharex,
         show=show,

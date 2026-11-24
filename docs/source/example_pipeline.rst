@@ -116,10 +116,10 @@ commentary. See :doc:`tutorials/tut01_meth_prob` and
 
    simplot = SimPlot()
    simplot.plot_energy(sim_data, region="601", mol=0, run=0)
-   simplot.plot_samples(sim_data, region="601", mol=0, plot_eseq=True)
+   simplot.plot_samples(sim_data, region="601", mol=0, plot_edata=True)
 
    # Analyze and save results
    catella.compute_occup(sim_data)
    link = catella.sort_by_linkage(dataset=sim_data, data_name="occup")
-   catella.plot_occup(sim_data, regions="601", link_mat=link, plot_eseq=True)
+   catella.plot_occup(sim_data, regions="601", link_mat=link, plot_edata=True)
    sim_data.save()

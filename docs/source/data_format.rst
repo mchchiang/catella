@@ -383,9 +383,9 @@ The dataset-level file (``<dataset_name>.h5``, default
        nmol                int array, molecules per region
        nbp                 int array, bp length per region
        settings/           group; attrs = every SimSettings field
-       eseq/<region>       (optional, store_eseq=True) gzip dataset,
-                            (n_mol, nbp), sequence-specific binding
-                            energy landscape
+       edata/<region>      (optional, store_edata=True) gzip dataset,
+                            (n_mol, nbp), data energy of each
+                            molecule (named eseq/ in older files)
        seed_table/<region> (optional) uint32 array, (nmol, nsim),
                             per-(molecule, run) seed for reproducing
                             an individual run

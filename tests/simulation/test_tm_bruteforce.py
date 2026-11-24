@@ -16,14 +16,14 @@ def _erep(gap, nucbp, llink, elink):
     return elink * sr6 * sr6
 
 
-def _brute_force(nucbp, llink, elink, mu, eseq, temp=1.0):
+def _brute_force(nucbp, llink, elink, mu, edata, temp=1.0):
     """
     Enumerate every valid (non-overlapping) nucleosome placement on a
     small fiber by direct summation, using the same Hamiltonian as
     NucPosModel/NucPosTM. Returns (logz, start_prob, occup, mean_n,
     var_n), each computed exactly.
     """
-    nbp = len(eseq)
+    nbp = len(edata)
     npos = nbp - nucbp + 1
     total_weight = 0.0
     start_weight = [0.0] * npos
@@ -35,7 +35,7 @@ def _brute_force(nucbp, llink, elink, mu, eseq, temp=1.0):
         if idx == npos:
             w = 1.0
             for i, x in enumerate(placed):
-                w *= math.exp(-(eseq[x] - mu) / temp)
+                w *= math.exp(-(edata[x] - mu) / temp)
                 if i > 0:
                     gap = x - placed[i - 1]
                     w *= math.exp(-_erep(gap, nucbp, llink, elink) / temp)
@@ -63,8 +63,8 @@ def _brute_force(nucbp, llink, elink, mu, eseq, temp=1.0):
     return logz, start_prob, occup, mean_n, var_n
 
 
-def _brute_force_log(nucbp, llink, elink, mu, eseq, temp):
-    nbp = len(eseq)
+def _brute_force_log(nucbp, llink, elink, mu, edata, temp):
+    nbp = len(edata)
     npos = nbp - nucbp + 1
     configs = []
 
@@ -79,7 +79,7 @@ def _brute_force_log(nucbp, llink, elink, mu, eseq, temp):
     recurse(0, [])
     logw = []
     for placed in configs:
-        energy = sum(eseq[x] - mu for x in placed)
+        energy = sum(edata[x] - mu for x in placed)
         energy += sum(
             _erep(b - a, nucbp, llink, elink)
             for a, b in itertools.pairwise(placed)
@@ -95,9 +95,9 @@ def _brute_force_log(nucbp, llink, elink, mu, eseq, temp):
     return logz, start_prob, ground
 
 
-def _tm(nucbp, llink, elink, mu, eseq, temp=1.0, seed=1):
-    tm = NucPosTM(nucbp, len(eseq), llink, elink, mu, seed)
-    tm.setEnergy(list(eseq), 1e9)
+def _tm(nucbp, llink, elink, mu, edata, temp=1.0, seed=1):
+    tm = NucPosTM(nucbp, len(edata), llink, elink, mu, seed)
+    tm.setEnergy(list(edata), 1e9)
     tm.solve(temp)
     return tm
 
@@ -117,11 +117,11 @@ class TestCoreQuantities:
         self, nucbp, llink, elink, mu, nbp, seed
     ):
         rng = np.random.default_rng(seed)
-        eseq = rng.normal(size=nbp).tolist()
+        edata = rng.normal(size=nbp).tolist()
         logz_bf, start_bf, occup_bf, meann_bf, _ = _brute_force(
-            nucbp, llink, elink, mu, eseq
+            nucbp, llink, elink, mu, edata
         )
-        tm = _tm(nucbp, llink, elink, mu, eseq)
+        tm = _tm(nucbp, llink, elink, mu, edata)
 
         assert tm.getLogZ() == pytest.approx(logz_bf, rel=1e-8)
         np.testing.assert_allclose(tm.getStartProb(), start_bf, atol=1e-8)
@@ -133,8 +133,8 @@ class TestCoreQuantities:
         # must sum to <N>, and occupancy must lie in [0, 1] everywhere.
         rng = np.random.default_rng(42)
         nbp = 16
-        eseq = rng.normal(size=nbp).tolist()
-        tm = _tm(3, 2, 1.0, 0.2, eseq)
+        edata = rng.normal(size=nbp).tolist()
+        tm = _tm(3, 2, 1.0, 0.2, edata)
         start_prob = np.asarray(tm.getStartProb())
         occup = np.asarray(tm.getOccup())
         assert start_prob.sum() == pytest.approx(tm.getMeanN(), rel=1e-8)
@@ -145,24 +145,24 @@ class TestUncertainty:
     def test_var_n_matches_brute_force(self):
         rng = np.random.default_rng(7)
         nucbp, llink, elink, mu, nbp = 3, 2, 1.0, 0.4, 14
-        eseq = rng.normal(size=nbp).tolist()
-        _, _, _, _, var_n_bf = _brute_force(nucbp, llink, elink, mu, eseq)
-        tm = _tm(nucbp, llink, elink, mu, eseq)
+        edata = rng.normal(size=nbp).tolist()
+        _, _, _, _, var_n_bf = _brute_force(nucbp, llink, elink, mu, edata)
+        tm = _tm(nucbp, llink, elink, mu, edata)
         assert tm.getVarN() == pytest.approx(var_n_bf, rel=1e-4)
 
     def test_var_occup_matches_bernoulli_closed_form(self):
         rng = np.random.default_rng(8)
         nucbp, llink, elink, mu, nbp = 2, 3, 0.8, -0.2, 13
-        eseq = rng.normal(size=nbp).tolist()
-        tm = _tm(nucbp, llink, elink, mu, eseq)
+        edata = rng.normal(size=nbp).tolist()
+        tm = _tm(nucbp, llink, elink, mu, edata)
         occup = np.asarray(tm.getOccup())
         expected = occup * (1.0 - occup)
         np.testing.assert_allclose(tm.getVarOccup(), expected, atol=1e-12)
 
     def test_var_n_insensitive_to_step_size(self):
         rng = np.random.default_rng(9)
-        eseq = rng.normal(size=12).tolist()
-        tm = _tm(2, 2, 1.0, 0.1, eseq)
+        edata = rng.normal(size=12).tolist()
+        tm = _tm(2, 2, 1.0, 0.1, edata)
         v1 = tm.getVarN(dmu=1e-3)
         v2 = tm.getVarN(dmu=1e-5)
         assert v1 == pytest.approx(v2, rel=1e-3)
@@ -172,8 +172,8 @@ class TestSampling:
     def test_sampled_configurations_match_exact_marginals(self):
         rng = np.random.default_rng(11)
         nucbp, llink, elink, mu, nbp = 2, 2, 1.0, 0.5, 10
-        eseq = rng.normal(size=nbp).tolist()
-        tm = _tm(nucbp, llink, elink, mu, eseq, seed=123)
+        edata = rng.normal(size=nbp).tolist()
+        tm = _tm(nucbp, llink, elink, mu, edata, seed=123)
         exact_start = np.asarray(tm.getStartProb())
 
         n_samples = 20000
@@ -190,13 +190,13 @@ class TestSampling:
     def test_sample_energy_matches_hamiltonian(self):
         rng = np.random.default_rng(12)
         nucbp, llink, elink, mu, nbp = 3, 2, 1.0, 0.3, 14
-        eseq = rng.normal(size=nbp).tolist()
-        tm = _tm(nucbp, llink, elink, mu, eseq, seed=5)
+        edata = rng.normal(size=nbp).tolist()
+        tm = _tm(nucbp, llink, elink, mu, edata, seed=5)
         for _ in range(20):
             positions, energy = tm.sampleConfig()
             expected = 0.0
             for i, x in enumerate(positions):
-                expected += eseq[x]
+                expected += edata[x]
                 if i > 0:
                     expected += _erep(
                         x - positions[i - 1], nucbp, llink, elink
@@ -207,12 +207,12 @@ class TestSampling:
     def test_set_seed_matches_fresh_model(self):
         rng = np.random.default_rng(13)
         nucbp, llink, elink, mu, nbp = 3, 2, 1.0, 0.3, 40
-        eseq = rng.normal(size=nbp).tolist()
-        tm = _tm(nucbp, llink, elink, mu, eseq, seed=1)
+        edata = rng.normal(size=nbp).tolist()
+        tm = _tm(nucbp, llink, elink, mu, edata, seed=1)
         for s in (7, 8, 9):
             tm.setSeed(s)
             got = tm.sampleConfig()
-            fresh = _tm(nucbp, llink, elink, mu, eseq, seed=s)
+            fresh = _tm(nucbp, llink, elink, mu, edata, seed=s)
             expected = fresh.sampleConfig()
             assert list(got[0]) == list(expected[0])
             assert got[1] == expected[1]
@@ -220,8 +220,8 @@ class TestSampling:
     def test_set_seed_repeats_sample(self):
         rng = np.random.default_rng(14)
         nucbp, llink, elink, mu, nbp = 3, 2, 1.0, 0.3, 40
-        eseq = rng.normal(size=nbp).tolist()
-        tm = _tm(nucbp, llink, elink, mu, eseq, seed=1)
+        edata = rng.normal(size=nbp).tolist()
+        tm = _tm(nucbp, llink, elink, mu, edata, seed=1)
         tm.setSeed(42)
         first = tm.sampleConfig()
         tm.setSeed(42)
@@ -232,8 +232,8 @@ class TestSampling:
     def test_reset_returns_to_set_seed(self):
         rng = np.random.default_rng(15)
         nucbp, llink, elink, mu, nbp = 3, 2, 1.0, 0.3, 40
-        eseq = rng.normal(size=nbp).tolist()
-        tm = _tm(nucbp, llink, elink, mu, eseq, seed=1)
+        edata = rng.normal(size=nbp).tolist()
+        tm = _tm(nucbp, llink, elink, mu, edata, seed=1)
         tm.setSeed(42)
         first = tm.sampleConfig()
         tm.sampleConfig()
@@ -246,11 +246,11 @@ class TestLowTemperature:
     def test_matches_log_space_brute_force(self, seed):
         rng = np.random.default_rng(seed)
         nucbp, llink, elink, mu, nbp, temp = 3, 2, 1.0, 0.5, 16, 0.01
-        eseq = (10.0 * rng.normal(size=nbp)).tolist()
+        edata = (10.0 * rng.normal(size=nbp)).tolist()
         logz_bf, start_bf, _ = _brute_force_log(
-            nucbp, llink, elink, mu, eseq, temp
+            nucbp, llink, elink, mu, edata, temp
         )
-        tm = _tm(nucbp, llink, elink, mu, eseq, temp=temp)
+        tm = _tm(nucbp, llink, elink, mu, edata, temp=temp)
 
         assert tm.getLogZ() == pytest.approx(logz_bf, rel=1e-8)
         np.testing.assert_allclose(tm.getStartProb(), start_bf, atol=1e-8)
@@ -261,9 +261,9 @@ class TestLowTemperature:
     def test_samples_ground_state(self):
         rng = np.random.default_rng(3)
         nucbp, llink, elink, mu, nbp, temp = 3, 2, 1.0, 0.5, 16, 0.01
-        eseq = (-10.0 + rng.normal(size=nbp)).tolist()
-        _, _, ground = _brute_force_log(nucbp, llink, elink, mu, eseq, temp)
-        tm = _tm(nucbp, llink, elink, mu, eseq, temp=temp, seed=4)
+        edata = (-10.0 + rng.normal(size=nbp)).tolist()
+        _, _, ground = _brute_force_log(nucbp, llink, elink, mu, edata, temp)
+        tm = _tm(nucbp, llink, elink, mu, edata, temp=temp, seed=4)
         for _ in range(10):
             positions, _energy = tm.sampleConfig()
             assert list(positions) == ground
@@ -271,8 +271,8 @@ class TestLowTemperature:
     @pytest.mark.parametrize("scale", [1.0, 10.0])
     def test_long_fiber_marginals_are_valid(self, scale):
         rng = np.random.default_rng(5)
-        eseq = np.clip(scale * rng.normal(size=2000) - 5.0, -10.0, 10.0)
-        tm = _tm(147, 50, 1.0, 0.0, eseq.tolist(), temp=0.01)
+        edata = np.clip(scale * rng.normal(size=2000) - 5.0, -10.0, 10.0)
+        tm = _tm(147, 50, 1.0, 0.0, edata.tolist(), temp=0.01)
         start_prob = np.asarray(tm.getStartProb())
         occup = np.asarray(tm.getOccup())
 
@@ -298,8 +298,8 @@ class TestRequireSolve:
         tm.getVarN()
 
 
-def _config_energy(nucbp, llink, elink, mu, eseq, placed):
-    energy = sum(eseq[x] - mu for x in placed)
+def _config_energy(nucbp, llink, elink, mu, edata, placed):
+    energy = sum(edata[x] - mu for x in placed)
     energy += sum(
         _erep(b - a, nucbp, llink, elink)
         for a, b in itertools.pairwise(placed)
@@ -323,15 +323,15 @@ class TestMostLikelyConfig:
         self, nucbp, llink, elink, mu, nbp, seed
     ):
         rng = np.random.default_rng(seed)
-        eseq = rng.normal(size=nbp).tolist()
-        _, _, ground = _brute_force_log(nucbp, llink, elink, mu, eseq, 1.0)
-        tm = _tm(nucbp, llink, elink, mu, eseq)
+        edata = rng.normal(size=nbp).tolist()
+        _, _, ground = _brute_force_log(nucbp, llink, elink, mu, edata, 1.0)
+        tm = _tm(nucbp, llink, elink, mu, edata)
 
         positions, energy = tm.getMostLikelyConfig()
 
         assert list(positions) == ground
         assert energy == pytest.approx(
-            _config_energy(nucbp, llink, elink, mu, eseq, ground)
+            _config_energy(nucbp, llink, elink, mu, edata, ground)
         )
 
     def test_does_not_require_solve(self):
@@ -350,16 +350,16 @@ class TestMostLikelyConfig:
 
     def test_independent_of_solve_temperature(self):
         rng = np.random.default_rng(7)
-        eseq = rng.normal(size=14).tolist()
-        cold = _tm(3, 2, 1.0, 0.5, eseq, temp=0.1).getMostLikelyConfig()
-        hot = _tm(3, 2, 1.0, 0.5, eseq, temp=5.0).getMostLikelyConfig()
+        edata = rng.normal(size=14).tolist()
+        cold = _tm(3, 2, 1.0, 0.5, edata, temp=0.1).getMostLikelyConfig()
+        hot = _tm(3, 2, 1.0, 0.5, edata, temp=5.0).getMostLikelyConfig()
         assert list(cold[0]) == list(hot[0])
 
     def test_long_fiber_is_valid(self):
         rng = np.random.default_rng(5)
-        eseq = np.clip(rng.normal(size=2000) - 1.0, -10.0, 10.0).tolist()
+        edata = np.clip(rng.normal(size=2000) - 1.0, -10.0, 10.0).tolist()
         tm = NucPosTM(147, 2000, 50, 1.0, 0.0, seed=1)
-        tm.setEnergy(eseq, 1e9)
+        tm.setEnergy(edata, 1e9)
         positions, energy = tm.getMostLikelyConfig()
         positions = np.asarray(positions)
 
@@ -367,7 +367,7 @@ class TestMostLikelyConfig:
         assert np.all(np.diff(positions) >= 147)
         assert positions.min() >= 0 and positions.max() <= 2000 - 147
         assert energy == pytest.approx(
-            _config_energy(147, 50, 1.0, 0.0, eseq, positions.tolist())
+            _config_energy(147, 50, 1.0, 0.0, edata, positions.tolist())
         )
 
 
@@ -406,8 +406,8 @@ class TestBestMatchConfig:
         self, nucbp, llink, elink, mu, nbp, gamma
     ):
         rng = np.random.default_rng(nbp)
-        eseq = rng.normal(size=nbp).tolist()
-        tm = _tm(nucbp, llink, elink, mu, eseq)
+        edata = rng.normal(size=nbp).tolist()
+        tm = _tm(nucbp, llink, elink, mu, edata)
         gain = _footprint_gain(tm.getOccup(), nucbp, gamma)
         configs = _valid_configs(nucbp, nbp - nucbp + 1)
         scores = [
@@ -425,15 +425,15 @@ class TestBestMatchConfig:
         )
         assert score == pytest.approx(max(scores))
         assert energy == pytest.approx(
-            _config_energy(nucbp, llink, elink, mu, eseq, best)
+            _config_energy(nucbp, llink, elink, mu, edata, best)
         )
 
     @pytest.mark.parametrize("gamma", [0.5, 1.0, 2.0])
     def test_no_gap_with_repulsion_above_max_gain(self, gamma):
         nucbp, llink, elink = 20, 6, 1.0
         rng = np.random.default_rng(3)
-        eseq = (rng.normal(size=600) - 2.0).tolist()
-        tm = _tm(nucbp, llink, elink, 0.0, eseq)
+        edata = (rng.normal(size=600) - 2.0).tolist()
+        tm = _tm(nucbp, llink, elink, 0.0, edata)
 
         positions, _ = tm.getBestMatchConfig(gamma)
 
@@ -455,8 +455,8 @@ class TestBestMatchConfig:
     def test_no_repulsion_matches_unpenalized(self):
         nucbp, nbp = 3, 14
         rng = np.random.default_rng(4)
-        eseq = rng.normal(size=nbp).tolist()
-        tm = _tm(nucbp, 0, 1.0, 0.5, eseq)
+        edata = rng.normal(size=nbp).tolist()
+        tm = _tm(nucbp, 0, 1.0, 0.5, edata)
         gain = _footprint_gain(tm.getOccup(), nucbp, 1.0)
         configs = _valid_configs(nucbp, nbp - nucbp + 1)
         scores = [gain[c].sum() if c else 0.0 for c in configs]
@@ -479,8 +479,8 @@ class TestBestMatchConfig:
     @pytest.mark.parametrize("seed", [11, 12, 13])
     def test_covered_occupancy_grows_with_gamma(self, seed):
         rng = np.random.default_rng(seed)
-        eseq = rng.normal(size=14).tolist()
-        tm = _tm(3, 2, 1.0, 0.5, eseq)
+        edata = rng.normal(size=14).tolist()
+        tm = _tm(3, 2, 1.0, 0.5, edata)
         occup = np.asarray(tm.getOccup())
 
         def covered_mass(gamma):
@@ -507,8 +507,8 @@ class TestBestMatchConfig:
 
     def test_long_fiber_is_valid(self):
         rng = np.random.default_rng(5)
-        eseq = np.clip(rng.normal(size=2000) - 1.0, -10.0, 10.0).tolist()
-        tm = _tm(147, 50, 1.0, 0.0, eseq)
+        edata = np.clip(rng.normal(size=2000) - 1.0, -10.0, 10.0).tolist()
+        tm = _tm(147, 50, 1.0, 0.0, edata)
         positions, energy = tm.getBestMatchConfig()
         positions = np.asarray(positions)
 
@@ -516,16 +516,16 @@ class TestBestMatchConfig:
         assert np.all(np.diff(positions) >= 147)
         assert positions.min() >= 0 and positions.max() <= 2000 - 147
         assert energy == pytest.approx(
-            _config_energy(147, 50, 1.0, 0.0, eseq, positions.tolist())
+            _config_energy(147, 50, 1.0, 0.0, edata, positions.tolist())
         )
 
 
-def _linker_hist_bf(nucbp, llink, elink, mu, eseq, temp, lmax, xlo, xhi):
-    nbp = len(eseq)
+def _linker_hist_bf(nucbp, llink, elink, mu, edata, temp, lmax, xlo, xhi):
+    nbp = len(edata)
     configs = _valid_configs(nucbp, nbp - nucbp + 1)
     logw = np.array(
         [
-            -_config_energy(nucbp, llink, elink, mu, eseq, c) / temp
+            -_config_energy(nucbp, llink, elink, mu, edata, c) / temp
             for c in configs
         ]
     )
@@ -549,12 +549,12 @@ class TestLinkerHist:
         self, nucbp, llink, elink, mu, nbp, temp, trim
     ):
         rng = np.random.default_rng(nbp)
-        eseq = rng.normal(size=nbp).tolist()
-        tm = _tm(nucbp, llink, elink, mu, eseq, temp=temp)
+        edata = rng.normal(size=nbp).tolist()
+        tm = _tm(nucbp, llink, elink, mu, edata, temp=temp)
         lmax = 2
         xlo, xhi = trim, nbp - trim
         expected = _linker_hist_bf(
-            nucbp, llink, elink, mu, eseq, temp, lmax, xlo, xhi
+            nucbp, llink, elink, mu, edata, temp, lmax, xlo, xhi
         )
         got = tm.getLinkerHist(lmax, xlo, xhi)
         np.testing.assert_allclose(got, expected, rtol=1e-9, atol=1e-12)
@@ -562,8 +562,8 @@ class TestLinkerHist:
     @pytest.mark.parametrize("nucbp,llink,elink,mu,nbp", PARAM_SETS)
     def test_sum_rule(self, nucbp, llink, elink, mu, nbp):
         rng = np.random.default_rng(nbp + 1)
-        eseq = rng.normal(size=nbp).tolist()
-        tm = _tm(nucbp, llink, elink, mu, eseq)
+        edata = rng.normal(size=nbp).tolist()
+        tm = _tm(nucbp, llink, elink, mu, edata)
         hist = np.asarray(tm.getLinkerHist(nbp))
         expected = tm.getMeanN() - 1.0 + math.exp(-tm.getLogZ())
         assert hist.sum() == pytest.approx(expected, rel=1e-10)
@@ -571,8 +571,8 @@ class TestLinkerHist:
 
     def test_default_window_is_full_fiber(self):
         rng = np.random.default_rng(3)
-        eseq = rng.normal(size=14).tolist()
-        tm = _tm(3, 2, 1.0, 0.5, eseq)
+        edata = rng.normal(size=14).tolist()
+        tm = _tm(3, 2, 1.0, 0.5, edata)
         np.testing.assert_array_equal(
             tm.getLinkerHist(2), tm.getLinkerHist(2, 0, 14)
         )
@@ -611,8 +611,8 @@ class TestLinkerHist:
     def test_matches_sampled_histogram(self):
         rng = np.random.default_rng(6)
         nucbp, llink, elink, mu, nbp = 2, 2, 1.0, 0.5, 30
-        eseq = rng.normal(size=nbp).tolist()
-        tm = _tm(nucbp, llink, elink, mu, eseq, seed=9)
+        edata = rng.normal(size=nbp).tolist()
+        tm = _tm(nucbp, llink, elink, mu, edata, seed=9)
         lmax = 5
         exact = np.asarray(tm.getLinkerHist(lmax))
         n_samples = 20000
@@ -625,8 +625,8 @@ class TestLinkerHist:
 
     def test_long_fiber_is_finite_and_obeys_sum_rule(self):
         rng = np.random.default_rng(7)
-        eseq = np.clip(rng.normal(size=2000) - 1.0, -10.0, 10.0).tolist()
-        tm = _tm(147, 50, 1.0, 0.0, eseq)
+        edata = np.clip(rng.normal(size=2000) - 1.0, -10.0, 10.0).tolist()
+        tm = _tm(147, 50, 1.0, 0.0, edata)
         hist = np.asarray(tm.getLinkerHist(1853))
         assert np.all(np.isfinite(hist)) and np.all(hist >= 0.0)
         expected = tm.getMeanN() - 1.0 + math.exp(-tm.getLogZ())

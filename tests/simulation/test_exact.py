@@ -7,7 +7,7 @@ from catella.h5_array import H5Array
 from catella.simulation._exact import (
     TMStat,
     _reject_time,
-    _require_eseq,
+    _require_edata,
     _require_tm,
     _solved_tm,
     _tm_configs,
@@ -59,27 +59,27 @@ def _make_mcmc_dataset(tmp_path):
     )
 
 
-class TestRequireEseq:
-    def test_passes_with_eseq(self, tmp_path):
-        _require_eseq(_make_tm_dataset(tmp_path))
+class TestRequireEdata:
+    def test_passes_with_edata(self, tmp_path):
+        _require_edata(_make_tm_dataset(tmp_path))
 
-    def test_raises_without_eseq(self, tmp_path):
-        dataset = _make_tm_dataset(tmp_path, store_eseq=False)
-        with pytest.raises(ValueError, match="store_eseq"):
-            _require_eseq(dataset)
+    def test_raises_without_edata(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, store_edata=False)
+        with pytest.raises(ValueError, match="store_edata"):
+            _require_edata(dataset)
 
 
 class TestRequireTM:
-    def test_passes_for_tm_with_eseq(self, tmp_path):
+    def test_passes_for_tm_with_edata(self, tmp_path):
         _require_tm(_make_tm_dataset(tmp_path), "f")
 
     def test_mcmc_raises_with_caller_name(self, tmp_path):
         with pytest.raises(ValueError, match="my_method requires"):
             _require_tm(_make_mcmc_dataset(tmp_path), "my_method")
 
-    def test_tm_without_eseq_raises(self, tmp_path):
-        dataset = _make_tm_dataset(tmp_path, store_eseq=False)
-        with pytest.raises(ValueError, match="store_eseq"):
+    def test_tm_without_edata_raises(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, store_edata=False)
+        with pytest.raises(ValueError, match="store_edata"):
             _require_tm(dataset, "f")
 
 
@@ -100,7 +100,7 @@ class TestSolvedTM:
         dataset = _make_tm_dataset(tmp_path)
         tm = _solved_tm(dataset, "chr1", 1)
         ref = NucPosTM(3, 12, 2, 1.0, 0.5, 1)
-        ref.setEnergy(dataset.eseq["chr1"][1].tolist(), 5.0)
+        ref.setEnergy(dataset.edata["chr1"][1].tolist(), 5.0)
         ref.solve(0.8)
         np.testing.assert_allclose(tm.getOccup(), ref.getOccup())
         assert tm.getLogZ() == pytest.approx(ref.getLogZ())

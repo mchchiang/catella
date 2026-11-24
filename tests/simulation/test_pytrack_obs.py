@@ -16,8 +16,8 @@ POS_KEYS = {"position_flat", "position_offset"}
 
 def _model(seed=3, nbp=400):
     model = NucPosMCMC(147, nbp, 20, 1.0, -1.0, seed)
-    eseq = np.random.default_rng(seed).uniform(-2.0, 2.0, nbp)
-    model.setEnergy(eseq.tolist(), 5.0)
+    edata = np.random.default_rng(seed).uniform(-2.0, 2.0, nbp)
+    model.setEnergy(edata.tolist(), 5.0)
     return model
 
 

@@ -37,7 +37,7 @@ def _make_meth_prob(nmol=3, nbp=400, seed=0):
 
 
 def _make_sim_run(out_file, **overrides):
-    seq_energy = np.asarray(
+    edata = np.asarray(
         _make_meth_prob(nmol=1)[0], dtype=np.float64
     ).tobytes()
     defaults = {
@@ -45,7 +45,7 @@ def _make_sim_run(out_file, **overrides):
         "mol": 0,
         "run": 0,
         "seed": 1,
-        "seq_energy": seq_energy,
+        "edata": edata,
         "out_type": Dump.OutputType.All,
         "out_file": out_file,
         "settings": _make_settings(),
@@ -646,14 +646,14 @@ def _make_tm_settings(**overrides):
 
 
 def _make_tm_job(out_file, seeds=(1, 2, 3), nbp=20, **overrides):
-    seq_energy = np.asarray(
+    edata = np.asarray(
         logit(_make_meth_prob(nmol=1, nbp=nbp)[0]), dtype=np.float64
     ).tobytes()
     defaults = {
         "region": "chr1",
         "mol": 0,
         "seeds": seeds,
-        "seq_energy": seq_energy,
+        "edata": edata,
         "out_file": out_file,
         "settings": _make_tm_settings(),
     }
@@ -678,17 +678,17 @@ class TestRunTMJob:
         p = _make_tm_job(out_file, seeds=(11, 12, 13))
         SimManager._run_tm_job(p)
         settings = p.settings
-        eseq = np.frombuffer(p.seq_energy, dtype=np.float64).tolist()
+        edata = np.frombuffer(p.edata, dtype=np.float64).tolist()
         for run, s in enumerate(p.seeds):
             tm = NucPosTM(
                 settings.nucbp,
-                len(eseq),
+                len(edata),
                 settings.llink,
                 settings.elink,
                 settings.mu,
                 s,
             )
-            tm.setEnergy(eseq, settings.emax)
+            tm.setEnergy(edata, settings.emax)
             tm.solve(settings.end_temp)
             position, energy = tm.sampleConfig()
             sample = _read_tm_sample(out_file, run)
@@ -1047,7 +1047,7 @@ class TestFillNan:
     def test_fill_sets_energy(self, tmp_path):
         meth_prob = _partial_nan_meth_prob()
         dataset = self._run(tmp_path, meth_prob, 0.5)
-        assert np.isfinite(dataset.eseq["chr1"][0, 10])
+        assert np.isfinite(dataset.edata["chr1"][0, 10])
         assert np.isnan(meth_prob[0, 10])
 
     @pytest.mark.parametrize("fill_nan", [0.5, "mean", None])

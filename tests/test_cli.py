@@ -1908,7 +1908,7 @@ class TestPlotConfig:
         assert result.exit_code == 0, result.output
         assert out_file.exists()
 
-    def test_plot_mean_and_eseq(self, tmp_path):
+    def test_plot_mean_and_edata(self, tmp_path):
         dataset_file = self._two_region_file(tmp_path)
         out_file = tmp_path / "configs_mean.png"
 
@@ -1921,7 +1921,7 @@ class TestPlotConfig:
                 "--name",
                 "best_match",
                 "--plot-mean",
-                "--plot-eseq",
+                "--plot-edata",
                 "--out-file",
                 str(out_file),
                 "--no-show",
@@ -2039,7 +2039,7 @@ class TestPlotOccup:
         "ignore:__array__ implementation doesn't accept a copy keyword"
         ":DeprecationWarning"
     )
-    def test_plot_mean_and_eseq(self, tmp_path):
+    def test_plot_mean_and_edata(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=4, nbp=10)
         out_file = tmp_path / "occup_mean.png"
 
@@ -2052,7 +2052,7 @@ class TestPlotOccup:
                 "--time",
                 "0",
                 "--plot-mean",
-                "--plot-eseq",
+                "--plot-edata",
                 "--out-file",
                 str(out_file),
                 "--no-show",

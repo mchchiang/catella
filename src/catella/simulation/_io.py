@@ -360,7 +360,7 @@ def _write_metadata(
     nmol,
     nbp,
     settings,
-    eseq=None,
+    edata=None,
     out_type=None,
     seed=None,
     seed_table=None,
@@ -390,8 +390,8 @@ def _write_metadata(
         The number of molecules and base pairs of each region.
     settings : SimSettings
         The simulation settings.
-    eseq : mapping of str to np.ndarray, optional
-        The binding energy of each region; not written if None.
+    edata : mapping of str to np.ndarray, optional
+        The data energy of each region; not written if None.
     out_type : Dump.OutputType, optional
         The recorded MCMC data; not written if None.
     seed : int, optional
@@ -418,10 +418,12 @@ def _write_metadata(
     gmeta.create_dataset("nmol", data=np.asarray([nmol[r] for r in regions]))
     gmeta.create_dataset("nbp", data=np.asarray([nbp[r] for r in regions]))
     _write_settings(gmeta.create_group("settings"), settings)
-    if eseq is not None:
-        geseq = gmeta.create_group("eseq")
+    if edata is not None:
+        gedata = gmeta.create_group("edata")
         for region in regions:
-            geseq.create_dataset(region, data=eseq[region], compression="gzip")
+            gedata.create_dataset(
+                region, data=edata[region], compression="gzip"
+            )
     if out_type is not None:
         gmeta.attrs["out_type"] = int(out_type)
     if seed is not None:
@@ -451,7 +453,7 @@ def _read_metadata(h5file):
     -------
     dict of str to Any
         'raw_dir' (Path, as stored), 'nsim', 'method', 'regions', 'nmol',
-        'nbp', 'settings', 'eseq', 'out_type', 'seed', 'seed_table',
+        'nbp', 'settings', 'edata', 'out_type', 'seed', 'seed_table',
         'no_data', and 'nan_fill'.
         Optional fields that were not written are None; 'method' defaults
         to "mcmc".
@@ -475,7 +477,8 @@ def _read_metadata(h5file):
         "nmol": dict(zip(regions, gmeta["nmol"][()], strict=True)),
         "nbp": dict(zip(regions, gmeta["nbp"][()], strict=True)),
         "settings": _read_settings(gmeta["settings"]),
-        "eseq": per_region("eseq"),
+        # Old datasets stored the data energy as 'eseq'
+        "edata": per_region("edata") or per_region("eseq"),
         "out_type": (
             Dump.OutputType(int(attrs["out_type"]))
             if "out_type" in attrs

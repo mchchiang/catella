@@ -37,9 +37,9 @@ class MCMCJob:
     from the batch seed if per-run offsets are applied.
     """
 
-    seq_energy: bytes
-    """Binary representation of the sequence-specific nucleosome binding
-    energy derived from the methylation data."""
+    edata: bytes
+    """Binary representation of the data energy derived from the
+    methylation data."""
 
     out_type: Dump.OutputType
     """The format or scope of data to be recorded (e.g., Energy, Position,
@@ -73,9 +73,9 @@ class TMJob:
     """One seed per sample; sample `i` is drawn after re-seeding the
     sampler with `seeds[i]`."""
 
-    seq_energy: bytes
-    """Binary representation of the sequence-specific nucleosome binding
-    energy derived from the methylation data."""
+    edata: bytes
+    """Binary representation of the data energy derived from the
+    methylation data."""
 
     out_file: Path
     """The HDF5 file where all of the molecule's samples are stored."""
@@ -216,7 +216,7 @@ def _run_seeds(dataset, region, mol, runs, seed=None):
     return tuple(_job_seed(seed, region_idx, mol, run) for run in runs)
 
 
-def _eseq_bytes(meth_prob_row):
+def _edata_bytes(meth_prob_row):
     """
     Encode one molecule's logit methylation probability for a job.
 
@@ -233,9 +233,9 @@ def _eseq_bytes(meth_prob_row):
     return np.asarray(logit(meth_prob_row), dtype=np.float64).tobytes()
 
 
-def _compute_eseq(settings, meth_prob, regions):
+def _compute_edata(settings, meth_prob, regions):
     """
-    Compute the sequence-specific nucleosome binding energy of molecules.
+    Compute the data energy of molecules from their methylation data.
 
     Parameters
     ----------
@@ -253,7 +253,7 @@ def _compute_eseq(settings, meth_prob, regions):
         The energy of each molecule and base pair, with the same shape as
         `meth_prob[region]`.
     """
-    eseq = {}
+    edata = {}
     for region in regions:
         prob = meth_prob[region]
         model = NucPosMCMC(
@@ -264,11 +264,11 @@ def _compute_eseq(settings, meth_prob, regions):
             settings.mu,
             0,
         )
-        eseq[region] = np.empty(prob.shape)
+        edata[region] = np.empty(prob.shape)
         for i in range(prob.shape[0]):
             model.setEnergy(logit(prob[i]), settings.emax)
-            eseq[region][i] = model.getDataEnergy()
-    return eseq
+            edata[region][i] = model.getDataEnergy()
+    return edata
 
 
 def _iter_selected(regions, nmol, mols):
@@ -321,10 +321,10 @@ def _iter_mcmc_jobs(
     MCMCJob
         The job of each target, in order.
     """
-    last_mol = eseq = None
+    last_mol = edata = None
     for region, mol, run in targets:
         if (region, mol) != last_mol:
-            eseq = _eseq_bytes(meth_prob[region][mol, :])
+            edata = _edata_bytes(meth_prob[region][mol, :])
             last_mol = (region, mol)
         yield MCMCJob(
             region=region,
@@ -332,7 +332,7 @@ def _iter_mcmc_jobs(
             run=run,
             settings=settings.for_region(region),
             seed=_run_seeds(dataset, region, mol, [run], seed)[0],
-            seq_energy=eseq,
+            edata=edata,
             out_type=out_type,
             out_file=dataset.mcmc_file(region, mol, run),
         )
@@ -367,7 +367,7 @@ def _iter_tm_jobs(dataset, settings, meth_prob, targets, seed=None):
             region=region,
             mol=mol,
             seeds=_run_seeds(dataset, region, mol, runs, seed),
-            seq_energy=_eseq_bytes(meth_prob[region][mol, :]),
+            edata=_edata_bytes(meth_prob[region][mol, :]),
             out_file=dataset.tm_file(region, mol),
             settings=settings.for_region(region),
         )

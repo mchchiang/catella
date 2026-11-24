@@ -35,7 +35,7 @@ from catella.simulation._jobs import (
     MCMCJob,
     TMJob,
     _check_seed_source,
-    _compute_eseq,
+    _compute_edata,
     _iter_mcmc_jobs,
     _iter_selected,
     _iter_tm_jobs,
@@ -192,7 +192,7 @@ class SimManager:
         out_types: str | Iterable[str] = "all",
         seed: int | None = None,
         mols: IndexType | Mapping[str, IndexType] = slice(None),
-        store_eseq: bool = True,
+        store_edata: bool = True,
         fill_nan: str | float | None = None,
     ) -> SimDataset:
         """
@@ -246,9 +246,9 @@ class SimManager:
         mols : IndexType or dict, default slice(None)
             Indices of molecules to simulate for each region. Can be a
             single index/slice or a mapping of {region_name: indices}.
-        store_eseq : bool, default True
-            Whether to store the sequence-specific nucleosome binding energy
-            landscape derived from the methylation data to output dataset file.
+        store_edata : bool, default True
+            Whether to store the data energy of each molecule (derived from
+            the methylation data) in the output dataset file.
         fill_nan : {"mean"}, float, or None, default None
             How to treat a molecule of `meth_prob` that is nan at some but
             not all nucleosome start positions. If None (default), raise
@@ -306,9 +306,9 @@ class SimManager:
         else:
             out_type = None
 
-        eseq = None
-        if store_eseq:
-            eseq = _compute_eseq(settings, meth_prob, regions)
+        edata = None
+        if store_edata:
+            edata = _compute_edata(settings, meth_prob, regions)
         seed = _resolve_master_seed(seed)
 
         # Save now so a loadable dataset exists even if the run is cut short
@@ -318,7 +318,7 @@ class SimManager:
             nsim=nsim,
             nbp=nbp,
             settings=settings,
-            eseq=eseq if store_eseq else None,
+            edata=edata if store_edata else None,
             out_dir=out_dir,
             dataset_name=dataset_name,
             method=method,
@@ -767,8 +767,8 @@ class SimManager:
             sim_dir = Path(p.out_file).parents[0]
             sim_dir.mkdir(exist_ok=True, parents=True)
             # Initialize the methylation energy landscape
-            eseq_list = np.frombuffer(p.seq_energy, dtype=np.float64).tolist()
-            nbp = len(eseq_list)
+            edata_list = np.frombuffer(p.edata, dtype=np.float64).tolist()
+            nbp = len(edata_list)
             cool_option = SimSettings._cool_map[settings.cool_option]
             # Create the cpp backend Monte Carlo simulation model
             model = NucPosMCMC(
@@ -779,7 +779,7 @@ class SimManager:
                 settings.mu,
                 p.seed,
             )
-            model.setEnergy(eseq_list, settings.emax)
+            model.setEnergy(edata_list, settings.emax)
             # For tracking all simulation data
             dump = sim.createDump(settings.print_freq, p.out_type)
             model.addTracker(dump)
@@ -811,8 +811,8 @@ class SimManager:
         settings = p.settings
         try:
             Path(p.out_file).parent.mkdir(exist_ok=True, parents=True)
-            eseq_list = np.frombuffer(p.seq_energy, dtype=np.float64).tolist()
-            nbp = len(eseq_list)
+            edata_list = np.frombuffer(p.edata, dtype=np.float64).tolist()
+            nbp = len(edata_list)
             model = NucPosTM(
                 settings.nucbp,
                 nbp,
@@ -821,7 +821,7 @@ class SimManager:
                 settings.mu,
                 p.seeds[0],
             )
-            model.setEnergy(eseq_list, settings.emax)
+            model.setEnergy(edata_list, settings.emax)
             model.solve(settings.end_temp)
             positions = []
             energies = []

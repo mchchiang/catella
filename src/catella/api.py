@@ -726,6 +726,7 @@ def qc(
     mask_name: str | None = None,
     batch_size: int = 20000,
     overwrite: bool = False,
+    span: str = "full",
 ) -> pd.DataFrame:
     """
     Summarize data quality per region and channel.
@@ -752,6 +753,8 @@ def qc(
         Molecules per batch when counting calls.
     overwrite : bool, default False
         Whether to replace an existing `exp.global_analysis["qc"]`.
+    span : {"full", "calls", "read"}, default "full"
+        As in `compute_model_prob`; pass the same value.
 
     Returns
     -------
@@ -762,9 +765,7 @@ def qc(
     Raises
     ------
     ValueError
-        If `channels` or `regions` is invalid, `percentiles` is empty
-        or outside [0, 100], the table exists and `overwrite` is
-        False, or a region has no `refseq` or no test data.
+        As in `MethPrintExperiment.qc`.
     KeyError
         If `mask_name` is not found for some source.
     """
@@ -775,6 +776,7 @@ def qc(
         mask_name=mask_name,
         batch_size=batch_size,
         overwrite=overwrite,
+        span=span,
     )
 
 

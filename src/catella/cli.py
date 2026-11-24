@@ -380,6 +380,10 @@ def qc(
             help="Replace an existing qc table"
         ),
     ] = False,
+    span: Annotated[
+        str,
+        typer.Option(help="Molecule stretch counted: full, calls or read"),
+    ] = "full",
 ):
     """
     Summarize data quality per region and channel (model-free).
@@ -393,6 +397,7 @@ def qc(
         mask_name=mask_name,
         batch_size=batch_size,
         overwrite=overwrite,
+        span=span,
     )
     typer.echo(df.to_csv(sep="\t", index=False), nl=False)
     if tsv_file is not None:

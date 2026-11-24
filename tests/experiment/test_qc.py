@@ -272,3 +272,35 @@ class TestValidation:
         with pytest.raises(ValueError):
             e.qc()
         e.close()
+
+    def test_invalid_span_raises(self, exp):
+        with pytest.raises(ValueError, match="span must be one of"):
+            exp.qc(span="bogus")
+
+
+class TestSpan:
+    @pytest.fixture
+    def partial(self, tmp_path):
+        e = _load(tmp_path, _mol("p", [0, 1], "+", 0.9))
+        yield e
+        e.close()
+
+    def test_full_counts_unread_sites(self, partial):
+        row = partial.qc().iloc[0]
+        assert row["meth_frac_test"] == pytest.approx(0.36)
+        assert row["dropout_test_p50"] == pytest.approx(0.6)
+
+    def test_read_counts_only_read_sites(self, partial):
+        row = partial.qc(span="read").iloc[0]
+        assert row["meth_frac_test"] == pytest.approx(0.9)
+        assert row["dropout_test_p50"] == pytest.approx(0.0)
+
+    def test_frac_read(self, partial):
+        assert partial.qc().iloc[0]["frac_read_test"] == pytest.approx(0.2)
+
+    def test_no_frac_read_with_wrap(self, tmp_path):
+        e = _load(tmp_path, _full(0.5, 0.5), wrap=True)
+        assert "frac_read_test" not in e.qc().columns
+        with pytest.raises(ValueError, match="requires read extents"):
+            e.qc(span="read", overwrite=True)
+        e.close()

@@ -442,6 +442,17 @@ class TestQC:
         result = runner.invoke(app, ["qc", str(raw_file), "--overwrite"])
         assert result.exit_code == 0, result.output
 
+    def test_span_option(self, tmp_path):
+        raw_file, *_ = _load_raw_a_mtase(tmp_path)
+        ok = runner.invoke(app, ["qc", str(raw_file), "--span", "read"])
+        assert ok.exit_code == 0, ok.output
+
+        bad = runner.invoke(
+            app, ["qc", str(raw_file), "--span", "bogus", "--overwrite"]
+        )
+        assert bad.exit_code != 0
+        assert "span must be one of" in str(bad.exception)
+
 
 class TestPlotDropoutEcdf:
     def test_writes_figure_file(self, tmp_path):

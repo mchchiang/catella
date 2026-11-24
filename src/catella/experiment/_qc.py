@@ -12,7 +12,7 @@ from catella.experiment._contexts import (
 from catella.experiment._controls import _streamed_call_count
 from catella.experiment._dropout import (
     _dropout_fracs,
-    _site_coverage,
+    _source_coverage,
     _strand_of_mol,
 )
 
@@ -51,9 +51,11 @@ def _ratio(num, den):
     return float(num / den) if den else float("nan")
 
 
-def _source_stats(exp, region, src, site_masks, percentiles, mask_name):
+def _source_stats(
+    exp, region, src, site_masks, percentiles, mask_name, span="full"
+):
     """
-    Molecule, strand and dropout statistics of one source.
+    Molecule, strand, dropout and read-length statistics of one source.
 
     Parameters
     ----------
@@ -69,16 +71,20 @@ def _source_stats(exp, region, src, site_masks, percentiles, mask_name):
         Dropout percentiles to report.
     mask_name : str or None
         Dropout mask; masked molecules are left out.
+    span : {"full", "calls", "read"}, default "full"
+        As in `filter_dropout`.
 
     Returns
     -------
     dict
         `nmol` (kept molecules), `strand` (`frac_plus`/`frac_minus`/
         `frac_unmapped` over kept molecules; empty if
-        `exp.ignore_strand`), `frac_masked`, and `dropout` (percentiles
-        per channel name, plus "all" pooled).
+        `exp.ignore_strand`), `frac_masked`, `dropout` (percentiles
+        per channel name, plus "all" pooled; NaN molecules left out),
+        and `frac_read` (see `_frac_read`).
     """
-    source = exp.raw[region].sources[src]
+    raw = exp.raw[region]
+    source = raw.sources[src]
     df = source.data
     nmol_all = source.nmol
     keep = exp.is_kept(region, which=src, mask_name=mask_name)
@@ -90,21 +96,25 @@ def _source_stats(exp, region, src, site_masks, percentiles, mask_name):
         for key, s in (("plus", "+"), ("minus", "-"), ("unmapped", ".")):
             strand_fracs[f"frac_{key}"] = _ratio((kept == s).sum(), len(kept))
 
-    cov = _site_coverage(
-        df,
-        nmol_all,
+    cov = _source_coverage(
+        raw,
+        region,
+        src,
         site_masks,
         "union" if exp.ignore_strand else "drop",
-        ignore_strand=exp.ignore_strand,
+        exp.ignore_strand,
+        span,
     )
     names = list(site_masks)
     frac, pooled = _dropout_fracs(cov, names)
     sel = keep if exp.ignore_strand else keep & (strand != ".")
 
     def pct(x):
-        if not sel.any():
+        x = x[sel]
+        x = x[~np.isnan(x)]
+        if not len(x):
             return [float("nan")] * len(percentiles)
-        return [float(v) for v in np.percentile(x[sel], percentiles)]
+        return [float(v) for v in np.percentile(x, percentiles)]
 
     dropout = {name: pct(frac[i]) for i, name in enumerate(names)}
     dropout["all"] = pct(pooled)
@@ -113,10 +123,33 @@ def _source_stats(exp, region, src, site_masks, percentiles, mask_name):
         "strand": strand_fracs,
         "frac_masked": _ratio((~keep).sum(), nmol_all),
         "dropout": dropout,
+        "frac_read": _frac_read(source, keep, raw.nbp),
     }
 
 
-def _channel_rates(exp, region, codes, sources, mask_name, batch_size):
+def _frac_read(source, keep, nbp):
+    """
+    Mean share of the region read by the kept molecules: read extent
+    minus internal gaps, over `nbp`. None without read extents.
+    """
+    if source.mol_start is None or source.mol_end is None:
+        return None
+    start, end = source.mol_start, source.mol_end
+    length = (end - start).astype(np.float64)
+    if source.gaps is not None and source.gap_offset is not None:
+        gaps, offset = source.gaps, source.gap_offset
+        mol = np.repeat(np.arange(len(start)), np.diff(offset))
+        a = np.maximum(gaps[:, 0], start[mol])
+        b = np.minimum(gaps[:, 1], end[mol])
+        length -= np.bincount(
+            mol, weights=np.maximum(b - a, 0), minlength=len(start)
+        )
+    return _ratio(length[keep].sum(), keep.sum() * nbp)
+
+
+def _channel_rates(
+    exp, region, codes, sources, mask_name, batch_size, span="full"
+):
     """
     Pooled methylation rate per channel and source.
 
@@ -134,6 +167,8 @@ def _channel_rates(exp, region, codes, sources, mask_name, batch_size):
         Dropout mask; masked molecules are left out.
     batch_size : int
         Molecules per streamed batch.
+    span : {"full", "calls", "read"}, default "full"
+        Forwarded to `_streamed_call_count`.
 
     Returns
     -------
@@ -145,7 +180,7 @@ def _channel_rates(exp, region, codes, sources, mask_name, batch_size):
     rates = {}
     for src in sources:
         k, n = _streamed_call_count(
-            exp, region, src, ctx, assay, batch_size, mask_name
+            exp, region, src, ctx, assay, batch_size, mask_name, span=span
         )
         rates[src] = {
             CONTEXT_NAMES[c]: _ratio(k[ctx == c].sum(), n[ctx == c].sum())
@@ -184,7 +219,9 @@ def _site_cols(site_masks, parts, ignore_strand):
     }
 
 
-def _region_qc_rows(exp, region, codes, percentiles, mask_name, batch_size):
+def _region_qc_rows(
+    exp, region, codes, percentiles, mask_name, batch_size, span="full"
+):
     """
     QC table rows of one region.
 
@@ -202,6 +239,8 @@ def _region_qc_rows(exp, region, codes, percentiles, mask_name, batch_size):
         Dropout mask; masked molecules are left out.
     batch_size : int
         Molecules per streamed batch.
+    span : {"full", "calls", "read"}, default "full"
+        As in `filter_dropout`, for dropout and rates.
 
     Returns
     -------
@@ -230,10 +269,14 @@ def _region_qc_rows(exp, region, codes, percentiles, mask_name, batch_size):
         _strand_site_masks(exp, region, len(ctx)), ctx, codes
     )
     stats = {
-        s: _source_stats(exp, region, s, site_masks, percentiles, mask_name)
+        s: _source_stats(
+            exp, region, s, site_masks, percentiles, mask_name, span
+        )
         for s in sources
     }
-    rates = _channel_rates(exp, region, codes, sources, mask_name, batch_size)
+    rates = _channel_rates(
+        exp, region, codes, sources, mask_name, batch_size, span
+    )
 
     names = list(site_masks)
     if len(names) > 1:
@@ -249,6 +292,9 @@ def _region_qc_rows(exp, region, codes, percentiles, mask_name, batch_size):
                 row[f"{key}_{s}"] = val
         for s in sources:
             row[f"frac_masked_{s}"] = stats[s]["frac_masked"]
+        for s in sources:
+            if stats[s]["frac_read"] is not None:
+                row[f"frac_read_{s}"] = stats[s]["frac_read"]
         for s in sources:
             vals = stats[s]["dropout"][name]
             for q, val in zip(percentiles, vals, strict=True):

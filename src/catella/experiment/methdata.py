@@ -1676,6 +1676,7 @@ class MethPrintExperiment:
         mask_name: str | None = None,
         batch_size: int = 20000,
         overwrite: bool = False,
+        span: str = "full",
     ) -> pd.DataFrame:
         """
         Summarize data quality per region and channel.
@@ -1702,6 +1703,8 @@ class MethPrintExperiment:
             Molecules per batch when counting calls.
         overwrite : bool, default False
             Whether to replace an existing `global_analysis["qc"]`.
+        span : {"full", "calls", "read"}, default "full"
+            As in `filter_dropout`, for the dropout and rate columns.
 
         Returns
         -------
@@ -1719,9 +1722,13 @@ class MethPrintExperiment:
               Not included if `ignore_strand`.
             - `frac_masked_<src>`: share of molecules removed by
               `mask_name` (0 without a mask).
+            - `frac_read_<src>`: mean share of the region read by kept
+              molecules (read extent minus gaps). Not included without
+              read extents (e.g. `wrap`).
             - `dropout_<src>_p<q>`: percentile `q` of the per-molecule
               dropout fraction, i.e. the share of the channel's sites
-              on the molecule's strand with no call.
+              on the molecule's strand (within `span`, outside gaps)
+              with no call.
             - `meth_frac_<src>`: share of the channel's calls that are
               methylated. `meth_frac_unmeth` is the false positive
               rate, and 1 - `meth_frac_meth` the false negative rate.
@@ -1738,7 +1745,8 @@ class MethPrintExperiment:
         included in the "all" row.
 
         Rates pool all calls, so molecules with more calls weigh more.
-        They use the same counts as `model_prob`. `accessible_frac`
+        They use the same counts as `model_prob` with the same `span`.
+        `accessible_frac`
         assumes the methylated control is fully accessible; it is not
         clipped, so values outside [0, 1] flag a control problem, and
         it is noisy when `meth_frac_meth` - `meth_frac_unmeth` is
@@ -1757,8 +1765,9 @@ class MethPrintExperiment:
         ValueError
             If `channels` or `regions` is invalid, `percentiles` is
             empty or outside [0, 100], `global_analysis["qc"]`
-            exists and `overwrite` is False, or a region has no
-            `refseq` or no test data.
+            exists and `overwrite` is False, a region has no
+            `refseq` or no test data, `span` is invalid, or `span` is
+            "read" without read extents.
         KeyError
             If `mask_name` is not found for some source.
         """
@@ -1770,10 +1779,11 @@ class MethPrintExperiment:
         codes = _resolve_channels(self, channels)
         regions = self._resolve_regions_subset(regions)
         qs = _check_percentiles(percentiles)
+        _check_span(span)
         rows = []
         for region in regions:
             rows += _region_qc_rows(
-                self, region, codes, qs, mask_name, batch_size
+                self, region, codes, qs, mask_name, batch_size, span
             )
         table = pd.DataFrame(rows)
         self._global_analysis["qc"] = table

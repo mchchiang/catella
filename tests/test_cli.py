@@ -388,6 +388,20 @@ class TestFilterDropout:
         )
         assert bad.exit_code != 0
 
+    def test_span_option(self, tmp_path):
+        raw_file, *_ = _load_raw_a_mtase(tmp_path)
+
+        ok = runner.invoke(
+            app, ["filter_dropout", str(raw_file), "--span", "read"]
+        )
+        assert ok.exit_code == 0, ok.output
+
+        bad = runner.invoke(
+            app, ["filter_dropout", str(raw_file), "--span", "bogus"]
+        )
+        assert bad.exit_code != 0
+        assert "span must be one of" in str(bad.exception)
+
 
 class TestQC:
     def test_prints_tsv_writes_tsv_and_saves(self, tmp_path):

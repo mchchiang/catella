@@ -294,6 +294,10 @@ def filter_dropout(
             dir_okay=False,
         ),
     ] = None,
+    span: Annotated[
+        str,
+        typer.Option(help="Molecule stretch counted: full, calls or read"),
+    ] = "full",
 ):
     """
     Flag molecules with poor coverage at methylatable positions.
@@ -309,6 +313,7 @@ def filter_dropout(
         unmapped_strand=unmapped_strand,
         method=method,
         mask_name=mask_name,
+        span=span,
     )
     exp.save(out_file)
 
@@ -441,6 +446,10 @@ def plot_dropout_ecdf(
         ),
     ] = None,
     show: Annotated[bool, typer.Option(help="Display the figure")] = True,
+    span: Annotated[
+        str,
+        typer.Option(help="Molecule stretch counted: full, calls or read"),
+    ] = "full",
 ):
     """
     Plot the empirical CDF of dropout rate per group.
@@ -456,6 +465,7 @@ def plot_dropout_ecdf(
         split_by=split_by,
         out_file=out_file,
         show=show,
+        span=span,
     )
 
 

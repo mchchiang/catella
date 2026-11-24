@@ -44,7 +44,7 @@ from catella.experiment._dropout import (
     _apply_keep_mask,
     _dropout_fracs,
     _resolve_sources,
-    _site_coverage,
+    _source_coverage,
 )
 from catella.experiment._ingest import (
     _PER_MOL_KEYS,
@@ -60,6 +60,7 @@ from catella.experiment._ingest import (
     _write_coords,
 )
 from catella.experiment._qc import _check_percentiles, _region_qc_rows
+from catella.experiment._reads import _check_span
 from catella.h5_array import H5Array
 
 # Estimated peak memory of to_dense(as_h5array=False) per molecule and
@@ -1382,13 +1383,15 @@ class MethPrintExperiment:
         unmapped_strand: str = "union",
         method: str = "separate",
         mask_name: str = "dropout_mask",
+        span: str = "full",
     ) -> None:
         """
         Flag molecules with poor coverage at methylatable positions.
 
         Computes, per molecule, the fraction of methylatable positions
-        (per channel, on that molecule's own strand) with no
-        signal, and stores a keep/drop mask in `analysis`. Raw data is
+        (per channel, on that molecule's own strand, within `span`,
+        outside internal gaps) with no signal, and stores a keep/drop
+        mask in `analysis`. Raw data is
         never modified -- pass `mask_name` to `to_dense`/
         `MethPrintAnalysis.smooth`/`.meth_prob` to apply it downstream.
         If this experiment was loaded with `ignore_strand=True`,
@@ -1427,6 +1430,10 @@ class MethPrintExperiment:
             Key for the mask in `analysis[region]`, as
             `f"{source}_{mask_name}"` -- a single-column DataFrame
             with a boolean `keep` column, indexed by `mol_index`.
+            A channel without positions to measure is skipped; a
+            molecule without any is dropped.
+        span : {"full", "calls", "read"}, default "full"
+            As in `MethPrintAnalysis.model_prob`; pass the same value.
 
         Raises
         ------
@@ -1435,8 +1442,14 @@ class MethPrintExperiment:
             invalid (see `qc`), `regions` contains a region
             not in `self.regions`, `thres_min` or `thres_max` is not
             in [0, 1], `thres_min` is greater than `thres_max`,
-            `unmapped_strand`/`method` is invalid, a requested source
-            is missing for some region, or `refseq` is missing.
+            `unmapped_strand`/`method`/`span` is invalid, a requested
+            source is missing for some region, `refseq` is missing, or
+            `span` is "read" without read extents.
+
+        Warns
+        -----
+        UserWarning
+            If a region has no positions of any channel.
         """
         codes = self._resolve_dropout_channels(channels)
         regions = self._resolve_regions_subset(regions)
@@ -1465,6 +1478,7 @@ class MethPrintExperiment:
                 f"{sorted(_VALID_FILTER_DROPOUT_METHOD)}, got "
                 f"{method!r}"
             )
+        _check_span(span)
 
         for region in regions:
             raw = self.raw[region]
@@ -1476,19 +1490,21 @@ class MethPrintExperiment:
             sources = _resolve_sources(raw, which)
             masks = self._channel_masks(region, codes)
             names = list(masks)
+            if not any(p.any() or m.any() for p, m in masks.values()):
+                _warn(
+                    f"region '{region}' has no sites of channel(s) "
+                    f"{names}; all molecules dropped"
+                )
 
             for src in sources:
-                source = raw.sources.get(src)
-                if source is None:
-                    raise ValueError(
-                        f"no '{src}' data available for region '{region}'"
-                    )
-                cov = _site_coverage(
-                    source.data,
-                    source.nmol,
+                cov = _source_coverage(
+                    raw,
+                    region,
+                    src,
                     masks,
                     unmapped_strand,
-                    ignore_strand=self._ignore_strand,
+                    self._ignore_strand,
+                    span,
                 )
                 dropout_frac, combined_frac = _dropout_fracs(cov, names)
 
@@ -1569,6 +1585,7 @@ class MethPrintExperiment:
         channels: str | list | None = None,
         regions: list | None = None,
         unmapped_strand: str = "union",
+        span: str = "full",
     ) -> dict:
         """
         Return each molecule's dropout fraction (QC check).
@@ -1592,23 +1609,22 @@ class MethPrintExperiment:
         unmapped_strand : {"union", "drop", "+", "-"}, default
             "union"
             How to evaluate unmapped ('.') strand molecules.
+        span : {"full", "calls", "read"}, default "full"
+            As in `filter_dropout`.
 
         Returns
         -------
         dict of (str, str, str) to np.ndarray
             Maps `(region, source, channel)` to that group's
-            per-molecule dropout fraction array. Includes a
-            `channel="all"` entry per (region, source) pooling
-            all channels, if more than one channel is evaluated.
+            per-molecule dropout fraction array (NaN without positions
+            to measure). Includes a `channel="all"` entry per
+            (region, source) pooling all channels, if more than one
+            channel is evaluated.
 
         Raises
         ------
         ValueError
-            If `mtase` is unset on this experiment, `channels` is
-            invalid (see `qc`), `regions` contains a
-            region not in `self.regions`, `unmapped_strand` is
-            invalid, a requested source is missing for some
-            region, or `refseq` is missing.
+            As in `filter_dropout`.
         """
         codes = self._resolve_dropout_channels(channels)
         regions = self._resolve_regions_subset(regions)
@@ -1618,6 +1634,7 @@ class MethPrintExperiment:
                 f"{sorted(_VALID_UNMAPPED_STRAND)}, got "
                 f"{unmapped_strand!r}"
             )
+        _check_span(span)
 
         result = {}
         for region in regions:
@@ -1632,17 +1649,14 @@ class MethPrintExperiment:
             names = list(masks)
 
             for src in sources:
-                source = raw.sources.get(src)
-                if source is None:
-                    raise ValueError(
-                        f"no '{src}' data available for region '{region}'"
-                    )
-                cov = _site_coverage(
-                    source.data,
-                    source.nmol,
+                cov = _source_coverage(
+                    raw,
+                    region,
+                    src,
                     masks,
                     unmapped_strand,
-                    ignore_strand=self._ignore_strand,
+                    self._ignore_strand,
+                    span,
                 )
                 frac, pooled = _dropout_fracs(cov, names)
 

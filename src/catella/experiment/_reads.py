@@ -12,6 +12,17 @@ _UNMAPPED_STRAND_MSG = (
     "cannot do normalization by strand with unmapped strands '.'"
 )
 
+# Stretch of each molecule whose sites it reads (see `_read_sites`)
+_VALID_SPAN = {"full", "calls", "read"}
+
+
+def _check_span(span):
+    """Raise ValueError if `span` is not one of `_VALID_SPAN`."""
+    if span not in _VALID_SPAN:
+        raise ValueError(
+            f"span must be one of {sorted(_VALID_SPAN)}, got {span!r}"
+        )
+
 
 def _mol_strand(exp, region, which):
     """Per-molecule strand labels ('+'/'-'/'.') of `which`."""

@@ -37,7 +37,7 @@ from catella.experiment._eta import (
     _estimate_channel_eta,
     _resolve_eta_overrides,
 )
-from catella.experiment._reads import _check_mapped_strands
+from catella.experiment._reads import _check_mapped_strands, _check_span
 from catella.experiment._scoring import _score_test_reads
 from catella.experiment.methdata import MethPrintExperiment
 
@@ -52,8 +52,6 @@ __all__ = [
     "A",
     "MethPrintAnalysis",
 ]
-
-_VALID_SPAN = {"full", "calls", "read"}
 
 
 class MethPrintAnalysis:
@@ -570,9 +568,9 @@ class MethPrintAnalysis:
             with partial reads such as in-vivo native fragments.
             "calls" restricts each molecule to its first to last call;
             with base callers that omit confident canonical calls,
-            this trims protected ends of the molecule. A `mask_name`
-            from `filter_dropout` still counts dropout over the whole
-            fiber, so it drops partial reads. Under every span, sites
+            this trims protected ends of the molecule. Pass the same
+            `span` to `filter_dropout` for a `mask_name`, or it may
+            drop partial reads. Under every span, sites
             inside internal gaps recorded by `load_raw` (see
             `min_gap`) are not read.
         batch_size : int, default 20000
@@ -638,10 +636,7 @@ class MethPrintAnalysis:
         score each region are stored in
         `exp.analysis[region][f"{prob_name}_theta"]`.
         """
-        if span not in _VALID_SPAN:
-            raise ValueError(
-                f"span must be one of {sorted(_VALID_SPAN)}, got {span!r}"
-            )
+        _check_span(span)
         if lbin < 1:
             raise ValueError(f"lbin must be at least 1, got {lbin}")
         if nu is not None and nu < 0:

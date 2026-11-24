@@ -574,8 +574,9 @@ class MethPlot:
 
         For each matching `(region, source, channel)` group, at
         threshold `t` the plotted value is
-        `100 * mean(dropout_frac <= t)` over that group's molecules.
-        The legend shows only the key fields that differ between
+        `100 * mean(dropout_frac <= t)` over that group's molecules,
+        leaving out NaN fractions. The legend shows only the key fields
+        that differ between
         lines (other than `split_by`); fields shared by all lines go in
         the title.
 
@@ -670,7 +671,8 @@ class MethPlot:
             )
         for ax, (panel_title, panel_keys) in zip(axes.flat, panels):
             for key in panel_keys:
-                frac = np.sort(dropout_fractions[key])
+                frac = dropout_fractions[key]
+                frac = np.sort(frac[~np.isnan(frac)])
                 n = len(frac)
                 ecdf_pct = 100 * np.arange(1, n + 1) / n
                 label = "/".join(key[i] for i in legend_idx)

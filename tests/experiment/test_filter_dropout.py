@@ -635,3 +635,74 @@ class TestIsKept:
         with pytest.raises(KeyError, match="meth_dropout_mask"):
             exp.is_kept("chr1", which="meth")
         exp.close()
+
+
+def _partial_rows():
+    return [("m0", p, "chr1", "+", 0.5, "a") for p in range(10)] + [
+        ("m1", p, "chr1", "+", 0.5, "a") for p in range(20)
+    ]
+
+
+class TestSpan:
+    def _keep(self, exp):
+        return exp.analysis["chr1"]["test_dropout_mask"]["keep"].tolist()
+
+    def test_full_penalizes_partial_read(self, tmp_path):
+        exp = _load(tmp_path, "A" * 20, _partial_rows(), mtase="A")
+        exp.filter_dropout(thres_max=0.2)
+        assert self._keep(exp) == [0, 1]
+        exp.close()
+
+    @pytest.mark.parametrize("span", ["read", "calls"])
+    def test_partial_read_kept(self, tmp_path, span):
+        exp = _load(tmp_path, "A" * 20, _partial_rows(), mtase="A")
+        exp.filter_dropout(thres_max=0.2, span=span)
+        assert self._keep(exp) == [1, 1]
+        exp.close()
+
+    def test_fractions_follow_span(self, tmp_path):
+        exp = _load(tmp_path, "A" * 20, _partial_rows(), mtase="A")
+        full = exp.dropout_fractions(which="test")[("chr1", "test", "A")]
+        read = exp.dropout_fractions(which="test", span="read")
+        assert full.tolist() == [0.5, 0.0]
+        assert read[("chr1", "test", "A")].tolist() == [0.0, 0.0]
+        exp.close()
+
+    def test_invalid_span_raises(self, tmp_path):
+        exp = _load(tmp_path, "A" * 20, _partial_rows(), mtase="A")
+        with pytest.raises(ValueError, match="span must be one of"):
+            exp.filter_dropout(span="bogus")
+        exp.close()
+
+    def test_read_without_extents_raises(self, tmp_path):
+        exp = _load(
+            tmp_path, "A" * 20, _partial_rows(), mtase="A", wrap=True
+        )
+        with pytest.raises(ValueError, match="requires read extents"):
+            exp.filter_dropout(span="read")
+        exp.close()
+
+
+class TestNoSites:
+    def test_channel_without_sites_is_nan(self, tmp_path):
+        exp = _load(
+            tmp_path,
+            "AGCGA",
+            [("m0", 2, "chr1", "+", 0.5, "a")],
+            mtase=["CG", "GC"],
+        )
+        fracs = exp.dropout_fractions(which="test")
+        assert np.isnan(fracs[("chr1", "test", "GCH")]).all()
+        assert fracs[("chr1", "test", "GCG")].tolist() == [0.0]
+        exp.close()
+
+    def test_region_without_sites_warns_and_drops(self, tmp_path):
+        exp = _load(
+            tmp_path, "C" * 10, [("m0", 0, "chr1", "+", 0.5, "a")], mtase="A"
+        )
+        with pytest.warns(UserWarning, match="no sites of channel"):
+            exp.filter_dropout()
+        assert exp.analysis["chr1"]["test_dropout_mask"]["keep"].tolist() == [
+            0
+        ]
+        exp.close()

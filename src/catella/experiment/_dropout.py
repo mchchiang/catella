@@ -182,6 +182,61 @@ def _site_coverage(
     return result
 
 
+def _source_coverage(
+    raw, region, src, site_masks, unmapped_strand, ignore_strand, span
+):
+    """
+    `_site_coverage` of one source, with its stored extents and gaps.
+
+    Parameters
+    ----------
+    raw : MethPrintData
+        Raw data block of `region`.
+    region : str
+        Region identifier, for error messages.
+    src : {"test", "meth", "unmeth"}
+        Source to evaluate.
+    site_masks, unmapped_strand, ignore_strand, span
+        As in `_site_coverage`.
+
+    Returns
+    -------
+    dict of str to (np.ndarray, np.ndarray)
+        As `_site_coverage`.
+
+    Raises
+    ------
+    ValueError
+        If `src` is missing for `region`, or `span` is "read" and `src`
+        has no stored read extents.
+    """
+    source = raw.sources.get(src)
+    if source is None:
+        raise ValueError(f"no '{src}' data available for region '{region}'")
+    extent = None
+    if span == "read":
+        if source.mol_start is None or source.mol_end is None:
+            raise ValueError(
+                f"span='read' requires read extents, but '{src}' on "
+                f"region '{region}' has none; reload the raw data with "
+                "load_raw and wrap=False"
+            )
+        extent = (source.mol_start, source.mol_end)
+    gaps = None
+    if source.gaps is not None and source.gap_offset is not None:
+        gaps = (source.gaps, source.gap_offset)
+    return _site_coverage(
+        source.data,
+        source.nmol,
+        site_masks,
+        unmapped_strand,
+        ignore_strand=ignore_strand,
+        span=span,
+        extent=extent,
+        gaps=gaps,
+    )
+
+
 def _span_bounds(pos, mol_index, nmol, L, site_masks, span, extent):
     """
     Per-molecule half-open bounds `[lo, hi)` of `span` (see

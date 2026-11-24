@@ -657,6 +657,7 @@ def filter_dropout(
     unmapped_strand: str = "union",
     method: str = "separate",
     mask_name: str = "dropout_mask",
+    span: str = "full",
 ) -> None:
     """
     Flag molecules with poor coverage at methylatable positions.
@@ -695,16 +696,13 @@ def filter_dropout(
     mask_name : str, default "dropout_mask"
         Key for the mask in `exp.analysis[region]`, as
         `f"{source}_{mask_name}"`.
+    span : {"full", "calls", "read"}, default "full"
+        As in `compute_model_prob`; pass the same value.
 
     Raises
     ------
     ValueError
-        If `mtase` is unset on `exp`, `channels` is invalid,
-        `regions` contains a region not in
-        `exp.regions`, `thres_min` or `thres_max` is not in [0, 1],
-        `thres_min` is greater than `thres_max`,
-        `unmapped_strand`/`method` is invalid, a requested source is
-        missing for some region, or `refseq` is missing.
+        As in `MethPrintExperiment.filter_dropout`.
     """
     exp.filter_dropout(
         which=which,
@@ -715,6 +713,7 @@ def filter_dropout(
         unmapped_strand=unmapped_strand,
         method=method,
         mask_name=mask_name,
+        span=span,
     )
 
 
@@ -790,6 +789,7 @@ def plot_dropout_ecdf(
     split_by: str | None = None,
     out_file: str | Path | None = None,
     show: bool = True,
+    span: str = "full",
 ):
     """
     Plot the empirical CDF of dropout rate per group.
@@ -822,16 +822,15 @@ def plot_dropout_ecdf(
         they do not exist.
     show : bool, default True
         Whether to display the plot using `plt.show()`.
+    span : {"full", "calls", "read"}, default "full"
+        As in `filter_dropout`.
 
     Raises
     ------
     ValueError
-        If `mtase` is unset, `channels` is invalid,
-        `unmapped_strand` is invalid, a source is missing for some
-        region, or `refseq` is missing (from
-        `exp.dropout_fractions`); or if `regions` holds an unknown
-        region or one with no matching entries in the result, or
-        `split_by` is invalid.
+        As in `exp.dropout_fractions`; or if `regions` holds an
+        unknown region or one with no matching entries in the result,
+        or `split_by` is invalid.
     """
     regions = [regions] if isinstance(regions, str) else list(regions)
     fractions = exp.dropout_fractions(
@@ -839,6 +838,7 @@ def plot_dropout_ecdf(
         channels=channels,
         regions=regions,
         unmapped_strand=unmapped_strand,
+        span=span,
     )
     methplot = MethPlot()
     methplot.plot_dropout_ecdf(

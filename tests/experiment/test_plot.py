@@ -500,6 +500,14 @@ class TestPlotDropoutEcdf:
         plt.close("all")
         exp.close()
 
+    def test_nan_left_out(self):
+        fracs = {("r", "test", "A"): np.array([0.3, np.nan, 0.1])}
+        MethPlot().plot_dropout_ecdf(fracs, "r", show=False)
+        line = plt.gcf().axes[0].lines[0]
+        assert line.get_xdata().tolist() == [0.1, 0.3]
+        assert line.get_ydata().tolist() == [50.0, 100.0]
+        plt.close("all")
+
     def test_unknown_region_in_list_raises(self, tmp_path):
         exp = _two_region_exp(tmp_path)
         fracs = exp.dropout_fractions()

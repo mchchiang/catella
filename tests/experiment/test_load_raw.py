@@ -1871,3 +1871,121 @@ class TestGapsBed:
     def test_invalid_combination_raises(self, tmp_path, kw):
         with pytest.raises(ValueError, match="gaps_bed requires"):
             self._load(tmp_path, [], **kw)
+
+
+_INTERVALS = [("chr1", 10, 40, "A"), ("chr1", 25, 70, "B", "-")]
+
+
+def _interval_rows():
+    return (
+        _make_rows("chr1", ["m0"], [12, 30])
+        + _make_rows("chr1", ["m1"], [60])
+        + _make_rows("chr2", ["m2"], [5])
+    )
+
+
+class TestIntervalRegions:
+    def _load(self, tmp_path, rows=None, regions=None, **kwargs):
+        chromsize, f = _extent_setup(
+            tmp_path,
+            rows or _interval_rows(),
+            sizes={"chr1": 100, "chr2": 50},
+        )
+        return MethPrintExperiment.load_raw(
+            chromsize=chromsize,
+            test_file=f,
+            regions=regions or _INTERVALS,
+            **kwargs,
+        )
+
+    def test_rows_split_and_shifted(self, tmp_path):
+        exp = self._load(tmp_path)
+        assert exp.regions == ("A", "B")
+        a, b = exp.raw["A"], exp.raw["B"]
+        assert (a.nbp, b.nbp) == (30, 45)
+        assert a.test.mol_id.tolist() == ["m0"]
+        assert a.test.data["pos"].tolist() == [2, 20]
+        assert b.test.mol_id.tolist() == ["m0", "m1"]
+        assert b.test.data["pos"].tolist() == [5, 35]
+        exp.close()
+
+    @pytest.mark.parametrize("chunk_size", [1, 1000000])
+    def test_extents_use_rows_outside_region(self, tmp_path, chunk_size):
+        exp = self._load(tmp_path, chunk_size=chunk_size)
+        assert _extent(exp.raw["A"]) == ([2], [21])
+        assert _extent(exp.raw["B"]) == ([0, 35], [6, 36])
+        exp.close()
+
+    def test_coords(self, tmp_path):
+        exp = self._load(tmp_path)
+        assert exp.raw["B"].coords == Region("chr1", 25, 70, "B", "-")
+        assert exp.region_coords.loc["B"].tolist() == [
+            "chr1", 25, 70, "-", 45
+        ]
+        exp.close()
+
+    def test_bed_file(self, tmp_path):
+        bed = tmp_path / "regions.bed"
+        bed.write_text("chr1\t10\t40\tA\n")
+        exp = self._load(tmp_path, regions=bed)
+        assert exp.regions == ("A",)
+        assert exp.raw["A"].test.data["pos"].tolist() == [2, 20]
+        exp.close()
+
+    def test_refseq_sliced(self, tmp_path):
+        seq = "ACGT" * 25
+        fasta = tmp_path / "ref.fa"
+        _write_fasta(fasta, {"chr1": seq, "chr2": "A" * 50})
+        exp = self._load(tmp_path, fasta_file=fasta)
+        assert exp.raw["A"].refseq == seq[10:40]
+        assert exp.raw["B"].refseq == seq[25:70]
+        exp.close()
+
+    def test_fasta_length_mismatch_raises(self, tmp_path):
+        fasta = tmp_path / "ref.fa"
+        _write_fasta(fasta, {"chr1": "A" * 90})
+        with pytest.raises(ValueError, match="does not match"):
+            self._load(tmp_path, fasta_file=fasta)
+
+    def test_gap_across_region_start(self, tmp_path):
+        chromsize, f = _extent_setup(
+            tmp_path, _gap_rows(), header=_GAP_HEADER
+        )
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize,
+            test_file=f,
+            regions=[("chr1", 30, 80, "R")],
+        )
+        raw = exp.raw["R"]
+        assert raw.test.mol_id.tolist() == ["m0"]
+        assert _gaps(raw) == ([[0, 30]], [0, 1])
+        assert _extent(raw) == ([0], [31])
+        exp.close()
+
+    def test_gaps_bed_shifted(self, tmp_path):
+        chromsize, f = _extent_setup(
+            tmp_path, _gap_rows(), header=_GAP_HEADER
+        )
+        bed = _write_bed(
+            tmp_path / "reads.bed", [("chr1", 0, 70, "m0", [10, 5], [0, 65])]
+        )
+        exp = MethPrintExperiment.load_raw(
+            chromsize=chromsize,
+            test_file=f,
+            regions=[("chr1", 30, 80, "R")],
+            gaps_bed=bed,
+        )
+        assert _gaps(exp.raw["R"]) == ([[0, 35]], [0, 1])
+        exp.close()
+
+    def test_unknown_chrom_raises(self, tmp_path):
+        with pytest.raises(ValueError, match="not found in chromsize"):
+            self._load(tmp_path, regions=[("chr9", 0, 10)])
+
+    def test_end_past_chrom_raises(self, tmp_path):
+        with pytest.raises(ValueError, match="past the end of 'chr1'"):
+            self._load(tmp_path, regions=[("chr1", 90, 120)])
+
+    def test_wrap_raises(self, tmp_path):
+        with pytest.raises(ValueError, match="require wrap=False"):
+            self._load(tmp_path, wrap=True)

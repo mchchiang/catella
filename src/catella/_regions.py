@@ -106,6 +106,35 @@ def _check_region_lengths(lengths):
         )
 
 
+def _check_region_ends(regions, chrom_sizes):
+    """
+    Check that regions lie on known chromosomes, within their length.
+
+    Parameters
+    ----------
+    regions : list of Region
+        Regions given as intervals.
+    chrom_sizes : dict of str to int
+        Chromosome -> length (bp), from `chromsize`.
+
+    Raises
+    ------
+    ValueError
+        If a region's chromosome is not in `chrom_sizes`, or its end
+        exceeds the chromosome length.
+    """
+    unknown = sorted({r.chrom for r in regions} - set(chrom_sizes))
+    if unknown:
+        raise ValueError(f"chromosomes not found in chromsize: {unknown}")
+    for r in regions:
+        length = chrom_sizes[r.chrom]
+        if r.end > length:
+            raise ValueError(
+                f"region {r.name!r} ends at {r.end}, past the end of "
+                f"{r.chrom!r} ({length} bp)"
+            )
+
+
 def _normalize_regions(
     regions: str | Iterable[str] | None = None,
     default_regions: Iterable[str] | None = None,

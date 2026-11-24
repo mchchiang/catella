@@ -27,8 +27,10 @@ from catella._batches import _row_batches
 from catella._dataclasses import _add_frozen_properties, _init_frozen_fields
 from catella._regions import (
     Region,
+    _check_region_ends,
     _check_region_lengths,
     _check_region_names,
+    _parse_regions,
 )
 from catella._warnings import _warn
 from catella.containers import DataFrameMap, FixedKeyMap
@@ -46,6 +48,7 @@ from catella.experiment._ingest import (
     _ingest_into,
     _ingest_sources,
     _load_refseqs,
+    _load_region_refseqs,
     _merge_staging,
     _normalize_mtase,
     _read_chromsize,
@@ -560,7 +563,7 @@ class MethPrintExperiment:
         meth_file: str | Path | None = None,
         fasta_file: str | Path | None = None,
         mtase: str | list[str] | None = None,
-        regions: list[str] | None = None,
+        regions: str | Path | Iterable | None = None,
         wrap: bool = False,
         ignore_strand: bool = False,
         colidx: list | None = None,
@@ -588,8 +591,9 @@ class MethPrintExperiment:
         Parameters
         ----------
         chromsize : str or pathlib.Path
-            Tab-separated file of chromosome names and lengths (bp);
-            each chromosome is analyzed as one region.
+            Tab-separated file of chromosome names and lengths (bp).
+            Unless `regions` gives intervals, each chromosome is
+            analyzed as one region.
         test_file : str or pathlib.Path
             Raw experimental (test) data file.
         unmeth_file : str or pathlib.Path, optional
@@ -597,17 +601,21 @@ class MethPrintExperiment:
         meth_file : str or pathlib.Path, optional
             Fully methylated control data file.
         fasta_file : str or pathlib.Path, optional
-            Multi-FASTA file of per-region reference sequences
-            (record id matching `chromsize`); stored on
+            Multi-FASTA file of reference sequences (record id
+            matching `chromsize`); each region's sequence is stored on
             `MethPrintData.refseq`.
         mtase : str or list of str, optional
             Methyltransferase(s) used to generate the test data: 'A'
             (any-context adenine, e.g., EcoGII), 'CG' (CpG, e.g.,
             M.SssI), 'GC' (GpC, e.g., M.CviPI). One label, a list of
             labels, or None (default) if unspecified.
-        regions : list of str, optional
-            Restrict processing to these regions. If None
-            (default), all regions in `chromsize` are processed.
+        regions : str, pathlib.Path, or iterable, optional
+            Regions to analyze: None (default) for every chromosome in
+            `chromsize`; chromosome name(s), each a whole region; a
+            BED file; or `(chrom, start, end[, name[, strand]])`
+            tuples. Intervals are 0-based and half-open, named
+            `chrom_start_end` by default (BED column 4 otherwise);
+            positions are relative to `start` (see `region_coords`).
         wrap : bool, default False
             If True, calculates positions relative to the fiber center
             (useful for circular or symmetrical fibers). No read
@@ -682,8 +690,13 @@ class MethPrintExperiment:
             than 2, if `colidx` has neither 6 nor 8 entries, if
             `min_gap` is neither None nor a positive integer, if
             `gaps_bed` is given with `wrap` True or `min_gap` None, if
-            a region is longer than 1 Mb, or if a region name is not
-            safe as a file name.
+            a region is longer than 1 Mb, if a region name is not
+            safe as a file name, if `regions` gives intervals with
+            `wrap` True, or if an interval's chromosome is not in
+            `chromsize` or its end is past the chromosome's end.
+        TypeError
+            If `regions` has an unsupported type or mixes names and
+            tuples.
 
         Warns
         -----
@@ -736,10 +749,28 @@ class MethPrintExperiment:
                     f"True, got {max_nmol}"
                 )
         mtase = _normalize_mtase(mtase)
-        full_sizes, sizes = _read_chromsize(chromsize, wrap, regions)
-        _check_region_lengths(sizes)
-        _check_region_names(list(sizes))
-        refseq_by_region = _load_refseqs(fasta_file, full_sizes)
+        kind, parsed = _parse_regions(regions)
+        if kind == "regions":
+            if wrap:
+                raise ValueError(
+                    "regions given as intervals require wrap=False"
+                )
+            chrom_sizes, _ = _read_chromsize(chromsize, False, None)
+            sizes = {r.name: r.end - r.start for r in parsed}
+            _check_region_lengths(sizes)
+            _check_region_ends(parsed, chrom_sizes)
+            coords = {r.name: r for r in parsed}
+            refseq_by_region = _load_region_refseqs(
+                fasta_file, parsed, chrom_sizes
+            )
+        else:
+            chrom_sizes, sizes = _read_chromsize(chromsize, wrap, parsed)
+            _check_region_lengths(sizes)
+            _check_region_names(list(sizes))
+            coords = {
+                r: Region(r, 0, chrom_sizes[r], r, ".") for r in sizes
+            }
+            refseq_by_region = _load_refseqs(fasta_file, chrom_sizes)
 
         tmp_dir = h5_utils.fresh_tmp_dir(base_dir=tmp_dir)
         fd, tmp_file = tempfile.mkstemp(suffix=".h5", dir=tmp_dir)
@@ -756,10 +787,8 @@ class MethPrintExperiment:
             "chunk_size": chunk_size,
             "block_size": 64 * 1024 * 1024,
             "sizes": sizes,
-            "coords": {
-                r: Region(r, 0, full_sizes[r], r, ".") for r in sizes
-            },
-            "chrom_sizes": full_sizes,
+            "coords": coords,
+            "chrom_sizes": chrom_sizes,
             "wrap": wrap,
             "refseq_by_region": refseq_by_region,
             "mtase": mtase,

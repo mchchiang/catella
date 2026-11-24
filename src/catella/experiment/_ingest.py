@@ -374,6 +374,53 @@ def _parse_fasta(fasta_file, wanted_chroms):
     return sequences
 
 
+def _load_region_refseqs(fasta_file, regions, chrom_sizes):
+    """
+    Reference sequence of each region, sliced from its chromosome.
+
+    Parameters
+    ----------
+    fasta_file : str or pathlib.Path or None
+        Multi-FASTA file; None returns an empty dict.
+    regions : list of Region
+        Regions given as intervals.
+    chrom_sizes : dict of str to int
+        Chromosome -> length (bp), checked against the FASTA.
+
+    Returns
+    -------
+    dict of str to str
+        Region name -> sequence, for regions whose chromosome is in
+        the file.
+
+    Raises
+    ------
+    ValueError
+        If a chromosome's sequence length does not match
+        `chrom_sizes`.
+    """
+    if fasta_file is None:
+        return {}
+    _ensure_fasta_index(fasta_file)
+    fasta = pyfaidx.Fasta(str(fasta_file), as_raw=True, build_index=True)
+    sequences = {}
+    try:
+        for r in regions:
+            if r.chrom not in fasta:
+                continue
+            length = len(fasta[r.chrom])
+            if length != chrom_sizes[r.chrom]:
+                raise ValueError(
+                    f"reference sequence length for chromosome "
+                    f"{r.chrom!r} ({length}) does not match its "
+                    f"chromsize length ({chrom_sizes[r.chrom]})"
+                )
+            sequences[r.name] = str(fasta[r.chrom][r.start : r.end])
+    finally:
+        fasta.close()
+    return sequences
+
+
 def _iter_csv_chunks(
     data_file,
     header_names,

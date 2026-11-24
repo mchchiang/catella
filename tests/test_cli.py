@@ -101,6 +101,31 @@ def _make_dataset(tmp_path, *, nmol=4, nbp=20, nsim=2, seed=1, name="results"):
 
 
 class TestLoadRaw:
+    def test_regions_bed_file(self, tmp_path):
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, _make_test_rows(nmol=3, nbp=30))
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 30})
+        bed = tmp_path / "regions.bed"
+        bed.write_text("chr1\t5\t25\tmid\n")
+        out = tmp_path / "exp.h5"
+        result = runner.invoke(
+            app,
+            [
+                "load_raw",
+                str(chromsize),
+                str(test_file),
+                str(out),
+                "--regions",
+                str(bed),
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        got = MethPrintExperiment.load(out)
+        assert got.regions == ("mid",)
+        assert got.raw["mid"].nbp == 20
+        got.close()
+
     def test_fasta_file_populates_refseq(self, tmp_path):
         rows = _make_test_rows(nmol=5, nbp=30)
         test_file = tmp_path / "test.tsv"

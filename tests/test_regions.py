@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 from catella._regions import (
     Region,
+    _check_region_ends,
     _check_region_lengths,
     _check_region_names,
     _make_region,
@@ -118,6 +119,19 @@ class TestCheckRegionLengths:
     def test_exactly_1_mb_warns_only(self):
         with pytest.warns(UserWarning):
             _check_region_lengths({"a": 1000000})
+
+
+class TestCheckRegionEnds:
+    def test_within_chrom_passes(self):
+        _check_region_ends([Region("c", 0, 10, "a", ".")], {"c": 10})
+
+    def test_unknown_chrom_raises(self):
+        with pytest.raises(ValueError, match="not found in chromsize"):
+            _check_region_ends([Region("x", 0, 10, "a", ".")], {"c": 10})
+
+    def test_end_past_chrom_raises(self):
+        with pytest.raises(ValueError, match="ends at 11"):
+            _check_region_ends([Region("c", 0, 11, "a", ".")], {"c": 10})
 
 
 class TestMakeRegion:

@@ -143,7 +143,8 @@ def load_raw(
     regions: Annotated[
         str | None,
         typer.Option(
-            callback=csv_parser(str), help="Subset of regions to load"
+            callback=csv_parser(str),
+            help="Chromosomes to load, or a BED file of regions",
         ),
     ] = None,
     wrap: Annotated[
@@ -207,6 +208,9 @@ def load_raw(
     """
     Load raw methylation footprinting data into a MethPrintExperiment.
     """
+    is_bed = regions is not None and len(regions) == 1
+    if is_bed and Path(regions[0]).is_file():
+        regions = regions[0]
     exp = catella.load_raw(
         chromsize=chromsize,
         test_file=test_file,

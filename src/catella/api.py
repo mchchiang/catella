@@ -30,7 +30,7 @@ def load_raw(
     meth_file: str | Path | None = None,
     fasta_file: str | Path | None = None,
     mtase: str | Iterable[str] | None = None,
-    regions: Iterable[str] | None = None,
+    regions: str | Path | Iterable | None = None,
     wrap: bool = False,
     ignore_strand: bool = False,
     colidx: Iterable | None = None,
@@ -72,9 +72,11 @@ def load_raw(
         (any-context adenine, e.g., EcoGII), 'CG' (CpG, e.g., M.SssI),
         'GC' (GpC, e.g., M.CviPI). One label, a list of labels, or
         None (default) if unspecified.
-    regions : iterable of str, optional
-        Restrict processing to these regions. If None (default),
-        all regions in `chromsize` are processed.
+    regions : str, Path, or iterable, optional
+        Regions to analyze: None (default) for every chromosome in
+        `chromsize`; chromosome name(s), each a whole region; a BED
+        file; or `(chrom, start, end[, name[, strand]])` tuples
+        (0-based, half-open).
     wrap : bool, default False
         If True, calculates positions relative to the fiber center
         (useful for circular or symmetrical fibers).

@@ -56,9 +56,10 @@ def _add_frozen_properties(cls):
     For every field named `_frozen_<name>`, a property `<name>` is added
     whose docstring is the field's `metadata["doc"]`. The property
     returns a read-only view of a NumPy array, a copy of a pandas
-    object, a tuple of the elements (with read-only views of any arrays)
-    for a list or tuple, and any other value as is, so that callers
-    cannot modify the stored arrays and frames.
+    object, a named tuple as is, a tuple of the elements (with read-only
+    views of any arrays) for any other list or tuple, and any other
+    value as is, so that callers cannot modify the stored arrays and
+    frames.
 
     Parameters
     ----------
@@ -86,6 +87,8 @@ def _add_frozen_properties(cls):
                 # Pandas 3.0: standard copy is O(1) and safe
                 if isinstance(val, (pd.DataFrame, pd.Series)):
                     return val.copy()
+                if isinstance(val, tuple) and hasattr(val, "_fields"):
+                    return val
                 if isinstance(val, (tuple, list)):
                     return tuple(
                         _read_only_view(v) if isinstance(v, np.ndarray) else v

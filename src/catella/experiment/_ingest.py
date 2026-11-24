@@ -13,6 +13,7 @@ import pyarrow.csv as pyarrow_csv
 import pyfaidx
 
 from catella import h5_utils
+from catella._regions import Region
 from catella._warnings import _warn
 
 # Column names as they appear in raw Modkit output, and their internal
@@ -50,6 +51,8 @@ _COLIDX_NAMES = _CANONICAL_NAMES[:8]
 # Optional per-molecule datasets stored as `{src}_{key}` next to
 # `{src}_mol_id` (read extents and internal gaps)
 _PER_MOL_KEYS = ("mol_start", "mol_end", "gaps", "gap_offset")
+# Genomic coordinates stored as attrs of each region's metadata group
+_COORD_KEYS = ("ref_chrom", "ref_start", "ref_end", "ref_strand")
 # SAM flags of secondary and supplementary alignments
 _NON_PRIMARY_FLAGS = 256 | 2048
 _CANONICAL_PA_TYPES = {
@@ -1165,13 +1168,62 @@ def _clip_extents(start, end, nbp):
     return start, end
 
 
-def _ensure_region_data_group(graw, region, nbp, refseq_by_region):
+def _write_coords(gmeta, coords):
+    """
+    Store a region's genomic coordinates as attrs of its metadata group.
+
+    Parameters
+    ----------
+    gmeta : h5py.Group
+        The region's `metadata` group.
+    coords : Region or None
+        The region's reference interval and strand; None writes
+        nothing.
+    """
+    if coords is None:
+        return
+    gmeta.attrs["ref_chrom"] = coords.chrom
+    gmeta.attrs["ref_start"] = int(coords.start)
+    gmeta.attrs["ref_end"] = int(coords.end)
+    gmeta.attrs["ref_strand"] = coords.strand
+
+
+def _read_coords(gmeta, region):
+    """
+    A region's genomic coordinates from its metadata group.
+
+    Parameters
+    ----------
+    gmeta : h5py.Group
+        The region's `metadata` group.
+    region : str
+        The region name.
+
+    Returns
+    -------
+    Region or None
+        None for a file written before coordinates were stored.
+    """
+    attrs = gmeta.attrs
+    if not all(key in attrs for key in _COORD_KEYS):
+        return None
+    return Region(
+        str(attrs["ref_chrom"]),
+        int(attrs["ref_start"]),
+        int(attrs["ref_end"]),
+        str(region),
+        str(attrs["ref_strand"]),
+    )
+
+
+def _ensure_region_data_group(graw, region, nbp, refseq_by_region, coords):
     """
     Create a region's `metadata` and `data` groups under `graw`.
 
     Each region is created at most once per private staging file, so
     no idempotency check is needed here (unlike a shared file). The
-    region name is stored in the `chrom` attribute (on-disk key).
+    region name is stored in the `chrom` attribute (on-disk key), and
+    its genomic coordinates in `ref_*` attributes (see `_write_coords`).
 
     Returns
     -------
@@ -1182,6 +1234,7 @@ def _ensure_region_data_group(graw, region, nbp, refseq_by_region):
     gmeta = gregion.create_group("metadata")
     gmeta.attrs["chrom"] = region
     gmeta.attrs["nbp"] = int(nbp)
+    _write_coords(gmeta, coords)
     seq = refseq_by_region.get(region)
     if seq is not None:
         dt = h5py.string_dtype(encoding="utf-8")
@@ -1210,6 +1263,7 @@ def _ingest_into(
     tmp_dir,
     min_gap=None,
     gaps_bed=None,
+    coords=None,
 ):
     """
     Resolve, scan, and stream one raw data file into the `raw_data`
@@ -1228,6 +1282,9 @@ def _ingest_into(
         `MethPrintExperiment.load_raw`'s `seed` parameter.
     tmp_dir : str or pathlib.Path
         Directory for any decompression scratch copy.
+    coords : dict of str to Region, optional
+        Region name -> genomic coordinates, stored with each region
+        (see `_write_coords`).
     Other parameters are as in `MethPrintExperiment.load_raw`.
 
     Returns
@@ -1258,7 +1315,11 @@ def _ingest_into(
         gdatas = {}
         for region, m in mol_maps.items():
             gdata = _ensure_region_data_group(
-                graw, region, sizes[region], refseq_by_region
+                graw,
+                region,
+                sizes[region],
+                refseq_by_region,
+                (coords or {}).get(region),
             )
             gdata.create_dataset(f"{name}_mol_id", data=m["mol_id"], dtype=dt)
             appenders[region] = h5_utils.AppendableDF(

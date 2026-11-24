@@ -25,6 +25,7 @@ from catella._analysis_io import (
 )
 from catella._batches import _row_batches
 from catella._dataclasses import _add_frozen_properties, _init_frozen_fields
+from catella._regions import Region
 from catella._warnings import _warn
 from catella.containers import DataFrameMap, FixedKeyMap
 from catella.experiment._contexts import _resolve_channels
@@ -44,6 +45,8 @@ from catella.experiment._ingest import (
     _merge_staging,
     _normalize_mtase,
     _read_chromsize,
+    _read_coords,
+    _write_coords,
 )
 from catella.experiment._qc import _check_percentiles, _region_qc_rows
 from catella.h5_array import H5Array
@@ -85,6 +88,13 @@ class MethPrintData:
         metadata={
             "doc": "str: The reference nucleotide sequence for this "
             "region, or None if not provided."
+        }
+    )
+
+    _frozen_coords: Region | None = field(
+        metadata={
+            "doc": "Region: Genomic coordinates of this region, or None "
+            "if not stored."
         }
     )
 
@@ -228,6 +238,7 @@ class MethPrintData:
         gmeta = gregion.create_group("metadata")
         gmeta.attrs["chrom"] = self.region
         gmeta.attrs["nbp"] = self.nbp
+        _write_coords(gmeta, self._frozen_coords)
         if self._frozen_refseq is not None:
             gmeta.create_dataset("refseq", data=self._frozen_refseq, dtype=dt)
         gdata = gregion.create_group("data")
@@ -253,6 +264,7 @@ class MethPrintData:
         region = gmeta.attrs["chrom"]
         nbp = int(gmeta.attrs["nbp"])
         refseq = gmeta["refseq"].asstr()[()] if "refseq" in gmeta else None
+        coords = _read_coords(gmeta, region)
 
         def load_data(name, gdata):
             id_name = name + "_mol_id"
@@ -273,7 +285,9 @@ class MethPrintData:
                 ds = f"{name}_{key}"
                 if mol_id is not None and ds in gdata:
                     kwargs[ds] = gdata[ds][()].astype(np.int64)
-        return cls._create(region=region, nbp=nbp, refseq=refseq, **kwargs)
+        return cls._create(
+            region=region, nbp=nbp, refseq=refseq, coords=coords, **kwargs
+        )
 
     @classmethod
     def _create(cls, **kwargs) -> Self:
@@ -334,6 +348,75 @@ class LazyRawDataMap(ABCMapping):
     def __len__(self):
         return len(self._regions)
 
+    def coords(self):
+        """
+        Coordinates and length of each region, read from the region
+        metadata only (no raw call table is loaded).
+
+        Returns
+        -------
+        list of (str, Region or None, int)
+            `(region, coords, nbp)` per region, in region order.
+        """
+        with h5py.File(self._path, "r") as h5stream:
+            graw = h5stream["raw_data"]
+            out = []
+            for region in self._regions:
+                gmeta = graw[region]["metadata"]
+                out.append(
+                    (
+                        region,
+                        _read_coords(gmeta, region),
+                        int(gmeta.attrs["nbp"]),
+                    )
+                )
+        return out
+
+
+def _coords_table(rows):
+    """
+    The `region_coords` table from `(region, coords, nbp)` rows.
+
+    Parameters
+    ----------
+    rows : iterable of (str, Region or None, int)
+        Per region, its coordinates (None if not stored) and length.
+
+    Returns
+    -------
+    pd.DataFrame
+        See `MethPrintExperiment.region_coords`.
+    """
+    records = []
+    for region, coords, nbp in rows:
+        records.append(
+            {
+                "region": region,
+                "ref_chrom": None if coords is None else coords.chrom,
+                "ref_start": None if coords is None else coords.start,
+                "ref_end": None if coords is None else coords.end,
+                "ref_strand": None if coords is None else coords.strand,
+                "nbp": nbp,
+            }
+        )
+    table = pd.DataFrame(
+        records,
+        columns=[
+            "region", "ref_chrom", "ref_start", "ref_end", "ref_strand",
+            "nbp",
+        ],
+    )
+    table = table.astype(
+        {
+            "ref_chrom": "string",
+            "ref_start": "Int64",
+            "ref_end": "Int64",
+            "ref_strand": "string",
+            "nbp": "int64",
+        }
+    )
+    return table.set_index("region")
+
 
 # Valid values for MethPrintExperiment.filter_dropout()'s
 # 'unmapped_strand' and 'method' arguments.
@@ -364,6 +447,7 @@ class MethPrintExperiment:
     _mtase: tuple[str, ...] | None
     _wrap: bool
     _ignore_strand: bool
+    _region_coords: pd.DataFrame | None
 
     def __init__(self, **kwargs: Any):
         if not kwargs.pop("_internal", False):
@@ -405,6 +489,9 @@ class MethPrintExperiment:
         # positions (both strands' motif context OR'd together); set
         # at load_raw() time.
         self._ignore_strand = kwargs.get("_ignore_strand", False)
+
+        # Table of region coordinates, built on first use
+        self._region_coords = None
 
     @staticmethod
     def _cleanup_tmp_dir(tmp_dir):
@@ -656,6 +743,9 @@ class MethPrintExperiment:
             "tmp_dir": tmp_dir,
             "min_gap": min_gap,
             "gaps_bed": gaps_bed,
+            "coords": {
+                r: Region(r, 0, full_sizes[r], r, ".") for r in sizes
+            },
         }
 
         try:
@@ -862,6 +952,30 @@ class MethPrintExperiment:
             A sorted tuple of region names.
         """
         return tuple(self._raw_data.keys())
+
+    @property
+    def region_coords(self) -> pd.DataFrame:
+        """
+        Genomic coordinates of every region.
+
+        Returns
+        -------
+        pd.DataFrame
+            Indexed by region, with columns `ref_chrom`, `ref_start`,
+            `ref_end`, `ref_strand` and `nbp`. Position `pos` of a
+            region is at `ref_start + pos` on `ref_chrom`.
+        """
+        if self._region_coords is None:
+            rows = (
+                self._raw_data.coords()
+                if isinstance(self._raw_data, LazyRawDataMap)
+                else [
+                    (region, data.coords, data.nbp)
+                    for region, data in self._raw_data.items()
+                ]
+            )
+            self._region_coords = _coords_table(rows)
+        return self._region_coords.copy()
 
     @property
     def mtase(self) -> tuple[str, ...] | None:

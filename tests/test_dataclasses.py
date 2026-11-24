@@ -1,11 +1,17 @@
 # test_dataclasses.py
 
 from dataclasses import dataclass, field
+from typing import NamedTuple
 
 import numpy as np
 import pandas as pd
 import pytest
 from catella._dataclasses import _add_frozen_properties, _init_frozen_fields
+
+
+class _Point(NamedTuple):
+    x: int
+    y: int
 
 
 @_add_frozen_properties
@@ -89,6 +95,12 @@ class TestAddFrozenProperties:
     def test_other_values_returned_as_is(self):
         data = _Data(_internal=True, value=1.5)
         assert data.value == 1.5
+
+    def test_named_tuple_keeps_its_type(self):
+        point = _Point(1, 2)
+        data = _Data(_internal=True, seq=point)
+        assert data.seq is point
+        assert data.seq.y == 2
 
     def test_property_docstrings_from_metadata(self):
         assert _Data.arr.__doc__ == "An array."

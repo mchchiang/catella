@@ -2,9 +2,11 @@
 
 from unittest.mock import patch
 
+import h5py
 import numpy as np
 import pandas as pd
 import pytest
+from catella._regions import Region
 from catella.experiment.methdata import MethPrintData, MethPrintExperiment
 
 _HEADER = "read_id\tref_position\tchrom\tref_strand\tmod_qual\tmod_code\n"
@@ -674,6 +676,99 @@ class TestRegionSelection:
         )
         exp_a.close()
         exp_b.close()
+
+
+class TestRegionCoords:
+    def _load(self, tmp_path, **kwargs):
+        rows = _make_rows("chr1", ["m0"], [1, 5]) + _make_rows(
+            "chr2", ["m1"], [2]
+        )
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 100, "chr2": 60})
+        return MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file, **kwargs
+        )
+
+    def test_whole_chrom_coords(self, tmp_path):
+        exp = self._load(tmp_path)
+        assert exp.raw["chr1"].coords == Region("chr1", 0, 100, "chr1", ".")
+        table = exp.region_coords
+        assert table.index.tolist() == ["chr1", "chr2"]
+        assert table.loc["chr2"].tolist() == ["chr2", 0, 60, ".", 60]
+        exp.close()
+
+    def test_wrap_keeps_full_length(self, tmp_path):
+        exp = self._load(tmp_path, wrap=True)
+        row = exp.region_coords.loc["chr1"]
+        assert (row["ref_end"], row["nbp"]) == (100, 50)
+        exp.close()
+
+    def test_save_and_subset_load(self, tmp_path):
+        exp = self._load(tmp_path)
+        saved = tmp_path / "exp.h5"
+        exp.save(saved)
+        exp.close()
+        reloaded = MethPrintExperiment.load(saved, regions=["chr2"])
+        assert reloaded.region_coords.index.tolist() == ["chr2"]
+        assert reloaded.raw["chr2"].coords.end == 60
+        reloaded.close()
+
+    def test_multi_file_merge_keeps_coords(self, tmp_path):
+        unmeth = tmp_path / "unmeth.tsv"
+        _write_tsv(
+            unmeth,
+            _make_rows("chr1", ["u0"], [3]) + _make_rows("chr2", ["u1"], [4]),
+        )
+        exp = self._load(tmp_path, unmeth_file=unmeth)
+        assert exp.region_coords["ref_end"].tolist() == [100, 60]
+        exp.close()
+
+    def test_old_file_without_coords(self, tmp_path):
+        exp = self._load(tmp_path)
+        saved = tmp_path / "exp.h5"
+        exp.save(saved)
+        exp.close()
+        with h5py.File(saved, "a") as h5:
+            for region in ("chr1", "chr2"):
+                attrs = h5[f"raw_data/{region}/metadata"].attrs
+                for key in ("ref_chrom", "ref_start", "ref_end", "ref_strand"):
+                    del attrs[key]
+        reloaded = MethPrintExperiment.load(saved)
+        assert reloaded.raw["chr1"].coords is None
+        table = reloaded.region_coords
+        assert table["ref_start"].isna().all()
+        assert table["nbp"].tolist() == [100, 60]
+        reloaded.close()
+
+    def test_in_memory_experiment(self):
+        raw = MethPrintData._create(
+            region="r1",
+            nbp=10,
+            coords=Region("chr9", 5, 15, "r1", "-"),
+            test_mol_id=np.array(["m0"], dtype=object),
+            test_data=pd.DataFrame(
+                {
+                    "mol_index": [0],
+                    "pos": [1],
+                    "strand": ["+"],
+                    "mod_qual": [0.5],
+                    "mod_code": ["a"],
+                }
+            ),
+        )
+        exp = MethPrintExperiment._create(_raw_data={"r1": raw})
+        assert exp.region_coords.loc["r1"].tolist() == [
+            "chr9", 5, 15, "-", 10
+        ]
+
+    def test_returns_a_copy(self, tmp_path):
+        exp = self._load(tmp_path)
+        table = exp.region_coords
+        table.loc["chr1", "nbp"] = -1
+        assert exp.region_coords.loc["chr1", "nbp"] == 100
+        exp.close()
 
 
 class TestRefseq:

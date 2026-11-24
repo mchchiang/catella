@@ -303,7 +303,8 @@ Common ``global_analysis`` keys:
    * - Key
      - Contents
    * - ``<smoothed_name>_params``
-     - DataFrame (1 row): ``lnuc``, ``nan_method``, ``fill_edge``,
+     - DataFrame (1 row): ``lwin`` (``lnuc`` in older files),
+       ``nan_method``, ``fill_edge``,
        ``mask_name``.
    * - ``<prob_name>_eta``
      - DataFrame (1 row): ``eta_<channel>`` per selected channel

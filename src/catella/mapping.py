@@ -16,7 +16,8 @@ class CoordsTransform:
     """
 
     lnuc: int
-    """The smoothing window size used to calculate the original mean."""
+    """The window size (bp) of the left-aligned values, e.g. the
+    nucleosome footprint of a probability or the window of a smoothing."""
 
     fill_edge: float = np.nan
     """The value used to fill empty spaces created by shifting data. Default

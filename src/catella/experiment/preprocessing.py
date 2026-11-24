@@ -70,7 +70,7 @@ class MethPrintAnalysis:
         self,
         exp: MethPrintExperiment,
         *,
-        lnuc: int,
+        lwin: int,
         name: str = "smoothed",
         nan_method: str = "mean",
         fill_edge: float | str = np.nan,
@@ -91,7 +91,7 @@ class MethPrintAnalysis:
         ----------
         exp : MethPrintExperiment
             The experiment object containing raw data and analysis maps.
-        lnuc : int
+        lwin : int
             Window size in base pairs for the rolling average smoothing.
         name : str, default "smoothed"
             The suffix used to store the resulting array in `exp.analysis`.
@@ -140,7 +140,7 @@ class MethPrintAnalysis:
         exp.global_analysis[f"{name}_params"] = pd.DataFrame(
             [
                 {
-                    "lnuc": lnuc,
+                    "lwin": lwin,
                     "nan_method": nan_method,
                     "fill_edge": fill_edge,
                     "mask_name": mask_name or "",
@@ -148,7 +148,7 @@ class MethPrintAnalysis:
             ]
         )
         smooth_kwargs = {
-            "lnuc": lnuc,
+            "lwin": lwin,
             "nan_method": nan_method,
             "fill_edge": fill_edge,
             "batch_size": batch_size,
@@ -383,7 +383,8 @@ class MethPrintAnalysis:
         ------
         ValueError
             If smoothing is needed but no `lnuc` is known, or the cached
-            result was made with a different `lnuc` or `nan_method`.
+            result was made with a window `lwin` other than `lnuc`, or
+            with a different `nan_method`.
         """
         already_smoothed = (
             f"test_{smoothed_name}" in exp.analysis[exp.regions[0]]
@@ -391,7 +392,9 @@ class MethPrintAnalysis:
         cached_params = exp.global_analysis.get(f"{smoothed_name}_params")
         cached_lnuc = None
         if cached_params is not None:
-            cached_lnuc = int(cached_params["lnuc"].iloc[0])
+            # Old files stored the smoothing window as 'lnuc'
+            key = "lwin" if "lwin" in cached_params else "lnuc"
+            cached_lnuc = int(cached_params[key].iloc[0])
 
         if resmooth or not already_smoothed:
             if lnuc is None:
@@ -402,7 +405,7 @@ class MethPrintAnalysis:
                     "smoothed"
                 )
             self.smooth(
-                lnuc=lnuc,
+                lwin=lnuc,
                 exp=exp,
                 name=smoothed_name,
                 nan_method="none",
@@ -414,7 +417,9 @@ class MethPrintAnalysis:
         if cached_params is not None:
             mismatched = []
             if lnuc is not None and lnuc != cached_lnuc:
-                mismatched.append("lnuc")
+                mismatched.append(
+                    f"lwin (got {cached_lnuc}, need lnuc={lnuc})"
+                )
             if cached_params["nan_method"].iloc[0] != "none":
                 mismatched.append("nan_method")
             # mask_name is not compared: it is reapplied to the output

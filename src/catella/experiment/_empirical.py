@@ -45,7 +45,7 @@ def _fill_smoothed_nans(res, nan_method, fill_edge):
 
 
 def _smooth_source(
-    df, nbp, nmol, keep, *, lnuc, nan_method, fill_edge, batch_size, tmp_dir
+    df, nbp, nmol, keep, *, lwin, nan_method, fill_edge, batch_size, tmp_dir
 ):
     """
     Left-aligned rolling mean of one raw source, streamed in batches of
@@ -62,8 +62,8 @@ def _smooth_source(
     keep : np.ndarray or None
         bool, length `nmol`; molecules with False are set to all nan.
         None keeps every molecule.
-    lnuc : int
-        Window size (bp); position i summarizes `[i, i + lnuc)`.
+    lwin : int
+        Window size (bp); position i summarizes `[i, i + lwin)`.
     nan_method, fill_edge
         Forwarded to `_fill_smoothed_nans`.
     batch_size : int
@@ -101,9 +101,9 @@ def _smooth_source(
             .pivot(index="pos", columns="mol_index", values="mod_qual")
             .reindex(all_pos)
         )
-        res = df_piv.rolling(window=lnuc, min_periods=1).mean()
+        res = df_piv.rolling(window=lwin, min_periods=1).mean()
         res = _fill_smoothed_nans(
-            res.shift(-(lnuc - 1)), nan_method, fill_edge
+            res.shift(-(lwin - 1)), nan_method, fill_edge
         )
         out_batch = res.to_numpy().T
         if keep is not None:

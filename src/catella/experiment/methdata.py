@@ -1493,10 +1493,14 @@ class MethPrintExperiment:
                 dropout_frac, combined_frac = _dropout_fracs(cov, names)
 
                 if method == "separate":
-                    keep = (
-                        (dropout_frac >= thres_min)
-                        & (dropout_frac <= thres_max)
-                    ).all(axis=0)
+                    # NaN channels (no sites to measure) are skipped
+                    valid = ~np.isnan(dropout_frac)
+                    in_range = (dropout_frac >= thres_min) & (
+                        dropout_frac <= thres_max
+                    )
+                    keep = valid.any(axis=0) & (in_range | ~valid).all(
+                        axis=0
+                    )
                 else:
                     keep = (combined_frac >= thres_min) & (
                         combined_frac <= thres_max

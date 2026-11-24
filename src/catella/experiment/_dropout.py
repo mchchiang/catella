@@ -4,13 +4,6 @@ import numpy as np
 import pandas as pd
 
 from catella._batches import _row_batches
-from catella.experiment._contexts import (
-    _MTASE_CHANNELS,
-    CONTEXT_NAMES,
-    _merge_contexts,
-    _reference_contexts,
-)
-from catella.experiment._ingest import _methylatable_positions
 from catella.h5_array import H5Array
 
 
@@ -56,68 +49,6 @@ def _resolve_sources(raw, which):
     if which is not None:
         return [which]
     return [src for src in ("test", "meth", "unmeth") if src in raw.sources]
-
-
-def _channel_site_masks(refseq, channels):
-    """
-    Per-strand site masks for each context channel.
-
-    Parameters
-    ----------
-    refseq : str
-        Reference sequence for this region.
-    channels : iterable of int
-        Channel codes, as from `_resolve_channels`; merged channels
-        (GC, CG) pool the sites of their parts.
-
-    Returns
-    -------
-    dict of str to (np.ndarray, np.ndarray)
-        Maps each channel name to `(plus_mask, minus_mask)`, bool,
-        length `len(refseq)`.
-    """
-    channels = tuple(channels)
-    ctx = _merge_contexts(_reference_contexts(refseq), channels)
-    strand_sites = {
-        s: np.logical_or.reduce(
-            [_methylatable_positions(refseq, m, s) for m in _MTASE_CHANNELS]
-        )
-        for s in ("+", "-")
-    }
-    return {
-        CONTEXT_NAMES[c]: (
-            strand_sites["+"] & (ctx == c),
-            strand_sites["-"] & (ctx == c),
-        )
-        for c in channels
-    }
-
-
-def _fold_site_masks(site_masks, nbp):
-    """
-    Fold per-strand site masks onto the stored positions of a wrapped
-    fibre.
-
-    A wrapped molecule reads both halves, folded onto [0, nbp), so a
-    folded position is a site if either half has one there (as in
-    `_strand_assay_masks`).
-
-    Parameters
-    ----------
-    site_masks : dict of str to (np.ndarray, np.ndarray)
-        Masks over the full reference, as from `_channel_site_masks`.
-    nbp : int
-        Stored (halved) length.
-
-    Returns
-    -------
-    dict of str to (np.ndarray, np.ndarray)
-        Same keys, masks of length `nbp`.
-    """
-    return {
-        name: tuple(m[:nbp] | m[len(m) - nbp :][::-1] for m in pair)
-        for name, pair in site_masks.items()
-    }
 
 
 def _covered_rows(pos, row_strand, plus_mask, minus_mask, unmapped_strand):

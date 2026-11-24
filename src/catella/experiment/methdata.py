@@ -34,12 +34,15 @@ from catella._regions import (
 )
 from catella._warnings import _warn
 from catella.containers import DataFrameMap, FixedKeyMap
-from catella.experiment._contexts import _resolve_channels
+from catella.experiment._calibration import _fold_contexts
+from catella.experiment._contexts import (
+    _channel_site_masks,
+    _resolve_channels,
+    _strand_site_masks,
+)
 from catella.experiment._dropout import (
     _apply_keep_mask,
-    _channel_site_masks,
     _dropout_fracs,
-    _fold_site_masks,
     _resolve_sources,
     _site_coverage,
 )
@@ -1347,27 +1350,26 @@ class MethPrintExperiment:
             )
         return tuple(regions)
 
-    def _channel_masks(self, raw, codes):
+    def _channel_masks(self, region, codes):
         """
         Per-strand site masks of each channel, on stored positions.
 
         Parameters
         ----------
-        raw : MethPrintData
-            Raw data block of one region, with `refseq`.
+        region : str
+            Region with a `refseq`.
         codes : tuple of int
             Channel codes, as from `_resolve_dropout_channels`.
 
         Returns
         -------
         dict of str to (np.ndarray, np.ndarray)
-            As `_channel_site_masks`, folded to `raw.nbp` if
-            `self.wrap`.
+            As `_channel_site_masks`, with the same sites and contexts
+            (folded if `self.wrap`) as `model_prob`.
         """
-        masks = _channel_site_masks(raw.refseq, codes)
-        if self._wrap:
-            masks = _fold_site_masks(masks, raw.nbp)
-        return masks
+        ctx = _fold_contexts(self, region, codes)
+        sites = _strand_site_masks(self, region, len(ctx))
+        return _channel_site_masks(sites, ctx, codes)
 
     def filter_dropout(
         self,
@@ -1472,7 +1474,7 @@ class MethPrintExperiment:
                     "required to determine methylatable positions"
                 )
             sources = _resolve_sources(raw, which)
-            masks = self._channel_masks(raw, codes)
+            masks = self._channel_masks(region, codes)
             names = list(masks)
 
             for src in sources:
@@ -1622,7 +1624,7 @@ class MethPrintExperiment:
                     "required to determine methylatable positions"
                 )
             sources = _resolve_sources(raw, which)
-            masks = self._channel_masks(raw, codes)
+            masks = self._channel_masks(region, codes)
             names = list(masks)
 
             for src in sources:

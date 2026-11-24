@@ -219,6 +219,36 @@ def _strand_assay_masks(exp, region, ctx):
         all False, since the sites of a molecule of unknown strand
         cannot be told; such a molecule reads only its called sites.
     """
+    full = _strand_site_masks(exp, region, len(ctx))
+    if exp.ignore_strand:
+        both = full["+"] | full["-"]
+        full = {"+": both, "-": both}
+    ok = ctx != NONE
+    masks = {s: m & ok for s, m in full.items()}
+    masks["."] = np.zeros(len(ctx), dtype=bool)
+    return masks
+
+
+def _strand_site_masks(exp, region, L):
+    """
+    Positions methylatable on each strand by the experiment's mtase.
+
+    Parameters
+    ----------
+    exp : MethPrintExperiment
+        The experiment object containing raw data and analysis maps.
+    region : str
+        Region identifier.
+    L : int
+        Number of stored positions (`nbp`, halved if `exp.wrap`).
+
+    Returns
+    -------
+    dict of str to np.ndarray
+        "+" and "-" -> bool, length L: methylatable by one of
+        `exp.mtase` (all mtase labels if unset). If `exp.wrap`, a
+        folded position is a site if either half has one there.
+    """
     seq = exp.raw[region].refseq
     labels = exp.mtase if exp.mtase is not None else tuple(_MTASE_CHANNELS)
     full = {}
@@ -227,14 +257,36 @@ def _strand_assay_masks(exp, region, ctx):
         for label in labels:
             m |= _methylatable_positions(seq, label, s)
         full[s] = m
-    if exp.ignore_strand:
-        both = full["+"] | full["-"]
-        full = {"+": both, "-": both}
-    L = len(ctx)
     if exp.wrap:
         length = len(seq)
-        full = {s: m[:L] | m[length - L :][::-1] for s, m in full.items()}
-    ok = ctx != NONE
-    masks = {s: m[:L] & ok for s, m in full.items()}
-    masks["."] = np.zeros(L, dtype=bool)
-    return masks
+        return {s: m[:L] | m[length - L :][::-1] for s, m in full.items()}
+    return {s: m[:L] for s, m in full.items()}
+
+
+def _channel_site_masks(strand_sites, ctx, codes):
+    """
+    Per-strand site masks for each context channel.
+
+    Parameters
+    ----------
+    strand_sites : dict of str to np.ndarray
+        "+" and "-" -> bool, length L, as from `_strand_site_masks`.
+    ctx : np.ndarray
+        int8, length L, context code per position, with the channels of
+        `codes` merged (see `_merge_contexts`).
+    codes : iterable of int
+        Channel codes, as from `_resolve_channels`.
+
+    Returns
+    -------
+    dict of str to (np.ndarray, np.ndarray)
+        Maps each channel name to `(plus_mask, minus_mask)`, bool,
+        length L.
+    """
+    return {
+        CONTEXT_NAMES[c]: (
+            strand_sites["+"] & (ctx == c),
+            strand_sites["-"] & (ctx == c),
+        )
+        for c in codes
+    }

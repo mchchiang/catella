@@ -3,12 +3,15 @@
 import numpy as np
 
 from catella.experiment._calibration import _fold_contexts
-from catella.experiment._contexts import CONTEXT_NAMES, _strand_assay_masks
+from catella.experiment._contexts import (
+    CONTEXT_NAMES,
+    _channel_site_masks,
+    _strand_assay_masks,
+    _strand_site_masks,
+)
 from catella.experiment._controls import _streamed_call_count
 from catella.experiment._dropout import (
-    _channel_site_masks,
     _dropout_fracs,
-    _fold_site_masks,
     _site_coverage,
     _strand_of_mol,
 )
@@ -61,7 +64,7 @@ def _source_stats(exp, region, src, site_masks, percentiles, mask_name):
     src : {"test", "meth", "unmeth"}
         Source to summarize.
     site_masks : dict of str to (np.ndarray, np.ndarray)
-        From `_channel_site_masks`.
+        From `_channel_site_masks` (`_contexts.py`).
     percentiles : tuple of float
         Dropout percentiles to report.
     mask_name : str or None
@@ -222,9 +225,10 @@ def _region_qc_rows(exp, region, codes, percentiles, mask_name, batch_size):
         raise ValueError(f"no 'test' data available for region '{region}'")
     sources = [s for s in _QC_SOURCES if s in raw.sources]
 
-    site_masks = _channel_site_masks(raw.refseq, codes)
-    if exp.wrap:
-        site_masks = _fold_site_masks(site_masks, raw.nbp)
+    ctx = _fold_contexts(exp, region, codes)
+    site_masks = _channel_site_masks(
+        _strand_site_masks(exp, region, len(ctx)), ctx, codes
+    )
     stats = {
         s: _source_stats(exp, region, s, site_masks, percentiles, mask_name)
         for s in sources

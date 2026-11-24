@@ -633,6 +633,24 @@ class TestComputeEmpiricalProb:
         reloaded = MethPrintExperiment.load(raw_file)
         assert "meth_prob" in reloaded.analysis["chr1"]
 
+    def test_span_option(self, tmp_path):
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, _make_test_rows(nmol=5, nbp=30))
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 30})
+        raw_file = tmp_path / "raw_exp.h5"
+        runner.invoke(
+            app, ["load_raw", str(chromsize), str(test_file), str(raw_file)]
+        )
+        args = ["compute_empirical_prob", str(raw_file), "--lnuc", "5"]
+
+        ok = runner.invoke(app, [*args, "--span", "read"])
+        assert ok.exit_code == 0, ok.output
+
+        bad = runner.invoke(app, [*args, "--span", "bogus"])
+        assert bad.exit_code != 0
+        assert "span must be one of" in str(bad.exception)
+
     def test_prob_name_renames_stored_probabilities(self, tmp_path):
         rows = _make_test_rows(nmol=5, nbp=30)
         test_file = tmp_path / "test.tsv"

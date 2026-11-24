@@ -5,6 +5,7 @@ import pandas as pd
 
 from catella._batches import _row_batches
 from catella.experiment._dropout import _apply_keep_mask
+from catella.experiment._reads import _gap_mask, _window_covered
 from catella.h5_array import H5Array
 
 
@@ -288,13 +289,16 @@ def _write_empirical_prob(
     batch_size,
     tmp_dir,
     eps,
+    coverage=None,
+    lnuc=1,
 ):
     """
     Scale the normalized test signal to [0, 1] between `vmin` and `vmax`,
     streamed in batches to a disk-backed array.
 
     Interior gaps are filled with 0.5, positions from `end_idx` on with
-    `fill_edge`, and all-nan (dropped) molecules stay all nan.
+    `fill_edge`, and all-nan (dropped) molecules stay all nan. Windows
+    without a covered position (see `_coverage_spec`) are nan.
 
     Parameters
     ----------
@@ -317,6 +321,10 @@ def _write_empirical_prob(
     eps : float
         Floor on `vmax - vmin`, also forwarded to
         `_normalize_to_controls`.
+    coverage : tuple, optional
+        From `_coverage_spec`; None if every position is covered.
+    lnuc : int, default 1
+        Window size, for `_window_covered`.
 
     Returns
     -------
@@ -337,6 +345,75 @@ def _write_empirical_prob(
         prob[:, :end_idx] = np.where(np.isnan(interior), 0.5, interior)
         if end_idx is not None:
             prob[:, end_idx:] = fill_edge
+        if coverage is not None:
+            covered = _covered_positions(coverage, start, stop, nbp)
+            prob[~_window_covered(covered, lnuc)] = np.nan
         prob[masked, :] = np.nan
         out.write_batch(start, stop, prob)
     return out
+
+
+def _coverage_spec(raw, region, span):
+    """
+    Per-molecule span and gaps of the test source, for
+    `_write_empirical_prob`.
+
+    Parameters
+    ----------
+    raw : MethPrintData
+        Raw data block of `region`.
+    region : str
+        Region identifier, for error messages.
+    span : {"full", "calls", "read"}
+        "full": the whole region; "calls": first to last row; "read":
+        the stored read extent.
+
+    Returns
+    -------
+    tuple or None
+        `(lo, hi, gaps)`: int64 bounds per molecule and `(gaps,
+        offset)` or None; None if every position is covered ("full"
+        without gaps).
+
+    Raises
+    ------
+    ValueError
+        If `span` is "read" and the test source has no read extents.
+    """
+    source = raw.test
+    gaps = None
+    if source.gaps is not None and source.gap_offset is not None:
+        gaps = (source.gaps, source.gap_offset)
+    nmol = source.nmol
+    if span == "full":
+        if gaps is None:
+            return None
+        lo = np.zeros(nmol, dtype=np.int64)
+        hi = np.full(nmol, raw.nbp, dtype=np.int64)
+    elif span == "read":
+        if source.mol_start is None or source.mol_end is None:
+            raise ValueError(
+                f"span='read' requires read extents, but 'test' on "
+                f"region '{region}' has none; reload the raw data with "
+                "load_raw and wrap=False"
+            )
+        lo, hi = source.mol_start, source.mol_end
+    else:
+        mol = source.data["mol_index"].to_numpy(dtype=np.int64)
+        pos = source.data["pos"].to_numpy(dtype=np.int64)
+        lo = np.full(nmol, raw.nbp, dtype=np.int64)
+        hi = np.zeros(nmol, dtype=np.int64)
+        np.minimum.at(lo, mol, pos)
+        np.maximum.at(hi, mol, pos + 1)
+        hi = np.maximum(hi, lo)
+    return lo, hi, gaps
+
+
+def _covered_positions(coverage, start, stop, nbp):
+    """Positions covered by molecules `start:stop` (see `_coverage_spec`)."""
+    lo, hi, gaps = coverage
+    idx = np.arange(nbp)[None, :]
+    covered = (idx >= lo[start:stop, None]) & (idx < hi[start:stop, None])
+    if gaps is not None:
+        covered &= ~_gap_mask(gaps[0], gaps[1], start, stop, nbp)
+    return covered

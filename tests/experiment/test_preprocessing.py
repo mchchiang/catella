@@ -475,6 +475,62 @@ class TestEmpiricalProb:
         assert "meth_prob" in exp.analysis["chr1"]
 
 
+def _empirical_span_exp(**extra):
+    rows = [(0, p, "+", 0.1 * (p % 5), 0) for p in range(2, 10)]
+    df = pd.DataFrame(
+        rows, columns=["mol_index", "pos", "strand", "mod_qual", "mod_code"]
+    )
+    raw = MethPrintData._create(
+        region="chr1",
+        nbp=20,
+        test_mol_id=np.array(["mol0"], dtype=object),
+        test_data=df,
+        **extra,
+    )
+    return MethPrintExperiment._create(_raw_data={"chr1": raw})
+
+
+class TestEmpiricalProbSpan:
+    def _prob(self, exp, **kwargs):
+        MethPrintAnalysis().empirical_prob(
+            exp=exp, lnuc=3, fill_edge=0.5, **kwargs
+        )
+        return exp.analysis["chr1"]["meth_prob"].to_numpy()[0]
+
+    def test_full_without_gaps_is_finite(self):
+        assert np.isfinite(self._prob(_empirical_span_exp())).all()
+
+    def test_calls_nan_beyond_last_row(self):
+        prob = self._prob(_empirical_span_exp(), span="calls")
+        assert np.isfinite(prob[:10]).all()
+        assert np.isnan(prob[10:]).all()
+
+    def test_read_nan_outside_extent(self):
+        exp = _empirical_span_exp(
+            test_mol_start=np.array([0]), test_mol_end=np.array([12])
+        )
+        prob = self._prob(exp, span="read")
+        assert np.isfinite(prob[:12]).all()
+        assert np.isnan(prob[12:]).all()
+
+    def test_window_inside_gap_is_nan_under_full(self):
+        exp = _empirical_span_exp(
+            test_gaps=np.array([[12, 18]]), test_gap_offset=np.array([0, 1])
+        )
+        prob = self._prob(exp)
+        assert np.isnan(prob[12:16]).all()
+        assert np.isfinite(prob[:12]).all()
+        assert np.isfinite(prob[16:]).all()
+
+    def test_read_without_extents_raises(self):
+        with pytest.raises(ValueError, match="requires read extents"):
+            self._prob(_empirical_span_exp(), span="read")
+
+    def test_invalid_span_raises(self):
+        with pytest.raises(ValueError, match="span must be one of"):
+            self._prob(_empirical_span_exp(), span="bogus")
+
+
 class TestEmpiricalProbResmooth:
     def test_fill_edge_applies_to_trailing_probability_columns(self):
         exp = _make_experiment(nmol=6, nbp=10)

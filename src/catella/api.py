@@ -172,6 +172,7 @@ def compute_empirical_prob(
     percentile_sample_size: int = 100000,
     seed: int | None = None,
     mask_name: str | None = None,
+    span: str = "full",
 ) -> MethPrintExperiment:
     """
     Compute methylation probabilities via empirical normalization.
@@ -230,6 +231,9 @@ def compute_empirical_prob(
         source: set to all-NaN in the smoothed signal, and excluded
         (set to NaN) from the test signal, control-based normalization
         statistics, and the resulting probabilities.
+    span : {"full", "calls", "read"}, default "full"
+        As in `compute_model_prob`: windows outside the span or inside
+        a gap are nan.
 
     Returns
     -------
@@ -251,6 +255,7 @@ def compute_empirical_prob(
         percentile_sample_size=percentile_sample_size,
         seed=seed,
         mask_name=mask_name,
+        span=span,
     )
 
     # Save the results

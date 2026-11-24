@@ -29,6 +29,7 @@ from catella.experiment._dropout import _strand_of_mol
 from catella.experiment._empirical import (
     _clip_bounds,
     _control_means,
+    _coverage_spec,
     _masked_smoothed,
     _smooth_source,
     _write_empirical_prob,
@@ -188,6 +189,7 @@ class MethPrintAnalysis:
         percentile_sample_size: int = 100000,
         seed: int | None = None,
         mask_name: str | None = None,
+        span: str = "full",
     ):
         """
         Convert the smoothed methylation signal into a methylation probability
@@ -262,10 +264,15 @@ class MethPrintAnalysis:
             call's `mask_name` matches what `smooth` itself last used.
             Also passed through to `smooth` if smoothing is triggered
             lazily.
+        span : {"full", "calls", "read"}, default "full"
+            As in `model_prob`: windows with no position inside the
+            span (whole region, first to last row, or read extent) and
+            outside internal gaps are nan.
 
         Raises
         ------
         ValueError
+            If `span` is invalid, or "read" without read extents.
             If `lnuc` is not provided and no cached `lnuc` exists.
             If `test_{smoothed_name}` already exists and an
             explicitly-given `lnuc` does not match what was used to
@@ -285,6 +292,11 @@ class MethPrintAnalysis:
         scratch files from the same experiment.
         """
 
+        _check_span(span)
+        coverage = {
+            region: _coverage_spec(exp.raw[region], region, span)
+            for region in exp.regions
+        }
         tmp_dir = exp.resolve_tmp_dir()
         lnuc = self._ensure_smoothed(
             exp, lnuc, smoothed_name, resmooth, batch_size, mask_name
@@ -342,6 +354,8 @@ class MethPrintAnalysis:
                 batch_size=batch_size,
                 tmp_dir=tmp_dir,
                 eps=self._EPSILON,
+                coverage=coverage[region],
+                lnuc=lnuc,
             )
 
     def _ensure_smoothed(

@@ -525,6 +525,10 @@ def compute_empirical_prob(
             dir_okay=False,
         ),
     ] = None,
+    span: Annotated[
+        str,
+        typer.Option(help="Molecule stretch counted: full, calls or read"),
+    ] = "full",
 ):
     """
     Compute methylation probabilities via empirical normalization.
@@ -542,6 +546,7 @@ def compute_empirical_prob(
         percentile_sample_size=percentile_sample_size,
         seed=seed,
         mask_name=mask_name,
+        span=span,
     )
     exp.save(out_file)
 

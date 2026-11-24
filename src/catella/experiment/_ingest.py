@@ -457,10 +457,11 @@ def _scan_accepted_mols(
     rng,
     balance_strand=False,
     regions=None,
+    sizes=None,
 ):
     """
-    Determine, per region, which molecules are kept and their
-    `mol_index`.
+    Determine, per region, which molecules are kept, their
+    `mol_index`, and their read extents.
 
     Each region is a value of the `chrom` column (a whole
     chromosome). Streams only the `chrom`+`mol_id` columns (plus
@@ -500,18 +501,27 @@ def _scan_accepted_mols(
         Regions to keep. Rows on other regions are skipped before
         sampling, so they neither warn nor consume `rng` draws. If
         None, keep every region found in the file.
+    sizes : dict of str to int, optional
+        Region -> length (bp), used to bound and clip read extents.
+        None computes no extents (`wrap=True`).
 
     Returns
     -------
     dict of str to dict
-        `{region: {"mol_id": np.ndarray (sorted, accepted mol_ids),
-        "index": dict mapping mol_id -> mol_index}}`, covering every
-        region found in the file that is in `regions`.
+        `{region: {"mol_id", "index", "start", "end"}}`: the sorted
+        accepted mol_ids, mol_id -> mol_index, and the read extent
+        `[start, end)` of each molecule (int64; `(0, 0)` without an
+        in-bounds row), or None for `start`/`end` without `sizes`.
+        Covers every region found in the file that is in `regions`.
     """
+    has_align = all(c in name_for for c in _OPTIONAL_NAMES)
     cols = ["chrom", "mol_id"] + (["strand"] if balance_strand else [])
     if "flag" in name_for:
         cols.append("flag")
+    if sizes is not None:
+        cols += ["upos", *(_OPTIONAL_NAMES if has_align else ())]
     mol_order = {}
+    extent_of = {}
     for batch_df in _iter_csv_chunks(
         data_file,
         header_names,
@@ -537,6 +547,8 @@ def _scan_accepted_mols(
             seen = mol_order.setdefault(region, {})
             if mol_id not in seen:
                 seen[mol_id] = strand
+        if sizes is not None:
+            _merge_chunk_extents(extent_of, batch_df, sizes, has_align)
 
     result = {}
     for region in sorted(mol_order.keys()):
@@ -547,11 +559,95 @@ def _scan_accepted_mols(
             if max_nmol is not None and len(mols) > max_nmol:
                 mols = rng.choice(mols, max_nmol, replace=False)
         sorted_mols = np.sort(mols)
+        start = end = None
+        if sizes is not None:
+            start, end = _extent_arrays(
+                extent_of.get(region, {}), sorted_mols, sizes[region]
+            )
         result[region] = {
             "mol_id": sorted_mols,
             "index": {m: i for i, m in enumerate(sorted_mols)},
+            "start": start,
+            "end": end,
         }
     return result
+
+
+def _merge_chunk_extents(extent_of, batch_df, sizes, has_align):
+    """
+    Widen per-molecule extents in place with one chunk of rows.
+
+    Parameters
+    ----------
+    extent_of : dict of str to dict
+        Region -> mol_id -> `(start, end)`, updated in place.
+    batch_df : pd.DataFrame
+        Rows with `chrom`, `mol_id`, `upos` and, if `has_align`,
+        `align_start`/`align_end` columns.
+    sizes : dict of str to int
+        Region -> length (bp); rows with `upos` outside `[0, length)`
+        are ignored.
+    has_align : bool
+        Whether to use the alignment columns instead of `upos`.
+    """
+    upos = batch_df["upos"].to_numpy()
+    length = batch_df["chrom"].map(sizes).to_numpy()
+    rows = batch_df[(upos >= 0) & (upos < length)]
+    if rows.empty:
+        return
+    if has_align:
+        lo, hi = rows["align_start"], rows["align_end"]
+    else:
+        lo, hi = rows["upos"], rows["upos"] + 1
+    agg = (
+        pd.DataFrame(
+            {
+                "chrom": rows["chrom"],
+                "mol_id": rows["mol_id"],
+                "lo": lo,
+                "hi": hi,
+            }
+        )
+        .groupby(["chrom", "mol_id"], sort=False)
+        .agg(lo=("lo", "min"), hi=("hi", "max"))
+    )
+    for (region, mol_id), lo_, hi_ in zip(
+        agg.index, agg["lo"].to_numpy(), agg["hi"].to_numpy()
+    ):
+        by_mol = extent_of.setdefault(region, {})
+        cur = by_mol.get(mol_id)
+        if cur is not None:
+            lo_, hi_ = min(cur[0], lo_), max(cur[1], hi_)
+        by_mol[mol_id] = (int(lo_), int(hi_))
+
+
+def _extent_arrays(extent_of_region, mol_ids, size):
+    """
+    Read extents of `mol_ids` as arrays, clipped to `[0, size]`.
+
+    Parameters
+    ----------
+    extent_of_region : dict of str to (int, int)
+        mol_id -> `(start, end)`, from `_merge_chunk_extents`.
+    mol_ids : sequence of str
+        Molecules, in `mol_index` order.
+    size : int
+        Region length (bp).
+
+    Returns
+    -------
+    start, end : np.ndarray
+        int64; `(0, 0)` for a molecule without an in-bounds row.
+    """
+    start = np.array(
+        [extent_of_region.get(m, (size, 0))[0] for m in mol_ids],
+        dtype=np.int64,
+    )
+    end = np.array(
+        [extent_of_region.get(m, (size, 0))[1] for m in mol_ids],
+        dtype=np.int64,
+    )
+    return _clip_extents(start, end, size)
 
 
 def _balanced_mols(region, strand_of, max_nmol, rng):
@@ -618,7 +714,7 @@ def _stream_rows_to_staging(
 ):
     """
     Stream full rows, transform them, and append to per-region
-    disk-backed appenders.
+    disk-backed appenders, inferring internal gaps along the way.
 
     Rows with a canonical call (`mod_code` of '-', i.e. no methylation
     signal) are dropped, since the emission model only considers sites
@@ -670,19 +766,11 @@ def _stream_rows_to_staging(
 
     Returns
     -------
-    extents : dict of str to (np.ndarray, np.ndarray) or None
-        Region -> `(start, end)`, int64 of length nmol, the half-open
-        extent `[start, end)` of each molecule, taken before the
-        `mod_code` and strand filters and clipped to the region;
-        `(0, 0)` for a molecule with no in-bounds row.
-        Taken from the `align_start`/`align_end` columns if present,
-        else from the first and last row of each molecule. None if
-        `wrap`, since folded positions have no extent.
-    gaps : dict of str to (np.ndarray, np.ndarray) or None
-        Region -> `(gaps, offset)` from `_GapTracker.result`,
-        inferred from all rows before the `mod_code` and strand
-        filters. None if `wrap`, if `min_gap` is None, or if the file
-        has no `read_pos` column.
+    dict of str to (np.ndarray, np.ndarray) or None
+        Region -> `(gaps, offset)` from `_GapTracker.result`, inferred
+        from all rows before the `mod_code` and strand filters. None if
+        `wrap`, if `min_gap` is None, or if the file has no `read_pos`
+        column.
 
     Warns
     -----
@@ -694,18 +782,8 @@ def _stream_rows_to_staging(
         those molecules get no gaps.
     """
     n_out = {}
-    extents = None
-    if not wrap:
-        extents = {
-            region: (
-                np.full(len(m["mol_id"]), full_sizes[region], dtype=np.int64),
-                np.zeros(len(m["mol_id"]), dtype=np.int64),
-            )
-            for region, m in mol_maps.items()
-        }
-    has_align = all(c in name_for for c in _OPTIONAL_NAMES)
     trackers = None
-    if extents is not None and min_gap is not None and "read_pos" in name_for:
+    if not wrap and min_gap is not None and "read_pos" in name_for:
         trackers = {
             region: _GapTracker(len(m["mol_id"]), min_gap)
             for region, m in mol_maps.items()
@@ -721,8 +799,6 @@ def _stream_rows_to_staging(
             valid_by_region[region] = (plus, minus)
 
     needed = ["mol_id", "upos", "chrom", "strand", "mod_qual", "mod_code"]
-    if has_align and extents is not None:
-        needed += list(_OPTIONAL_NAMES)
     if "flag" in name_for:
         needed.append("flag")
     if trackers is not None:
@@ -745,8 +821,6 @@ def _stream_rows_to_staging(
                 n_out[chrom] = n_out.get(chrom, 0) + int((~in_bounds).sum())
                 group = group.loc[in_bounds]
             mol_index = group["mol_id"].map(mapping["index"])
-            if extents is not None:
-                _update_extents(extents[chrom], group, mol_index, has_align)
             if trackers is not None:
                 mapped = mol_index.notna().to_numpy()
                 trackers[chrom].update(
@@ -811,14 +885,8 @@ def _stream_rows_to_staging(
             f"dropped {n} row(s) on chrom '{chrom}' with ref_position "
             f"outside [0, {full_sizes[chrom]})"
         )
-    if extents is None:
-        return None, None
-    extents = {
-        region: _clip_extents(start, end, full_sizes[region])
-        for region, (start, end) in extents.items()
-    }
     if trackers is None:
-        return extents, None
+        return None
     gaps = {}
     n_unordered = 0
     for region, tracker in trackers.items():
@@ -832,38 +900,7 @@ def _stream_rows_to_staging(
             "for them (sort the file by read and reference position, or "
             "pass gaps_bed)"
         )
-    return extents, gaps
-
-
-def _update_extents(extent, group, mol_index, has_align):
-    """
-    Widen per-molecule extents in place with one chunk of rows.
-
-    Parameters
-    ----------
-    extent : (np.ndarray, np.ndarray)
-        int64 running `(start, end)` per molecule.
-    group : pd.DataFrame
-        Rows of one region, with `upos` and, if `has_align`,
-        `align_start`/`align_end` columns.
-    mol_index : pd.Series
-        Molecule index of each row of `group`; nan for molecules not
-        kept.
-    has_align : bool
-        Whether to use the alignment columns instead of `upos`.
-    """
-    mapped = mol_index.notna().to_numpy()
-    if not mapped.any():
-        return
-    idx = mol_index.to_numpy()[mapped].astype(np.int64)
-    if has_align:
-        lo = group["align_start"].to_numpy()[mapped]
-        hi = group["align_end"].to_numpy()[mapped]
-    else:
-        lo = group["upos"].to_numpy()[mapped]
-        hi = lo + 1
-    np.minimum.at(extent[0], idx, lo.astype(np.int64))
-    np.maximum.at(extent[1], idx, hi.astype(np.int64))
+    return gaps
 
 
 class _GapTracker:
@@ -1308,6 +1345,7 @@ def _ingest_into(
             rng,
             balance_strand=balance_strand,
             regions=set(sizes),
+            sizes=None if wrap else sizes,
         )
 
         dt = h5py.string_dtype(encoding="utf-8")
@@ -1322,6 +1360,9 @@ def _ingest_into(
                 (coords or {}).get(region),
             )
             gdata.create_dataset(f"{name}_mol_id", data=m["mol_id"], dtype=dt)
+            if m["start"] is not None:
+                gdata.create_dataset(f"{name}_mol_start", data=m["start"])
+                gdata.create_dataset(f"{name}_mol_end", data=m["end"])
             appenders[region] = h5_utils.AppendableDF(
                 gdata,
                 f"{name}_data",
@@ -1330,7 +1371,7 @@ def _ingest_into(
             )
             gdatas[region] = gdata
 
-        extents, gaps = _stream_rows_to_staging(
+        gaps = _stream_rows_to_staging(
             read_path,
             header_names,
             name_for,
@@ -1346,10 +1387,7 @@ def _ingest_into(
             ignore_strand=ignore_strand,
             min_gap=min_gap,
         )
-        for region, (start, end) in (extents or {}).items():
-            gdatas[region].create_dataset(f"{name}_mol_start", data=start)
-            gdatas[region].create_dataset(f"{name}_mol_end", data=end)
-        if gaps_bed and extents is not None:
+        if gaps_bed and not wrap:
             gaps = _apply_bed_gaps(
                 gaps,
                 gaps_bed,

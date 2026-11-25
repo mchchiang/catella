@@ -14,9 +14,11 @@ from catella._batches import _row_batches
 from catella._warnings import _warn
 from catella.simulation._inputs import (
     _check_fill_nan,
+    _extent,
     _is_valid_llink,
     _prepare_block,
     _resolve_settings,
+    _set_energy,
 )
 
 # Warn below this many molecules, as per-molecule estimates are noisy
@@ -39,12 +41,15 @@ def _resolve_llinks(llinks):
     return sorted({int(value) for value in values})
 
 
-def _log_z(settings, llink, energy, nbp):
-    """Log partition function of one fiber at temperature 1."""
+def _log_z(settings, llink, energy, nbp, extent=None):
+    """
+    Log partition function of one fiber at temperature 1, with
+    nucleosomes kept in `extent` if given.
+    """
     model = NucPosTM(
         settings.lnuc, nbp, llink, settings.elink, settings.mu, 1
     )
-    model.setEnergy(energy, settings.emax)
+    _set_energy(model, energy, settings.emax, settings.lnuc, extent)
     model.solve(1.0)
     return model.getLogZ()
 
@@ -79,22 +84,43 @@ def _region_array(exp, region, prob_name):
     return arr
 
 
-def _chunk_evidence(settings, candidates, block, log_z0):
+def _chunk_evidence(settings, candidates, block, log_z0, extents=None):
     """
     Sum over the rows of `block` of log Z(data) - log Z(no data), one
-    value per candidate.
+    value per candidate. A row with an extent in `extents` keeps its
+    nucleosomes in it; its prior log Z is that of a free fiber of the
+    extent's length, cached per length and candidate.
     """
     nbp = block.shape[1]
     totals = np.zeros(len(candidates))
-    for row in block:
+    cache = {}
+    for r, row in enumerate(block):
         energy = logit(row).tolist()
+        extent = None if extents is None else extents[r]
         for i, ll in enumerate(candidates):
-            totals[i] += _log_z(settings, ll, energy, nbp) - log_z0[i]
+            lz = _log_z(settings, ll, energy, nbp, extent)
+            if extent is None:
+                totals[i] += lz - log_z0[i]
+                continue
+            length = extent[1] - extent[0]
+            if (length, ll) not in cache:
+                # No nucleosome fits an extent shorter than lnuc
+                cache[length, ll] = (
+                    0.0
+                    if length < settings.lnuc
+                    else _log_z(settings, ll, [0.0] * length, length)
+                )
+            totals[i] += lz - cache[length, ll]
     return totals
 
 
-def _chunk_jobs(exp, settings, candidates, prob_name, selected, fill_nan):
-    """Yield `(region, block, log_z0)` for each chunk of selected rows."""
+def _chunk_jobs(
+    exp, settings, candidates, prob_name, selected, fill_nan, occupy_read_ends
+):
+    """
+    Yield `(region, block, log_z0, extents)` for each chunk of selected
+    rows; `extents` is None if `occupy_read_ends`.
+    """
     for region, rows in selected.items():
         arr = _region_array(exp, region, prob_name)
         nbp = arr.shape[1]
@@ -103,24 +129,27 @@ def _chunk_jobs(exp, settings, candidates, prob_name, selected, fill_nan):
         for start in range(0, len(rows), _CHUNK_NMOL):
             chunk = rows[start : start + _CHUNK_NMOL]
             block = np.asarray(arr[chunk, :], dtype=np.float64)
-            block, _, _ = _prepare_block(
+            block, _, spanned = _prepare_block(
                 block, settings.lnuc, region, fill_nan
             )
-            yield region, block, log_z0
+            extents = None
+            if not occupy_read_ends:
+                extents = [_extent(spanned, r) for r in range(len(block))]
+            yield region, block, log_z0, extents
 
 
 def _run_chunks(jobs, settings, candidates, nworker):
     """Yield `(region, totals)` for each job, in submission order."""
     if nworker == 1:
-        for region, block, log_z0 in jobs:
-            yield region, _chunk_evidence(settings, candidates, block, log_z0)
+        for region, *args in jobs:
+            yield region, _chunk_evidence(settings, candidates, *args)
         return
     ctx = mp.get_context("spawn")
     with ProcessPoolExecutor(max_workers=nworker, mp_context=ctx) as pool:
         pending = deque()
-        for region, block, log_z0 in jobs:
+        for region, *args in jobs:
             future = pool.submit(
-                _chunk_evidence, settings, candidates, block, log_z0
+                _chunk_evidence, settings, candidates, *args
             )
             pending.append((region, future))
             if len(pending) >= 2 * nworker:
@@ -144,6 +173,7 @@ def _llink_evidence(
     mask_name=None,
     nworker=1,
     fill_nan=None,
+    occupy_read_ends=True,
 ):
     """
     Marginal likelihood of each candidate `llink`, per region.
@@ -181,6 +211,9 @@ def _llink_evidence(
     fill_nan : {"mean"}, float, or None, default None
         How to treat molecules that are nan at some but not all
         nucleosome start positions; see `SimManager.run`.
+    occupy_read_ends : bool, default True
+        See `SimManager.run`; if False, each molecule's nucleosomes stay
+        in its extent, in both log Z terms.
 
     Returns
     -------
@@ -241,7 +274,13 @@ def _llink_evidence(
         selected[region] = rows
 
     jobs = _chunk_jobs(
-        exp, settings, candidates, prob_name, selected, fill_nan
+        exp,
+        settings,
+        candidates,
+        prob_name,
+        selected,
+        fill_nan,
+        occupy_read_ends,
     )
     totals = {region: np.zeros(len(candidates)) for region in selected}
     for region, part in _run_chunks(jobs, settings, candidates, nworker):

@@ -10,7 +10,11 @@ import pandas as pd
 import pytest
 from catella.experiment.methdata import MethPrintExperiment
 from catella.h5_array import H5Array
-from catella.simulation._llink import _estimate_llink, _llink_evidence
+from catella.simulation._llink import (
+    _estimate_llink,
+    _llink_evidence,
+    _log_z,
+)
 from catella.simulation.config import SimSettings
 from scipy.special import expit
 
@@ -369,6 +373,72 @@ class TestNworker:
             _llink_evidence(
                 _exp({"c": _random_probs()}), _settings(), nworker=value
             )
+
+
+def _read_row(nbp, lo, hi, lnuc=20, seed=4):
+    row = np.random.default_rng(seed).uniform(0.05, 0.95, nbp)
+    for i in range(nbp):
+        if not (lo < min(i + lnuc, nbp) and i < hi):
+            row[i] = np.nan
+    return row
+
+
+class TestOccupyReadEnds:
+    @pytest.mark.parametrize("extent", [(0, 60), (7, 45), (30, 60)])
+    def test_cached_prior_matches_forbidden_solve(self, extent):
+        settings = _settings()
+        lo, hi = extent
+        forbidden = _log_z(settings, 5, [0.0] * 60, 60, extent)
+        free = _log_z(settings, 5, [0.0] * (hi - lo), hi - lo)
+        assert forbidden == pytest.approx(free)
+
+    @pytest.mark.parametrize(
+        ("nbp", "lo", "hi"), [(80, 21, 45), (60, 0, 33), (60, 25, 60)]
+    )
+    def test_matches_cropped_molecule(self, nbp, lo, hi):
+        row = _read_row(nbp, lo, hi)
+        got = _llink_evidence(
+            _exp({"c": row[None, :]}),
+            _settings(),
+            llinks=[0, 5, 10],
+            fill_nan=0.5,
+            occupy_read_ends=False,
+        )
+        want = _llink_evidence(
+            _exp({"c": row[None, lo:hi]}),
+            _settings(),
+            llinks=[0, 5, 10],
+        )
+        np.testing.assert_allclose(got["evidence"], want["evidence"])
+
+    def test_default_is_unchanged(self):
+        row = _read_row(60, 7, 45)[None, :]
+        default = _llink_evidence(
+            _exp({"c": row}), _settings(), llinks=[5], fill_nan=0.5
+        )
+        explicit = _llink_evidence(
+            _exp({"c": row}),
+            _settings(),
+            llinks=[5],
+            fill_nan=0.5,
+            occupy_read_ends=True,
+        )
+        assert default["evidence"].iloc[0] == explicit["evidence"].iloc[0]
+
+    def test_extent_shorter_than_lnuc_adds_nothing(self):
+        probs = _random_probs()
+        short = _read_row(60, 30, 40)
+        got = _llink_evidence(
+            _exp({"c": np.vstack([probs, short])}),
+            _settings(),
+            llinks=[5],
+            fill_nan=0.5,
+            occupy_read_ends=False,
+        )
+        want = _llink_evidence(_exp({"c": probs}), _settings(), llinks=[5])
+        assert got["evidence"].iloc[0] == pytest.approx(
+            want["evidence"].iloc[0]
+        )
 
 
 class TestEstimate:

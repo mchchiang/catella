@@ -548,6 +548,7 @@ def estimate_llink(
     nworker: int = 1,
     llink_evid_name: str | None = None,
     fill_nan: str | float | None = None,
+    occupy_read_ends: bool = True,
 ) -> dict[str, int]:
     """
     Estimate `SimSettings.llink` per region by maximum likelihood.
@@ -603,6 +604,8 @@ def estimate_llink(
         How to treat molecules that are nan at some but not all
         nucleosome start positions; see `run`. Molecules with no data
         (no spanned base pair) are always left out.
+    occupy_read_ends : bool, default True
+        See `run`; use the same value as for `run`.
 
     Returns
     -------
@@ -648,6 +651,7 @@ def estimate_llink(
         mask_name=mask_name,
         llink_evid_name=llink_evid_name,
         fill_nan=fill_nan,
+        occupy_read_ends=occupy_read_ends,
     )
 
 

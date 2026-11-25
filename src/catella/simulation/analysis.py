@@ -518,7 +518,7 @@ class SimAnalysis:
         Calculate nucleosome occupancy and the mean nucleosome count.
 
         For `dataset.method == "mcmc"`, occupancy is the fraction of
-        simulation runs where a base pair is covered by a nucleosome,
+        simulation runs where a base pair is occupied by a nucleosome,
         and the mean count is the average over runs, at a specific time
         point. For `"tm"`, both (and optionally their variances) are
         computed exactly via the transfer-matrix solver, with no time
@@ -808,7 +808,7 @@ class SimAnalysis:
         """
         Calculate the exact per-bp variance of nucleosome occupancy.
 
-        Closed form (occup*(1-occup)): a bp can be covered by at most
+        Closed form (occup*(1-occup)): a bp can be occupied by at most
         one nucleosome, so occupancy there is Bernoulli. Uncertainty
         has no MCMC equivalent computed here; only available for
         `dataset.method == "tm"` datasets. Nan at base pairs a molecule
@@ -940,7 +940,7 @@ class SimAnalysis:
             `dataset.analysis`.
         gamma : float, default 1.0
             Weight of correctly called occupied sites relative to
-            correctly called empty sites. A site favors being covered when
+            correctly called empty sites. A site favors being occupied when
             its occupancy exceeds 1/(1 + gamma), so larger values call more
             nucleosomes. Must be positive.
         nworker : int, default 1
@@ -1419,10 +1419,11 @@ class SimAnalysis:
             `config_name` is given.
         config_name : str, optional
             The `name` of configurations stored by `compute_config`.
-            Molecules are clustered by their footprints (1 covered, 0
-            linker): with the default ward/euclidean, the distance of two
-            molecules is the square root of the number of base pairs where
-            their calls differ. Molecules with no data are nan rows, so
+            Molecules are clustered by their footprints (1 occupied, 0
+            linker, nan unspanned): with the default ward/euclidean, the
+            distance of two molecules is the square root of the number of
+            base pairs where their calls differ. Molecules with no data
+            are nan rows, so
             they need `fill_nan`. The footprints are streamed through a
             temporary float32 file in batches of `batch_size`.
         store_link_mat : bool, default True
@@ -1510,7 +1511,7 @@ class SimAnalysis:
     def _config_footprints(self, dataset, region, name, batch_size, tmp_dir):
         """
         Write the stored configurations of `name` as a temporary footprint
-        array (float32: 1 covered, 0 linker, nan no data).
+        array (float32: 1 occupied, 0 linker, nan no data or unspanned).
 
         Parameters
         ----------
@@ -1541,5 +1542,6 @@ class SimAnalysis:
             for i, starts in enumerate(configs[start:stop]):
                 if starts is not None:
                     block[i] = nuc_map.project(np.asarray(starts))
+            _nan_unspanned(block, dataset.spanned[region], start, stop)
             out.write_batch(start, stop, block)
         return out

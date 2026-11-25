@@ -32,6 +32,7 @@ from catella._plotting import (
 from catella._regions import _per_region, _region_list
 from catella._warnings import _warn
 from catella.mapping import CoordsTransform
+from catella.simulation._exact import _spanned_rows
 from catella.simulation.analysis import NucFiberMap, SimAnalysis
 from catella.simulation.results import SimDataset
 
@@ -110,7 +111,7 @@ def _run_list(runs, nsim):
     return values
 
 
-def _footprints(configs, nbp, lnuc):
+def _footprints(configs, nbp, lnuc, spanned_rows=None):
     """
     Stack configurations into an int8 footprint matrix.
 
@@ -122,17 +123,22 @@ def _footprints(configs, nbp, lnuc):
         The number of base pairs.
     lnuc : int
         The nucleosome footprint size.
+    spanned_rows : np.ndarray, optional
+        bool, (len(configs), nbp) or (nbp,): spanned base pairs; others
+        are no data.
 
     Returns
     -------
     np.ndarray
-        int8, (len(configs), nbp): 1 covered, 0 linker, -1 no data.
+        int8, (len(configs), nbp): 1 occupied, 0 linker, -1 no data.
     """
     nuc_map = NucFiberMap(nbp=nbp, lnuc=lnuc)
     out = np.full((len(configs), nbp), -1, dtype=np.int8)
     for i, starts in enumerate(configs):
         if starts is not None:
             out[i] = nuc_map.project(np.asarray(starts))
+    if spanned_rows is not None:
+        out[~np.broadcast_to(spanned_rows, out.shape)] = -1
     return out
 
 
@@ -143,15 +149,15 @@ def _merge_rows(matrix, max_rows, how):
     Parameters
     ----------
     matrix : np.ndarray
-        int8 footprints (1 covered, 0 linker, -1 no data).
+        int8 footprints (1 occupied, 0 linker, -1 no data).
     max_rows : int or None
         The maximum number of rows; `matrix` is returned as is if None
         or if it already fits.
     how : {"stride", "mean", "max"}
         "stride" returns `matrix` as is (rows are picked before
-        reading). "mean" gives the covered share of each group among
+        reading). "mean" gives the occupied share of each group among
         rows with data (nan if none); "max" gives 1 if any row of the
-        group is covered (-1 if no row has data).
+        group is occupied (-1 if no row has data).
 
     Returns
     -------
@@ -163,10 +169,10 @@ def _merge_rows(matrix, max_rows, how):
         return matrix
     if how == "max":
         return utils.downsample(matrix, max_rows, how="max")
-    covered = utils.downsample(matrix > 0, max_rows, how="sum")
+    occupied = utils.downsample(matrix > 0, max_rows, how="sum")
     count = utils.downsample(matrix >= 0, max_rows, how="sum")
     with np.errstate(invalid="ignore", divide="ignore"):
-        return np.where(count > 0, covered / count, np.nan)
+        return np.where(count > 0, occupied / count, np.nan)
 
 
 @dataclass(slots=True, kw_only=True)
@@ -351,7 +357,7 @@ class SimPlot:
         Plot many nucleosome configurations of one molecule.
 
         Each row is one configuration of molecule `mol`, showing the
-        bases covered by nucleosomes (1) and the linkers (0):
+        bases occupied by nucleosomes (1) and the linkers (0):
 
         - `over="time"` (MCMC only): the recorded frames of one run
           between `tstart` and `tend`; with `plot_energy`, a check of the
@@ -397,9 +403,9 @@ class SimPlot:
             `downsample_how` says.
         downsample_how : {"stride", "mean", "max"}, default "stride"
             How to reduce the rows to `max_rows`: "stride" keeps every
-            k-th row (real configurations), "mean" shows the covered share
-            of each group of rows, and "max" whether any of them is
-            covered.
+            k-th row (real configurations), "mean" shows the occupied
+            share of each group of rows, and "max" whether any of them
+            is occupied.
         cmap : str, optional
             Matplotlib colormap name. If None, `self.cmap` is used.
         out_file : str or Path, optional
@@ -475,6 +481,9 @@ class SimPlot:
             matrix = NucFiberMap(nbp=nbp, lnuc=data.lnuc).stack(
                 [data.position[i] for i in idx]
             )
+            spanned = _spanned_rows(dataset.spanned[region], [mol], nbp)
+            if spanned is not None:
+                matrix[:, ~spanned[0]] = -1
             matrix = _merge_rows(matrix, max_rows, downsample_how)
             extent_y = (
                 data.time[idx[0]] / tscale,
@@ -501,7 +510,12 @@ class SimPlot:
                 )[0]
                 for r in run_ids
             ]
-            matrix = _footprints(configs, nbp, dataset.settings["lnuc"])
+            matrix = _footprints(
+                configs,
+                nbp,
+                dataset.settings["lnuc"],
+                _spanned_rows(dataset.spanned[region], [mol], nbp),
+            )
             matrix = _merge_rows(matrix, max_rows, downsample_how)
             extent_y = None
             unit = "run" if dataset.method == "mcmc" else "sample"
@@ -556,7 +570,7 @@ class SimPlot:
         """
         Plot one nucleosome configuration per molecule.
 
-        Each row is a molecule, showing the bases covered by the
+        Each row is a molecule, showing the bases occupied by the
         nucleosomes (1) and the linkers (0) of one configuration read with
         `SimAnalysis.extract_config`: the calls stored under `name` (e.g.,
         by `compute_config`), or the raw configuration of run `run` at
@@ -592,8 +606,8 @@ class SimPlot:
         downsample_how : {"stride", "mean", "max"}, default "stride"
             How to reduce the rows to `max_rows`: "stride" keeps every
             k-th molecule (real configurations; only those are read),
-            "mean" shows the covered share of each group of molecules,
-            and "max" whether any of them is covered.
+            "mean" shows the occupied share of each group of molecules,
+            and "max" whether any of them is occupied.
         xscale : int, default 1000
             Spatial scaling factor (a power of 10) for the x-axis labels.
         cmap : str, optional
@@ -652,7 +666,7 @@ class SimPlot:
         -----
         The footprints are held as an int8 matrix (1 byte per molecule
         and base pair) before downsampling. With several regions, a
-        colorbar of the covered share is shown if any panel is merged
+        colorbar of the occupied share is shown if any panel is merged
         with "mean"; 0/1 panels then use its ends.
         """
         regions = _region_list(regions)
@@ -770,7 +784,12 @@ class SimPlot:
         configs = SimAnalysis().extract_config(
             dataset, region=region, name=name, run=run, time=time, mols=mol_ids
         )
-        matrix = _footprints(configs, nbp, dataset.settings["lnuc"])
+        matrix = _footprints(
+            configs,
+            nbp,
+            dataset.settings["lnuc"],
+            _spanned_rows(dataset.spanned[region], mol_ids, nbp),
+        )
         mean = None
         if plot_mean:
             calls = np.where(matrix < 0, np.nan, matrix.astype(float))
@@ -836,7 +855,7 @@ class SimPlot:
         mean=None,
     ):
         """
-        Draw a footprint matrix (1 covered, 0 linker, -1 or nan no data)
+        Draw a footprint matrix (1 occupied, 0 linker, -1 or nan no data)
         into the axes of `panel` (from `_footprint_grid`), with an
         optional dendrogram on the right and mean and energy rows below.
         The legend or colorbar is drawn by `_footprint_side`.
@@ -921,7 +940,7 @@ class SimPlot:
 
         If all `matrices` are int8 (0/1 calls), a legend of nucleosome,
         linker, and (if any) no-data colors; otherwise a colorbar of the
-        covered share, which also covers 0/1 matrices (plus a no-data
+        occupied share, which also covers 0/1 matrices (plus a no-data
         entry if any data is missing with several panels). It goes next
         to the top-right heatmap, shared by all panels.
         """
@@ -942,7 +961,7 @@ class SimPlot:
             side_ax.axis("off")
             side_ax.legend(handles=handles, loc="center left", frameon=False)
             return
-        _colorbar(fig, panels, im, "Covered share")
+        _colorbar(fig, panels, im, "Occupied share")
         if len(panels) > 1 and missing:
             fig.legend(
                 handles=[no_data], loc="outside right lower", frameon=False

@@ -1362,7 +1362,7 @@ def plot_config(
     """
     Plot one nucleosome configuration per molecule.
 
-    Each row is a molecule, showing the bases covered by the nucleosomes
+    Each row is a molecule, showing the bases occupied by the nucleosomes
     (1) and the linkers (0) of one configuration read with
     `extract_config`: the calls stored under `name` by `compute_config`,
     or the raw configuration of run `run` at time `time` (MCMC) or of
@@ -1396,9 +1396,9 @@ def plot_config(
         says.
     downsample_how : {"stride", "mean", "max"}, default "stride"
         How to reduce the rows to `max_rows`: "stride" keeps every k-th
-        molecule (real configurations), "mean" shows the covered share of
+        molecule (real configurations), "mean" shows the occupied share of
         each group of molecules, and "max" whether any of them is
-        covered.
+        occupied.
     xscale : int, default 1000
         Spatial scaling factor (a power of 10) for the x-axis labels.
     cmap : str, optional
@@ -1930,7 +1930,7 @@ def sort_by_linkage(
     config_name : str, optional
         Only used with `dataset`. The `name` of configurations stored by
         `compute_config`; molecules are clustered by their footprints
-        (the base pairs covered by their calls) instead of an analysis
+        (the base pairs occupied by their calls) instead of an analysis
         array. Cannot be combined with `data_name`. Molecules with no
         data need `fill_nan`.
     raw_which : {"test", "meth", "unmeth"}, optional

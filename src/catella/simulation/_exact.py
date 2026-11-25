@@ -354,6 +354,38 @@ def _nan_unspanned(block, spanned, start, stop):
         block[~mask] = np.nan
 
 
+def _spanned_rows(spanned, mol_ids, nbp):
+    """
+    Spanned base pairs of the molecules `mol_ids`, in their order.
+
+    Parameters
+    ----------
+    spanned : tuple of np.ndarray or None
+        `(intervals, offset)` of the region (see `SimDataset.spanned`).
+    mol_ids : sequence of int
+        The molecules, in any order.
+    nbp : int
+        The number of base pairs.
+
+    Returns
+    -------
+    np.ndarray or None
+        bool, (len(mol_ids), nbp), or None if `spanned` is None.
+    """
+    if spanned is None:
+        return None
+    intervals, offset = spanned
+    mol_ids = np.asarray(mol_ids, dtype=np.int64)
+    counts = offset[mol_ids + 1] - offset[mol_ids]
+    rows = np.concatenate(
+        [np.arange(offset[m], offset[m + 1]) for m in mol_ids]
+        + [np.zeros(0, dtype=np.int64)]
+    )
+    sub_offset = np.zeros(len(mol_ids) + 1, dtype=np.int64)
+    np.cumsum(counts, out=sub_offset[1:])
+    return _interval_mask(intervals[rows], sub_offset, 0, len(mol_ids), nbp)
+
+
 def _spanned_fraction(intervals, nbp, lnuc):
     """
     Spanned share of the footprint of a nucleosome at each start position.

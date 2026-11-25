@@ -471,25 +471,25 @@ class TestBestMatchConfig:
         tm.solve()
         occup = np.asarray(tm.getOccup())
         positions, _ = tm.getBestMatchConfig()
-        covered = np.zeros(8, dtype=bool)
+        occupied = np.zeros(8, dtype=bool)
         for x in positions:
-            covered[x : x + 3] = True
-        np.testing.assert_array_equal(covered, occup > 0.5)
+            occupied[x : x + 3] = True
+        np.testing.assert_array_equal(occupied, occup > 0.5)
 
     @pytest.mark.parametrize("seed", [11, 12, 13])
-    def test_covered_occupancy_grows_with_gamma(self, seed):
+    def test_occupied_occupancy_grows_with_gamma(self, seed):
         rng = np.random.default_rng(seed)
         edata = rng.normal(size=14).tolist()
         tm = _tm(3, 2, 1.0, 0.5, edata)
         occup = np.asarray(tm.getOccup())
 
-        def covered_mass(gamma):
-            covered = np.zeros(14, dtype=bool)
+        def occupied_mass(gamma):
+            occupied = np.zeros(14, dtype=bool)
             for x in tm.getBestMatchConfig(gamma)[0]:
-                covered[x : x + 3] = True
-            return occup[covered].sum()
+                occupied[x : x + 3] = True
+            return occup[occupied].sum()
 
-        masses = [covered_mass(g) for g in (0.25, 1.0, 4.0)]
+        masses = [occupied_mass(g) for g in (0.25, 1.0, 4.0)]
         assert masses[0] <= masses[1] + 1e-12
         assert masses[1] <= masses[2] + 1e-12
 

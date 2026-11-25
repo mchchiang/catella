@@ -14,6 +14,7 @@ from catella.simulation._exact import (
     _require_tm,
     _solved_tm,
     _spanned_fraction,
+    _spanned_rows,
     _tm_configs,
     _tm_per_bp,
     _tm_per_mol,
@@ -326,6 +327,29 @@ def _brute_fraction_moments(edata, settings, frac):
     count = np.array([frac[placed].sum() for placed in configs])
     mean = float(prob @ count)
     return mean, float(prob @ (count - mean) ** 2)
+
+
+class TestSpannedRows:
+    _SPANNED = (np.array([[1, 3], [4, 6], [0, 2]]), np.array([0, 2, 2, 3]))
+
+    def test_rows_in_given_order(self):
+        got = _spanned_rows(self._SPANNED, [2, 0, 1], 6)
+        np.testing.assert_array_equal(
+            got,
+            [
+                [True, True, False, False, False, False],
+                [False, True, True, False, True, True],
+                [False] * 6,
+            ],
+        )
+
+    def test_repeated_molecule(self):
+        got = _spanned_rows(self._SPANNED, [2, 2], 6)
+        assert got.shape == (2, 6)
+        np.testing.assert_array_equal(got[0], got[1])
+
+    def test_none(self):
+        assert _spanned_rows(None, [0, 1], 6) is None
 
 
 class TestSpannedFraction:

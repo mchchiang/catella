@@ -885,6 +885,28 @@ class TestOccupSpanned:
             tm.getVarN(), rel=1e-5
         )
 
+    def test_config_footprints_nan_at_unspanned_bp(self, tmp_path):
+        dataset = _run_partial(tmp_path, "tm")
+        ana = SimAnalysis()
+        ana.compute_best_match_config(dataset=dataset, name="bm")
+        arr = ana._config_footprints(
+            dataset, "chr1", "bm", 2, dataset.resolve_tmp_dir()
+        )
+        try:
+            footprints = arr.to_numpy()
+        finally:
+            arr.close()
+        np.testing.assert_array_equal(
+            ~np.isnan(footprints), _expected_spanned()
+        )
+
+    def test_sort_by_config_runs_without_fill_nan(self, tmp_path):
+        dataset = _run_partial(tmp_path, "tm")
+        ana = SimAnalysis()
+        ana.compute_best_match_config(dataset=dataset, name="bm")
+        link = ana.sort_by_linkage(dataset, config_name="bm")
+        assert link["chr1"].shape == (2, 4)
+
     def test_compute_var_occup_nan_at_unspanned_bp(self, tmp_path):
         dataset = _run_partial(tmp_path, "tm")
         SimAnalysis().compute_var_occup(dataset=dataset)

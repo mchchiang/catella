@@ -872,6 +872,78 @@ def _rows(dataset, configs):
     )
 
 
+def _partial_dataset(tmp_path, method):
+    meth_prob = np.random.default_rng(9).uniform(0.05, 0.95, (3, 20))
+    meth_prob[0, :6] = np.nan
+    meth_prob[1, 8:12] = np.nan
+    if method == "tm":
+        settings = SimSettings(
+            lnuc=3, llink=2, elink=1.0, mu=0.5, end_temp=1.0, emax=5.0
+        )
+    else:
+        settings = _make_settings(lnuc=3, llink=2, nsweep=4)
+    return SimManager(nworker=1, verbose=False).run(
+        regions="chr1",
+        nsim=3,
+        method=method,
+        settings=settings,
+        meth_prob=meth_prob,
+        out_dir=tmp_path / f"partial_{method}",
+        seed=9,
+        fill_nan=0.5,
+    )
+
+
+def _unspanned():
+    mask = np.zeros((3, 20), dtype=bool)
+    mask[0, :8] = True
+    mask[1, 8:14] = True
+    return mask
+
+
+@pytest.mark.filterwarnings(
+    "ignore:__array__ implementation doesn't accept a copy keyword"
+    ":DeprecationWarning"
+)
+class TestFootprintsUnspanned:
+    @pytest.mark.parametrize("method", ["tm", "mcmc"])
+    def test_plot_config_marks_unspanned_as_no_data(self, tmp_path, method):
+        dataset = _partial_dataset(tmp_path, method)
+        SimPlot().plot_config(dataset, regions="chr1", run=0, show=False)
+        np.testing.assert_array_equal(_image() < 0, _unspanned())
+
+    def test_plot_samples_over_runs(self, tmp_path):
+        dataset = _partial_dataset(tmp_path, "tm")
+        SimPlot().plot_samples(
+            dataset, region="chr1", mol=0, over="runs", show=False
+        )
+        img = _image()
+        assert (img[:, :8] == -1).all()
+        assert (img[:, 8:] >= 0).all()
+
+    def test_plot_samples_over_time(self, tmp_path):
+        dataset = _partial_dataset(tmp_path, "mcmc")
+        SimPlot().plot_samples(dataset, region="chr1", mol=1, show=False)
+        img = _image()
+        np.testing.assert_array_equal(
+            (img < 0).all(axis=0), _unspanned()[1]
+        )
+        assert (img[:, ~_unspanned()[1]] >= 0).all()
+
+    def test_plot_mean_ignores_unspanned(self, tmp_path):
+        dataset = _partial_dataset(tmp_path, "tm")
+        SimPlot().plot_config(
+            dataset, regions="chr1", run=0, plot_mean=True, show=False
+        )
+        mean = _mean_line(plt.gcf())
+        configs = SimAnalysis().extract_config(dataset, region="chr1", run=0)
+        rows = _rows(dataset, configs).astype(float)
+        rows[_unspanned()] = np.nan
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            np.testing.assert_allclose(mean, np.nanmean(rows, axis=0))
+
+
 @pytest.mark.filterwarnings(
     "ignore:__array__ implementation doesn't accept a copy keyword"
     ":DeprecationWarning"
@@ -998,7 +1070,7 @@ class TestPlotConfig:
         )
         cbar_ax = plt.gcf().axes[1]
         assert cbar_ax.get_legend() is None
-        assert cbar_ax.get_ylabel() == "Covered share"
+        assert cbar_ax.get_ylabel() == "Occupied share"
 
     def test_rows_are_centered_with_integer_ticks(self, tmp_path):
         dataset = _tm_calls_dataset(tmp_path)
@@ -1278,7 +1350,7 @@ class TestPlotConfigMultiRegion:
         ]
         assert dtypes == [np.float64, np.int8]
         labels = [ax.get_ylabel() for ax in fig.axes]
-        assert labels.count("Covered share") == 1
+        assert labels.count("Occupied share") == 1
         assert _legend_labels(fig) == ["No data"]
 
     def test_panels_side_by_side(self, tmp_path):
@@ -1527,7 +1599,7 @@ class TestMergeRows:
         np.testing.assert_array_equal(result, [[1, 0, -1], [-1, 1, -1]])
         assert result.dtype == np.int8
 
-    def test_mean_is_covered_share_among_rows_with_data(self):
+    def test_mean_is_occupied_share_among_rows_with_data(self):
         result = _merge_rows(_FOOTPRINTS, 2, "mean")
         expected = [[0.5, 0.0, np.nan], [np.nan, 1.0, np.nan]]
         np.testing.assert_array_equal(result, expected)

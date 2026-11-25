@@ -11,6 +11,7 @@ import typer
 
 import catella
 from catella.experiment.methdata import MethPrintExperiment
+from catella.simulation.config import SimSettings
 from catella.simulation.results import SimDataset
 
 app = typer.Typer(help="Nucleosome Positioning from Methylation Footprinting")
@@ -695,6 +696,34 @@ def compute_model_prob(
     exp.save(out_file)
 
 
+def _check_lnuc(exp, settings_lnuc):
+    """
+    Check that the settings' `lnuc` equals the `lnuc` of `meth_prob`.
+
+    Parameters
+    ----------
+    exp : MethPrintExperiment
+        The experiment holding `meth_prob`.
+    settings_lnuc : int
+        The `lnuc` of the simulation settings.
+
+    Raises
+    ------
+    ValueError
+        If the stored `lnuc` of `meth_prob` differs from
+        `settings_lnuc`. Nothing is checked if none is stored.
+    """
+    params = exp.global_analysis.get("meth_prob_params")
+    if params is None or "lnuc" not in params:
+        return
+    lnuc = int(params["lnuc"].iloc[0])
+    if lnuc != settings_lnuc:
+        raise ValueError(
+            f"settings lnuc ({settings_lnuc}) differs from the lnuc of "
+            f"meth_prob ({lnuc}); they must be equal"
+        )
+
+
 @app.command()
 def run(
     regions: Annotated[
@@ -773,6 +802,7 @@ def run(
     Execute a parallelized methylation simulation.
     """
     exp_data = MethPrintExperiment.load(exp_file)
+    _check_lnuc(exp_data, SimSettings.load(settings).lnuc)
     meth_prob = {
         region: exp_data.analysis[region]["meth_prob"]
         for region in exp_data.regions

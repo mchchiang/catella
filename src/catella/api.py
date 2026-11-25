@@ -193,7 +193,7 @@ def compute_empirical_prob(
         result is only mutated in-memory.
     lnuc : int, default 147
         Nucleosome footprint size (bp): the rolling-average smoothing
-        window size.
+        window size. Must equal the simulation's `lnuc`.
     prob_name : str, default "meth_prob"
         The key used to store the resulting methylation probabilities
         in `exp.analysis`.
@@ -361,7 +361,7 @@ def compute_model_prob(
         BIC test) for its positions to be treated as informative.
     lnuc : int, default 147
         Nucleosome footprint size (bp), used as the output window-sum
-        size.
+        size. Must equal the simulation's `lnuc`.
     lbin : int, default 30
         Bin width (bp) of the non-overlapping windows in the
         no-controls expectation-maximization fit. Used only when no

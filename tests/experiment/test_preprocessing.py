@@ -531,6 +531,41 @@ class TestEmpiricalProbSpan:
             self._prob(_empirical_span_exp(), span="bogus")
 
 
+class TestEmpiricalProbParams:
+    def test_params_store_lnuc(self):
+        exp = _make_experiment(nmol=6, nbp=10)
+        MethPrintAnalysis().empirical_prob(
+            exp=exp, lnuc=3, batch_size=100, percentile_sample_size=1000
+        )
+        params = exp.global_analysis["meth_prob_params"]
+        assert params["lnuc"].iloc[0] == 3
+        assert params["span"].iloc[0] == "full"
+
+    def test_params_stored_under_prob_name(self):
+        exp = _make_experiment(nmol=6, nbp=10)
+        MethPrintAnalysis().empirical_prob(
+            exp=exp,
+            lnuc=3,
+            prob_name="emp",
+            batch_size=100,
+            percentile_sample_size=1000,
+        )
+        assert exp.global_analysis["emp_params"]["lnuc"].iloc[0] == 3
+        assert "meth_prob_params" not in exp.global_analysis
+
+    def test_params_replace_stale_params(self):
+        exp = _make_experiment(nmol=6, nbp=10)
+        exp.global_analysis["meth_prob_params"] = pd.DataFrame(
+            [{"lnuc": 147, "lbin": 30}]
+        )
+        MethPrintAnalysis().empirical_prob(
+            exp=exp, lnuc=3, batch_size=100, percentile_sample_size=1000
+        )
+        params = exp.global_analysis["meth_prob_params"]
+        assert params["lnuc"].iloc[0] == 3
+        assert "lbin" not in params
+
+
 class TestEmpiricalProbResmooth:
     def test_fill_edge_applies_to_trailing_probability_columns(self):
         exp = _make_experiment(nmol=6, nbp=10)

@@ -23,7 +23,9 @@ class SimSettings:
     """
 
     lnuc: int
-    """The number of base pairs occupied by a single nucleosome."""
+    """The number of base pairs occupied by a single nucleosome. Must
+    equal the `lnuc` of the methylation probabilities (`model_prob` or
+    `empirical_prob`); the CLI `run` checks this."""
 
     llink: int | Mapping[str, int]
     """The soft minimum DNA linker length between nucleosomes, enforced by

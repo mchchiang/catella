@@ -1360,6 +1360,62 @@ class TestRun:
         assert result.exit_code == 0, result.output
         assert SimDataset.load(out_dir / "results.h5").nan_fill == expected
 
+    def _run_tm(self, tmp_path, exp_file, settings_lnuc):
+        settings_file = tmp_path / "settings.json"
+        _write_settings_json(settings_file, lnuc=settings_lnuc)
+        return runner.invoke(
+            app,
+            [
+                "run",
+                "--regions",
+                "chr1",
+                "--nsim",
+                "0",
+                "--settings",
+                str(settings_file),
+                "--exp-file",
+                str(exp_file),
+                "--out-dir",
+                str(tmp_path / "lnuc_out"),
+                "--method",
+                "tm",
+                "--no-verbose",
+            ],
+        )
+
+    def _empirical_exp(self, tmp_path):
+        rows = _make_test_rows(nmol=3, nbp=20)
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 20})
+        exp = catella.load_raw(chromsize=chromsize, test_file=test_file)
+        catella.compute_empirical_prob(exp=exp, lnuc=5)
+        return exp
+
+    def test_lnuc_mismatch_raises(self, tmp_path):
+        exp_file = tmp_path / "exp.h5"
+        self._empirical_exp(tmp_path).save(exp_file)
+        result = self._run_tm(tmp_path, exp_file, settings_lnuc=7)
+        assert result.exit_code != 0
+        assert isinstance(result.exception, ValueError)
+        assert "lnuc" in str(result.exception)
+        assert not (tmp_path / "lnuc_out").exists()
+
+    def test_lnuc_match_runs(self, tmp_path):
+        exp_file = tmp_path / "exp.h5"
+        self._empirical_exp(tmp_path).save(exp_file)
+        result = self._run_tm(tmp_path, exp_file, settings_lnuc=5)
+        assert result.exit_code == 0, result.output
+
+    def test_lnuc_check_skipped_without_params(self, tmp_path):
+        exp_file = tmp_path / "exp.h5"
+        exp = self._empirical_exp(tmp_path)
+        del exp.global_analysis["meth_prob_params"]
+        exp.save(exp_file)
+        result = self._run_tm(tmp_path, exp_file, settings_lnuc=7)
+        assert result.exit_code == 0, result.output
+
 
 class TestComputeOccup:
     def test_matches_direct_api_call(self, tmp_path):

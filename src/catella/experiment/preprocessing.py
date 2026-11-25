@@ -212,13 +212,15 @@ class MethPrintAnalysis:
             Window size in base pairs used for the rolling average smoothing.
             If None, looked up from `exp.global_analysis[f"{smoothed_
             name}_params"]`, set by a previous `smooth` call under the
-            same `smoothed_name`.
+            same `smoothed_name`. Must equal the simulation's `lnuc`.
         smoothed_name : str, default "smoothed"
             The dictionary key suffix for the smoothed signals in
             `exp.analysis`.
         prob_name : str, default "meth_prob"
             The dictionary key used to store the resulting methylation
-            probabilities in `exp.analysis`.
+            probabilities in `exp.analysis`. The parameters used,
+            including `lnuc`, are stored in
+            `exp.global_analysis[f"{prob_name}_params"]`.
         clip_low : float, default 0.1
             Lower percentile bound for signal clipping. Values below this
             percentile are set to 0. If `exp` has meth/unmeth controls,
@@ -357,6 +359,21 @@ class MethPrintAnalysis:
                 coverage=coverage[region],
                 lnuc=lnuc,
             )
+
+        exp.global_analysis[f"{prob_name}_params"] = pd.DataFrame(
+            [
+                {
+                    "lnuc": lnuc,
+                    "smoothed_name": smoothed_name,
+                    "clip_low": clip_low,
+                    "clip_high": clip_high,
+                    "norm_by_strand": norm_by_strand,
+                    "fill_edge": fill_edge,
+                    "span": span,
+                    "mask_name": mask_name or "",
+                }
+            ]
+        )
 
     def _ensure_smoothed(
         self, exp, lnuc, smoothed_name, resmooth, batch_size, mask_name
@@ -549,7 +566,7 @@ class MethPrintAnalysis:
             evidence.
         lnuc : int, default 147
             Nucleosome footprint size (bp), used as the output
-            window-sum size.
+            window-sum size. Must equal the simulation's `lnuc`.
         lbin : int, default 30
             Bin width (bp) of the non-overlapping windows in the
             expectation-maximization fit (without controls, or with

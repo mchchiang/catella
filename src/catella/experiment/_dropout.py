@@ -128,7 +128,7 @@ def _site_coverage(
         `span` is "read".
     gaps : (np.ndarray, np.ndarray), optional
         `(gaps, offset)` of the molecules' internal gaps (see
-        `_gap_mask`), non-overlapping within a molecule.
+        `_interval_mask`), non-overlapping within a molecule.
 
     Returns
     -------

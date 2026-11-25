@@ -9,7 +9,6 @@ import pytest
 from catella.experiment._contexts import A
 from catella.experiment._reads import (
     _dense_batches,
-    _gap_mask,
     _iter_read_sites,
     _span_mask,
     _window_spanned,
@@ -109,34 +108,6 @@ class TestDenseBatches:
         before = df.copy()
         list(_dense_batches(df, _NMOL, _NBP, 2))
         pd.testing.assert_frame_equal(df, before)
-
-
-class TestGapMask:
-    _GAPS = np.array([[1, 3], [4, 6], [0, 2]])
-    _OFFSET = np.array([0, 2, 2, 3])
-
-    def test_whole_range(self):
-        mask = _gap_mask(self._GAPS, self._OFFSET, 0, 3, 6)
-        np.testing.assert_array_equal(
-            mask,
-            [
-                [False, True, True, False, True, True],
-                [False] * 6,
-                [True, True, False, False, False, False],
-            ],
-        )
-
-    def test_sub_range(self):
-        mask = _gap_mask(self._GAPS, self._OFFSET, 1, 3, 6)
-        np.testing.assert_array_equal(
-            mask, [[False] * 6, [True, True, False, False, False, False]]
-        )
-
-    def test_overlapping_gaps(self):
-        mask = _gap_mask(np.array([[1, 4], [2, 5]]), np.array([0, 2]), 0, 1, 6)
-        np.testing.assert_array_equal(
-            mask, [[False, True, True, True, True, False]]
-        )
 
 
 def _gapped_experiment():

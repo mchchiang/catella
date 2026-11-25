@@ -49,3 +49,32 @@ def _unpack_jagged(flat, offset):
         np.asarray(flat[offset[i] : offset[i + 1]], dtype=flat.dtype)
         for i in range(len(offset) - 1)
     )
+
+
+def _interval_mask(intervals, offset, start, stop, nbp):
+    """
+    Positions inside the intervals of molecules `start:stop`.
+
+    Parameters
+    ----------
+    intervals : np.ndarray
+        int64, (n_interval, 2), half-open intervals grouped by molecule.
+    offset : np.ndarray
+        int64, length nmol + 1; the intervals of molecule `i` are
+        `intervals[offset[i]:offset[i + 1]]`.
+    start, stop : int
+        Molecule range.
+    nbp : int
+        Number of positions.
+
+    Returns
+    -------
+    np.ndarray
+        bool, (stop - start, nbp).
+    """
+    lo, hi = offset[start], offset[stop]
+    mol = np.repeat(np.arange(stop - start), np.diff(offset[start : stop + 1]))
+    edges = np.zeros((stop - start, nbp + 1), dtype=np.int64)
+    np.add.at(edges, (mol, intervals[lo:hi, 0]), 1)
+    np.add.at(edges, (mol, intervals[lo:hi, 1]), -1)
+    return np.cumsum(edges, axis=1)[:, :nbp] > 0

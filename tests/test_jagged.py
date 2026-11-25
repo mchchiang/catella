@@ -1,7 +1,7 @@
 # test_jagged.py
 
 import numpy as np
-from catella._jagged import _pack_jagged, _unpack_jagged
+from catella._jagged import _interval_mask, _pack_jagged, _unpack_jagged
 
 
 class TestJagged:
@@ -27,3 +27,33 @@ class TestJagged:
     def test_dtype(self):
         flat, _ = _pack_jagged([np.array([1.5])], dtype=np.float64)
         assert flat.dtype == np.float64
+
+
+class TestIntervalMask:
+    _INTERVALS = np.array([[1, 3], [4, 6], [0, 2]])
+    _OFFSET = np.array([0, 2, 2, 3])
+
+    def test_whole_range(self):
+        mask = _interval_mask(self._INTERVALS, self._OFFSET, 0, 3, 6)
+        np.testing.assert_array_equal(
+            mask,
+            [
+                [False, True, True, False, True, True],
+                [False] * 6,
+                [True, True, False, False, False, False],
+            ],
+        )
+
+    def test_sub_range(self):
+        mask = _interval_mask(self._INTERVALS, self._OFFSET, 1, 3, 6)
+        np.testing.assert_array_equal(
+            mask, [[False] * 6, [True, True, False, False, False, False]]
+        )
+
+    def test_overlapping_intervals(self):
+        mask = _interval_mask(
+            np.array([[1, 4], [2, 5]]), np.array([0, 2]), 0, 1, 6
+        )
+        np.testing.assert_array_equal(
+            mask, [[False, True, True, True, True, False]]
+        )

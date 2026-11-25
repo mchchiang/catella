@@ -5,6 +5,7 @@ from typing import NamedTuple
 import numpy as np
 
 from catella._batches import _row_batches
+from catella._jagged import _interval_mask
 from catella.experiment._contexts import NONE
 from catella.experiment._dropout import _strand_of_mol
 
@@ -206,35 +207,6 @@ def _read_weights(b, assay, strand=None):
     return w
 
 
-def _gap_mask(gaps, offset, start, stop, nbp):
-    """
-    Positions inside the internal gaps of molecules `start:stop`.
-
-    Parameters
-    ----------
-    gaps : np.ndarray
-        int64, (n_gap, 2), half-open gaps grouped by molecule.
-    offset : np.ndarray
-        int64, length nmol + 1; the gaps of molecule `i` are
-        `gaps[offset[i]:offset[i + 1]]`.
-    start, stop : int
-        Molecule range.
-    nbp : int
-        Number of positions.
-
-    Returns
-    -------
-    np.ndarray
-        bool, (stop - start, nbp).
-    """
-    lo, hi = offset[start], offset[stop]
-    mol = np.repeat(np.arange(stop - start), np.diff(offset[start : stop + 1]))
-    edges = np.zeros((stop - start, nbp + 1), dtype=np.int64)
-    np.add.at(edges, (mol, gaps[lo:hi, 0]), 1)
-    np.add.at(edges, (mol, gaps[lo:hi, 1]), -1)
-    return np.cumsum(edges, axis=1)[:, :nbp] > 0
-
-
 def _dense_batches(df, nmol, nbp, batch_size):
     """
     Stream a raw long-format table as dense batches of molecules.
@@ -376,7 +348,7 @@ def _iter_read_sites(
             ext = (extent[0][start:stop], extent[1][start:stop])
         gap = None
         if gaps is not None and gap_offset is not None:
-            gap = _gap_mask(gaps, gap_offset, start, stop, raw.nbp)
+            gap = _interval_mask(gaps, gap_offset, start, stop, raw.nbp)
         q, read = _read_sites(
             batch, stacked[code[start:stop]], ctx_ok, span, ext, gap
         )

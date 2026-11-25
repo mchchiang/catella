@@ -4,8 +4,9 @@ import numpy as np
 import pandas as pd
 
 from catella._batches import _row_batches
+from catella._jagged import _interval_mask
 from catella.experiment._dropout import _apply_keep_mask
-from catella.experiment._reads import _gap_mask, _window_spanned
+from catella.experiment._reads import _window_spanned
 from catella.h5_array import H5Array
 
 
@@ -415,5 +416,5 @@ def _spanned_positions(span_spec, start, stop, nbp):
     idx = np.arange(nbp)[None, :]
     spanned = (idx >= lo[start:stop, None]) & (idx < hi[start:stop, None])
     if gaps is not None:
-        spanned &= ~_gap_mask(gaps[0], gaps[1], start, stop, nbp)
+        spanned &= ~_interval_mask(gaps[0], gaps[1], start, stop, nbp)
     return spanned

@@ -2448,6 +2448,41 @@ class TestPlotMeth:
         assert result.exit_code == 0, result.output
         assert out_file.exists()
 
+    def test_coords_labels_genomic_positions(self, tmp_path, monkeypatch):
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(
+            test_file,
+            [("m0", 3170000 + p, "chr1", "+", 0.5, "a") for p in range(20)],
+        )
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 4000000})
+        exp = catella.load_raw(
+            chromsize=chromsize,
+            test_file=test_file,
+            regions=[("chr1", 3170000, 3170020, "reg")],
+        )
+        exp_file = tmp_path / "exp.h5"
+        exp.save(exp_file)
+        exp.close()
+        seen = {}
+        monkeypatch.setattr(
+            catella, "plot_meth", lambda **kwargs: seen.update(kwargs)
+        )
+        result = runner.invoke(
+            app,
+            [
+                "plot_meth",
+                str(exp_file),
+                "reg",
+                "--raw-which",
+                "test",
+                "--coords",
+                "--no-show",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert seen["coords"] is True
+
     def test_several_regions_with_raw_which(self, tmp_path):
         exp_file = self._two_region_exp_file(tmp_path)
         out_file = tmp_path / "methmap_two_raw.png"

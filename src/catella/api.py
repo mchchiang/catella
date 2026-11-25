@@ -1693,6 +1693,7 @@ def plot_meth(
     out_file: str | Path | None = None,
     link_mat: np.ndarray | dict | None = None,
     sharex: bool = False,
+    coords: bool | pd.DataFrame | None = None,
     show: bool = True,
 ):
     """
@@ -1779,6 +1780,11 @@ def plot_meth(
     sharex : bool, default False
         If True, all panels span the widest region, so they share
         one bp scale. If False, each panel spans its own.
+    coords : bool or pd.DataFrame, optional
+        Label positions in genomic coordinates: True uses
+        `exp.region_coords`; a table like it is used as given. None or
+        False labels 0-based region positions. Requires `exp` and
+        `regions`.
     show : bool, default True
         Whether to display the figure using the active plotting
         backend.
@@ -1792,8 +1798,10 @@ def plot_meth(
         `raw_which`/`data_name`/`mols`/`mask_name`; if `mols` or
         `mask_name` is given without `raw_which`; if "energy" is
         combined with `raw_which`/`mols`/`mask_name`; if `emax` is given
-        with "prob"; or if `mols` or `link_mat` is not a dict with
-        several regions.
+        with "prob"; if `mols` or `link_mat` is not a dict with
+        several regions; or if `coords` is given without `exp` and
+        `regions`, or does not match a plotted region (missing region,
+        other `nbp`, no coordinates, or folded with `wrap`).
 
     Warns
     -----
@@ -1815,6 +1823,7 @@ def plot_meth(
         "out_file": out_file,
         "link_mat": link_mat,
         "sharex": sharex,
+        "coords": coords,
         "show": show,
     }
     if cbar_label is not None:

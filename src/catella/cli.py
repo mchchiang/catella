@@ -1451,6 +1451,12 @@ def plot_meth(
         bool,
         typer.Option(help="Put all panels on the widest region's scale"),
     ] = False,
+    coords: Annotated[
+        bool,
+        typer.Option(
+            "--coords", help="Label positions in genomic coordinates"
+        ),
+    ] = False,
     show: Annotated[bool, typer.Option(help="Display the figure")] = True,
 ):
     """
@@ -1484,6 +1490,7 @@ def plot_meth(
         out_file=out_file,
         link_mat=link_mat,
         sharex=sharex,
+        coords=coords,
         show=show,
     )
 

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import scipy.cluster.hierarchy as sch
 from matplotlib.colors import Normalize
 from scipy.special import logit
@@ -19,6 +20,7 @@ from catella._plotting import (
     _left_ylabels,
     _panel_grid,
     _position_xaxis,
+    _region_starts,
     _share_xlim,
     _warn_if_large,
 )
@@ -34,6 +36,41 @@ def _close_raw(sources):
     for source in sources:
         if source["raw"]:
             source["data"].close()
+
+
+def _coord_starts(coords, exp, regions):
+    """
+    Per plotted region, its `(ref_chrom, ref_start)` from `coords`.
+
+    Parameters
+    ----------
+    coords : bool, pd.DataFrame, or None
+        As in `MethPlot.plot_meth_prob`.
+    exp : MethPrintExperiment or None
+        The plotted experiment.
+    regions : str, iterable of str, or None
+        The plotted regions.
+
+    Returns
+    -------
+    list of (str, int) or None
+        In the order of `regions`; None if `coords` is None or False.
+
+    Raises
+    ------
+    ValueError
+        If `coords` is given without `exp` and `regions`, or as in
+        `_region_starts`.
+    """
+    if coords is None or coords is False:
+        return None
+    if exp is None or regions is None:
+        raise ValueError("coords requires 'exp' and 'regions'")
+    regions = _region_list(regions)
+    table = exp.region_coords if coords is True else pd.DataFrame(coords)
+    nbp = exp.region_coords["nbp"]
+    starts = _region_starts(table, {r: int(nbp[r]) for r in regions})
+    return [starts[r] for r in regions]
 
 
 @dataclass(slots=True, kw_only=True)
@@ -103,6 +140,7 @@ class MethPlot:
         out_file: str | Path | None = None,
         link_mat: np.ndarray | dict | None = None,
         sharex: bool = False,
+        coords: bool | pd.DataFrame | None = None,
         show: bool = True,
     ):
         """
@@ -177,14 +215,23 @@ class MethPlot:
         sharex : bool, default False
             If True, all panels span the widest region, so they
             share one bp scale. If False, each panel spans its own.
+        coords : bool or pd.DataFrame, optional
+            Label positions in genomic coordinates: True uses
+            `exp.region_coords`; a table like it (e.g., of another
+            experiment with the same regions) is used as given. None or
+            False labels 0-based region positions.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
         Raises
         ------
         ValueError
-            If neither `data` nor `exp` and `regions` with exactly one of
-            `raw_which`/`data_name` are given, if `data` is combined
+            If `coords` is given without `exp` and `regions`, if a
+            plotted region is not in it, if its `nbp` differs from the
+            region's, or if the region has no genomic coordinates or is
+            folded (`wrap`). If neither `data` nor `exp` and `regions`
+            with exactly one of `raw_which`/`data_name` are given, if
+            `data` is combined
             with any of `exp`/`regions`/`raw_which`/`data_name`/`mols`/
             `mask_name`, if `mols` or `mask_name` is given without
             `raw_which`, if `regions` is empty, if `mols` or `link_mat`
@@ -205,6 +252,7 @@ class MethPlot:
         Positions are labeled in bp, kb or Mb, whichever is the largest
         unit whose tick labels need at most one decimal.
         """
+        starts = _coord_starts(coords, exp, regions)
         sources = self._meth_sources(
             data,
             exp=exp,
@@ -225,6 +273,7 @@ class MethPlot:
                 cmap=cmap,
                 cbar_label=cbar_label,
                 sharex=sharex,
+                starts=starts,
                 show=show,
                 out_file=out_file,
             )
@@ -323,11 +372,16 @@ class MethPlot:
         sharex,
         show,
         out_file,
+        starts=None,
     ):
         """
         Downsample, draw and lay out the panels from `_meth_sources`,
-        with one colorbar on a common color scale.
+        with one colorbar on a common color scale; `starts` gives each
+        panel's `(ref_chrom, ref_start)` (from `_coord_starts`), or is
+        None for 0-based positions.
         """
+        if starts is None:
+            starts = [None] * len(sources)
         matrices = []
         for source in sources:
             matrix = source["data"]
@@ -355,7 +409,9 @@ class MethPlot:
             [5, 1, 0.25] if sorted_rows else [20, 1],
             dendrogram=sorted_rows,
         )
-        for source, matrix, panel in zip(sources, matrices, panels):
+        for source, matrix, panel, start in zip(
+            sources, matrices, panels, starts
+        ):
             im = self._draw_meth(
                 panel,
                 matrix,
@@ -363,6 +419,7 @@ class MethPlot:
                 vmax=vmax,
                 cmap=cmap,
                 link_mat=source["link_mat"],
+                start=start,
             )
             if source["title"] is not None:
                 panel["hm_ax"].set_title(source["title"], pad=12)
@@ -372,11 +429,14 @@ class MethPlot:
             _share_xlim(panels, max(m.shape[1] for m in matrices))
         _finish(fig, show, out_file)
 
-    def _draw_meth(self, panel, matrix, *, vmin, vmax, cmap, link_mat):
+    def _draw_meth(
+        self, panel, matrix, *, vmin, vmax, cmap, link_mat, start=None
+    ):
         """
         Draw a methylation heatmap into the axes of `panel` (from
         `_panel_grid`), with a dendrogram if `link_mat` is given (rows
-        already in its leaf order).
+        already in its leaf order); `start` is `(ref_chrom, ref_start)`
+        for genomic position labels, or None.
 
         Returns
         -------
@@ -398,7 +458,10 @@ class MethPlot:
             interpolation="none",
             extent=[0, ncol, 0, nrow],
         )
-        _position_xaxis(panel, hm_ax)
+        if start is None:
+            _position_xaxis(panel, hm_ax)
+        else:
+            _position_xaxis(panel, hm_ax, start=start[1], chrom=start[0])
         sorted_rows = link_mat is not None
         hm_ax.set_ylabel(
             "Row (leaf order)" if sorted_rows else "Molecule index"
@@ -435,6 +498,7 @@ class MethPlot:
         out_file: str | Path | None = None,
         link_mat: np.ndarray | dict | None = None,
         sharex: bool = False,
+        coords: bool | pd.DataFrame | None = None,
         show: bool = True,
     ):
         """
@@ -488,6 +552,8 @@ class MethPlot:
             several regions, a dict keyed by region. See `plot_meth_prob`.
         sharex : bool, default False
             If True, all panels span the widest region.
+        coords : bool or pd.DataFrame, optional
+            Genomic position labels; see `plot_meth_prob`.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
@@ -496,12 +562,14 @@ class MethPlot:
         ValueError
             If neither `data` nor `exp`, `regions`, and `data_name` are
             given, if `data` is combined with any of them, or for an
-            invalid `regions` or `link_mat` (see `plot_meth_prob`).
+            invalid `regions`, `link_mat` or `coords` (see
+            `plot_meth_prob`).
         """
         if data is None and exp is not None and data_name is None:
             raise ValueError(
                 "provide either 'data', or 'exp', 'regions' and 'data_name'"
             )
+        starts = _coord_starts(coords, exp, regions)
         sources = self._meth_sources(
             data,
             exp=exp,
@@ -540,6 +608,7 @@ class MethPlot:
             cmap=cmap if cmap is not None else "RdBu_r",
             cbar_label=cbar_label,
             sharex=sharex,
+            starts=starts,
             show=show,
             out_file=out_file,
         )

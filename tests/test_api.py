@@ -1264,6 +1264,111 @@ class TestPlotMeth:
             catella.plot_meth(value="energy", show=False)
 
 
+def _interval_exp(tmp_path, start, length=10000, wrap=False):
+    rows = [
+        (f"m{m}", start + p, "chr1", "+", 0.5, "a")
+        for m in range(3)
+        for p in range(0, length, 500)
+    ]
+    test_file = tmp_path / "test.tsv"
+    _write_tsv(test_file, rows)
+    chromsize = tmp_path / "sizes.tsv"
+    _write_chromsize(chromsize, {"chr1": 4000000})
+    if wrap:
+        _write_chromsize(chromsize, {"chr1": length})
+        return catella.load_raw(
+            chromsize=chromsize, test_file=test_file, wrap=True
+        )
+    return catella.load_raw(
+        chromsize=chromsize,
+        test_file=test_file,
+        regions=[("chr1", start, start + length, "reg")],
+    )
+
+
+def _tick_texts(ax):
+    return [t.get_text() for t in ax.get_xticklabels() if t.get_text()]
+
+
+class TestPlotMethCoords:
+    def _plot(self, exp, **kwargs):
+        catella.plot_meth(
+            exp=exp, regions="reg", raw_which="test", show=False, **kwargs
+        )
+        fig = plt.gcf()
+        fig.canvas.draw()
+        return fig.axes[0]
+
+    def test_genomic_labels(self, tmp_path):
+        exp = _interval_exp(tmp_path, 3170000)
+        ax = self._plot(exp, coords=True)
+        assert ax.get_xlabel() == "Position on chr1 [kb]"
+        assert "3,170" in _tick_texts(ax)
+        assert ax.get_xlim() == (0, 10000)
+
+    def test_odd_start_gives_round_ticks(self, tmp_path):
+        exp = _interval_exp(tmp_path, 3171234)
+        ax = self._plot(exp, coords=True)
+        values = [float(t.replace(",", "")) for t in _tick_texts(ax)]
+        assert values
+        assert all(round(v * 1000) % 500 == 0 for v in values)
+
+    def test_table_equals_true(self, tmp_path):
+        exp = _interval_exp(tmp_path, 3170000)
+        from_true = _tick_texts(self._plot(exp, coords=True))
+        plt.close("all")
+        from_table = _tick_texts(self._plot(exp, coords=exp.region_coords))
+        assert from_true == from_table
+
+    def test_default_is_zero_based(self, tmp_path):
+        exp = _interval_exp(tmp_path, 3170000)
+        ax = self._plot(exp)
+        assert ax.get_xlabel() == "Position $x$ [kb]"
+        assert "0" in _tick_texts(ax)
+
+    def test_narrower_data_passes(self, tmp_path):
+        exp = _interval_exp(tmp_path, 3170000)
+        exp.analysis["reg"]["narrow"] = pd.DataFrame(np.full((3, 9854), 0.5))
+        catella.plot_meth(
+            exp=exp, regions="reg", data_name="narrow", coords=True,
+            show=False,
+        )
+        assert plt.gcf().axes[0].get_xlabel() == "Position on chr1 [kb]"
+
+    def test_data_with_coords_raises(self):
+        data = np.full((2, 10), 0.5)
+        with pytest.raises(ValueError, match="coords requires 'exp'"):
+            catella.plot_meth(data, coords=True, show=False)
+
+    def test_missing_region_raises(self, tmp_path):
+        exp = _interval_exp(tmp_path, 3170000)
+        table = exp.region_coords.rename(index={"reg": "other"})
+        with pytest.raises(ValueError, match="coords has no region 'reg'"):
+            self._plot(exp, coords=table)
+
+    def test_nbp_mismatch_raises(self, tmp_path):
+        exp = _interval_exp(tmp_path, 3170000)
+        table = exp.region_coords
+        table.loc["reg", "nbp"] = 9000
+        with pytest.raises(ValueError, match="coords has nbp 9000"):
+            self._plot(exp, coords=table)
+
+    def test_no_coordinates_raises(self, tmp_path):
+        exp = _interval_exp(tmp_path, 3170000)
+        table = exp.region_coords
+        table.loc["reg", "ref_start"] = np.nan
+        with pytest.raises(ValueError, match="has no genomic coordinates"):
+            self._plot(exp, coords=table)
+
+    def test_wrap_raises(self, tmp_path):
+        exp = _interval_exp(tmp_path, 0, length=1000, wrap=True)
+        with pytest.raises(ValueError, match="is folded"):
+            catella.plot_meth(
+                exp=exp, regions="chr1", raw_which="test", coords=True,
+                show=False,
+            )
+
+
 class TestExtractConfig:
     def test_matches_simanalysis(self, tmp_path):
         dataset = _make_tm_dataset(tmp_path)

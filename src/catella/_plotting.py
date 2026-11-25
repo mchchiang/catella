@@ -4,6 +4,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import scipy.cluster.hierarchy as sch
 from matplotlib.ticker import Formatter, Locator, MaxNLocator
 
@@ -332,6 +333,50 @@ def _unit_axis(axis, units, *, start=0, label=None):
     axis.set_major_formatter(_UnitFormatter(units, start, label))
     if label is not None:
         axis.set_label_text(label.replace("{unit}", units[0][1]))
+
+
+def _region_starts(coords, nbp):
+    """
+    Reference chromosome and start of each plotted region.
+
+    Parameters
+    ----------
+    coords : pd.DataFrame
+        Indexed by region, with columns `ref_chrom`, `ref_start`,
+        `ref_end` and `nbp` (as `MethPrintExperiment.region_coords`).
+    nbp : dict of str to int
+        Plotted region -> its length (bp).
+
+    Returns
+    -------
+    dict of str to (str, int)
+        Region -> `(ref_chrom, ref_start)`.
+
+    Raises
+    ------
+    ValueError
+        If a region is not in `coords`, if its `nbp` differs, if it has
+        no coordinates, or if it is folded (`wrap`).
+    """
+    starts = {}
+    for region, length in nbp.items():
+        if region not in coords.index:
+            raise ValueError(f"coords has no region '{region}'")
+        row = coords.loc[region]
+        if row["nbp"] != length:
+            raise ValueError(
+                f"coords has nbp {row['nbp']} for region '{region}', but "
+                f"the region has {length}"
+            )
+        if pd.isna(row["ref_start"]):
+            raise ValueError(f"region '{region}' has no genomic coordinates")
+        if row["ref_end"] - row["ref_start"] != length:
+            raise ValueError(
+                f"region '{region}' is folded (wrap); it has no genomic "
+                "positions"
+            )
+        starts[region] = (str(row["ref_chrom"]), int(row["ref_start"]))
+    return starts
 
 
 def _position_xaxis(panel, label_ax, *, start=0, chrom=None):

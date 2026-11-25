@@ -873,6 +873,7 @@ def run(
     mols: IndexType | Mapping[str, IndexType] = slice(None),
     store_edata: bool = True,
     fill_nan: str | float | None = None,
+    occupy_read_ends: bool = True,
     nworker: int = 1,
     verbose: bool = True,
 ) -> SimDataset:
@@ -929,6 +930,9 @@ def run(
         for windows a read does not cover (read ends with
         `span="read"`, long gaps). `meth_prob` is not modified, and the
         value is stored as `SimDataset.nan_fill`.
+    occupy_read_ends : bool, default True
+        Whether nucleosomes may occupy the unread DNA before and after
+        each read; see `SimManager.run`.
     nworker : int, default 1
         Number of parallel processes to spawn.
     verbose : bool, default True
@@ -960,6 +964,7 @@ def run(
         mols=mols,
         store_edata=store_edata,
         fill_nan=fill_nan,
+        occupy_read_ends=occupy_read_ends,
     )
     return dataset
 

@@ -25,6 +25,7 @@ from catella.simulation._inputs import (
     _parse_out_types,
     _prepare_block,
     _resolve_settings,
+    _set_energy,
 )
 from catella.simulation._io import (
     _write_mcmc_data,
@@ -211,6 +212,7 @@ class SimManager:
         mols: IndexType | Mapping[str, IndexType] = slice(None),
         store_edata: bool = True,
         fill_nan: str | float | None = None,
+        occupy_read_ends: bool = True,
     ) -> SimDataset:
         """
         Execute simulations in parallel across regions and molecules.
@@ -275,6 +277,12 @@ class SimManager:
             `span="read"`, long gaps). `meth_prob` itself is not
             modified, and the value is stored as `SimDataset.nan_fill`
             for reruns.
+        occupy_read_ends : bool, default True
+            Whether nucleosomes may occupy the unread DNA before and
+            after each read. Set False for reads that cover their whole
+            molecule (e.g., native fragments with `span="read"`): no
+            nucleosome then leaves the molecule's extent. Interior gaps
+            are not affected. Stored as `SimDataset.occupy_read_ends`.
 
         Returns
         -------
@@ -344,6 +352,7 @@ class SimManager:
             no_data=no_data,
             nan_fill=fill_nan,
             spanned=spanned,
+            occupy_read_ends=occupy_read_ends,
         )
         dataset.save()
 
@@ -796,7 +805,9 @@ class SimManager:
                 settings.mu,
                 p.seed,
             )
-            model.setEnergy(edata_list, settings.emax)
+            _set_energy(
+                model, edata_list, settings.emax, settings.lnuc, p.extent
+            )
             # For tracking all simulation data
             dump = sim.createDump(settings.print_freq, p.out_type)
             model.addTracker(dump)
@@ -838,7 +849,9 @@ class SimManager:
                 settings.mu,
                 p.seeds[0],
             )
-            model.setEnergy(edata_list, settings.emax)
+            _set_energy(
+                model, edata_list, settings.emax, settings.lnuc, p.extent
+            )
             model.solve(settings.end_temp)
             positions = []
             energies = []

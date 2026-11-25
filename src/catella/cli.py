@@ -794,6 +794,13 @@ def run(
             "if omitted)",
         ),
     ] = None,
+    occupy_read_ends: Annotated[
+        bool,
+        typer.Option(
+            help="Let nucleosomes occupy the unread DNA before and after "
+            "each read; disable for reads covering their whole molecule"
+        ),
+    ] = True,
     verbose: Annotated[
         bool | None, typer.Option(help="Print progress")
     ] = True,
@@ -821,6 +828,7 @@ def run(
         nworker=nworker,
         store_edata=store_edata,
         fill_nan=fill_nan,
+        occupy_read_ends=occupy_read_ends,
         verbose=verbose,
     )
 

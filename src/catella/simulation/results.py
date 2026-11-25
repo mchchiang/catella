@@ -529,6 +529,7 @@ class SimDataset:
     _no_data: Mapping[str, np.ndarray]
     _nan_fill: str | float | None
     _spanned: Mapping[str, tuple[np.ndarray, np.ndarray] | None]
+    _occupy_read_ends: bool
     _raw_dir: Path
     _dataset_file: Path
     _file_map: SimFileMapper
@@ -563,6 +564,7 @@ class SimDataset:
         no_data: Mapping[str, np.ndarray] | None = None,
         nan_fill: str | float | None = None,
         spanned: Mapping[str, tuple | None] | None = None,
+        occupy_read_ends: bool = True,
     ):
         # Some validations
         if method not in ("mcmc", "tm"):
@@ -634,6 +636,7 @@ class SimDataset:
             )
             for region in obj._regions
         }
+        obj._occupy_read_ends = bool(occupy_read_ends)
         obj._tmp_dir = None
         obj._finalizer = None
         return obj
@@ -657,6 +660,7 @@ class SimDataset:
         no_data: Mapping[str, np.ndarray] | None = None,
         nan_fill: str | float | None = None,
         spanned: Mapping[str, tuple | None] | None = None,
+        occupy_read_ends: bool = True,
     ) -> Self:
         """
         Create a new simulation dataset with the specified parameters.
@@ -718,6 +722,8 @@ class SimDataset:
         spanned : Mapping[str, tuple or None], optional
             The base pairs each molecule spans, per region; see
             `spanned`. If None (default), every base pair is spanned.
+        occupy_read_ends : bool, default True
+            See `SimManager.run`.
 
         Returns
         -------
@@ -775,6 +781,7 @@ class SimDataset:
             no_data=no_data,
             nan_fill=nan_fill,
             spanned=spanned,
+            occupy_read_ends=occupy_read_ends,
         )
 
     @classmethod
@@ -884,6 +891,7 @@ class SimDataset:
                 no_data=self._no_data,
                 nan_fill=self._nan_fill,
                 spanned=self._spanned,
+                occupy_read_ends=self._occupy_read_ends,
             )
 
         _save_analysis(
@@ -1487,6 +1495,19 @@ class SimDataset:
             for datasets that predate this being persisted.
         """
         return MappingProxyType(self._spanned)
+
+    @property
+    def occupy_read_ends(self) -> bool:
+        """
+        Whether nucleosomes may occupy the unread DNA before and after
+        each read (the `occupy_read_ends` of `SimManager.run`).
+
+        Returns
+        -------
+        bool
+            True for datasets that predate this being persisted.
+        """
+        return self._occupy_read_ends
 
     @property
     def raw(self) -> SimDataAccessor:

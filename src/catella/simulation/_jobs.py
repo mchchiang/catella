@@ -7,6 +7,7 @@ import numpy as np
 from catella_cpp import Dump, NucPosMCMC
 from scipy.special import logit
 
+from catella.simulation._inputs import _extent
 from catella.simulation.config import SimSettings
 
 
@@ -51,6 +52,10 @@ class MCMCJob:
     settings: SimSettings
     """The physical constants and Monte Carlo protocol used for this run."""
 
+    extent: tuple[int, int] | None = None
+    """If given, `(lo, hi)`: no nucleosome may leave the molecule's
+    extent (`occupy_read_ends=False`)."""
+
 
 @dataclass(frozen=True, kw_only=True)
 class TMJob:
@@ -82,6 +87,10 @@ class TMJob:
 
     settings: SimSettings
     """The physical constants used for this molecule."""
+
+    extent: tuple[int, int] | None = None
+    """If given, `(lo, hi)`: no nucleosome may leave the molecule's
+    extent (`occupy_read_ends=False`)."""
 
 
 def _job_seed(master_seed, region_idx, mol, run):
@@ -271,6 +280,30 @@ def _compute_edata(settings, meth_prob, regions):
     return edata
 
 
+def _job_extent(dataset, region, mol):
+    """
+    Return the extent a job must keep nucleosomes in, or None.
+
+    Parameters
+    ----------
+    dataset : SimDataset
+        The dataset of the molecule.
+    region : str
+        The region of the molecule.
+    mol : int
+        The molecule index.
+
+    Returns
+    -------
+    tuple of int or None
+        The molecule's extent if `dataset.occupy_read_ends` is False,
+        else None.
+    """
+    if dataset.occupy_read_ends:
+        return None
+    return _extent(dataset.spanned[region], mol)
+
+
 def _iter_selected(regions, nmol, mols):
     """
     Yield the selected molecules of each region.
@@ -335,6 +368,7 @@ def _iter_mcmc_jobs(
             edata=edata,
             out_type=out_type,
             out_file=dataset.mcmc_file(region, mol, run),
+            extent=_job_extent(dataset, region, mol),
         )
 
 
@@ -370,6 +404,7 @@ def _iter_tm_jobs(dataset, settings, meth_prob, targets, seed=None):
             edata=_edata_bytes(meth_prob[region][mol, :]),
             out_file=dataset.tm_file(region, mol),
             settings=settings.for_region(region),
+            extent=_job_extent(dataset, region, mol),
         )
 
 

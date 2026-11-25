@@ -1393,6 +1393,39 @@ class TestRun:
         catella.compute_empirical_prob(exp=exp, lnuc=5)
         return exp
 
+    @pytest.mark.parametrize(
+        ("flag", "expected"),
+        [("--no-occupy-read-ends", False), ("--occupy-read-ends", True)],
+    )
+    def test_occupy_read_ends_is_stored(self, tmp_path, flag, expected):
+        exp_file = tmp_path / "exp.h5"
+        self._empirical_exp(tmp_path).save(exp_file)
+        settings_file = tmp_path / "settings.json"
+        _write_settings_json(settings_file)
+        result = runner.invoke(
+            app,
+            [
+                "run",
+                "--regions",
+                "chr1",
+                "--nsim",
+                "0",
+                "--settings",
+                str(settings_file),
+                "--exp-file",
+                str(exp_file),
+                "--out-dir",
+                str(tmp_path / "ends_out"),
+                "--method",
+                "tm",
+                flag,
+                "--no-verbose",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        dataset = SimDataset.load(tmp_path / "ends_out" / "results.h5")
+        assert dataset.occupy_read_ends is expected
+
     def test_lnuc_mismatch_raises(self, tmp_path):
         exp_file = tmp_path / "exp.h5"
         self._empirical_exp(tmp_path).save(exp_file)

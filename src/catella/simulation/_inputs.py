@@ -260,6 +260,49 @@ def _spanned_intervals(block, lnuc):
     return np.concatenate(chunks).astype(np.int64), offset
 
 
+def _extent(spanned, mol):
+    """
+    Return the extent `(lo, hi)` of molecule `mol`: its first to last
+    spanned base pair, or None if it has no spanned intervals or
+    `spanned` is None.
+    """
+    if spanned is None:
+        return None
+    intervals, offset = spanned
+    lo, hi = offset[mol], offset[mol + 1]
+    if lo == hi:
+        return None
+    return int(intervals[lo, 0]), int(intervals[hi - 1, 1])
+
+
+def _set_energy(model, edata, emax, lnuc, extent=None):
+    """
+    Set the data energy of a solver, forbidding starts outside `extent`.
+
+    Parameters
+    ----------
+    model : NucPosMCMC or NucPosTM
+        The solver.
+    edata : array_like
+        The data energy of each base pair.
+    emax : float
+        The clamp of the data energy.
+    lnuc : int
+        The nucleosome footprint size.
+    extent : tuple of int, optional
+        `(lo, hi)`: if given, no nucleosome may start where its
+        footprint leaves `[lo, hi)` (energy +inf, after clamping).
+    """
+    if extent is None:
+        model.setEnergy(np.asarray(edata, dtype=np.float64).tolist(), emax)
+        return
+    energy = np.clip(np.asarray(edata, dtype=np.float64), -emax, emax)
+    starts = np.arange(len(energy))
+    lo, hi = extent
+    energy[(starts < lo) | (starts + lnuc > hi)] = np.inf
+    model.setEnergy(energy.tolist(), np.inf)
+
+
 def _prepare_block(block, lnuc, region, fill_nan=None):
     """
     Find the spanned base pairs and the molecules with no data of

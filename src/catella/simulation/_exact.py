@@ -9,7 +9,11 @@ from catella_cpp import NucPosTM
 
 from catella._jagged import _interval_mask, _pack_jagged
 from catella.h5_array import H5Array
-from catella.simulation._inputs import _start_positions
+from catella.simulation._inputs import (
+    _extent,
+    _set_energy,
+    _start_positions,
+)
 from catella.simulation._parallel import _process_map
 from catella.simulation.config import SimSettings
 
@@ -50,6 +54,9 @@ class TMBatchJob:
     spanned: tuple[np.ndarray, np.ndarray] | None = None
     """The `(intervals, offset)` of the batch's molecules, with offsets
     from 0; None if every base pair is spanned."""
+
+    occupy_read_ends: bool = True
+    """If False, no nucleosome may leave a molecule's extent."""
 
 
 @dataclass(frozen=True)
@@ -187,7 +194,7 @@ def _region_settings(dataset, region):
     return SimSettings(**dict(dataset.settings)).for_region(region)
 
 
-def _build_tm(settings, nbp, edata):
+def _build_tm(settings, nbp, edata, extent=None):
     """
     Build and solve the transfer matrix of one molecule.
 
@@ -202,6 +209,9 @@ def _build_tm(settings, nbp, edata):
         The number of base pairs of the molecule.
     edata : np.ndarray
         The data energy of each base pair.
+    extent : tuple of int, optional
+        If given, no nucleosome may leave `[lo, hi)` (see
+        `_set_energy`).
 
     Returns
     -------
@@ -216,7 +226,7 @@ def _build_tm(settings, nbp, edata):
         settings.mu,
         1,
     )
-    tm.setEnergy(np.asarray(edata, dtype=np.float64).tolist(), settings.emax)
+    _set_energy(tm, edata, settings.emax, settings.lnuc, extent)
     tm.solve(settings.end_temp)
     return tm
 
@@ -239,10 +249,14 @@ def _solved_tm(dataset, region, mol):
     NucPosTM
         The solved model.
     """
+    extent = None
+    if not dataset.occupy_read_ends:
+        extent = _extent(dataset.spanned[region], mol)
     return _build_tm(
         _region_settings(dataset, region),
         dataset.nbp[region],
         dataset.edata[region][mol],
+        extent,
     )
 
 
@@ -267,11 +281,14 @@ def _run_tm_batch(job):
         if np.isnan(_start_positions(row, job.settings.lnuc)).all():
             results.append(None)
             continue
-        tm = _build_tm(job.settings, job.nbp, row)
         intervals = None
         if job.spanned is not None:
             spanned, offset = job.spanned
             intervals = spanned[offset[i] : offset[i + 1]]
+        extent = None
+        if not job.occupy_read_ends and job.spanned is not None:
+            extent = _extent(job.spanned, i)
+        tm = _build_tm(job.settings, job.nbp, row, extent)
         results.append(
             tuple(
                 _lists_to_arrays(
@@ -535,6 +552,7 @@ def _iter_tm_batches(dataset, regions, getters, batch_size, nworker):
                     settings=settings,
                     nbp=dataset.nbp[region],
                     spanned=_batch_intervals(spanned, start, stop),
+                    occupy_read_ends=dataset.occupy_read_ends,
                     edata=np.array(edata[start : start + batch_size]),
                     getters=getters,
                 )

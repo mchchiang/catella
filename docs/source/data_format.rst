@@ -382,7 +382,8 @@ The dataset-level file (``<dataset_name>.h5``, default
 .. code-block:: text
 
    /metadata
-       attrs: raw_dir, nsim (always); out_type, seed (optional)
+       attrs: raw_dir, nsim (always); out_type, seed (optional);
+              occupy_read_ends (bool; True if absent)
        chroms              string dataset, region names
        nmol                int array, molecules per region
        nbp                 int array, bp length per region

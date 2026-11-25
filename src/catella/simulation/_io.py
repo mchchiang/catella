@@ -374,6 +374,7 @@ def _write_metadata(
     no_data=None,
     nan_fill=None,
     spanned=None,
+    occupy_read_ends=True,
 ):
     """
     Write the dataset metadata to the '/metadata' group.
@@ -414,6 +415,8 @@ def _write_metadata(
     spanned : mapping of str to tuple or None, optional
         The `(intervals, offset)` of each region; regions with None are
         not written.
+    occupy_read_ends : bool, default True
+        Whether nucleosomes may occupy the unread read ends.
     """
     if "metadata" in h5file:
         gmeta = h5file["metadata"]
@@ -441,6 +444,7 @@ def _write_metadata(
         gmeta.attrs["seed"] = int(seed)
     if nan_fill is not None:
         gmeta.attrs["nan_fill"] = nan_fill
+    gmeta.attrs["occupy_read_ends"] = bool(occupy_read_ends)
     if seed_table is not None:
         gseeds = gmeta.create_group("seed_table")
         for region in regions:
@@ -476,8 +480,8 @@ def _read_metadata(h5file):
     dict of str to Any
         'raw_dir' (Path, as stored), 'nsim', 'method', 'regions', 'nmol',
         'nbp', 'settings', 'edata', 'out_type', 'seed', 'seed_table',
-        'no_data', 'nan_fill', and 'spanned' (region to `(intervals,
-        offset)` or None).
+        'no_data', 'nan_fill', 'spanned' (region to `(intervals,
+        offset)` or None), and 'occupy_read_ends' (True if absent).
         Optional fields that were not written are None; 'method' defaults
         to "mcmc".
     """
@@ -512,6 +516,7 @@ def _read_metadata(h5file):
         "no_data": per_region("no_data"),
         "nan_fill": _read_nan_fill(attrs),
         "spanned": _read_spanned(gmeta, regions),
+        "occupy_read_ends": bool(attrs.get("occupy_read_ends", True)),
     }
 
 

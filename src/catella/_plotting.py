@@ -9,8 +9,14 @@ from matplotlib.ticker import Formatter, Locator, MaxNLocator
 
 from catella._warnings import _warn
 
-# Units (factor, name) of position axes, smallest first
+# Units (factor, name) of position and time axes, smallest first
 _BP_UNITS = ((1, "bp"), (1000, "kb"), (1000000, "Mb"))
+_MCS_UNITS = (
+    (1, "MCS"),
+    (1000, "$10^3$ MCS"),
+    (1000000, "$10^6$ MCS"),
+    (1000000000, "$10^9$ MCS"),
+)
 
 # Most decimals in tick labels of an automatic unit
 _MAX_UNIT_DECIMALS = 1
@@ -28,34 +34,6 @@ _MAX_PANELS = 10
 
 # Region panels per row (as in MethPlot.plot_dropout_ecdf)
 _PANELS_PER_ROW = 4
-
-
-def _power_of_10(x, name=None):
-    """
-    Return the base-10 logarithm of `x`, checked to be a power of 10.
-
-    Parameters
-    ----------
-    x : float
-        The value to check.
-    name : str, optional
-        The variable name to include in the error message.
-
-    Returns
-    -------
-    float
-        The log10 of `x`.
-
-    Raises
-    ------
-    ValueError
-        If `x` is not a non-negative power of 10.
-    """
-    log10x = np.log10(x)
-    if log10x < 0.0 or not np.isclose(np.mod(log10x, 1), 0, atol=1e-9):
-        xstr = name if name is not None else "x"
-        raise ValueError(f"'{xstr}' must be a non-negative power of 10")
-    return log10x
 
 
 def _warn_if_large(nrow, ncol, hint):

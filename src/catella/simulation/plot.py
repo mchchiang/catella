@@ -17,6 +17,7 @@ from matplotlib.ticker import MaxNLocator
 from catella import utils
 from catella._plotting import (
     _MAX_PANELS,
+    _MCS_UNITS,
     _PANELS_PER_ROW,
     _colorbar,
     _draw_mean,
@@ -25,9 +26,9 @@ from catella._plotting import (
     _left_ylabels,
     _panel_grid,
     _position_xaxis,
-    _power_of_10,
     _row_axes,
     _share_xlim,
+    _unit_axis,
     _warn_if_large,
 )
 from catella._regions import _per_region, _region_list
@@ -239,29 +240,6 @@ class SimPlot:
 
         return wrapper
 
-    def _log10(self, x, name=None):
-        """
-        Validates and returns the base-10 logarithm of a value.
-
-        Parameters
-        ----------
-        x : float
-            The value to check.
-        name : str, optional
-            The variable name to include in the error message.
-
-        Returns
-        -------
-        float
-            The log10 of x.
-
-        Raises
-        ------
-        ValueError
-            If x is not a non-negative power of 10.
-        """
-        return _power_of_10(x, name)
-
     @_apply_style
     def plot_energy(
         self,
@@ -272,7 +250,6 @@ class SimPlot:
         run: int,
         tstart: int | None = None,
         tend: int | None = None,
-        tscale: int = 1000,
         out_file: str | Path | None = None,
         show: bool = True,
     ):
@@ -297,8 +274,6 @@ class SimPlot:
             simulation.
         tend : int, optional
             Ending time step. If None, defaults to the end of the simulation.
-        tscale : int, default 1000
-            Time scaling factor (must be a power of 10) for the y-axis labels.
         out_file : str or Path, optional
             Path to save the generated figure. Directories are created if
             they do not exist.
@@ -308,13 +283,17 @@ class SimPlot:
         Raises
         ------
         ValueError
-            If `tend` < `tstart` or if scaling factors are not powers of 10.
+            If `tend` < `tstart`.
+
+        Notes
+        -----
+        Time is labeled in MCS, or in $10^3$, $10^6$ or $10^9$ MCS,
+        whichever is the largest unit whose tick labels need at most one
+        decimal.
         """
         # Check the time values are valid
         if tstart is not None and tend is not None and tend < tstart:
             raise ValueError("'tend' must be greater than 'tstart'")
-
-        tpow = int(self._log10(tscale, "tscale"))
 
         # Retrieve the data
         data = dataset.raw[region, mol, run]
@@ -327,15 +306,13 @@ class SimPlot:
             if tend is None
             else min(data.time_index(tend) + 1, nframes)
         )
-        time = data.time[start_idx:end_idx] / tscale
+        time = data.time[start_idx:end_idx]
         energy = data.energy[start_idx:end_idx]
 
-        # Plot the nucleosome position as a heat map
         fig, ax = plt.subplots()
         ax.plot(time, energy)
 
-        tpow_str = rf"$10^{{{tpow}}}$"
-        ax.set_xlabel(rf"Time $t$ [{tpow_str} MCS]")
+        _unit_axis(ax.xaxis, _MCS_UNITS, label="Time $t$ [{unit}]")
         ax.set_ylabel(r"Energy [$k_BT$]")
 
         fig.tight_layout()
@@ -361,7 +338,6 @@ class SimPlot:
         time: int | None = None,
         tstart: int | None = None,
         tend: int | None = None,
-        tscale: int = 1000,
         max_rows: int | None = None,
         downsample_how: str = "stride",
         cmap: str | None = None,
@@ -409,9 +385,6 @@ class SimPlot:
             None.
         tend : int, optional
             Last time step shown with `over="time"`; the end if None.
-        tscale : int, default 1000
-            Time scaling factor (a power of 10) for the y-axis labels with
-            `over="time"`.
         max_rows : int, optional
             If given, show at most this many rows, merged as
             `downsample_how` says.
@@ -438,9 +411,8 @@ class SimPlot:
             dataset, with several `runs`, with `time`, or for a molecule
             with no data; if `tstart` or `tend` is used with
             `over="runs"`; if a TM dataset stores no samples; if `tend` <
-            `tstart`; if `max_rows` or `downsample_how` is invalid; if
-            `tscale` is not a power of 10; or if `plot_edata` is True and
-            the dataset stores no energies.
+            `tstart`; if `max_rows` or `downsample_how` is invalid; or if
+            `plot_edata` is True and the dataset stores no energies.
 
         Warns
         -----
@@ -479,7 +451,6 @@ class SimPlot:
                 raise ValueError(
                     f"molecule {mol} of region '{region}' has no data"
                 )
-            tpow = int(self._log10(tscale, "tscale"))
             data = dataset.raw[region, mol, run]
             nframes = len(data.time)
             start_idx = 0 if tstart is None else data.time_index(tstart)
@@ -499,11 +470,8 @@ class SimPlot:
             if spanned is not None:
                 matrix[:, ~spanned[0]] = -1
             matrix = _merge_rows(matrix, max_rows, downsample_how)
-            extent_y = (
-                data.time[idx[0]] / tscale,
-                data.time[idx[-1]] / tscale,
-            )
-            ylabel = rf"Time $t$ [$10^{{{tpow}}}$ MCS]"
+            extent_y = (data.time[idx[0]], data.time[idx[-1]])
+            ylabel = "Time $t$ [MCS]"
             invert_y = True
         else:
             if tstart is not None or tend is not None:
@@ -556,6 +524,10 @@ class SimPlot:
             edata=edata,
             edata_label=r"$E^{\text{data}}$ [$k_BT$]",
         )
+        if over == "time":
+            _unit_axis(
+                panel["hm_ax"].yaxis, _MCS_UNITS, label="Time $t$ [{unit}]"
+            )
         self._footprint_side(fig, [panel], im, [matrix], cmap)
         panel["hm_ax"].set_title(region, pad=12)
         _finish(fig, show, out_file)

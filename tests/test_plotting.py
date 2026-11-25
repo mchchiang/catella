@@ -8,16 +8,35 @@ import numpy as np
 import pytest
 from catella._plotting import (
     _BP_UNITS,
+    _MCS_UNITS,
     _ShiftedLocator,
     _unit_axis,
     _UnitFormatter,
 )
 
 
-def _labels(locs, start=0):
-    fmt = _UnitFormatter(_BP_UNITS, start)
+def _labels(locs, start=0, units=_BP_UNITS):
+    fmt = _UnitFormatter(units, start)
     fmt.set_locs(np.asarray(locs, dtype=float))
     return [fmt(x) for x in locs]
+
+
+class TestTimeUnits:
+    def test_thousands_of_mcs(self):
+        fig, ax = plt.subplots()
+        ax.set_xlim(0, 20000)
+        _unit_axis(ax.xaxis, _MCS_UNITS, label="Time [{unit}]")
+        fig.canvas.draw()
+        assert ax.get_xlabel() == "Time [$10^3$ MCS]"
+        plt.close(fig)
+
+    def test_labels(self):
+        assert _labels([0, 5000, 10000], units=_MCS_UNITS) == [
+            "0",
+            "5",
+            "10",
+        ]
+        assert _labels([0, 50, 100], units=_MCS_UNITS) == ["0", "50", "100"]
 
 
 class TestUnitFormatter:

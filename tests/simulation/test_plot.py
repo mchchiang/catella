@@ -569,6 +569,31 @@ class TestPositionalDatasetArg:
 
         assert plt.gcf().axes
 
+    def test_plot_energy_time_in_mcs(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=2, nbp=20)
+        SimPlot().plot_energy(dataset, region="chr1", mol=0, run=0, show=False)
+        fig = plt.gcf()
+        fig.canvas.draw()
+        ax = fig.axes[0]
+        time = dataset.raw["chr1", 0, 0].time
+        np.testing.assert_allclose(ax.lines[0].get_xdata(), time)
+        assert ax.get_xlabel().startswith("Time $t$ [")
+        assert ax.get_xlabel().endswith("MCS]")
+
+    @pytest.mark.parametrize("method", ["plot_energy", "plot_samples"])
+    def test_tscale_removed(self, tmp_path, method):
+        dataset = _make_dataset(tmp_path, nmol=2, nbp=20)
+        kwargs = {"run": 0} if method == "plot_energy" else {}
+        with pytest.raises(TypeError, match="tscale"):
+            getattr(SimPlot(), method)(
+                dataset,
+                region="chr1",
+                mol=0,
+                tscale=1000,
+                show=False,
+                **kwargs,
+            )
+
     def test_plot_samples_accepts_dataset_positionally(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=2, nbp=20)
 
@@ -709,6 +734,19 @@ class TestPlotSamples:
         assert img.shape == (len(data.time), 400)
         for i, pos in enumerate(data.position):
             np.testing.assert_array_equal(img[i], _footprint(dataset, pos))
+
+    def test_mcmc_over_time_axis_in_mcs(self, tmp_path):
+        dataset = _mcmc_dataset(tmp_path)
+        SimPlot().plot_samples(
+            dataset, region="chr1", mol=0, runs=2, show=False
+        )
+        fig = plt.gcf()
+        fig.canvas.draw()
+        hm_ax = fig.axes[0]
+        time = dataset.raw["chr1", 0, 2].time
+        assert sorted(hm_ax.get_ylim()) == [time[0], time[-1]]
+        assert hm_ax.get_ylabel().startswith("Time $t$ [")
+        assert hm_ax.get_ylabel().endswith("MCS]")
 
     def test_mcmc_over_runs_rows_are_runs(self, tmp_path):
         dataset = _mcmc_dataset(tmp_path)

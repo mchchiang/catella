@@ -582,6 +582,7 @@ class MethPrintExperiment:
         min_gap: int | None = 20,
         gaps_bed: str | Path | Iterable | None = None,
         min_overlap: int = 0,
+        count_5hmc: bool = False,
     ) -> Self:
         """
         Create an experiment by processing raw sequencing data files.
@@ -685,6 +686,12 @@ class MethPrintExperiment:
             Minimum overlap (bp) of a molecule's read extent with a
             region (internal gaps not subtracted); molecules
             overlapping less are dropped before `max_nmol` sampling.
+        count_5hmc : bool, default False
+            If True, 'CG' and 'GC' of `mtase` also keep 5hmC calls ('h'
+            or '76792'); 5mC and 5hmC calls at one position are summed
+            into the probability of a modified C. For models that call
+            both (e.g., 5mC_5hmC), where 5hmC takes part of the 5mC
+            signal.
 
         Returns
         -------
@@ -834,6 +841,7 @@ class MethPrintExperiment:
             "min_gap": min_gap,
             "gaps_bed": gaps_bed,
             "min_overlap": min_overlap,
+            "count_5hmc": count_5hmc,
         }
 
         try:

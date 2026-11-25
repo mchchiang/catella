@@ -209,6 +209,13 @@ def load_raw(
         int,
         typer.Option(min=0, help="Min read overlap (bp) with a region"),
     ] = 0,
+    count_5hmc: Annotated[
+        bool,
+        typer.Option(
+            "--count-5hmc",
+            help="Count 5hmC calls as modified C for CG/GC (summed)",
+        ),
+    ] = False,
 ):
     """
     Load raw methylation footprinting data into a MethPrintExperiment.
@@ -237,6 +244,7 @@ def load_raw(
         min_gap=min_gap or None,
         gaps_bed=gaps_bed,
         min_overlap=min_overlap,
+        count_5hmc=count_5hmc,
     )
     exp.save(out_file)
 

@@ -125,6 +125,36 @@ class TestLoadRaw:
         assert got.raw["mid"].nbp == 20
         got.close()
 
+    def test_count_5hmc_forwarded(self, tmp_path):
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(
+            test_file,
+            [
+                ("m0", 1, "chr1", "+", 0.3, "m"),
+                ("m0", 1, "chr1", "+", 0.2, "h"),
+            ],
+        )
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 5})
+        out = tmp_path / "exp.h5"
+        result = runner.invoke(
+            app,
+            [
+                "load_raw",
+                str(chromsize),
+                str(test_file),
+                str(out),
+                "--mtase",
+                "CG",
+                "--count-5hmc",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        got = MethPrintExperiment.load(out)
+        qual = got.raw["chr1"].test.data["mod_qual"].tolist()
+        assert qual == pytest.approx([0.5])
+        got.close()
+
     def test_min_overlap_forwarded(self, tmp_path):
         test_file = tmp_path / "test.tsv"
         _write_tsv(test_file, _make_test_rows(nmol=3, nbp=30))

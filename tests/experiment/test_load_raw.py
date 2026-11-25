@@ -1123,12 +1123,13 @@ class TestStrandConsistency:
 
 
 class TestModCodes:
-    def _load(self, tmp_path, rows, seq=None, mtase="A", length=None):
+    def _load(
+        self, tmp_path, rows, seq=None, mtase="A", length=None, **kwargs
+    ):
         test_file = tmp_path / "test.tsv"
         _write_tsv(test_file, rows)
         chromsize = tmp_path / "sizes.tsv"
         _write_chromsize(chromsize, {"chr1": length or len(seq)})
-        kwargs = {}
         if seq is not None:
             fasta_file = tmp_path / "ref.fa"
             _write_fasta(fasta_file, {"chr1": seq})
@@ -1242,6 +1243,46 @@ class TestModCodes:
         ]
         with pytest.raises(ValueError, match="repeat a mod_code"):
             self._load(tmp_path, rows, seq="AAAA")
+
+    def _5hmc_rows(self):
+        return [
+            ("m0", 1, "chr1", "+", 0.3, "m"),
+            ("m0", 1, "chr1", "+", 0.2, "h"),
+            ("m0", 5, "chr1", "+", 0.4, "76792"),
+        ]
+
+    def test_5hmc_dropped_by_default(self, tmp_path):
+        with pytest.warns(UserWarning, match=r"dropped 2 call\(s\)"):
+            exp = self._load(
+                tmp_path, self._5hmc_rows(), seq="ACGAGCA", mtase=["CG", "GC"]
+            )
+        df = exp.raw["chr1"].test.data
+        assert df["pos"].tolist() == [1]
+        assert df["mod_qual"].tolist() == pytest.approx([0.3])
+        exp.close()
+
+    def test_count_5hmc_sums_with_5mc(self, tmp_path):
+        exp = self._load(
+            tmp_path,
+            self._5hmc_rows(),
+            seq="ACGAGCA",
+            mtase=["CG", "GC"],
+            count_5hmc=True,
+        )
+        df = exp.raw["chr1"].test.data.sort_values("pos")
+        assert df["pos"].tolist() == [1, 5]
+        assert df["mod_qual"].tolist() == pytest.approx([0.5, 0.4])
+        exp.close()
+
+    def test_count_5hmc_ignored_for_a(self, tmp_path):
+        rows = [
+            ("m0", 0, "chr1", "+", 0.5, "a"),
+            ("m0", 1, "chr1", "+", 0.5, "h"),
+        ]
+        with pytest.warns(UserWarning, match=r"mod_code\(s\) \['h'\]"):
+            exp = self._load(tmp_path, rows, seq="AAAA", count_5hmc=True)
+        assert self._calls(exp) == [(0, "a")]
+        exp.close()
 
 
 class TestMtase:

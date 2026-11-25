@@ -168,9 +168,11 @@ _MTASE_MOD_CODES = {
     "CG": ("m", "27551"),
     "GC": ("m", "27551"),
 }
+# Mod codes of 5hmC, accepted for C labels with `count_5hmc`
+_5HMC_CODES = ("h", "76792")
 
 
-def _region_labels(mtase, refseq):
+def _region_labels(mtase, refseq, count_5hmc=False):
     """
     Accepted mod codes and methylatable positions of each label.
 
@@ -180,6 +182,8 @@ def _region_labels(mtase, refseq):
         Normalized methyltransferase labels.
     refseq : str or None
         Reference sequence of the region; None skips the base check.
+    count_5hmc : bool, default False
+        If True, 'CG' and 'GC' also accept the 5hmC codes.
 
     Returns
     -------
@@ -195,7 +199,10 @@ def _region_labels(mtase, refseq):
                 _methylatable_positions(refseq, label, "+"),
                 _methylatable_positions(refseq, label, "-"),
             )
-        labels.append((_MTASE_MOD_CODES[label], masks))
+        codes = _MTASE_MOD_CODES[label]
+        if count_5hmc and label != "A":
+            codes = codes + _5HMC_CODES
+        labels.append((codes, masks))
     return labels
 
 
@@ -852,6 +859,7 @@ def _stream_rows_to_staging(
     mtase=None,
     ignore_strand=False,
     min_gap=None,
+    count_5hmc=False,
 ):
     """
     Stream full rows, transform them, and append to per-region
@@ -913,6 +921,8 @@ def _stream_rows_to_staging(
     min_gap : int, optional
         Minimum net deletion (bp) recorded as an internal gap (see
         `_GapTracker`). None records no gaps.
+    count_5hmc : bool, default False
+        If True, 'CG' and 'GC' also accept 5hmC calls.
 
     Returns
     -------
@@ -951,7 +961,7 @@ def _stream_rows_to_staging(
     if mtase is not None:
         refseqs = refseq_by_region or {}
         labels_by_region = {
-            region: _region_labels(mtase, refseqs.get(region))
+            region: _region_labels(mtase, refseqs.get(region), count_5hmc)
             for region in mol_maps
         }
     stats = _CodeStats()
@@ -1714,6 +1724,7 @@ def _ingest_into(
     gaps_bed=None,
     chrom_sizes=None,
     min_overlap=0,
+    count_5hmc=False,
 ):
     """
     Resolve, scan, and stream one raw data file into the `raw_data`
@@ -1810,6 +1821,7 @@ def _ingest_into(
             mtase=mtase,
             ignore_strand=ignore_strand,
             min_gap=min_gap,
+            count_5hmc=count_5hmc,
         )
         if gaps_bed and not wrap:
             gaps = _apply_bed_gaps(

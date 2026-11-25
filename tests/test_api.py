@@ -215,6 +215,28 @@ class TestLoadRaw:
         assert exp.regions == ("chr1",)
         assert sorted(exp.raw["chr1"].test.mol_id) == ["m0", "m1"]
 
+    def test_count_5hmc_forwarded(self, tmp_path):
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(
+            test_file,
+            [
+                ("m0", 1, "chr1", "+", 0.3, "m"),
+                ("m0", 1, "chr1", "+", 0.2, "h"),
+            ],
+        )
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 5})
+
+        exp = catella.load_raw(
+            chromsize=chromsize,
+            test_file=test_file,
+            mtase="CG",
+            count_5hmc=True,
+        )
+
+        qual = exp.raw["chr1"].test.data["mod_qual"].tolist()
+        assert qual == pytest.approx([0.5])
+
     def test_regions_forwarded(self, tmp_path):
         test_file = tmp_path / "test.tsv"
         _write_tsv(

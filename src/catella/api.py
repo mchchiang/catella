@@ -44,6 +44,7 @@ def load_raw(
     min_gap: int | None = 20,
     gaps_bed: str | Path | Iterable | None = None,
     min_overlap: int = 0,
+    count_5hmc: bool = False,
 ) -> MethPrintExperiment:
     """
     Load raw methylation footprinting data into a MethPrintExperiment.
@@ -126,6 +127,10 @@ def load_raw(
     min_overlap : int, default 0
         Minimum overlap (bp) of a read's extent with a region; reads
         overlapping less are dropped before `max_nmol` sampling.
+    count_5hmc : bool, default False
+        If True, 'CG' and 'GC' of `mtase` also keep 5hmC calls, summed
+        with 5mC calls at one position; see
+        `MethPrintExperiment.load_raw`.
 
     Returns
     -------
@@ -155,6 +160,7 @@ def load_raw(
         min_gap=min_gap,
         gaps_bed=gaps_bed,
         min_overlap=min_overlap,
+        count_5hmc=count_5hmc,
     )
 
 

@@ -1200,10 +1200,6 @@ def plot_config(
     downsample_how: Annotated[
         str, typer.Option(help="'stride', 'mean' or 'max'")
     ] = "stride",
-    xscale: Annotated[
-        int,
-        typer.Option(help="Spatial scale factor (power of 10) for the x-axis"),
-    ] = 1000,
     cmap: Annotated[
         str | None, typer.Option(help="Matplotlib colormap name")
     ] = None,
@@ -1254,7 +1250,6 @@ def plot_config(
         time=time,
         max_rows=max_rows,
         downsample_how=downsample_how,
-        xscale=xscale,
         cmap=cmap,
         plot_mean=plot_mean,
         plot_edata=plot_edata,
@@ -1303,10 +1298,6 @@ def plot_occup(
         list[int] | None,
         typer.Option(help="Molecule index to display (repeatable)"),
     ] = None,
-    xscale: Annotated[
-        int,
-        typer.Option(help="Spatial scale factor (power of 10) for the x-axis"),
-    ] = 1000,
     cmap: Annotated[
         str | None, typer.Option(help="Matplotlib colormap name")
     ] = None,
@@ -1351,7 +1342,6 @@ def plot_occup(
         out_file=out_file,
         occup_name=occup_name,
         mols=mols,
-        xscale=xscale,
         cmap=cmap,
         plot_mean=plot_mean,
         plot_edata=plot_edata,
@@ -1457,10 +1447,6 @@ def plot_meth(
             "dendrogram"
         ),
     ] = None,
-    xscale: Annotated[
-        int,
-        typer.Option(help="Spatial scale factor (power of 10) for the x-axis"),
-    ] = 1000,
     sharex: Annotated[
         bool,
         typer.Option(help="Put all panels on the widest region's scale"),
@@ -1497,7 +1483,6 @@ def plot_meth(
         cbar_label=cbar_label,
         out_file=out_file,
         link_mat=link_mat,
-        xscale=xscale,
         sharex=sharex,
         show=show,
     )

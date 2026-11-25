@@ -2115,7 +2115,7 @@ class TestPlotOccup:
         "ignore:__array__ implementation doesn't accept a copy keyword"
         ":DeprecationWarning"
     )
-    def test_with_mols_xscale_cmap(self, tmp_path):
+    def test_with_mols_cmap(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=6, nbp=10)
         SimAnalysis().compute_occup(dataset=dataset)
         dataset.save()
@@ -2131,8 +2131,6 @@ class TestPlotOccup:
                 "0",
                 "--mols",
                 "2",
-                "--xscale",
-                "1",
                 "--cmap",
                 "viridis",
                 "--out-file",
@@ -2462,8 +2460,6 @@ class TestPlotMeth:
                 "chr1,chr2",
                 "--raw-which",
                 "test",
-                "--xscale",
-                "1",
                 "--out-file",
                 str(out_file),
                 "--no-show",

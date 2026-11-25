@@ -354,9 +354,7 @@ class TestPlotOccupMultiRegion:
 
     def test_xlim_per_region_by_default(self, tmp_path):
         dataset = _make_two_region_dataset(tmp_path)
-        SimPlot().plot_occup(
-            dataset, regions=["chr1", "chr2"], xscale=1, show=False
-        )
+        SimPlot().plot_occup(dataset, regions=["chr1", "chr2"], show=False)
         xlims = [ax.get_xlim() for ax in _heatmap_axes(plt.gcf())]
         assert xlims == [(0, 20), (0, 30)]
 
@@ -365,7 +363,6 @@ class TestPlotOccupMultiRegion:
         SimPlot().plot_occup(
             dataset,
             regions=["chr1", "chr2"],
-            xscale=1,
             plot_edata=True,
             sharex=True,
             show=False,
@@ -462,7 +459,7 @@ class TestPlotOccupMean:
     def test_mean_over_all_molecules(self, tmp_path):
         dataset = _make_two_region_dataset(tmp_path)
         SimPlot().plot_occup(
-            dataset, regions="chr1", xscale=1, plot_mean=True, show=False
+            dataset, regions="chr1", plot_mean=True, show=False
         )
         occup = dataset.analysis["chr1"]["occup"].to_numpy()
         np.testing.assert_allclose(_mean_line(plt.gcf()), occup.mean(0))
@@ -539,7 +536,6 @@ class TestPlotOccupMean:
         SimPlot().plot_occup(
             dataset,
             regions=["chr1", "chr2"],
-            xscale=1,
             plot_mean=True,
             sharex=True,
             show=False,
@@ -1285,7 +1281,6 @@ class TestPlotConfigMean:
             dataset,
             regions=["chr1", "chr2"],
             name="bm",
-            xscale=1,
             plot_mean=True,
             sharex=True,
             show=False,
@@ -1400,7 +1395,6 @@ class TestPlotConfigMultiRegion:
             dataset,
             regions=["chr1", "chr2"],
             name="bm",
-            xscale=1,
             sharex=True,
             show=False,
         )

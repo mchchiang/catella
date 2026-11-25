@@ -24,6 +24,7 @@ from catella._plotting import (
     _leaf_order,
     _left_ylabels,
     _panel_grid,
+    _position_xaxis,
     _power_of_10,
     _row_axes,
     _share_xlim,
@@ -361,7 +362,6 @@ class SimPlot:
         tstart: int | None = None,
         tend: int | None = None,
         tscale: int = 1000,
-        xscale: int = 1000,
         max_rows: int | None = None,
         downsample_how: str = "stride",
         cmap: str | None = None,
@@ -412,8 +412,6 @@ class SimPlot:
         tscale : int, default 1000
             Time scaling factor (a power of 10) for the y-axis labels with
             `over="time"`.
-        xscale : int, default 1000
-            Spatial scaling factor (a power of 10) for the x-axis labels.
         max_rows : int, optional
             If given, show at most this many rows, merged as
             `downsample_how` says.
@@ -440,9 +438,9 @@ class SimPlot:
             dataset, with several `runs`, with `time`, or for a molecule
             with no data; if `tstart` or `tend` is used with
             `over="runs"`; if a TM dataset stores no samples; if `tend` <
-            `tstart`; if `max_rows` or `downsample_how` is invalid; if a
-            scaling factor is not a power of 10; or if `plot_edata` is True
-            and the dataset stores no energies.
+            `tstart`; if `max_rows` or `downsample_how` is invalid; if
+            `tscale` is not a power of 10; or if `plot_edata` is True and
+            the dataset stores no energies.
 
         Warns
         -----
@@ -455,7 +453,6 @@ class SimPlot:
         Requires 'position' (or 'all') in the `out_types` of an MCMC
         `run`.
         """
-        xpow = int(self._log10(xscale, "xscale"))
         _check_downsample(max_rows, downsample_how)
         _check_edata(dataset, plot_edata)
         if over is None:
@@ -555,8 +552,6 @@ class SimPlot:
             extent_y=extent_y,
             ylabel=ylabel,
             invert_y=invert_y,
-            xpow=xpow,
-            xscale=xscale,
             cmap=cmap,
             edata=edata,
             edata_label=r"$E^{\text{data}}$ [$k_BT$]",
@@ -577,7 +572,6 @@ class SimPlot:
         time: int | None = None,
         max_rows: int | None = None,
         downsample_how: str = "stride",
-        xscale: int = 1000,
         cmap: str | None = None,
         out_file: str | Path | None = None,
         plot_mean: bool = False,
@@ -627,8 +621,6 @@ class SimPlot:
             k-th molecule (real configurations; only those are read),
             "mean" shows the occupied share of each group of molecules,
             and "max" whether any of them is occupied.
-        xscale : int, default 1000
-            Spatial scaling factor (a power of 10) for the x-axis labels.
         cmap : str, optional
             Matplotlib colormap name. If None, `self.cmap` is used.
         out_file : str or Path, optional
@@ -663,8 +655,8 @@ class SimPlot:
         ------
         ValueError
             If `regions` is empty, if `max_rows` or `downsample_how` is
-            invalid, if `xscale` is not a power of 10, if `plot_edata` is
-            True and the dataset stores no energies, if `mols` or
+            invalid, if `plot_edata` is True and the dataset stores no
+            energies, if `mols` or
             `link_mat` is not a dict with several regions, if `link_mat`
             is combined with `mols` or does not match the number of
             molecules, or for invalid arguments of
@@ -694,7 +686,6 @@ class SimPlot:
             for r, m in _per_region(mols, regions, "mols").items()
         }
         link_mat = _per_region(link_mat, regions, "link_mat")
-        xpow = int(self._log10(xscale, "xscale"))
         _check_downsample(max_rows, downsample_how)
         _check_edata(dataset, plot_edata)
 
@@ -746,8 +737,6 @@ class SimPlot:
                 extent_y=None,
                 ylabel=d["ylabel"],
                 invert_y=False,
-                xpow=xpow,
-                xscale=xscale,
                 cmap=cmap,
                 edata=d["edata"],
                 edata_label=r"$\langle E^{\text{data}} \rangle$ [$k_BT$]",
@@ -758,7 +747,7 @@ class SimPlot:
         self._footprint_side(fig, panels, im, matrices, cmap)
         _left_ylabels(panels)
         if sharex:
-            _share_xlim(panels, max(dataset.nbp[r] for r in regions) / xscale)
+            _share_xlim(panels, max(dataset.nbp[r] for r in regions))
         _finish(fig, show, out_file)
 
     def _config_panel(
@@ -865,8 +854,6 @@ class SimPlot:
         extent_y,
         ylabel,
         invert_y,
-        xpow,
-        xscale,
         cmap,
         edata,
         edata_label,
@@ -913,18 +900,18 @@ class SimPlot:
             aspect="auto",
             origin="lower",
             interpolation="none",
-            extent=[0, nbp / xscale, *extent_y],
+            extent=[0, nbp, *extent_y],
         )
         if rows_axis:
             hm_ax.yaxis.set_major_locator(MaxNLocator(integer=True))
         if invert_y:
             hm_ax.invert_yaxis()
-        hm_ax.set_xlim(0, nbp / xscale)
+        hm_ax.set_xlim(0, nbp)
         hm_ax.set_ylabel(ylabel)
 
         if mean is not None:
             hm_ax.get_xaxis().set_visible(False)
-            _draw_mean(panel["mean_ax"], mean, xscale=xscale)
+            _draw_mean(panel["mean_ax"], mean)
             if edata is not None:
                 panel["mean_ax"].get_xaxis().set_visible(False)
 
@@ -940,12 +927,11 @@ class SimPlot:
             edata = CoordsTransform(lnuc=lnuc).left_to_center_aligned(edata)
             edata[: lnuc // 2] = np.nan
             edata[len(edata) - lnuc // 2 :] = np.nan
-            edata_ax.plot(np.arange(0, nbp) / xscale, edata)
+            edata_ax.plot(np.arange(0, nbp), edata)
             edata_ax.set_ylabel(edata_label)
-            edata_ax.set_xlim(0, nbp / xscale)
+            edata_ax.set_xlim(0, nbp)
 
-        btm_ax = _row_axes(panel)[-1]
-        btm_ax.set_xlabel(rf"Position $x$ [$10^{{{xpow}}}$ bp]")
+        _position_xaxis(panel, _row_axes(panel)[-1])
         return im
 
     def _footprint_cmap(self, cmap):
@@ -995,7 +981,6 @@ class SimPlot:
         time: int | None = None,
         occup_name: str = "occup",
         mols: Iterable[int] | dict | None = None,
-        xscale: int = 1000,
         cmap: str | None = None,
         out_file: str | Path | None = None,
         plot_mean: bool = False,
@@ -1032,9 +1017,6 @@ class SimPlot:
             The y-axis reflects positions within this subset (0..n),
             not the original molecule indices. With several regions, a
             dict keyed by region (regions not in it show all molecules).
-        xscale : int, default 1000
-            Spatial scaling factor (must be a power of 10) for the x-axis
-            labels.
         cmap : str, optional
             Matplotlib colormap name to use for this plot. If None,
             `self.cmap` is used.
@@ -1085,7 +1067,6 @@ class SimPlot:
             for r, m in _per_region(mols, regions, "mols").items()
         }
         link_mat = _per_region(link_mat, regions, "link_mat")
-        xpow = int(self._log10(xscale, "xscale"))
         _warn_if_large(
             sum(
                 dataset.nmol[r] if mols[r] is None else len(mols[r])
@@ -1119,8 +1100,6 @@ class SimPlot:
                 time=time,
                 occup_name=occup_name,
                 mols=mols[region],
-                xscale=xscale,
-                xpow=xpow,
                 cmap=cmap,
                 plot_edata=plot_edata,
                 link_mat=link_mat[region],
@@ -1128,7 +1107,7 @@ class SimPlot:
         _colorbar(fig, panels, im, "Occupancy")
         _left_ylabels(panels)
         if sharex:
-            _share_xlim(panels, max(dataset.nbp[r] for r in regions) / xscale)
+            _share_xlim(panels, max(dataset.nbp[r] for r in regions))
         _finish(fig, show, out_file)
 
     def _draw_occup(
@@ -1140,8 +1119,6 @@ class SimPlot:
         time,
         occup_name,
         mols,
-        xscale,
-        xpow,
         cmap,
         plot_edata,
         link_mat,
@@ -1195,17 +1172,16 @@ class SimPlot:
             aspect="auto",
             origin="lower",
             interpolation="none",
-            extent=[0, occup.shape[1] / xscale, 0, occup.shape[0]],
+            extent=[0, occup.shape[1], 0, occup.shape[0]],
         )
-        xpow_str = rf"$10^{{{xpow}}}$"
-        hm_ax.set_xlim(0, nbp / xscale)
+        hm_ax.set_xlim(0, nbp)
         if plot_edata or mean_ax is not None:
             hm_ax.get_xaxis().set_visible(False)
         if mean_ax is not None:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", category=RuntimeWarning)
                 mean = np.nanmean(np.asarray(occup, dtype=float), axis=0)
-            _draw_mean(mean_ax, mean, xscale=xscale)
+            _draw_mean(mean_ax, mean)
             if plot_edata:
                 mean_ax.get_xaxis().set_visible(False)
         hm_ax.set_ylabel("Row (leaf order)" if sort_data else "Molecule index")
@@ -1241,13 +1217,11 @@ class SimPlot:
             edata = trans.left_to_center_aligned(edata)
             edata[: lnuc // 2] = np.nan
             edata[len(edata) - lnuc // 2 :] = np.nan
-            edata_ax.plot(np.arange(0, nbp) / xscale, edata)
+            edata_ax.plot(np.arange(0, nbp), edata)
             edata_ax.set_ylabel(r"$\langle E^{\text{data}} \rangle$ [$k_BT$]")
-            edata_ax.set_xlim(0, nbp / xscale)
+            edata_ax.set_xlim(0, nbp)
 
-        # Common x-axis label
-        btm_ax = _row_axes(panel)[-1]
-        btm_ax.set_xlabel(rf"Position $x$ [{xpow_str} bp]")
+        _position_xaxis(panel, _row_axes(panel)[-1])
 
         hm_ax.set_title(region, pad=12)
         return im

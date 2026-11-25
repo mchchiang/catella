@@ -5,8 +5,15 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.cluster.hierarchy as sch
+from matplotlib.ticker import Formatter, Locator, MaxNLocator
 
 from catella._warnings import _warn
+
+# Units (factor, name) of position axes, smallest first
+_BP_UNITS = ((1, "bp"), (1000, "kb"), (1000000, "Mb"))
+
+# Most decimals in tick labels of an automatic unit
+_MAX_UNIT_DECIMALS = 1
 
 # Estimated peak memory of rendering and saving one heatmap cell
 # (measured with matplotlib 3.10 Agg: ~70 B PNG, ~30 B PDF, whatever
@@ -228,22 +235,140 @@ def _left_ylabels(panels):
 
 def _share_xlim(panels, xmax):
     """Set the x-limits of every heatmap, mean and energy axis to
-    (0, xmax)."""
+    (0, xmax), in bp."""
     for panel in panels:
         for ax in _row_axes(panel):
             ax.set_xlim(0, xmax)
 
 
-def _draw_mean(ax, mean, *, xscale):
+def _draw_mean(ax, mean):
     """
     Plot the mean across molecules (one value per bp) into `ax`, on a
     fixed (0, 1) y-range.
     """
     nbp = len(mean)
-    ax.plot(np.arange(nbp) / xscale, mean)
+    ax.plot(np.arange(nbp), mean)
     ax.set_ylim(0, 1)
-    ax.set_xlim(0, nbp / xscale)
+    ax.set_xlim(0, nbp)
     ax.set_ylabel("Mean")
+
+
+def _decimals(values, most=6):
+    """Fewest decimals (at most `most`) that write `values` exactly."""
+    for ndec in range(most + 1):
+        if np.allclose(values, np.round(values, ndec), rtol=0, atol=1e-6):
+            return ndec
+    return most
+
+
+class _ShiftedLocator(Locator):
+    """
+    Ticks at round values of `start + x`, for an axis drawn in `x`.
+
+    Parameters
+    ----------
+    start : float, default 0
+        The value of `x = 0` (e.g., the genomic start of a region).
+    """
+
+    def __init__(self, start=0):
+        self.start = start
+        self._base = MaxNLocator(nbins="auto", steps=[1, 2, 2.5, 5, 10])
+
+    def set_axis(self, axis):
+        super().set_axis(axis)
+        self._base.set_axis(axis)
+
+    def __call__(self):
+        vmin, vmax = self.axis.get_view_interval()
+        return self.tick_values(vmin, vmax)
+
+    def tick_values(self, vmin, vmax):
+        shifted = self._base.tick_values(vmin + self.start, vmax + self.start)
+        return shifted - self.start
+
+
+class _UnitFormatter(Formatter):
+    """
+    Tick labels of `start + x` in the largest unit that needs at most
+    one decimal, chosen when the ticks are drawn.
+
+    Parameters
+    ----------
+    units : sequence of (float, str)
+        Unit factors and names, smallest first (e.g., `_BP_UNITS`).
+    start : float, default 0
+        The value of `x = 0`.
+    label : str, optional
+        Axis label with a "{unit}" placeholder, set to the chosen unit;
+        None leaves the label alone.
+    """
+
+    def __init__(self, units, start=0, label=None):
+        self.units = units
+        self.start = start
+        self.label = label
+        self.factor, self.ndec = units[0][0], 0
+
+    def set_locs(self, locs):
+        super().set_locs(locs)
+        values = np.asarray(locs, dtype=float) + self.start
+        factor, name = self.units[0]
+        ndec = _decimals(values / factor)
+        for unit_factor, unit_name in self.units[1:]:
+            unit_ndec = _decimals(values / unit_factor)
+            if unit_ndec <= _MAX_UNIT_DECIMALS:
+                factor, name, ndec = unit_factor, unit_name, unit_ndec
+        self.factor, self.ndec = factor, ndec
+        if self.label is not None and self.axis is not None:
+            self.axis.set_label_text(self.label.replace("{unit}", name))
+
+    def __call__(self, x, pos=None):
+        return f"{(x + self.start) / self.factor:,.{self.ndec}f}"
+
+
+def _unit_axis(axis, units, *, start=0, label=None):
+    """
+    Give a matplotlib axis round ticks and automatic-unit labels.
+
+    Parameters
+    ----------
+    axis : matplotlib.axis.Axis
+        E.g., `ax.xaxis`.
+    units : sequence of (float, str)
+        As in `_UnitFormatter`.
+    start : float, default 0
+        The value of `x = 0`.
+    label : str, optional
+        Axis label with a "{unit}" placeholder; set at once to the
+        smallest unit, then updated when drawn. None sets no label.
+    """
+    axis.set_major_locator(_ShiftedLocator(start))
+    axis.set_major_formatter(_UnitFormatter(units, start, label))
+    if label is not None:
+        axis.set_label_text(label.replace("{unit}", units[0][1]))
+
+
+def _position_xaxis(panel, label_ax, *, start=0, chrom=None):
+    """
+    Give the heatmap, mean and energy axes of `panel` position ticks in
+    bp, kb or Mb, and label `label_ax`.
+
+    Parameters
+    ----------
+    panel : dict
+        As returned by `_panel_grid`.
+    label_ax : matplotlib.axes.Axes
+        The axis that carries the x label (the bottom one).
+    start : float, default 0
+        The position of `x = 0` (e.g., `ref_start` of the region).
+    chrom : str, optional
+        If given, the label reads "Position on `chrom`".
+    """
+    where = "$x$" if chrom is None else f"on {chrom}"
+    for ax in _row_axes(panel):
+        label = f"Position {where} [{{unit}}]" if ax is label_ax else None
+        _unit_axis(ax.xaxis, _BP_UNITS, start=start, label=label)
 
 
 def _colorbar(fig, panels, mappable, label):

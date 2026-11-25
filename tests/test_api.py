@@ -1176,31 +1176,25 @@ class TestPlotMeth:
             exp=exp,
             regions=["chr1", "chr2"],
             data_name="prob",
-            xscale=1,
             sharex=True,
             show=False,
         )
         xlims = [ax.get_xlim() for ax in plt.gcf().axes if ax.images]
         assert xlims == [(0, 14), (0, 14)]
 
-    @pytest.mark.parametrize(
-        ("xscale", "xmax", "label"),
-        [
-            (1000, 0.01, r"Position $x$ [$10^{3}$ bp]"),
-            (1, 10, r"Position $x$ [$10^{0}$ bp]"),
-        ],
-    )
-    def test_xscale(self, xscale, xmax, label):
-        catella.plot_meth(self._data(), xscale=xscale, show=False)
-        hm_ax = plt.gcf().axes[0]
-        assert hm_ax.get_xlim() == pytest.approx((0, xmax))
-        assert hm_ax.get_xlabel() == label
+    def test_positions_drawn_in_bp(self):
+        catella.plot_meth(self._data(), show=False)
+        fig = plt.gcf()
+        fig.canvas.draw()
+        hm_ax = fig.axes[0]
+        assert hm_ax.get_xlim() == pytest.approx((0, 10))
+        assert hm_ax.get_xlabel() == "Position $x$ [bp]"
 
     @pytest.mark.parametrize("value", ["prob", "energy"])
-    def test_bad_xscale_raises(self, value):
-        with pytest.raises(ValueError, match="'xscale' must be a"):
+    def test_xscale_removed(self, value):
+        with pytest.raises(TypeError, match="xscale"):
             catella.plot_meth(
-                self._data(), value=value, xscale=3, show=False
+                self._data(), value=value, xscale=1000, show=False
             )
 
     def test_data_with_regions_raises(self):

@@ -18,7 +18,7 @@ from catella._plotting import (
     _leaf_order,
     _left_ylabels,
     _panel_grid,
-    _power_of_10,
+    _position_xaxis,
     _share_xlim,
     _warn_if_large,
 )
@@ -102,7 +102,6 @@ class MethPlot:
         cbar_label: str = "Methylation prob.",
         out_file: str | Path | None = None,
         link_mat: np.ndarray | dict | None = None,
-        xscale: int = 1000,
         sharex: bool = False,
         show: bool = True,
     ):
@@ -175,8 +174,6 @@ class MethPlot:
             loaded to reorder it. With several regions, a dict keyed by
             region, e.g. the result of `sort_by_linkage` (regions not in
             it are not sorted; extra keys are ignored).
-        xscale : int, default 1000
-            Spatial scaling factor (a power of 10) for the x-axis labels.
         sharex : bool, default False
             If True, all panels span the widest region, so they
             share one bp scale. If False, each panel spans its own.
@@ -186,8 +183,7 @@ class MethPlot:
         Raises
         ------
         ValueError
-            If `xscale` is not a power of 10, if neither `data` nor
-            `exp` and `regions` with exactly one of
+            If neither `data` nor `exp` and `regions` with exactly one of
             `raw_which`/`data_name` are given, if `data` is combined
             with any of `exp`/`regions`/`raw_which`/`data_name`/`mols`/
             `mask_name`, if `mols` or `mask_name` is given without
@@ -203,8 +199,12 @@ class MethPlot:
             (about 80 bytes per row and base pair, over all panels).
             Pass `max_rows`, or downsample first (`utils.downsample`),
             to avoid it. Also if more than 10 regions are plotted.
+
+        Notes
+        -----
+        Positions are labeled in bp, kb or Mb, whichever is the largest
+        unit whose tick labels need at most one decimal.
         """
-        _power_of_10(xscale, "xscale")
         sources = self._meth_sources(
             data,
             exp=exp,
@@ -224,7 +224,6 @@ class MethPlot:
                 vmax=vmax,
                 cmap=cmap,
                 cbar_label=cbar_label,
-                xscale=xscale,
                 sharex=sharex,
                 show=show,
                 out_file=out_file,
@@ -321,7 +320,6 @@ class MethPlot:
         vmax,
         cmap,
         cbar_label,
-        xscale,
         sharex,
         show,
         out_file,
@@ -330,7 +328,6 @@ class MethPlot:
         Downsample, draw and lay out the panels from `_meth_sources`,
         with one colorbar on a common color scale.
         """
-        xpow = int(_power_of_10(xscale, "xscale"))
         matrices = []
         for source in sources:
             matrix = source["data"]
@@ -366,20 +363,16 @@ class MethPlot:
                 vmax=vmax,
                 cmap=cmap,
                 link_mat=source["link_mat"],
-                xscale=xscale,
-                xpow=xpow,
             )
             if source["title"] is not None:
                 panel["hm_ax"].set_title(source["title"], pad=12)
         _colorbar(fig, panels, im, cbar_label)
         _left_ylabels(panels)
         if sharex:
-            _share_xlim(panels, max(m.shape[1] for m in matrices) / xscale)
+            _share_xlim(panels, max(m.shape[1] for m in matrices))
         _finish(fig, show, out_file)
 
-    def _draw_meth(
-        self, panel, matrix, *, vmin, vmax, cmap, link_mat, xscale, xpow
-    ):
+    def _draw_meth(self, panel, matrix, *, vmin, vmax, cmap, link_mat):
         """
         Draw a methylation heatmap into the axes of `panel` (from
         `_panel_grid`), with a dendrogram if `link_mat` is given (rows
@@ -403,9 +396,9 @@ class MethPlot:
             aspect="auto",
             origin="lower",
             interpolation="none",
-            extent=[0, ncol / xscale, 0, nrow],
+            extent=[0, ncol, 0, nrow],
         )
-        hm_ax.set_xlabel(rf"Position $x$ [$10^{{{xpow}}}$ bp]")
+        _position_xaxis(panel, hm_ax)
         sorted_rows = link_mat is not None
         hm_ax.set_ylabel(
             "Row (leaf order)" if sorted_rows else "Molecule index"
@@ -441,7 +434,6 @@ class MethPlot:
         cbar_label: str = r"Energy [$k_BT$]",
         out_file: str | Path | None = None,
         link_mat: np.ndarray | dict | None = None,
-        xscale: int = 1000,
         sharex: bool = False,
         show: bool = True,
     ):
@@ -494,8 +486,6 @@ class MethPlot:
             Linkage matrix of these molecules; the rows are put in its
             leaf order and its dendrogram is drawn alongside. With
             several regions, a dict keyed by region. See `plot_meth_prob`.
-        xscale : int, default 1000
-            Spatial scaling factor (a power of 10) for the x-axis labels.
         sharex : bool, default False
             If True, all panels span the widest region.
         show : bool, default True
@@ -504,12 +494,10 @@ class MethPlot:
         Raises
         ------
         ValueError
-            If `xscale` is not a power of 10, if neither `data` nor
-            `exp`, `regions`, and `data_name` are given, if `data` is
-            combined with any of them, or for an invalid `regions` or
-            `link_mat` (see `plot_meth_prob`).
+            If neither `data` nor `exp`, `regions`, and `data_name` are
+            given, if `data` is combined with any of them, or for an
+            invalid `regions` or `link_mat` (see `plot_meth_prob`).
         """
-        _power_of_10(xscale, "xscale")
         if data is None and exp is not None and data_name is None:
             raise ValueError(
                 "provide either 'data', or 'exp', 'regions' and 'data_name'"
@@ -551,7 +539,6 @@ class MethPlot:
             vmax=vmax,
             cmap=cmap if cmap is not None else "RdBu_r",
             cbar_label=cbar_label,
-            xscale=xscale,
             sharex=sharex,
             show=show,
             out_file=out_file,

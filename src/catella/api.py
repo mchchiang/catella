@@ -1365,7 +1365,6 @@ def plot_config(
     time: int | None = None,
     max_rows: int | None = None,
     downsample_how: str = "stride",
-    xscale: int = 1000,
     cmap: str | None = None,
     out_file: str | Path | None = None,
     plot_mean: bool = False,
@@ -1414,8 +1413,6 @@ def plot_config(
         molecule (real configurations), "mean" shows the occupied share of
         each group of molecules, and "max" whether any of them is
         occupied.
-    xscale : int, default 1000
-        Spatial scaling factor (a power of 10) for the x-axis labels.
     cmap : str, optional
         Matplotlib colormap name. If None, the `SimPlot` default is used.
     out_file : str or Path, optional
@@ -1447,11 +1444,11 @@ def plot_config(
     ------
     ValueError
         If `regions` is empty, if `max_rows` or `downsample_how` is
-        invalid, if `xscale` is not a power of 10, if `plot_edata` is True
-        and the dataset stores no energies, if `mols` or `link_mat` is
-        not a dict with several regions, if `link_mat` is combined with
-        `mols` or does not match the number of molecules, or for invalid
-        arguments of `extract_config`.
+        invalid, if `plot_edata` is True and the dataset stores no
+        energies, if `mols` or `link_mat` is not a dict with several
+        regions, if `link_mat` is combined with `mols` or does not match
+        the number of molecules, or for invalid arguments of
+        `extract_config`.
     KeyError
         If no calls are stored under `name` for a region.
     IndexError
@@ -1473,7 +1470,6 @@ def plot_config(
         time=time,
         max_rows=max_rows,
         downsample_how=downsample_how,
-        xscale=xscale,
         cmap=cmap,
         out_file=out_file,
         plot_mean=plot_mean,
@@ -1492,7 +1488,6 @@ def plot_occup(
     out_file: str | Path | None = None,
     occup_name: str = "occup",
     mols: Iterable[int] | dict | None = None,
-    xscale: int = 1000,
     cmap: str | None = None,
     plot_mean: bool = False,
     plot_edata: bool = False,
@@ -1529,9 +1524,6 @@ def plot_occup(
         subset. If None (default), all molecules are shown. With several
         regions, a dict keyed by region (regions not in it show all
         molecules).
-    xscale : int, default 1000
-        Spatial scaling factor (must be a power of 10) for the x-axis
-        labels.
     cmap : str, optional
         Matplotlib colormap name to use for this plot. If None, the
         `SimPlot` default is used.
@@ -1583,7 +1575,6 @@ def plot_occup(
         time=time,
         occup_name=occup_name,
         mols=mols,
-        xscale=xscale,
         cmap=cmap,
         out_file=out_file,
         plot_mean=plot_mean,
@@ -1701,7 +1692,6 @@ def plot_meth(
     cbar_label: str | None = None,
     out_file: str | Path | None = None,
     link_mat: np.ndarray | dict | None = None,
-    xscale: int = 1000,
     sharex: bool = False,
     show: bool = True,
 ):
@@ -1786,8 +1776,6 @@ def plot_meth(
         alongside. Cannot be combined with `mols`. With several regions, a
         dict keyed by region, e.g. the result of `sort_by_linkage` (regions
         not in it are not sorted; extra keys are ignored).
-    xscale : int, default 1000
-        Spatial scaling factor (a power of 10) for the x-axis labels.
     sharex : bool, default False
         If True, all panels span the widest region, so they share
         one bp scale. If False, each panel spans its own.
@@ -1798,8 +1786,7 @@ def plot_meth(
     Raises
     ------
     ValueError
-        If `value` is not "prob" or "energy"; if `xscale` is not a power
-        of 10; if neither `data` nor
+        If `value` is not "prob" or "energy"; if neither `data` nor
         `exp` and `regions` with exactly one of `raw_which`/`data_name`
         are given; if `data` is combined with any of `exp`/`regions`/
         `raw_which`/`data_name`/`mols`/`mask_name`; if `mols` or
@@ -1827,7 +1814,6 @@ def plot_meth(
         "cmap": cmap,
         "out_file": out_file,
         "link_mat": link_mat,
-        "xscale": xscale,
         "sharex": sharex,
         "show": show,
     }

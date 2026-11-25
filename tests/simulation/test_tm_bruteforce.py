@@ -428,6 +428,38 @@ class TestBestMatchConfig:
             _config_energy(lnuc, llink, elink, mu, edata, best)
         )
 
+    def test_forbidden_starts_are_never_used(self):
+        lnuc, llink, elink, mu, nbp, gamma = 3, 2, 1.0, 2.0, 12, 3.0
+        configs = _valid_configs(lnuc, nbp - lnuc + 1)
+        changed = 0
+        for seed in [115, 238, *range(20)]:
+            rng = np.random.default_rng(seed)
+            edata = rng.normal(size=nbp) * 2
+            nforbid = rng.integers(1, 4)
+            forbidden = rng.choice(nbp - lnuc + 1, size=nforbid, replace=False)
+            edata[forbidden] = np.inf
+            tm = NucPosTM(lnuc, nbp, llink, elink, mu, 1)
+            tm.setEnergy(edata.tolist(), np.inf)
+            tm.solve()
+            gain = _footprint_gain(tm.getOccup(), lnuc, gamma)
+            scores = [
+                gain[c].sum() - _repulsion(c, lnuc, llink, elink)
+                if c
+                else 0.0
+                for c in configs
+            ]
+            allowed = [
+                i
+                for i, c in enumerate(configs)
+                if not set(c) & set(forbidden.tolist())
+            ]
+            best = configs[max(allowed, key=lambda i: scores[i])]
+            changed += best != configs[int(np.argmax(scores))]
+            positions, energy = tm.getBestMatchConfig(gamma)
+            assert list(positions) == best
+            assert np.isfinite(energy)
+        assert changed >= 2
+
     @pytest.mark.parametrize("gamma", [0.5, 1.0, 2.0])
     def test_no_gap_with_repulsion_above_max_gain(self, gamma):
         lnuc, llink, elink = 20, 6, 1.0

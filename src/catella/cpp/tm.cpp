@@ -348,9 +348,12 @@ std::pair<vector<int>, double> NucPosTM::getBestMatchConfig(
   for (size_t y = 0; y < occup.size(); y++) {
     prefix[y+1] = prefix[y] + (1.0 + gamma)*occup[y] - 1.0;
   }
+  const vector<double>& edata = model.edata();
   vector<double> siteScore(npos);
   for (int x = 0; x < npos; x++) {
-    siteScore[x] = prefix[x+lnuc] - prefix[x];
+    // A start with +inf energy is forbidden, whatever the occupancy
+    siteScore[x] = (std::isinf(edata[x]) && edata[x] > 0)
+      ? NINF : prefix[x+lnuc] - prefix[x];
   }
   vector<double> stateScore(W, NINF);
   for (int k = lnuc-1; k < W; k++) stateScore[k] = -model.erep(k+1);

@@ -1,5 +1,6 @@
 # _exact.py
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -42,8 +43,13 @@ class TMBatchJob:
     edata: np.ndarray
     """The data energy of each molecule, shape (nmol_batch, nbp)."""
 
-    getters: tuple[tuple[str, dict], ...]
-    """The `(method_name, kwargs)` of each `NucPosTM` getter to call."""
+    getters: tuple[tuple[str | Callable, dict], ...]
+    """The `(getter, kwargs)` of each getter to call: a `NucPosTM`
+    method name, or a function `(tm, intervals, **kwargs)`."""
+
+    spanned: tuple[np.ndarray, np.ndarray] | None = None
+    """The `(intervals, offset)` of the batch's molecules, with offsets
+    from 0; None if every base pair is spanned."""
 
 
 @dataclass(frozen=True)
@@ -55,8 +61,12 @@ class TMStat:
     name: str
     """The key of the result in `dataset.analysis`."""
 
-    getter: str
-    """The name of the `NucPosTM` method that returns the value."""
+    getter: str | Callable
+    """The name of the `NucPosTM` method that returns the value, or a
+    function `(tm, intervals, **kwargs)`, where `intervals` holds the
+    molecule's spanned intervals (None if every base pair is spanned).
+    A function must be defined at module level, so worker processes can
+    import it."""
 
     kwargs: dict = field(default_factory=dict)
     """Keyword arguments passed to the getter."""
@@ -253,15 +263,23 @@ def _run_tm_batch(job):
         energy at every nucleosome start position), which is not solved.
     """
     results = []
-    for row in job.edata:
+    for i, row in enumerate(job.edata):
         if np.isnan(_start_positions(row, job.settings.lnuc)).all():
             results.append(None)
             continue
         tm = _build_tm(job.settings, job.nbp, row)
+        intervals = None
+        if job.spanned is not None:
+            spanned, offset = job.spanned
+            intervals = spanned[offset[i] : offset[i + 1]]
         results.append(
             tuple(
-                _lists_to_arrays(getattr(tm, name)(**kwargs))
-                for name, kwargs in job.getters
+                _lists_to_arrays(
+                    getter(tm, intervals, **kwargs)
+                    if callable(getter)
+                    else getattr(tm, getter)(**kwargs)
+                )
+                for getter, kwargs in job.getters
             )
         )
     return results
@@ -292,6 +310,30 @@ def _lists_to_arrays(value):
     return value
 
 
+def _batch_intervals(spanned, start, stop):
+    """
+    Return the spanned intervals of molecules `start:stop`.
+
+    Parameters
+    ----------
+    spanned : tuple of np.ndarray or None
+        `(intervals, offset)` of a region (see `SimDataset.spanned`).
+    start, stop : int
+        The molecule range.
+
+    Returns
+    -------
+    tuple of np.ndarray or None
+        `(intervals, offset)` of the molecules, with offsets from 0, or
+        None if `spanned` is None.
+    """
+    if spanned is None:
+        return None
+    intervals, offset = spanned
+    lo, hi = offset[start], offset[stop]
+    return np.array(intervals[lo:hi]), offset[start : stop + 1] - lo
+
+
 def _iter_tm_batches(dataset, regions, getters, batch_size, nworker):
     """
     Solve every molecule of `regions` once, in batches, possibly in parallel.
@@ -302,8 +344,9 @@ def _iter_tm_batches(dataset, regions, getters, batch_size, nworker):
         The TM dataset holding the settings and data energy.
     regions : iterable of str
         The regions to process.
-    getters : sequence of (str, dict)
-        The `(method_name, kwargs)` of each `NucPosTM` getter to call.
+    getters : sequence of (str or callable, dict)
+        The `(getter, kwargs)` of each getter to call (see
+        `TMBatchJob.getters`).
     batch_size : int
         The number of molecules per job.
     nworker : int
@@ -327,18 +370,21 @@ def _iter_tm_batches(dataset, regions, getters, batch_size, nworker):
         raise ValueError(f"batch_size must be positive, got {batch_size}")
     if nworker < 1:
         raise ValueError(f"nworker must be positive, got {nworker}")
-    getters = tuple((name, dict(kwargs)) for name, kwargs in getters)
+    getters = tuple((getter, dict(kwargs)) for getter, kwargs in getters)
 
     def jobs():
         for region in regions:
             settings = _region_settings(dataset, region)
             edata = dataset.edata[region]
+            spanned = dataset.spanned[region]
             for start in range(0, dataset.nmol[region], batch_size):
+                stop = min(start + batch_size, dataset.nmol[region])
                 yield TMBatchJob(
                     region=region,
                     start=start,
                     settings=settings,
                     nbp=dataset.nbp[region],
+                    spanned=_batch_intervals(spanned, start, stop),
                     edata=np.array(edata[start : start + batch_size]),
                     getters=getters,
                 )

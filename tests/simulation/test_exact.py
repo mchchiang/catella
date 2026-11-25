@@ -206,6 +206,78 @@ class TestTMStatsFixedWidth:
         assert stat.width(12) == expected
 
 
+def _interval_count(tm, intervals):
+    return -1.0 if intervals is None else float(len(intervals))
+
+
+def _first_start(tm, intervals, shift=0):
+    return float(intervals[0, 0] + shift)
+
+
+def _mean_n_and_intervals(tm, intervals):
+    return tm.getMeanN() + len(intervals)
+
+
+def _make_partial_tm_dataset(tmp_path):
+    rng = np.random.default_rng(6)
+    meth_prob = rng.uniform(0.05, 0.95, (4, 12))
+    meth_prob[0, :4] = np.nan
+    meth_prob[1, 3:7] = np.nan
+    meth_prob[3] = np.nan
+    return SimManager(nworker=1, verbose=False).run(
+        regions="chr1",
+        nsim=0,
+        method="tm",
+        settings=_make_tm_settings(),
+        meth_prob=meth_prob,
+        out_dir=tmp_path / "tm_partial",
+        seed=1,
+        fill_nan=0.5,
+    )
+
+
+class TestTMStatsPythonGetter:
+    @pytest.mark.parametrize("batch_size", [1, 2, 100])
+    @pytest.mark.parametrize("nworker", [1, 2])
+    def test_gets_each_molecule_intervals(self, tmp_path, batch_size, nworker):
+        dataset = _make_partial_tm_dataset(tmp_path)
+        _tm_stats(
+            dataset,
+            ["chr1"],
+            [TMStat("k", _interval_count)],
+            batch_size=batch_size,
+            nworker=nworker,
+        )
+        got = dataset.analysis["chr1"]["k"].to_numpy().ravel()
+        np.testing.assert_array_equal(got[:3], [1, 2, 1])
+        assert np.isnan(got[3])
+
+    def test_kwargs_are_passed(self, tmp_path):
+        dataset = _make_partial_tm_dataset(tmp_path)
+        stat = TMStat("s", _first_start, {"shift": 100})
+        _tm_stats(dataset, ["chr1"], [stat], batch_size=2)
+        got = dataset.analysis["chr1"]["s"].to_numpy().ravel()
+        np.testing.assert_array_equal(got[:3], [106, 100, 100])
+
+    def test_intervals_none_when_all_spanned(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path, nmol=3)
+        _tm_stats(dataset, ["chr1"], [TMStat("k", _interval_count)])
+        got = dataset.analysis["chr1"]["k"].to_numpy().ravel()
+        np.testing.assert_array_equal(got, [-1, -1, -1])
+
+    def test_mixed_with_cpp_getter(self, tmp_path):
+        dataset = _make_partial_tm_dataset(tmp_path)
+        stats = [
+            TMStat("n", "getMeanN"),
+            TMStat("m", _mean_n_and_intervals),
+        ]
+        _tm_stats(dataset, ["chr1"], stats, batch_size=3)
+        analysis = dataset.analysis["chr1"]
+        n = analysis["n"].to_numpy().ravel()
+        m = analysis["m"].to_numpy().ravel()
+        np.testing.assert_allclose(m[:3], n[:3] + [1, 2, 1])
+
+
 class TestTMConfigs:
     def test_stores_configs_energy_and_log_prob(self, tmp_path):
         dataset = _make_tm_dataset(tmp_path, nmol=3)

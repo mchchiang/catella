@@ -614,7 +614,10 @@ class MethPrintExperiment:
             Methyltransferase(s) used to generate the test data: 'A'
             (any-context adenine, e.g., EcoGII), 'CG' (CpG, e.g.,
             M.SssI), 'GC' (GpC, e.g., M.CviPI). One label, a list of
-            labels, or None (default) if unspecified.
+            labels, or None (default) if unspecified. If given, a call
+            is kept only if some label accepts both its position (with
+            `fasta_file`) and its `mod_code`: 'a' or '28871' (6mA) for
+            'A', 'm' or '27551' (5mC) for 'CG' and 'GC'.
         regions : str, pathlib.Path, or iterable, optional
             Regions to analyze: None (default) for every chromosome in
             `chromsize`; chromosome name(s), each a whole region; a
@@ -706,7 +709,8 @@ class MethPrintExperiment:
             `chromsize` or its end is past the chromosome's end, or
             if no interval region has molecules in every given file, or
             if `min_overlap` is negative, not an integer, or positive
-            with `wrap` True.
+            with `wrap` True, or if `mtase` is given and a file has
+            calls but none with a `mod_code` of `mtase`.
         TypeError
             If `regions` has an unsupported type or mixes names and
             tuples.
@@ -723,7 +727,9 @@ class MethPrintExperiment:
             rows are dropped. Also if some molecules' rows are not
             ordered along the reference; those get no internal gaps.
             Also if interval regions are dropped for lacking molecules
-            in some given file.
+            in some given file. Also if calls at positions of `mtase`
+            are dropped for their `mod_code` (e.g., 5mC calls at read
+            mismatches over a reference A with `mtase` 'A').
 
         Notes
         -----

@@ -75,10 +75,10 @@ def _write_settings_json(path, **overrides):
         json.dump(_settings_dict(**overrides), f)
 
 
-def _make_test_rows(nmol, nbp, seed=0, step=5):
+def _make_test_rows(nmol, nbp, seed=0, step=5, code="a"):
     rng = np.random.default_rng(seed)
     return [
-        (f"m{m}", pos, "chr1", "+", round(float(rng.random()), 3), "a")
+        (f"m{m}", pos, "chr1", "+", round(float(rng.random()), 3), code)
         for m in range(nmol)
         for pos in range(0, nbp, step)
     ]
@@ -175,7 +175,7 @@ class TestLoadRaw:
         assert got.raw["chr1"].refseq == "A" * 30
 
     def test_mtase_populates_experiment(self, tmp_path):
-        rows = _make_test_rows(nmol=5, nbp=30)
+        rows = _make_test_rows(nmol=5, nbp=30, code="m")
         test_file = tmp_path / "test.tsv"
         _write_tsv(test_file, rows)
         chromsize = tmp_path / "sizes.tsv"
@@ -518,7 +518,10 @@ class TestPlotDropoutEcdf:
         assert out_file.exists()
 
     def test_multi_regions_no_pooled_and_split_by(self, tmp_path):
-        rows = [("m0", i, "chr1", "+", 0.5, "a") for i in range(4)] + [
+        rows = [
+            ("m0", i, "chr1", "+", 0.5, "m" if i == 2 else "a")
+            for i in range(4)
+        ] + [
             ("m1", i, "chr2", "+", 0.5, "a") for i in range(2)
         ]
         test_file = tmp_path / "test.tsv"
@@ -839,8 +842,10 @@ class TestComputeModelProb:
         got = MethPrintExperiment.load(cli_out)
         assert got.global_analysis["meth_prob_params"]["span"][0] == "calls"
 
-    def _load_model_raw(self, tmp_path, extra=()):
-        rows = _make_test_rows(nmol=5, nbp=len(_MODEL_SEQ), step=1)
+    def _load_model_raw(self, tmp_path, extra=(), code="a"):
+        rows = _make_test_rows(
+            nmol=5, nbp=len(_MODEL_SEQ), step=1, code=code
+        )
         test_file = tmp_path / "test.tsv"
         _write_tsv(test_file, rows)
         chromsize = tmp_path / "sizes.tsv"
@@ -887,7 +892,9 @@ class TestComputeModelProb:
         assert set(eta_row.index) == {"eta_GCH", "eta_GCG"}
 
     def test_merged_channel_is_forwarded(self, tmp_path):
-        raw_file = self._load_model_raw(tmp_path, ("--mtase", "GC"))
+        raw_file = self._load_model_raw(
+            tmp_path, ("--mtase", "GC"), code="m"
+        )
         cli_out = tmp_path / "cli_exp.h5"
         result = runner.invoke(
             app,

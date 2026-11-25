@@ -1,5 +1,6 @@
 # test_load_raw.py
 
+import warnings
 from unittest.mock import patch
 
 import h5py
@@ -30,13 +31,13 @@ def _write_fasta(path, records):
         f.writelines(f">{region}\n{seq}\n" for region, seq in records.items())
 
 
-def _make_rows(region, mol_ids, positions, seed=0, strand="+"):
+def _make_rows(region, mol_ids, positions, seed=0, strand="+", code="a"):
     rng = np.random.default_rng(seed)
     rows = []
     for mol in mol_ids:
         for pos in positions:
             rows.append(
-                (mol, pos, region, strand, round(float(rng.random()), 4), "a")
+                (mol, pos, region, strand, round(float(rng.random()), 4), code)
             )
     return rows
 
@@ -985,7 +986,7 @@ class TestStrandConsistency:
 
     def test_respects_dinucleotide_context(self, tmp_path):
         seq = "ACAT"  # 'C' at index 1 not followed by 'G' -- not a CpG site
-        rows = [("m0", 1, "chr1", "+", 0.9, "a")]
+        rows = [("m0", 1, "chr1", "+", 0.9, "m")]
         test_file = tmp_path / "test.tsv"
         _write_tsv(test_file, rows)
         chromsize = tmp_path / "sizes.tsv"
@@ -1121,6 +1122,96 @@ class TestStrandConsistency:
         exp.close()
 
 
+class TestModCodes:
+    def _load(self, tmp_path, rows, seq=None, mtase="A", length=None):
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(test_file, rows)
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": length or len(seq)})
+        kwargs = {}
+        if seq is not None:
+            fasta_file = tmp_path / "ref.fa"
+            _write_fasta(fasta_file, {"chr1": seq})
+            kwargs["fasta_file"] = fasta_file
+        return MethPrintExperiment.load_raw(
+            chromsize=chromsize, test_file=test_file, mtase=mtase, **kwargs
+        )
+
+    def _calls(self, exp):
+        df = exp.raw["chr1"].test.data
+        return sorted(zip(df["pos"], df["mod_code"].astype(str)))
+
+    def test_c_calls_at_reference_a_dropped_and_warned(self, tmp_path):
+        rows = [
+            ("m0", 0, "chr1", "+", 0.5, "a"),
+            ("m0", 1, "chr1", "+", 0.4, "21839"),
+            ("m0", 1, "chr1", "+", 0.1, "m"),
+            ("m0", 2, "chr1", "+", 0.3, "a"),
+        ]
+        with pytest.warns(UserWarning, match=r"dropped 2 call\(s\)"):
+            exp = self._load(tmp_path, rows, seq="AAAA")
+        assert self._calls(exp) == [(0, "a"), (2, "a")]
+        dense = exp.to_dense("chr1", which="test")
+        assert dense.shape == (1, 4)
+        assert dense.iloc[0, 0] == pytest.approx(0.5)
+        assert np.isnan(dense.iloc[0, 1])
+        exp.close()
+
+    def test_chebi_code_kept(self, tmp_path):
+        rows = [("m0", 0, "chr1", "+", 0.5, "28871")]
+        exp = self._load(tmp_path, rows, seq="AAAA")
+        assert self._calls(exp) == [(0, "28871")]
+        exp.close()
+
+    def test_code_checked_per_label(self, tmp_path):
+        rows = [
+            ("m0", 0, "chr1", "+", 0.5, "m"),
+            ("m0", 2, "chr1", "+", 0.5, "a"),
+            ("m0", 2, "chr1", "+", 0.5, "m"),
+            ("m0", 3, "chr1", "+", 0.5, "a"),
+        ]
+        with pytest.warns(UserWarning, match=r"dropped 2 call\(s\)"):
+            exp = self._load(tmp_path, rows, seq="AGCA", mtase=["A", "GC"])
+        assert self._calls(exp) == [(2, "m"), (3, "a")]
+        exp.close()
+
+    def test_calls_at_non_target_bases_not_warned(self, tmp_path):
+        rows = [
+            ("m0", 0, "chr1", "+", 0.5, "a"),
+            ("m0", 1, "chr1", "+", 0.5, "m"),
+        ]
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            exp = self._load(tmp_path, rows, seq="AC")
+        assert self._calls(exp) == [(0, "a")]
+        exp.close()
+
+    def test_without_fasta_unknown_codes_dropped(self, tmp_path):
+        rows = [
+            ("m0", 0, "chr1", "+", 0.5, "a"),
+            ("m0", 1, "chr1", "+", 0.5, "m"),
+        ]
+        with pytest.warns(UserWarning, match=r"mod_code\(s\) \['m'\]"):
+            exp = self._load(tmp_path, rows, length=4)
+        assert self._calls(exp) == [(0, "a")]
+        exp.close()
+
+    def test_no_known_code_raises(self, tmp_path):
+        rows = [("m0", 0, "chr1", "+", 0.5, "x")]
+        with pytest.raises(ValueError, match="no call in .* has a mod_code"):
+            self._load(tmp_path, rows, seq="AAAA")
+
+    def test_no_mtase_keeps_every_code(self, tmp_path):
+        rows = [
+            ("m0", 0, "chr1", "+", 0.5, "a"),
+            ("m0", 1, "chr1", "+", 0.5, "m"),
+            ("m0", 2, "chr1", "+", 0.5, "x"),
+        ]
+        exp = self._load(tmp_path, rows, seq="AAAA", mtase=None)
+        assert self._calls(exp) == [(0, "a"), (1, "m"), (2, "x")]
+        exp.close()
+
+
 class TestMtase:
     def test_no_mtase_defaults_to_none(self, tmp_path):
         rows = _make_rows("chr1", ["m0"], [1, 2])
@@ -1136,7 +1227,7 @@ class TestMtase:
         exp.close()
 
     def test_single_string_normalized_to_tuple(self, tmp_path):
-        rows = _make_rows("chr1", ["m0"], [1, 2])
+        rows = _make_rows("chr1", ["m0"], [1, 2], code="m")
         test_file = tmp_path / "test.tsv"
         _write_tsv(test_file, rows)
         chromsize = tmp_path / "sizes.tsv"
@@ -1149,7 +1240,7 @@ class TestMtase:
         exp.close()
 
     def test_list_of_labels_preserved(self, tmp_path):
-        rows = _make_rows("chr1", ["m0"], [1, 2])
+        rows = _make_rows("chr1", ["m0"], [1, 2], code="m")
         test_file = tmp_path / "test.tsv"
         _write_tsv(test_file, rows)
         chromsize = tmp_path / "sizes.tsv"

@@ -162,6 +162,54 @@ def _methylatable_positions(refseq, mtase_label, strand):
     return mask
 
 
+# Modkit mod codes (letter and ChEBI) of the mark each mtase deposits
+_MTASE_MOD_CODES = {
+    "A": ("a", "28871"),
+    "CG": ("m", "27551"),
+    "GC": ("m", "27551"),
+}
+
+
+def _region_labels(mtase, refseq):
+    """
+    Accepted mod codes and methylatable positions of each label.
+
+    Parameters
+    ----------
+    mtase : tuple of str
+        Normalized methyltransferase labels.
+    refseq : str or None
+        Reference sequence of the region; None skips the base check.
+
+    Returns
+    -------
+    list of (tuple of str, (np.ndarray, np.ndarray) or None)
+        Per label, its mod codes and its methylatable positions on '+'
+        and '-' (None without `refseq`).
+    """
+    labels = []
+    for label in mtase:
+        masks = None
+        if refseq is not None:
+            masks = (
+                _methylatable_positions(refseq, label, "+"),
+                _methylatable_positions(refseq, label, "-"),
+            )
+        labels.append((_MTASE_MOD_CODES[label], masks))
+    return labels
+
+
+def _site_consistent(masks, upos, strand, ignore_strand):
+    """Bool mask of rows methylatable at their position and strand."""
+    plus, minus = masks
+    if ignore_strand:
+        return (plus | minus)[upos]
+    # Unmapped strand ('.') is not validated -- kept.
+    return np.where(
+        strand == "+", plus[upos], np.where(strand == "-", minus[upos], True)
+    )
+
+
 def _decompress_once(data_file, tmp_dir):
     """
     Inflate a compressed raw data file once to a local scratch copy, so
@@ -811,7 +859,8 @@ def _stream_rows_to_staging(
 
     Rows with a canonical call (`mod_code` of '-', i.e. no methylation
     signal) are dropped, since the emission model only considers sites
-    with an actual modification call.
+    with an actual modification call. With `mtase`, a row is kept only
+    if some label accepts both its `mod_code` and its position.
 
     Parameters
     ----------
@@ -852,8 +901,9 @@ def _stream_rows_to_staging(
         when it is None) are not filtered.
     mtase : tuple of str, optional
         Methyltransferase label(s) (as normalized by
-        `_normalize_mtase`) to validate rows against. If None, no
-        strand-consistency filtering is applied.
+        `_normalize_mtase`) to validate rows against (mod code and
+        position, see `_MTASE_MOD_CODES`). If None, no row is dropped
+        for its mod code or position.
     ignore_strand : bool, default False
         If True, a row is kept if its `upos` is methylatable by any
         `mtase` label on either strand, instead of only the row's own
@@ -878,7 +928,14 @@ def _stream_rows_to_staging(
         unaligned bases), or come from secondary or supplementary
         alignments (per a `flag` column); those rows are dropped. Also
         if some molecules' rows are not ordered along the reference;
-        those molecules get no gaps.
+        those molecules get no gaps. Also if calls at positions
+        methylatable by `mtase` are dropped for their mod code.
+
+    Raises
+    ------
+    ValueError
+        If `mtase` is given and the file has calls of accepted
+        molecules, but none with a mod code of `mtase`.
     """
     n_out = {}
     trackers = None
@@ -887,15 +944,14 @@ def _stream_rows_to_staging(
             chrom: _GapTracker(len(m["mol_id"]), min_gap)
             for chrom, m in src_maps.items()
         }
-    valid_by_region = {}
-    if mtase is not None and refseq_by_region is not None:
-        for region, seq in refseq_by_region.items():
-            plus = np.zeros(len(seq), dtype=bool)
-            minus = np.zeros(len(seq), dtype=bool)
-            for label in mtase:
-                plus |= _methylatable_positions(seq, label, "+")
-                minus |= _methylatable_positions(seq, label, "-")
-            valid_by_region[region] = (plus, minus)
+    labels_by_region = {}
+    if mtase is not None:
+        refseqs = refseq_by_region or {}
+        labels_by_region = {
+            region: _region_labels(mtase, refseqs.get(region))
+            for region in mol_maps
+        }
+    stats = _CodeStats()
 
     needed = ["mol_id", "upos", "chrom", "strand", "mod_qual", "mod_code"]
     if "flag" in name_for:
@@ -937,13 +993,16 @@ def _stream_rows_to_staging(
                 out = _stage_region_rows(
                     rows,
                     mol_maps[region]["index"],
-                    valid_by_region.get(region),
+                    labels_by_region.get(region),
                     ignore_strand,
                     reg.end - reg.start if wrap else None,
+                    stats,
                 )
                 if out is not None:
                     appenders[region].append(out)
 
+    if mtase is not None:
+        stats.report(data_file, mtase)
     if n_non_primary:
         _warn(
             f"dropped {n_non_primary} row(s) of secondary or "
@@ -975,7 +1034,57 @@ def _stream_rows_to_staging(
     return gaps
 
 
-def _stage_region_rows(rows, index, masks, ignore_strand, fold_length):
+class _CodeStats:
+    """
+    Counts of the calls of one file checked against `mtase` labels.
+
+    Attributes
+    ----------
+    nseen : int
+        Calls (not '-') of accepted molecules.
+    nknown : int
+        Of those, calls whose mod code some label accepts.
+    codes : set of str
+        Mod codes of the calls seen.
+    dropped : dict of str to int
+        Per mod code, calls at a position methylatable by some label
+        but dropped for their mod code.
+    """
+
+    def __init__(self):
+        self.nseen = 0
+        self.nknown = 0
+        self.codes = set()
+        self.dropped = {}
+
+    def update(self, code, seen, known, dropped):
+        """Add the counts of one batch of rows (bool masks)."""
+        self.nseen += int(seen.sum())
+        self.nknown += int(known.sum())
+        self.codes.update(np.unique(code[seen]).tolist())
+        names, counts = np.unique(code[dropped], return_counts=True)
+        for name, n in zip(names.tolist(), counts.tolist()):
+            self.dropped[name] = self.dropped.get(name, 0) + n
+
+    def report(self, data_file, mtase):
+        """Raise if no call has a known mod code; warn about drops."""
+        if self.nseen and not self.nknown:
+            raise ValueError(
+                f"no call in {data_file} has a mod_code of mtase "
+                f"{list(mtase)}; found mod_code(s) {sorted(self.codes)}"
+            )
+        if self.dropped:
+            n = sum(self.dropped.values())
+            _warn(
+                f"dropped {n} call(s) with mod_code(s) "
+                f"{sorted(self.dropped)} not used by mtase {list(mtase)} "
+                f"in {data_file}"
+            )
+
+
+def _stage_region_rows(
+    rows, index, labels, ignore_strand, fold_length, stats=None
+):
     """
     Filter and transform the rows of one region for staging.
 
@@ -985,13 +1094,16 @@ def _stage_region_rows(rows, index, masks, ignore_strand, fold_length):
         Rows of the region, in region coordinates.
     index : dict of str to int
         mol_id -> mol_index of the region's accepted molecules.
-    masks : (np.ndarray, np.ndarray) or None
-        Methylatable positions on '+' and '-' (see `mtase` of
-        `_stream_rows_to_staging`); None skips the strand check.
+    labels : list or None
+        Per `mtase` label, its mod codes and methylatable positions
+        (see `_region_labels`); a row is kept if some label accepts
+        both. None keeps every call.
     ignore_strand : bool
         Accept a row methylatable on either strand.
     fold_length : int or None
         Unfolded length, if positions are folded (`wrap`).
+    stats : _CodeStats, optional
+        Updated with the mod code counts if `labels` is given.
 
     Returns
     -------
@@ -1000,21 +1112,27 @@ def _stage_region_rows(rows, index, masks, ignore_strand, fold_length):
         are kept.
     """
     mol_index = rows["mol_id"].map(index)
-    keep = mol_index.notna().to_numpy() & (rows["mod_code"].to_numpy() != "-")
-    if masks is not None:
-        plus, minus = masks
+    code = rows["mod_code"].to_numpy().astype(str)
+    keep = mol_index.notna().to_numpy() & (code != "-")
+    if labels is not None:
         upos = rows["upos"].to_numpy()
-        if ignore_strand:
-            consistent = (plus | minus)[upos]
-        else:
-            strand = rows["strand"].to_numpy()
-            # Unmapped strand ('.') is not validated -- kept.
-            consistent = np.where(
-                strand == "+",
-                plus[upos],
-                np.where(strand == "-", minus[upos], True),
+        strand = rows["strand"].to_numpy()
+        known = np.zeros(len(rows), dtype=bool)
+        site = np.zeros(len(rows), dtype=bool)
+        both = np.zeros(len(rows), dtype=bool)
+        for codes, masks in labels:
+            label_code = np.isin(code, codes)
+            label_site = (
+                np.ones(len(rows), dtype=bool)
+                if masks is None
+                else _site_consistent(masks, upos, strand, ignore_strand)
             )
-        keep &= consistent
+            known |= label_code
+            site |= label_site
+            both |= label_code & label_site
+        if stats is not None:
+            stats.update(code, keep, keep & known, keep & site & ~both)
+        keep &= both
     if not keep.any():
         return None
     rows = rows.loc[keep]

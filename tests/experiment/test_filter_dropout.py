@@ -145,10 +145,10 @@ class TestDinucleotideContext:
     # refseq "CG": CG+ -> idx0 (the C); CG- -> idx1.
     def test_cg_strand_offset(self, tmp_path):
         rows = [
-            ("plus_at_0", 0, "chr1", "+", 0.5, "a"),
-            ("plus_at_1", 1, "chr1", "+", 0.5, "a"),
-            ("minus_at_1", 1, "chr1", "-", 0.5, "a"),
-            ("minus_at_0", 0, "chr1", "-", 0.5, "a"),
+            ("plus_at_0", 0, "chr1", "+", 0.5, "m"),
+            ("plus_at_1", 1, "chr1", "+", 0.5, "m"),
+            ("minus_at_1", 1, "chr1", "-", 0.5, "m"),
+            ("minus_at_0", 0, "chr1", "-", 0.5, "m"),
         ]
         exp = _load(tmp_path, "CG", rows, mtase="CG")
         exp.filter_dropout(which="test", thres_max=0.2)
@@ -165,10 +165,10 @@ class TestDinucleotideContext:
     # refseq "GC": GC+ -> idx1 (the C); GC- -> idx0.
     def test_gc_strand_offset(self, tmp_path):
         rows = [
-            ("plus_at_1", 1, "chr1", "+", 0.5, "a"),
-            ("plus_at_0", 0, "chr1", "+", 0.5, "a"),
-            ("minus_at_0", 0, "chr1", "-", 0.5, "a"),
-            ("minus_at_1", 1, "chr1", "-", 0.5, "a"),
+            ("plus_at_1", 1, "chr1", "+", 0.5, "m"),
+            ("plus_at_0", 0, "chr1", "+", 0.5, "m"),
+            ("minus_at_0", 0, "chr1", "-", 0.5, "m"),
+            ("minus_at_1", 1, "chr1", "-", 0.5, "m"),
         ]
         exp = _load(tmp_path, "GC", rows, mtase="GC")
         exp.filter_dropout(which="test", thres_max=0.2)
@@ -189,7 +189,7 @@ class TestMultiLabel:
         exp = _load(
             tmp_path,
             "AGCGA",
-            [("m0", 2, "chr1", "+", 0.5, "a")],
+            [("m0", 2, "chr1", "+", 0.5, "m")],
             mtase=["CG", "GC"],
         )
         exp.filter_dropout(which="test", thres_max=0.2, method="separate")
@@ -534,7 +534,11 @@ class TestDropoutFractions:
     def test_both_c_mtases_default_unmerged(self, tmp_path):
         # "AGCAACGAGCG", + strand: A at 0,3,4,7; GCH at 2; HCG at 5;
         # GCG at 9. m0 covers 0, 2, 9.
-        rows = [("m0", i, "chr1", "+", 0.5, "a") for i in (0, 2, 9)]
+        rows = [
+            ("m0", 0, "chr1", "+", 0.5, "a"),
+            ("m0", 2, "chr1", "+", 0.5, "m"),
+            ("m0", 9, "chr1", "+", 0.5, "m"),
+        ]
         exp = _load(
             tmp_path, "AGCAACGAGCG", rows, mtase=["A", "CG", "GC"]
         )
@@ -688,7 +692,7 @@ class TestNoSites:
         exp = _load(
             tmp_path,
             "AGCGA",
-            [("m0", 2, "chr1", "+", 0.5, "a")],
+            [("m0", 2, "chr1", "+", 0.5, "m")],
             mtase=["CG", "GC"],
         )
         fracs = exp.dropout_fractions(which="test")

@@ -907,6 +907,37 @@ class TestOccupSpanned:
         link = ana.sort_by_linkage(dataset, config_name="bm")
         assert link["chr1"].shape == (2, 4)
 
+    def test_linker_hist_sums_spanned_intervals(self, tmp_path):
+        dataset = _run_partial(tmp_path, "tm")
+        SimAnalysis().compute_linker_hist(dataset=dataset, lmax=4)
+        hist = dataset.analysis["chr1"]["linker_hist"].to_numpy()
+        pieces = [[(8, 20)], [(0, 8), (14, 20)], [(0, 20)]]
+        for mol, windows in enumerate(pieces):
+            tm = _direct_tm(dataset, mol, _make_tm_settings())
+            expected = sum(
+                np.asarray(tm.getLinkerHist(4, lo, hi)) for lo, hi in windows
+            )
+            np.testing.assert_allclose(hist[mol], expected)
+
+    def test_linker_hist_trims_each_interval(self, tmp_path):
+        dataset = _run_partial(tmp_path, "tm")
+        SimAnalysis().compute_linker_hist(dataset=dataset, lmax=4, trim=1)
+        hist = dataset.analysis["chr1"]["linker_hist"].to_numpy()
+        pieces = [[(9, 19)], [(1, 7)], [(1, 19)]]
+        for mol, windows in enumerate(pieces):
+            tm = _direct_tm(dataset, mol, _make_tm_settings())
+            expected = sum(
+                np.asarray(tm.getLinkerHist(4, lo, hi)) for lo, hi in windows
+            )
+            np.testing.assert_allclose(hist[mol], expected)
+
+    def test_linker_hist_no_fill_nan_warning_with_spanned(
+        self, tmp_path, recwarn
+    ):
+        dataset = _run_partial(tmp_path, "tm")
+        SimAnalysis().compute_linker_hist(dataset=dataset, lmax=4)
+        assert not [w for w in recwarn if "fill_nan" in str(w.message)]
+
     def test_compute_var_occup_nan_at_unspanned_bp(self, tmp_path):
         dataset = _run_partial(tmp_path, "tm")
         SimAnalysis().compute_var_occup(dataset=dataset)

@@ -16,6 +16,7 @@ from catella.h5_array import H5Array
 from catella.simulation._exact import (
     TM_BATCH_SIZE,
     TMStat,
+    _linker_hist,
     _mean_nnuc,
     _nan_unspanned,
     _region_settings,
@@ -996,9 +997,9 @@ class SimAnalysis:
 
         The histogram reflects both the spacing of the nucleosomes and
         the uncertainty of their positions, which widens it; a strongly
-        positioned array (e.g., the 601) shows how much. The results
-        assume that each molecule is read along the whole fiber; linkers
-        in regions filled by `fill_nan` follow the prior.
+        positioned array (e.g., the 601) shows how much. Only linkers
+        within one spanned interval of the molecule are counted (see
+        `SimDataset.spanned`), so none cross a gap or a read end.
 
         Parameters
         ----------
@@ -1014,8 +1015,9 @@ class SimAnalysis:
             it use the whole fiber; extra keys are ignored). If None
             (default), the whole fiber.
         trim : int, default 0
-            Number of base pairs removed from each end of the window,
-            e.g., to drop nucleosomes near the fiber ends.
+            Number of base pairs removed from each end of the window and
+            of each spanned interval, e.g., to drop nucleosomes near the
+            fiber or read ends.
         regions : str or iterable of str, optional
             The region(s) to process. If None (default), all regions
             in the dataset are analyzed.
@@ -1044,8 +1046,9 @@ class SimAnalysis:
         Warns
         -----
         UserWarning
-            If the dataset was created with `fill_nan`, since linkers in
-            filled regions are counted.
+            If the dataset was created with `fill_nan` but stores no
+            spanned base pairs for the regions (older datasets), since
+            linkers in filled regions are then counted.
         """
         _check_nonneg_int(lmax, "lmax")
         _check_nonneg_int(trim, "trim")
@@ -1061,7 +1064,8 @@ class SimAnalysis:
             )
             for region in regions
         }
-        if dataset.nan_fill is not None:
+        unspanned = all(dataset.spanned[r] is None for r in regions)
+        if dataset.nan_fill is not None and unspanned:
             _warn(
                 f"dataset was created with fill_nan={dataset.nan_fill!r}; "
                 "linkers in filled regions, if any, are counted"
@@ -1071,8 +1075,8 @@ class SimAnalysis:
             xlo, xhi = windows[region]
             stat = TMStat(
                 name,
-                "getLinkerHist",
-                {"lmax": lmax, "xlo": xlo, "xhi": xhi},
+                _linker_hist,
+                {"lmax": lmax, "xlo": xlo, "xhi": xhi, "trim": trim},
                 ncol=lmax + 2,
                 columns=columns,
             )

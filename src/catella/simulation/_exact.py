@@ -464,6 +464,26 @@ def _var_nnuc(tm, intervals, settings, dmu=1e-4):
     return temp * temp * d2
 
 
+def _linker_hist(tm, intervals, settings, lmax, xlo, xhi, trim):
+    """
+    Linker histogram within the spanned intervals (a `TMStat` getter).
+
+    Sums `getLinkerHist` over each spanned interval intersected with the
+    window `[xlo, xhi)` (already trimmed), after removing `trim` bp
+    from each interval end; intervals too short for two nucleosomes
+    add nothing. The plain `getLinkerHist` if every base pair is
+    spanned.
+    """
+    if intervals is None:
+        return tm.getLinkerHist(lmax, xlo, xhi)
+    total = np.zeros(lmax + 2)
+    for a, b in intervals:
+        lo, hi = max(int(a) + trim, xlo), min(int(b) - trim, xhi)
+        if hi - lo >= 2 * settings.lnuc:
+            total += np.asarray(tm.getLinkerHist(lmax, lo, hi))
+    return total
+
+
 def _iter_tm_batches(dataset, regions, getters, batch_size, nworker):
     """
     Solve every molecule of `regions` once, in batches, possibly in parallel.

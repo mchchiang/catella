@@ -972,16 +972,16 @@ class TestSortByLinkage:
         _, want = utils.compute_linkage(smoothed)
         np.testing.assert_allclose(link_mats["chr1"], want)
 
-    def test_mask_name_needs_fill_nan(self):
+    def test_mask_name_works_with_and_without_fill_nan(self):
         exp = _make_experiment(nmol=6, nbp=10)
         keep = np.array([i not in (1, 3) for i in range(6)])
         exp.analysis["chr1"]["meth_drop"] = pd.DataFrame({"keep": keep})
         ana = MethPrintAnalysis()
 
-        with pytest.raises(ValueError, match="2 of 6 rows have no data"):
-            ana.sort_by_linkage(
-                exp=exp, raw_which="meth", mask_name="drop", batch_size=2
-            )
+        link_mats = ana.sort_by_linkage(
+            exp=exp, raw_which="meth", mask_name="drop", batch_size=2
+        )
+        assert np.isfinite(link_mats["chr1"]).all()
         link_mats = ana.sort_by_linkage(
             exp=exp,
             raw_which="meth",
@@ -1005,8 +1005,10 @@ class TestSortByLinkage:
         smoothed[0, :] = np.nan
         exp.analysis["chr1"]["test_nan"] = pd.DataFrame(smoothed)
 
-        with pytest.raises(ValueError):
-            ana.sort_by_linkage(exp=exp, data_name="test_nan", batch_size=2)
+        link_mats = ana.sort_by_linkage(
+            exp=exp, data_name="test_nan", batch_size=2
+        )
+        assert np.isfinite(link_mats["chr1"]).all()
 
         link_mats = ana.sort_by_linkage(
             exp=exp, data_name="test_nan", batch_size=2, fill_nan="mean"

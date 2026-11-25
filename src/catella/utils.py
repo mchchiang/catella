@@ -97,11 +97,10 @@ def compute_linkage(
     fill_nan : {"mean"}, float, or None, default None
         How to handle `nan` values before computing distances. If
         None (default), `nan` is instead handled by masking (see
-        Notes below), which can leave some pairwise distances
-        undefined. If "mean", each `nan` is replaced by its column's
+        Notes below). If "mean", each `nan` is replaced by its column's
         mean (ignoring `nan`); columns that are entirely `nan` fall
         back to 0.0. If a number, every `nan` is replaced by that
-        constant. Either mode guarantees finite pairwise distances.
+        constant.
 
     Returns
     -------
@@ -114,8 +113,8 @@ def compute_linkage(
     Raises
     ------
     ValueError
-        If `fill_nan` is invalid, or if `fill_nan` is None and some row is
-        nan in every column (its distances are undefined).
+        If `fill_nan` is invalid, or if `nan` is present with
+        `fill_nan` None and a metric other than "euclidean".
 
     Warns
     -----
@@ -128,16 +127,15 @@ def compute_linkage(
 
     Notes
     -----
-    By default (`fill_nan=None`), rows with `nan` (e.g. missing
-    coverage, or unfilled `smooth` edges) are handled by masking:
+    By default (`fill_nan=None`), rows with `nan` (e.g. unspanned
+    positions, or unfilled `smooth` edges) are handled by masking:
     each distance uses only the jointly non-`nan` columns of that
     pair, scaled to the full column count. Only implemented for
     `metric="euclidean"`; other metrics raise `ValueError` if any
-    row-block being compared contains `nan`. Rows that are entirely
-    `nan` (e.g. molecules with no data) are rejected up front. A pair
-    of partly-`nan` rows that shares no non-`nan` column still has an
-    undefined distance, which `scipy.cluster.hierarchy.linkage` rejects
-    with `ValueError`; use `fill_nan` to avoid both.
+    row-block being compared contains `nan`. Pairs that share no
+    non-`nan` column, including rows that are entirely `nan` (e.g.
+    molecules with no data), get the largest defined distance, so
+    unknown similarity counts as dissimilar.
     """
     if (
         fill_nan is not None
@@ -149,13 +147,6 @@ def compute_linkage(
         )
 
     nrow = matrix.shape[0]
-    if fill_nan is None:
-        n_empty = _count_nan_rows(matrix, batch_size)
-        if n_empty:
-            raise ValueError(
-                f"{n_empty} of {nrow} rows have no data (all nan), so "
-                "their distances are undefined; pass fill_nan"
-            )
     if nrow > _CLUSTER_WARN_ROWS:
         _warn(
             f"clustering {nrow} rows requires an {nrow}x{nrow} pairwise "
@@ -172,66 +163,82 @@ def compute_linkage(
             fill_nan=fill_nan,
         )
     else:
-        dense = np.asarray(matrix)
+        dense = np.asarray(matrix, dtype=np.float64)
         if fill_nan is not None:
             dense = _apply_fill_nan(dense, fill_nan)
             has_nan = False
         else:
             has_nan = np.isnan(dense).any()
-        dist_vec = pdist(dense, metric=_resolve_metric(metric, has_nan))
+        _check_nan_metric(metric, has_nan)
+        if has_nan:
+            full = _nan_euclidean_block(dense, dense)
+            np.fill_diagonal(full, 0.0)
+            dist_vec = squareform(full, checks=False)
+        else:
+            dist_vec = pdist(dense, metric=metric)
+    dist_vec = _fill_undefined(dist_vec)
 
     link_mat = sch.linkage(dist_vec, method=method)
     order = sch.leaves_list(link_mat)
     return order, link_mat
 
 
-def _count_nan_rows(matrix, batch_size):
+def _nan_euclidean_block(a, b):
     """
-    Count the rows of `matrix` that are nan in every column.
+    Euclidean distances between the rows of `a` and `b`, using only
+    jointly observed columns, scaled up to the full column count (as
+    sklearn's `nan_euclidean_distances`); nan for pairs that share no
+    observed column.
 
     Parameters
     ----------
-    matrix : H5Array, pd.DataFrame, or np.ndarray
-        2D data.
-    batch_size : int
-        Number of rows read per batch when `matrix` is an `H5Array`.
+    a, b : np.ndarray
+        float, (m, p) and (n, p).
 
     Returns
     -------
-    int
-        The number of all-nan rows.
+    np.ndarray
+        float64, (m, n).
     """
-    if not isinstance(matrix, H5Array):
-        dense = np.asarray(matrix, dtype=np.float64)
-        return int(np.isnan(dense).all(axis=1).sum())
-    count = 0
-    for start, stop in _row_batches(0, matrix.shape[0], batch_size):
-        block = np.asarray(matrix[start:stop, :], dtype=np.float64)
-        count += int(np.isnan(block).all(axis=1).sum())
-    return count
+    a = np.asarray(a, dtype=np.float64)
+    b = np.asarray(b, dtype=np.float64)
+    mask_a = (~np.isnan(a)).astype(np.float64)
+    mask_b = (~np.isnan(b)).astype(np.float64)
+    a0, b0 = np.nan_to_num(a), np.nan_to_num(b)
+    sq = (a0 * a0) @ mask_b.T + mask_a @ (b0 * b0).T - 2.0 * (a0 @ b0.T)
+    count = mask_a @ mask_b.T
+    with np.errstate(invalid="ignore", divide="ignore"):
+        d2 = a.shape[1] / count * np.maximum(sq, 0.0)
+    return np.where(count > 0, np.sqrt(d2), np.nan)
 
 
-def _nan_euclidean(u, v):
-    # Euclidean distance using only jointly-observed columns, scaled
-    # up to the full column count -- matches
-    # sklearn.metrics.pairwise.nan_euclidean_distances.
-    mask = ~np.isnan(u) & ~np.isnan(v)
-    n_present = mask.sum()
-    if n_present == 0:
-        return np.nan
-    sq = np.sum((u[mask] - v[mask]) ** 2)
-    return np.sqrt(len(u) / n_present * sq)
-
-
-def _resolve_metric(metric, has_nan):
-    if not has_nan:
-        return metric
-    if metric != "euclidean":
+def _check_nan_metric(metric, has_nan):
+    """Raise if nan-masked distances are needed for another metric."""
+    if has_nan and metric != "euclidean":
         raise ValueError(
             "NaN-masked distances are only supported for "
             f"metric='euclidean', got {metric!r} with nan present"
         )
-    return _nan_euclidean
+
+
+def _block_distances(a, b, metric, has_nan):
+    """Distances between the rows of `a` and `b` (nan-masked if needed)."""
+    _check_nan_metric(metric, has_nan)
+    if has_nan:
+        return _nan_euclidean_block(a, b)
+    return cdist(a, b, metric=metric)
+
+
+def _fill_undefined(dist_vec):
+    """
+    Replace undefined (nan) distances by the largest defined one, in
+    place: pairs that share no observed column count as dissimilar.
+    """
+    undefined = np.isnan(dist_vec)
+    if undefined.any():
+        finite = dist_vec[~undefined]
+        dist_vec[undefined] = finite.max() if finite.size else 0.0
+    return dist_vec
 
 
 def _apply_fill_nan(dense, fill_nan):
@@ -278,13 +285,7 @@ def _streamed_pdist(h5arr, *, metric, batch_size, dir, fill_nan=None):
             row_block = np.empty((a1 - a0, nrow), dtype=np.float64)
             for b0, b1 in _row_batches(0, nrow, batch_size):
                 if b0 == a0:
-                    if a1 - a0 == 1:
-                        row_block[:, b0:b1] = 0.0
-                    else:
-                        m = _resolve_metric(metric, has_nan_a)
-                        row_block[:, b0:b1] = squareform(
-                            pdist(block_a, metric=m)
-                        )
+                    block_b, has_nan_b = block_a, has_nan_a
                 else:
                     block_b = h5arr[b0:b1, :]
                     if fill_values is not None:
@@ -294,8 +295,11 @@ def _streamed_pdist(h5arr, *, metric, batch_size, dir, fill_nan=None):
                         has_nan_b = False
                     else:
                         has_nan_b = np.isnan(block_b).any()
-                    m = _resolve_metric(metric, has_nan_a or has_nan_b)
-                    row_block[:, b0:b1] = cdist(block_a, block_b, metric=m)
+                row_block[:, b0:b1] = _block_distances(
+                    block_a, block_b, metric, has_nan_a or has_nan_b
+                )
+                if b0 == a0:
+                    np.fill_diagonal(row_block[:, b0:b1], 0.0)
             dist.write_batch(a0, a1, row_block)
         dense = dist.to_numpy()
         return squareform(dense, checks=False)

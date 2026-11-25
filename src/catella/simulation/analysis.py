@@ -1426,10 +1426,9 @@ class SimAnalysis:
             Molecules are clustered by their footprints (1 occupied, 0
             linker, nan unspanned): with the default ward/euclidean, the
             distance of two molecules is the square root of the number of
-            base pairs where their calls differ. Molecules with no data
-            are nan rows, so
-            they need `fill_nan`. The footprints are streamed through a
-            temporary float32 file in batches of `batch_size`.
+            base pairs where their calls differ. The footprints are
+            streamed through a temporary float32 file in batches of
+            `batch_size`.
         store_link_mat : bool, default True
             Whether to also persist the linkage matrix into
             `dataset.analysis[region][link_mat_name]`. If False, the
@@ -1447,8 +1446,8 @@ class SimAnalysis:
             Number of rows processed (and held in memory) per batch.
         fill_nan : {"mean"}, float, or None, default None
             How to handle `nan` values, forwarded to
-            `utils.compute_linkage`. Molecules with no data (all nan,
-            see `SimDataset.no_data`) need it.
+            `utils.compute_linkage`; by default, distances use only
+            positions both molecules have.
 
         Returns
         -------
@@ -1465,8 +1464,7 @@ class SimAnalysis:
             If `data_name` (or the configurations of `config_name`) is not
             found for any of the selected regions.
         ValueError
-            If both `data_name` and `config_name` are given, or if some
-            molecule has no data and `fill_nan` is None.
+            If both `data_name` and `config_name` are given.
 
         Warns
         -----

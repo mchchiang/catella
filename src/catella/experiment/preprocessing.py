@@ -842,7 +842,7 @@ class MethPrintAnalysis:
             `exp.to_dense(region, which=raw_which, mask_name=mask_name)`
             so molecules flagged as dropout by a prior
             `filter_dropout(mask_name=mask_name)` call are excluded
-            (returned as all-NaN rows, which need `fill_nan`).
+            (returned as all-NaN rows).
         store_link_mat : bool, default True
             Whether to also persist each region's linkage matrix
             into `exp.analysis[region][link_mat_name]`. If False, the
@@ -875,8 +875,7 @@ class MethPrintAnalysis:
         Raises
         ------
         ValueError
-            If `mask_name` is given but `raw_which` is None, or if some
-            molecule has no data (all nan) and `fill_nan` is None.
+            If `mask_name` is given but `raw_which` is None.
         KeyError
             If `raw_which` is None, `data_name` is not `"test_smoothed"`
             (its default), and not found in `exp.analysis[region]` for

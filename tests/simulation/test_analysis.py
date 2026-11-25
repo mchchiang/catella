@@ -308,10 +308,10 @@ class TestSortByLinkage:
         occup[0, :] = np.nan
         dataset.analysis["chr1"]["occup_nan"] = pd.DataFrame(occup)
 
-        with pytest.raises(ValueError, match="1 of 5 rows have no data"):
-            ana.sort_by_linkage(
-                dataset=dataset, data_name="occup_nan", batch_size=2
-            )
+        link_mats = ana.sort_by_linkage(
+            dataset=dataset, data_name="occup_nan", batch_size=2
+        )
+        assert np.isfinite(link_mats["chr1"]).all()
 
         link_mats = ana.sort_by_linkage(
             dataset=dataset,
@@ -381,10 +381,10 @@ class TestSortByConfig:
         )
         np.testing.assert_allclose(batched["chr1"], full["chr1"])
 
-    def test_no_data_molecule_needs_fill_nan(self, tmp_path):
+    def test_no_data_molecule_clusters_without_fill_nan(self, tmp_path):
         dataset = _calls_dataset(tmp_path)
-        with pytest.raises(ValueError, match="1 of 8 rows have no data"):
-            SimAnalysis().sort_by_linkage(dataset, config_name="bm")
+        link = SimAnalysis().sort_by_linkage(dataset, config_name="bm")
+        assert np.isfinite(link["chr1"]).all()
 
     def test_data_name_and_config_name_raises(self, tmp_path):
         dataset = _calls_dataset(tmp_path)

@@ -186,8 +186,9 @@ class TestSortByLinkage:
         occup[0, :] = np.nan
         dataset.analysis["chr1"]["occup_nan"] = pd.DataFrame(occup)
 
-        with pytest.raises(ValueError):
-            catella.sort_by_linkage(dataset=dataset, data_name="occup_nan")
+        catella.sort_by_linkage(dataset=dataset, data_name="occup_nan")
+        link_mat = dataset.analysis["chr1"]["occup_nan_linkage"].to_numpy()
+        assert np.isfinite(link_mat).all()
 
         catella.sort_by_linkage(
             dataset=dataset, data_name="occup_nan", fill_nan="mean"

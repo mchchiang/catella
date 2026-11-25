@@ -1,6 +1,5 @@
 # test_cli.py
 
-import gc
 import io
 import json
 
@@ -1856,7 +1855,7 @@ class TestSortByLinkage:
         reloaded = SimDataset.load(dataset._dataset_file)
         assert "best_match_linkage" in reloaded.analysis["chr1"]
 
-    def test_fill_nan_avoids_crash_on_all_nan_row(self, tmp_path):
+    def test_all_nan_row_clusters_without_fill_nan(self, tmp_path):
         dataset = _make_dataset(tmp_path, nmol=6, nbp=10)
         SimAnalysis().compute_occup(dataset=dataset)
         occup = dataset.analysis["chr1"]["occup"].to_numpy()
@@ -1864,7 +1863,7 @@ class TestSortByLinkage:
         dataset.analysis["chr1"]["occup_nan"] = pd.DataFrame(occup)
         dataset.save()
 
-        no_fill = runner.invoke(
+        result = runner.invoke(
             app,
             [
                 "sort_by_linkage",
@@ -1875,11 +1874,18 @@ class TestSortByLinkage:
                 "occup_nan",
             ],
         )
-        assert no_fill.exit_code != 0
-        # Drop the retained traceback, which keeps the failed
-        # invocation's own file handle open otherwise.
-        del no_fill
-        gc.collect()
+        assert result.exit_code == 0, result.output
+        reloaded = SimDataset.load(dataset._dataset_file)
+        link_mat = reloaded.analysis["chr1"]["occup_nan_linkage"].to_numpy()
+        assert np.isfinite(link_mat).all()
+
+    def test_fill_nan_avoids_crash_on_all_nan_row(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=6, nbp=10)
+        SimAnalysis().compute_occup(dataset=dataset)
+        occup = dataset.analysis["chr1"]["occup"].to_numpy()
+        occup[0, :] = np.nan
+        dataset.analysis["chr1"]["occup_nan"] = pd.DataFrame(occup)
+        dataset.save()
 
         result = runner.invoke(
             app,

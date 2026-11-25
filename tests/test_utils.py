@@ -133,6 +133,62 @@ def test_nan_masked_distance_matches_reference(as_h5array):
     np.testing.assert_allclose(link_mat, ref_link)
 
 
+def _pair_nan_euclidean(u, v):
+    mask = ~np.isnan(u) & ~np.isnan(v)
+    if not mask.any():
+        return np.nan
+    return np.sqrt(len(u) / mask.sum() * np.sum((u[mask] - v[mask]) ** 2))
+
+
+def test_nan_euclidean_block_matches_pairwise():
+    rng = np.random.default_rng(12)
+    a = rng.random((6, 8))
+    b = rng.random((5, 8))
+    a[rng.random(a.shape) < 0.3] = np.nan
+    b[rng.random(b.shape) < 0.3] = np.nan
+    a[2] = np.nan
+    got = utils._nan_euclidean_block(a, b)
+    want = np.array([[_pair_nan_euclidean(u, v) for v in b] for u in a])
+    np.testing.assert_allclose(got, want, equal_nan=True)
+
+
+@pytest.mark.parametrize("as_h5array", [False, True])
+def test_pairs_without_overlap_get_largest_distance(as_h5array):
+    data = np.array(
+        [
+            [0.0, 1.0, np.nan, np.nan],
+            [np.nan, np.nan, 0.5, 0.2],
+            [0.3, 0.9, 0.4, np.nan],
+            [np.nan, np.nan, np.nan, np.nan],
+        ]
+    )
+    source = data
+    if as_h5array:
+        source = H5Array.create(data.shape)
+        source.write_batch(0, data.shape[0], data)
+    _, link_mat = utils.compute_linkage(source, method="single", batch_size=2)
+    defined = [
+        _pair_nan_euclidean(data[i], data[j])
+        for i, j in [(0, 2), (1, 2)]
+    ]
+    assert np.isfinite(link_mat).all()
+    assert link_mat[:, 2].max() == pytest.approx(max(defined))
+
+
+@pytest.mark.parametrize("batch_size", [1, 2, 3, 100])
+def test_streamed_nan_masked_matches_dense(batch_size):
+    rng = np.random.default_rng(13)
+    data = rng.random((7, 6))
+    data[rng.random(data.shape) < 0.4] = np.nan
+    data[5] = np.nan
+    source = H5Array.create(data.shape)
+    source.write_batch(0, data.shape[0], data)
+    dense_order, dense_link = utils.compute_linkage(data)
+    order, link = utils.compute_linkage(source, batch_size=batch_size)
+    np.testing.assert_array_equal(order, dense_order)
+    np.testing.assert_allclose(link, dense_link)
+
+
 @pytest.mark.parametrize("as_h5array", [False, True])
 def test_non_euclidean_metric_with_nan_raises(as_h5array):
     data = np.random.default_rng(7).random((6, 3))
@@ -201,8 +257,8 @@ def test_fill_nan_handles_zero_overlap_row(as_h5array, fill_nan):
         source = H5Array.create(data.shape)
         source.write_batch(0, data.shape[0], data)
 
-    with pytest.raises(ValueError, match="1 of 3 rows have no data"):
-        utils.compute_linkage(source, batch_size=1)
+    _, no_fill = utils.compute_linkage(source, batch_size=1)
+    assert np.isfinite(no_fill).all()
 
     order, link_mat = utils.compute_linkage(
         source, batch_size=1, fill_nan=fill_nan

@@ -1940,15 +1940,14 @@ def sort_by_linkage(
         Only used with `dataset`. The `name` of configurations stored by
         `compute_config`; molecules are clustered by their footprints
         (the base pairs occupied by their calls) instead of an analysis
-        array. Cannot be combined with `data_name`. Molecules with no
-        data need `fill_nan`.
+        array. Cannot be combined with `data_name`.
     raw_which : {"test", "meth", "unmeth"}, optional
         Only used with `exp`. If given, clusters raw long-form data
         instead of an `exp.analysis` entry.
     mask_name : str, optional
         Only used with `exp` and `raw_which`. If given, molecules
         flagged as dropout by a prior `filter_dropout(mask_name=
-        mask_name)` call are all-nan rows (which need `fill_nan`).
+        mask_name)` call are all-nan rows.
     store_link_mat : bool, default True
         Whether to also persist each region's linkage matrix into
         `.analysis[region][link_mat_name]`.
@@ -1976,9 +1975,8 @@ def sort_by_linkage(
     ------
     ValueError
         If neither or both of `dataset`/`exp` are given, if `mask_name`
-        is given with `dataset` or `config_name` with `exp`, if both
-        `data_name` and `config_name` are given, or if some molecule has
-        no data (all nan) and `fill_nan` is None.
+        is given with `dataset` or `config_name` with `exp`, or if both
+        `data_name` and `config_name` are given.
     """
     if (dataset is None) == (exp is None):
         raise ValueError("exactly one of 'dataset' or 'exp' must be given")

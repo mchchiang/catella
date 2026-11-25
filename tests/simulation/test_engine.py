@@ -1026,6 +1026,71 @@ def _partial_nan_meth_prob(nmol=3, nbp=400):
     return meth_prob
 
 
+def _partial_read_meth_prob(read_start=10, nbp=30, lnuc=3):
+    meth_prob = _make_meth_prob(nmol=3, nbp=nbp)
+    meth_prob[0, : read_start - lnuc + 1] = np.nan
+    meth_prob[1] = np.nan
+    return meth_prob
+
+
+class TestSpanned:
+    def _run(self, tmp_path, meth_prob, method="tm", nsim=0, name="ds"):
+        return SimManager(nworker=1, verbose=False).run(
+            regions="chr1",
+            nsim=nsim,
+            method=method,
+            settings=_make_tm_settings(),
+            meth_prob=meth_prob,
+            out_dir=tmp_path / name,
+            seed=1,
+            fill_nan=0.5,
+        )
+
+    def test_run_stores_spanned(self, tmp_path):
+        dataset = self._run(tmp_path, _partial_read_meth_prob())
+        intervals, offset = dataset.spanned["chr1"]
+        assert offset.tolist() == [0, 1, 1, 2]
+        assert intervals.tolist() == [[10, 30], [0, 30]]
+
+    def test_spanned_is_none_without_nan(self, tmp_path):
+        dataset = self._run(tmp_path, _make_meth_prob(nbp=30))
+        assert dataset.spanned["chr1"] is None
+
+    def test_spanned_survives_reload(self, tmp_path):
+        dataset = self._run(tmp_path, _partial_read_meth_prob())
+        loaded = SimDataset.load(dataset._dataset_file)
+        for got, expected in zip(
+            loaded.spanned["chr1"], dataset.spanned["chr1"], strict=True
+        ):
+            np.testing.assert_array_equal(got, expected)
+
+    def test_spanned_is_read_only(self, tmp_path):
+        dataset = self._run(tmp_path, _partial_read_meth_prob())
+        intervals, _ = dataset.spanned["chr1"]
+        with pytest.raises(ValueError):
+            intervals[0, 0] = 0
+
+    def test_rerun_with_same_spanned_passes(self, tmp_path):
+        meth_prob = _partial_read_meth_prob()
+        dataset = self._run(tmp_path, meth_prob, nsim=2)
+        manager = SimManager(nworker=1, verbose=False)
+        manager.rerun(dataset=dataset, meth_prob=meth_prob, only=[("chr1", 0)])
+
+    def test_rerun_with_different_spanned_raises(self, tmp_path):
+        dataset = self._run(tmp_path, _partial_read_meth_prob(), nsim=2)
+        other = _partial_read_meth_prob(read_start=15)
+        manager = SimManager(nworker=1, verbose=False)
+        with pytest.raises(ValueError, match="spanned positions differ"):
+            manager.rerun(dataset=dataset, meth_prob=other)
+
+    def test_old_dataset_loads_without_spanned(self, tmp_path):
+        dataset = self._run(tmp_path, _partial_read_meth_prob())
+        with h5py.File(dataset._dataset_file, "a") as f:
+            del f["metadata/spanned"]
+            del f["metadata/spanned_offset"]
+        assert SimDataset.load(dataset._dataset_file).spanned["chr1"] is None
+
+
 class TestFillNan:
     def _run(self, tmp_path, meth_prob, fill_nan, name="ds"):
         return SimManager(nworker=1, verbose=False).run(
@@ -1039,6 +1104,7 @@ class TestFillNan:
         )
 
     @pytest.mark.parametrize("fill_nan", [0.5, "mean"])
+    @pytest.mark.filterwarnings("ignore:fill_nan='mean'")
     def test_partial_molecule_is_simulated(self, tmp_path, fill_nan):
         dataset = self._run(tmp_path, _partial_nan_meth_prob(), fill_nan)
         assert dataset.mcmc_file("chr1", 0, 0).exists()

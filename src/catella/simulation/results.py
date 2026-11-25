@@ -401,6 +401,49 @@ def _read_tm_sample(combined_file: str | Path, run: int) -> SimTMData:
     return SimTMData._create(**_tm_sample_fields(arrays, run))
 
 
+def _checked_spanned(value, nmol, region):
+    """
+    Check one region's spanned intervals and make them read-only.
+
+    Parameters
+    ----------
+    value : tuple of array_like or None
+        `(intervals, offset)`, or None.
+    nmol : int
+        The number of molecules of the region.
+    region : str
+        The region, for error messages.
+
+    Returns
+    -------
+    tuple of np.ndarray or None
+        Read-only int64 `(intervals, offset)`, or None.
+
+    Raises
+    ------
+    ValueError
+        If `intervals` is not of shape (n, 2), or `offset` does not have
+        `nmol + 1` entries from 0 to n.
+    """
+    if value is None:
+        return None
+    intervals = np.array(value[0], dtype=np.int64).reshape(-1, 2)
+    offset = np.array(value[1], dtype=np.int64)
+    if offset.shape != (nmol + 1,) or offset[0] != 0:
+        raise ValueError(
+            f"spanned offset of region {region} must have {nmol + 1} "
+            f"entries starting at 0, got {offset.size}"
+        )
+    if offset[-1] != len(intervals):
+        raise ValueError(
+            f"spanned offset of region {region} must end at the number "
+            f"of intervals ({len(intervals)}), got {offset[-1]}"
+        )
+    intervals.flags.writeable = False
+    offset.flags.writeable = False
+    return intervals, offset
+
+
 @dataclass(slots=True, init=False, weakref_slot=True)
 class SimDataset:
     """
@@ -485,6 +528,7 @@ class SimDataset:
     _seed_table: Mapping[str, np.ndarray]
     _no_data: Mapping[str, np.ndarray]
     _nan_fill: str | float | None
+    _spanned: Mapping[str, tuple[np.ndarray, np.ndarray] | None]
     _raw_dir: Path
     _dataset_file: Path
     _file_map: SimFileMapper
@@ -518,6 +562,7 @@ class SimDataset:
         seed_table: Mapping[str, np.ndarray] | None = None,
         no_data: Mapping[str, np.ndarray] | None = None,
         nan_fill: str | float | None = None,
+        spanned: Mapping[str, tuple | None] | None = None,
     ):
         # Some validations
         if method not in ("mcmc", "tm"):
@@ -581,6 +626,14 @@ class SimDataset:
             obj._no_data[region] = arr
         _check_fill_nan(nan_fill)
         obj._nan_fill = nan_fill
+        obj._spanned = {
+            region: _checked_spanned(
+                None if spanned is None else spanned.get(region),
+                obj._nmol[region],
+                region,
+            )
+            for region in obj._regions
+        }
         obj._tmp_dir = None
         obj._finalizer = None
         return obj
@@ -603,6 +656,7 @@ class SimDataset:
         seed_table: Mapping[str, np.ndarray] | None = None,
         no_data: Mapping[str, np.ndarray] | None = None,
         nan_fill: str | float | None = None,
+        spanned: Mapping[str, tuple | None] | None = None,
     ) -> Self:
         """
         Create a new simulation dataset with the specified parameters.
@@ -661,6 +715,9 @@ class SimDataset:
             How molecules that are nan at some nucleosome start
             positions were filled (the `fill_nan` of `SimManager.run`),
             reused by reruns.
+        spanned : Mapping[str, tuple or None], optional
+            The base pairs each molecule spans, per region; see
+            `spanned`. If None (default), every base pair is spanned.
 
         Returns
         -------
@@ -717,6 +774,7 @@ class SimDataset:
             seed_table=seed_table,
             no_data=no_data,
             nan_fill=nan_fill,
+            spanned=spanned,
         )
 
     @classmethod
@@ -825,6 +883,7 @@ class SimDataset:
                 seed_table=self._seed_table,
                 no_data=self._no_data,
                 nan_fill=self._nan_fill,
+                spanned=self._spanned,
             )
 
         _save_analysis(
@@ -1406,6 +1465,29 @@ class SimDataset:
             persisted).
         """
         return self._nan_fill
+
+    @property
+    def spanned(self) -> Mapping[str, tuple[np.ndarray, np.ndarray] | None]:
+        """
+        The base pairs each molecule spans.
+
+        A base pair is spanned if it lies in the molecule's span and
+        outside gaps of at least `lnuc` bp, i.e. where the methylation
+        probability was not nan; a spanned base pair need not hold a
+        methylation site. Outputs elsewhere follow the prior only.
+
+        Returns
+        -------
+        types.MappingProxyType
+            A read-only mapping of region names to `(intervals,
+            offset)`: read-only int64 half-open intervals of shape
+            (n, 2), grouped by molecule, and offsets of length
+            `nmol[region] + 1`; the intervals of molecule `i` are
+            `intervals[offset[i]:offset[i + 1]]`. None for a region
+            where every molecule with data is spanned everywhere, and
+            for datasets that predate this being persisted.
+        """
+        return MappingProxyType(self._spanned)
 
     @property
     def raw(self) -> SimDataAccessor:

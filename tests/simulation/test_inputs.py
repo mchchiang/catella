@@ -1,5 +1,7 @@
 # test_inputs.py
 
+import warnings
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -159,8 +161,15 @@ class TestPrepareRows:
 
     def test_mean_uses_molecule_start_positions(self):
         block = np.array([[0.2, np.nan, 0.4, 0.6, 0.9, 0.9]])
-        out, _ = _prepare_rows(block, 3, "chr1", fill_nan="mean")
+        with pytest.warns(UserWarning, match="fill_nan='mean'"):
+            out, _ = _prepare_rows(block, 3, "chr1", fill_nan="mean")
         assert out[0, 1] == pytest.approx(0.4)
+
+    def test_fill_with_value_does_not_warn(self):
+        block = np.array([[0.2, np.nan, 0.4, 0.6, 0.9, 0.9]])
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            _prepare_rows(block, 3, "chr1", fill_nan=0.5)
 
     def test_no_data_rows_stay_nan(self):
         block = np.full((2, 10), 0.2)

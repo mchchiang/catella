@@ -8,6 +8,8 @@ import numpy as np
 import pandas as pd
 from catella_cpp import Dump
 
+from catella._batches import _row_batches
+from catella._warnings import _warn
 from catella.simulation.config import SimSettings
 
 # Recognized names of the data recorded by an MCMC run
@@ -179,6 +181,12 @@ def _prepare_rows(block, lnuc, region, fill_nan=None):
     starts = _start_positions(block, lnuc)
     sub = starts[partial]
     if isinstance(fill_nan, str):
+        _warn(
+            f"fill_nan='mean' fills the unspanned start positions of "
+            f"{partial.size} molecule(s) of region '{region}' with the "
+            "molecule's own signal; use fill_nan=0.5 for windows a read "
+            "does not span"
+        )
         value = np.nanmean(sub, axis=1, keepdims=True)
     else:
         value = float(fill_nan)
@@ -186,6 +194,70 @@ def _prepare_rows(block, lnuc, region, fill_nan=None):
     sub[sub_nan] = np.broadcast_to(value, sub.shape)[sub_nan]
     starts[partial] = sub
     return block, no_data
+
+
+# Cells (molecules x base pairs) per batch of `_spanned_intervals`
+_SPANNED_BATCH_CELLS = 2**24
+
+
+def _spanned_intervals(block, lnuc):
+    """
+    Find the base pairs each molecule of `block` spans, as intervals.
+
+    A base pair `b` is spanned if every nucleosome start position in
+    `[b - lnuc + 1, b]`, clipped to the existing start positions, is not
+    nan. With windows of `lnuc` bp marked nan where they miss the read
+    (`model_prob`), this recovers the read minus gaps of at least
+    `lnuc` bp. Molecules are processed in batches.
+
+    Parameters
+    ----------
+    block : np.ndarray
+        2D methylation probability, molecules by base pairs, before
+        filling.
+    lnuc : int
+        The nucleosome footprint size.
+
+    Returns
+    -------
+    tuple of np.ndarray or None
+        `(intervals, offset)`: int64 half-open intervals of shape
+        (n, 2), grouped by molecule, and int64 offsets of length
+        nmol + 1 (see `_interval_mask`). Molecules with no data have
+        no intervals. None if every molecule with data is finite at
+        every start position, or if `block` has no start position.
+    """
+    nmol, nbp = block.shape
+    npos = nbp - lnuc + 1
+    if npos <= 0:
+        return None
+    bp = np.arange(nbp)
+    lo = np.maximum(bp - lnuc + 1, 0)
+    hi = np.minimum(bp, npos - 1) + 1
+    batch_size = max(1, _SPANNED_BATCH_CELLS // nbp)
+    partly_nan = False
+    chunks = []
+    counts = []
+    for start, stop in _row_batches(0, nmol, batch_size):
+        nan = np.isnan(block[start:stop, :npos])
+        no_data = nan.all(axis=1)
+        partly_nan |= bool((nan.any(axis=1) & ~no_data).any())
+        cum = np.zeros((stop - start, npos + 1), dtype=np.int32)
+        np.cumsum(nan, axis=1, dtype=np.int32, out=cum[:, 1:])
+        spanned = cum[:, hi] == cum[:, lo]
+        spanned[no_data] = False
+        edges = np.diff(
+            np.pad(spanned.astype(np.int8), ((0, 0), (1, 1))), axis=1
+        )
+        rows, first = np.nonzero(edges == 1)
+        _, last = np.nonzero(edges == -1)
+        chunks.append(np.stack([first, last], axis=1))
+        counts.append(np.bincount(rows, minlength=stop - start))
+    if not partly_nan:
+        return None
+    offset = np.zeros(nmol + 1, dtype=np.int64)
+    np.cumsum(np.concatenate(counts), out=offset[1:])
+    return np.concatenate(chunks).astype(np.int64), offset
 
 
 def _normalize_mols(mols, regions):

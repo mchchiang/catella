@@ -393,6 +393,16 @@ The dataset-level file (``<dataset_name>.h5``, default
        seed_table/<region> (optional) uint32 array, (nmol, nsim),
                             per-(molecule, run) seed for reproducing
                             an individual run
+       spanned/<region>    (optional) int64 gzip dataset, (n, 2),
+                            half-open intervals of the bp each
+                            molecule spans (in the span, outside gaps
+                            of at least lnuc), grouped by molecule;
+                            absent if every molecule with data is
+                            spanned everywhere
+       spanned_offset/<region>
+                           (optional) int64, nmol + 1; the intervals
+                            of molecule i are rows offset[i] to
+                            offset[i + 1] of spanned/<region>
    /analysis/<region>/<key>  H5Array or DataFrameMap entry
    /global_analysis/<key>    H5Array or DataFrameMap entry
 

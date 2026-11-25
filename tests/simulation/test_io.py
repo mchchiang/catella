@@ -246,8 +246,34 @@ class TestMetadata:
             _write_metadata(f, **_metadata_kwargs(tmp_path))
         with h5py.File(tmp_path / "d.h5", "r") as f:
             meta = _read_metadata(f)
-        for name in ("edata", "out_type", "seed", "seed_table"):
+        for name in ("edata", "out_type", "seed", "seed_table", "spanned"):
             assert meta[name] is None
+
+    def test_spanned_round_trip(self, tmp_path):
+        spanned = {
+            "c1": (
+                np.array([[0, 10], [20, 40], [5, 30]]),
+                np.array([0, 2, 2, 3]),
+            ),
+            "c2": None,
+        }
+        kwargs = _metadata_kwargs(tmp_path, spanned=spanned)
+        with h5py.File(tmp_path / "d.h5", "w") as f:
+            _write_metadata(f, **kwargs)
+        with h5py.File(tmp_path / "d.h5", "r") as f:
+            meta = _read_metadata(f)
+        intervals, offset = meta["spanned"]["c1"]
+        np.testing.assert_array_equal(intervals, spanned["c1"][0])
+        np.testing.assert_array_equal(offset, spanned["c1"][1])
+        assert meta["spanned"]["c2"] is None
+
+    def test_spanned_all_none_is_not_written(self, tmp_path):
+        kwargs = _metadata_kwargs(tmp_path, spanned={"c1": None, "c2": None})
+        with h5py.File(tmp_path / "d.h5", "w") as f:
+            _write_metadata(f, **kwargs)
+            assert "spanned" not in f["metadata"]
+        with h5py.File(tmp_path / "d.h5", "r") as f:
+            assert _read_metadata(f)["spanned"] is None
 
     def test_existing_metadata_only_updates_raw_dir_and_nsim(self, tmp_path):
         with h5py.File(tmp_path / "d.h5", "w") as f:

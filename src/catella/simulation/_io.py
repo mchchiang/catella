@@ -373,6 +373,7 @@ def _write_metadata(
     seed_table=None,
     no_data=None,
     nan_fill=None,
+    spanned=None,
 ):
     """
     Write the dataset metadata to the '/metadata' group.
@@ -410,6 +411,9 @@ def _write_metadata(
         written if None.
     nan_fill : "mean" or float, optional
         How partly-nan molecules were filled; not written if None.
+    spanned : mapping of str to tuple or None, optional
+        The `(intervals, offset)` of each region; regions with None are
+        not written.
     """
     if "metadata" in h5file:
         gmeta = h5file["metadata"]
@@ -445,6 +449,17 @@ def _write_metadata(
         gno = gmeta.create_group("no_data")
         for region in regions:
             gno.create_dataset(region, data=np.asarray(no_data[region], bool))
+    if spanned is not None:
+        kept = [r for r in regions if spanned.get(r) is not None]
+        if kept:
+            givl = gmeta.create_group("spanned")
+            goff = gmeta.create_group("spanned_offset")
+            for region in kept:
+                intervals, offset = spanned[region]
+                givl.create_dataset(
+                    region, data=intervals, compression="gzip"
+                )
+                goff.create_dataset(region, data=offset, compression="gzip")
 
 
 def _read_metadata(h5file):
@@ -461,7 +476,8 @@ def _read_metadata(h5file):
     dict of str to Any
         'raw_dir' (Path, as stored), 'nsim', 'method', 'regions', 'nmol',
         'nbp', 'settings', 'edata', 'out_type', 'seed', 'seed_table',
-        'no_data', and 'nan_fill'.
+        'no_data', 'nan_fill', and 'spanned' (region to `(intervals,
+        offset)` or None).
         Optional fields that were not written are None; 'method' defaults
         to "mcmc".
     """
@@ -495,6 +511,20 @@ def _read_metadata(h5file):
         "seed_table": per_region("seed_table"),
         "no_data": per_region("no_data"),
         "nan_fill": _read_nan_fill(attrs),
+        "spanned": _read_spanned(gmeta, regions),
+    }
+
+
+def _read_spanned(gmeta, regions):
+    """Return the stored `(intervals, offset)` per region, or None each."""
+    if "spanned" not in gmeta:
+        return None
+    givl, goff = gmeta["spanned"], gmeta["spanned_offset"]
+    return {
+        region: (givl[region][()], goff[region][()])
+        if region in givl
+        else None
+        for region in regions
     }
 
 

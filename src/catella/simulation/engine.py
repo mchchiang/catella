@@ -25,6 +25,7 @@ from catella.simulation._inputs import (
     _parse_out_types,
     _prepare_rows,
     _resolve_settings,
+    _spanned_intervals,
 )
 from catella.simulation._io import (
     _write_mcmc_data,
@@ -58,8 +59,8 @@ from catella.utils import IndexType
 
 def _prepare_meth_prob(meth_prob, regions, lnuc, fill_nan=None):
     """
-    Normalize `meth_prob`, find the molecules with no data, and fill
-    the partly-nan ones.
+    Normalize `meth_prob`, find the molecules with no data and the base
+    pairs each molecule spans, and fill the partly-nan ones.
 
     Parameters
     ----------
@@ -78,6 +79,8 @@ def _prepare_meth_prob(meth_prob, regions, lnuc, fill_nan=None):
         The 2D array of each region; a filled copy where needed.
     no_data : dict of str to np.ndarray
         bool, True for each molecule with no data.
+    spanned : dict of str to tuple or None
+        The spanned intervals of each region (see `_spanned_intervals`).
 
     Raises
     ------
@@ -87,11 +90,13 @@ def _prepare_meth_prob(meth_prob, regions, lnuc, fill_nan=None):
     """
     meth_prob = _normalize_meth_prob(meth_prob, regions)
     no_data = {}
+    spanned = {}
     for region in regions:
+        spanned[region] = _spanned_intervals(meth_prob[region], lnuc)
         meth_prob[region], no_data[region] = _prepare_rows(
             meth_prob[region], lnuc, region, fill_nan
         )
-    return meth_prob, no_data
+    return meth_prob, no_data, spanned
 
 
 def _rerun_meth_prob(dataset, meth_prob):
@@ -113,9 +118,10 @@ def _rerun_meth_prob(dataset, meth_prob):
     Raises
     ------
     ValueError
-        If the molecules with no data differ from `dataset.no_data`.
+        If the molecules with no data differ from `dataset.no_data`, or
+        the spanned intervals differ from `dataset.spanned`.
     """
-    meth_prob, no_data = _prepare_meth_prob(
+    meth_prob, no_data, spanned = _prepare_meth_prob(
         meth_prob, dataset.regions, dataset.settings["lnuc"], dataset.nan_fill
     )
     for region in dataset.regions:
@@ -124,7 +130,19 @@ def _rerun_meth_prob(dataset, meth_prob):
                 f"meth_prob does not match the dataset for region '{region}'; "
                 "its molecules with no data differ from dataset.no_data"
             )
+        if not _same_intervals(spanned[region], dataset.spanned[region]):
+            raise ValueError(
+                f"meth_prob does not match the dataset for region '{region}'; "
+                "its spanned positions differ from dataset.spanned"
+            )
     return meth_prob
+
+
+def _same_intervals(a, b):
+    """Return True if two `(intervals, offset)` pairs (or None) are equal."""
+    if a is None or b is None:
+        return a is None and b is None
+    return all(np.array_equal(x, y) for x, y in zip(a, b, strict=True))
 
 
 def _check_rerun_targets(dataset, targets):
@@ -289,7 +307,7 @@ class SimManager:
         regions = _normalize_regions(regions)
         _check_region_names(regions)
         settings = _resolve_settings(settings)
-        meth_prob, no_data = _prepare_meth_prob(
+        meth_prob, no_data, spanned = _prepare_meth_prob(
             meth_prob, regions, settings.lnuc, fill_nan
         )
         mols = _normalize_mols(mols, regions)
@@ -327,6 +345,7 @@ class SimManager:
             seed_table=_seed_table(seed, regions, nmol, nsim),
             no_data=no_data,
             nan_fill=fill_nan,
+            spanned=spanned,
         )
         dataset.save()
 

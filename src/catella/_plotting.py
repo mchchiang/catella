@@ -255,8 +255,15 @@ def _draw_mean(ax, mean):
 
 def _decimals(values, most=6):
     """Fewest decimals (at most `most`) that write `values` exactly."""
+    values = np.asarray(values, dtype=float)
+    steps = np.diff(np.unique(values))
+    ref = steps.min() if steps.size else np.abs(values).max(initial=0)
+    if ref == 0:
+        return 0
+    # Tolerance relative to the tick spacing, not absolute
+    atol = 1e-3 * ref
     for ndec in range(most + 1):
-        if np.allclose(values, np.round(values, ndec), rtol=0, atol=1e-6):
+        if np.allclose(values, np.round(values, ndec), rtol=0, atol=atol):
             return ndec
     return most
 

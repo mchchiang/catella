@@ -45,7 +45,7 @@ class TMBatchJob:
 
     getters: tuple[tuple[str | Callable, dict], ...]
     """The `(getter, kwargs)` of each getter to call: a `NucPosTM`
-    method name, or a function `(tm, intervals, **kwargs)`."""
+    method name, or a function `(tm, intervals, settings, **kwargs)`."""
 
     spanned: tuple[np.ndarray, np.ndarray] | None = None
     """The `(intervals, offset)` of the batch's molecules, with offsets
@@ -63,10 +63,10 @@ class TMStat:
 
     getter: str | Callable
     """The name of the `NucPosTM` method that returns the value, or a
-    function `(tm, intervals, **kwargs)`, where `intervals` holds the
-    molecule's spanned intervals (None if every base pair is spanned).
-    A function must be defined at module level, so worker processes can
-    import it."""
+    function `(tm, intervals, settings, **kwargs)`, where `intervals`
+    holds the molecule's spanned intervals (None if every base pair is
+    spanned) and `settings` the region's settings. A function must be
+    defined at module level, so worker processes can import it."""
 
     kwargs: dict = field(default_factory=dict)
     """Keyword arguments passed to the getter."""
@@ -275,7 +275,7 @@ def _run_tm_batch(job):
         results.append(
             tuple(
                 _lists_to_arrays(
-                    getter(tm, intervals, **kwargs)
+                    getter(tm, intervals, job.settings, **kwargs)
                     if callable(getter)
                     else getattr(tm, getter)(**kwargs)
                 )
@@ -352,6 +352,84 @@ def _nan_unspanned(block, spanned, start, stop):
     if spanned is not None:
         mask = _interval_mask(*spanned, start, stop, block.shape[1])
         block[~mask] = np.nan
+
+
+def _spanned_fraction(intervals, nbp, lnuc):
+    """
+    Spanned share of the footprint of a nucleosome at each start position.
+
+    Parameters
+    ----------
+    intervals : np.ndarray
+        int, (n, 2), the molecule's spanned intervals.
+    nbp : int
+        The number of base pairs.
+    lnuc : int
+        The nucleosome footprint size.
+
+    Returns
+    -------
+    np.ndarray
+        float64, (nbp - lnuc + 1,): spanned bp in `[x, x + lnuc)`
+        divided by `lnuc`.
+    """
+    edges = np.zeros(nbp + 1, dtype=np.int64)
+    np.add.at(edges, intervals[:, 0], 1)
+    np.add.at(edges, intervals[:, 1], -1)
+    cum = np.zeros(nbp + 1, dtype=np.int64)
+    np.cumsum(np.cumsum(edges)[:nbp] > 0, out=cum[1:])
+    npos = nbp - lnuc + 1
+    return (cum[lnuc : lnuc + npos] - cum[:npos]) / lnuc
+
+
+def _mean_nnuc(tm, intervals, settings):
+    """
+    Mean nucleosome count on spanned DNA (a `TMStat` getter).
+
+    Each nucleosome counts as the spanned share of its footprint; the
+    plain mean `getMeanN` if every base pair is spanned.
+    """
+    if intervals is None:
+        return tm.getMeanN()
+    start_prob = np.asarray(tm.getStartProb())
+    nbp = len(tm.getDataEnergy())
+    return float(start_prob @ _spanned_fraction(intervals, nbp, settings.lnuc))
+
+
+def _var_nnuc(tm, intervals, settings, dmu=1e-4):
+    """
+    Variance of the nucleosome count on spanned DNA (a `TMStat` getter).
+
+    The count is as in `_mean_nnuc`; its variance is the second
+    difference of log Z in a shift of the energy of each start position
+    by its spanned share times `dmu` (as `getVarN` shifts `mu`); the
+    plain `getVarN` if every base pair is spanned.
+    """
+    if intervals is None:
+        return tm.getVarN(dmu)
+    edata = np.asarray(tm.getDataEnergy(), dtype=np.float64)
+    nbp = len(edata)
+    frac = _spanned_fraction(intervals, nbp, settings.lnuc)
+    shift = np.zeros(nbp)
+    shift[: len(frac)] = frac * dmu
+
+    def log_z(sign):
+        model = NucPosTM(
+            settings.lnuc,
+            nbp,
+            settings.llink,
+            settings.elink,
+            settings.mu,
+            1,
+        )
+        # Energies are already clamped; inf keeps the shift unclamped
+        model.setEnergy((edata - sign * shift).tolist(), np.inf)
+        model.solve(settings.end_temp)
+        return model.getLogZ()
+
+    temp = settings.end_temp
+    d2 = (log_z(1.0) - 2.0 * tm.getLogZ() + log_z(-1.0)) / dmu**2
+    return temp * temp * d2
 
 
 def _iter_tm_batches(dataset, regions, getters, batch_size, nworker):

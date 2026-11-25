@@ -1,24 +1,31 @@
 # test_exact.py
 
+import itertools
+
 import numpy as np
 import pandas as pd
 import pytest
 from catella.h5_array import H5Array
 from catella.simulation._exact import (
     TMStat,
+    _mean_nnuc,
     _reject_time,
     _require_edata,
     _require_tm,
     _solved_tm,
+    _spanned_fraction,
     _tm_configs,
     _tm_per_bp,
     _tm_per_mol,
     _tm_stats,
+    _var_nnuc,
 )
 from catella.simulation.config import SimSettings
 from catella.simulation.engine import SimManager
 from catella.simulation.results import SimDataset
 from catella_cpp import NucPosTM
+
+from tests.simulation.test_tm_bruteforce import _erep
 
 
 def _make_tm_settings(**overrides):
@@ -206,16 +213,16 @@ class TestTMStatsFixedWidth:
         assert stat.width(12) == expected
 
 
-def _interval_count(tm, intervals):
+def _interval_count(tm, intervals, settings):
     return -1.0 if intervals is None else float(len(intervals))
 
 
-def _first_start(tm, intervals, shift=0):
+def _first_start(tm, intervals, settings, shift=0):
     return float(intervals[0, 0] + shift)
 
 
-def _mean_n_and_intervals(tm, intervals):
-    return tm.getMeanN() + len(intervals)
+def _mean_n_and_intervals(tm, intervals, settings):
+    return tm.getMeanN() + len(intervals) + settings.lnuc
 
 
 def _make_partial_tm_dataset(tmp_path):
@@ -275,7 +282,94 @@ class TestTMStatsPythonGetter:
         analysis = dataset.analysis["chr1"]
         n = analysis["n"].to_numpy().ravel()
         m = analysis["m"].to_numpy().ravel()
-        np.testing.assert_allclose(m[:3], n[:3] + [1, 2, 1])
+        np.testing.assert_allclose(m[:3], n[:3] + [1, 2, 1] + 3)
+
+
+def _solved(edata, settings):
+    tm = NucPosTM(
+        settings.lnuc,
+        len(edata),
+        settings.llink,
+        settings.elink,
+        settings.mu,
+        1,
+    )
+    tm.setEnergy(list(edata), settings.emax)
+    tm.solve(settings.end_temp)
+    return tm
+
+
+def _brute_fraction_moments(edata, settings, frac):
+    lnuc, npos = settings.lnuc, len(frac)
+    configs = []
+
+    def recurse(idx, placed):
+        if idx == npos:
+            configs.append(placed)
+            return
+        recurse(idx + 1, placed)
+        if not placed or idx - placed[-1] >= lnuc:
+            recurse(idx + 1, [*placed, idx])
+
+    recurse(0, [])
+    logw = []
+    for placed in configs:
+        energy = sum(edata[x] - settings.mu for x in placed)
+        energy += sum(
+            _erep(b - a, lnuc, settings.llink, settings.elink)
+            for a, b in itertools.pairwise(placed)
+        )
+        logw.append(-energy / settings.end_temp)
+    logw = np.asarray(logw)
+    prob = np.exp(logw - logw.max())
+    prob /= prob.sum()
+    count = np.array([frac[placed].sum() for placed in configs])
+    mean = float(prob @ count)
+    return mean, float(prob @ (count - mean) ** 2)
+
+
+class TestSpannedFraction:
+    def test_hand_example(self):
+        got = _spanned_fraction(np.array([[2, 5]]), 8, 3)
+        np.testing.assert_allclose(got, [1, 2, 3, 2, 1, 0] / np.float64(3))
+
+    def test_two_intervals(self):
+        got = _spanned_fraction(np.array([[0, 2], [4, 6]]), 6, 2)
+        np.testing.assert_allclose(got, [1, 0.5, 0, 0.5, 1])
+
+
+class TestCountGetters:
+    _EDATA = np.random.default_rng(8).normal(0, 1.5, 10)
+
+    def test_none_intervals_match_cpp(self):
+        settings = _make_tm_settings()
+        tm = _solved(self._EDATA, settings)
+        assert _mean_nnuc(tm, None, settings) == tm.getMeanN()
+        assert _var_nnuc(tm, None, settings) == tm.getVarN()
+
+    @pytest.mark.parametrize("emax", [5.0, 0.7])
+    def test_full_interval_matches_cpp(self, emax):
+        settings = _make_tm_settings(emax=emax)
+        tm = _solved(self._EDATA, settings)
+        full = np.array([[0, 10]])
+        assert _mean_nnuc(tm, full, settings) == pytest.approx(tm.getMeanN())
+        assert _var_nnuc(tm, full, settings) == pytest.approx(
+            tm.getVarN(), rel=1e-5
+        )
+
+    @pytest.mark.parametrize(
+        "intervals", [[[2, 7]], [[0, 3], [6, 10]], [[4, 5]]]
+    )
+    def test_matches_brute_force(self, intervals):
+        settings = _make_tm_settings()
+        tm = _solved(self._EDATA, settings)
+        intervals = np.array(intervals)
+        frac = _spanned_fraction(intervals, 10, settings.lnuc)
+        mean, var = _brute_fraction_moments(self._EDATA, settings, frac)
+        assert _mean_nnuc(tm, intervals, settings) == pytest.approx(mean)
+        assert _var_nnuc(tm, intervals, settings) == pytest.approx(
+            var, rel=1e-5
+        )
 
 
 class TestTMConfigs:

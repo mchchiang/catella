@@ -851,6 +851,40 @@ class TestOccupSpanned:
             )
         np.testing.assert_array_equal(~np.isnan(var_occup), mask)
 
+    @pytest.mark.parametrize("method", ["tm", "mcmc"])
+    def test_mean_nnuc_counts_spanned_occupancy(self, tmp_path, method):
+        dataset = _run_partial(tmp_path, method)
+        SimAnalysis().compute_occup(dataset=dataset)
+        occup = dataset.analysis["chr1"]["occup"].to_numpy()
+        mean_n = dataset.analysis["chr1"]["mean_nnuc"].to_numpy().ravel()
+        np.testing.assert_allclose(mean_n, np.nansum(occup, axis=1) / 3)
+
+    def test_tm_compute_mean_nnuc_matches_bundle(self, tmp_path):
+        dataset = _run_partial(tmp_path, "tm")
+        ana = SimAnalysis()
+        ana.compute_occup(dataset=dataset, compute_var=True)
+        ana.compute_mean_nnuc(dataset=dataset, name="m")
+        ana.compute_var_nnuc(dataset=dataset, name="v")
+        analysis = dataset.analysis["chr1"]
+        np.testing.assert_allclose(
+            analysis["m"].to_numpy(), analysis["mean_nnuc"].to_numpy()
+        )
+        np.testing.assert_allclose(
+            analysis["v"].to_numpy(), analysis["var_nnuc"].to_numpy()
+        )
+
+    def test_tm_full_molecule_count_unchanged(self, tmp_path):
+        dataset = _run_partial(tmp_path, "tm")
+        SimAnalysis().compute_occup(dataset=dataset, compute_var=True)
+        tm = _direct_tm(dataset, 2, _make_tm_settings())
+        analysis = dataset.analysis["chr1"]
+        assert analysis["mean_nnuc"].iloc[2, 0] == pytest.approx(
+            tm.getMeanN()
+        )
+        assert analysis["var_nnuc"].iloc[2, 0] == pytest.approx(
+            tm.getVarN(), rel=1e-5
+        )
+
     def test_compute_var_occup_nan_at_unspanned_bp(self, tmp_path):
         dataset = _run_partial(tmp_path, "tm")
         SimAnalysis().compute_var_occup(dataset=dataset)

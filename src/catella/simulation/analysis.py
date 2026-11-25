@@ -16,15 +16,17 @@ from catella.h5_array import H5Array
 from catella.simulation._exact import (
     TM_BATCH_SIZE,
     TMStat,
+    _mean_nnuc,
     _nan_unspanned,
     _region_settings,
     _reject_time,
     _require_edata,
     _require_tm,
+    _spanned_fraction,
     _tm_configs,
     _tm_per_bp,
-    _tm_per_mol,
     _tm_stats,
+    _var_nnuc,
 )
 from catella.simulation._parallel import _threaded_map
 from catella.simulation.results import SimDataset, SimMCMCData
@@ -542,7 +544,8 @@ class SimAnalysis:
             `dataset.analysis`.
         mean_nnuc_name : str or None, default "mean_nnuc"
             The key used to store the mean nucleosome count of each
-            molecule (a DataFrame). If None, it is not computed.
+            molecule (a DataFrame; see `compute_mean_nnuc`). If None, it
+            is not computed.
         compute_var : bool, default False
             If True, also compute the exact variance of the nucleosome
             count and of the per-bp occupancy. `tm` only.
@@ -583,10 +586,10 @@ class SimAnalysis:
             _require_edata(dataset)
             stats = [TMStat(name, "getOccup", per_bp=True)]
             if mean_nnuc_name is not None:
-                stats.append(TMStat(mean_nnuc_name, "getMeanN"))
+                stats.append(TMStat(mean_nnuc_name, _mean_nnuc))
             if compute_var:
                 stats += [
-                    TMStat(var_nnuc_name, "getVarN"),
+                    TMStat(var_nnuc_name, _var_nnuc),
                     TMStat(var_occup_name, "getVarOccup", per_bp=True),
                 ]
             _tm_stats(
@@ -672,7 +675,8 @@ class SimAnalysis:
         For `dataset.method == "mcmc"`, this is a Monte Carlo average
         over simulation runs at a specific time point. For `"tm"`, it
         is computed exactly via the transfer-matrix solver, with no
-        time axis.
+        time axis. Only spanned DNA counts: a nucleosome counts as the
+        spanned share of its footprint (see `SimDataset.spanned`).
 
         Parameters
         ----------
@@ -708,8 +712,8 @@ class SimAnalysis:
         if dataset.method == "tm":
             _reject_time(time, record_time)
             _require_edata(dataset)
-            _tm_per_mol(
-                dataset, regions, name, NucPosTM.getMeanN, nworker=nworker
+            _tm_stats(
+                dataset, regions, [TMStat(name, _mean_nnuc)], nworker=nworker
             )
             return
         self._compute_mean_nnuc_mcmc(
@@ -725,13 +729,22 @@ class SimAnalysis:
     ):
         if time is None:
             time = self._final_time(dataset, regions)
+        lnuc = dataset.settings["lnuc"]
 
         def mean_nnuc_agg(region, mol, nucpos):
-            mean_nnuc = 0.0
-            for x in nucpos:
-                mean_nnuc += len(x)
-            mean_nnuc /= float(len(nucpos))
-            return mean_nnuc
+            spanned = dataset.spanned[region]
+            if spanned is None:
+                return sum(len(x) for x in nucpos) / float(len(nucpos))
+            intervals, offset = spanned
+            frac = _spanned_fraction(
+                intervals[offset[mol] : offset[mol + 1]],
+                dataset.nbp[region],
+                lnuc,
+            )
+            total = sum(
+                frac[np.asarray(x, dtype=np.int64)].sum() for x in nucpos
+            )
+            return float(total) / len(nucpos)
 
         mean_nnuc = dataset.extract(
             time=time, obs="position", regions=regions, agg_func=mean_nnuc_agg
@@ -753,8 +766,9 @@ class SimAnalysis:
         """
         Calculate the exact variance of the nucleosome count.
 
-        Uncertainty has no MCMC equivalent computed here; only
-        available for `dataset.method == "tm"` datasets.
+        The count is as in `compute_mean_nnuc`. Uncertainty has no MCMC
+        equivalent computed here; only available for
+        `dataset.method == "tm"` datasets.
 
         Parameters
         ----------
@@ -778,7 +792,9 @@ class SimAnalysis:
         _require_tm(dataset, "compute_var_nnuc")
         _check_nworker(dataset, nworker)
         regions = _normalize_regions(regions, default_regions=dataset.regions)
-        _tm_per_mol(dataset, regions, name, NucPosTM.getVarN, nworker=nworker)
+        _tm_stats(
+            dataset, regions, [TMStat(name, _var_nnuc)], nworker=nworker
+        )
 
     def compute_var_occup(
         self,

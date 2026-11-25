@@ -14,7 +14,9 @@ from scipy.special import logit
 
 from catella import utils
 from catella._plotting import (
+    _check_figsize,
     _colorbar,
+    _figsize,
     _finish,
     _leaf_order,
     _left_ylabels,
@@ -141,6 +143,7 @@ class MethPlot:
         link_mat: np.ndarray | dict | None = None,
         sharex: bool = False,
         coords: bool | pd.DataFrame | None = None,
+        figsize: tuple[float, float] | None = None,
         show: bool = True,
     ):
         """
@@ -220,6 +223,9 @@ class MethPlot:
             `exp.region_coords`; a table like it (e.g., of another
             experiment with the same regions) is used as given. None or
             False labels 0-based region positions.
+        figsize : (float, float), optional
+            Size of the whole figure (width, height) in inches. If None,
+            each panel gets matplotlib's `figure.figsize`.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
@@ -241,9 +247,9 @@ class MethPlot:
             with any of `exp`/`regions`/`raw_which`/`data_name`/`mols`/
             `mask_name`, if `mols` or `mask_name` is given without
             `raw_which`, if `regions` is empty, if `mols` or `link_mat`
-            is not a dict with several regions, or if `link_mat` is
+            is not a dict with several regions, if `link_mat` is
             combined with `mols` or does not match the number of
-            molecules.
+            molecules, or if `figsize` is not two positive numbers.
 
         Warns
         -----
@@ -258,6 +264,7 @@ class MethPlot:
         Positions are labeled in bp, kb or Mb, whichever is the largest
         unit whose tick labels need at most one decimal.
         """
+        _check_figsize(figsize)
         starts = _coord_starts(coords, exp, regions)
         sources = self._meth_sources(
             data,
@@ -280,6 +287,7 @@ class MethPlot:
                 cbar_label=cbar_label,
                 sharex=sharex,
                 starts=starts,
+                figsize=figsize,
                 show=show,
                 out_file=out_file,
             )
@@ -379,12 +387,13 @@ class MethPlot:
         show,
         out_file,
         starts=None,
+        figsize=None,
     ):
         """
         Downsample, draw and lay out the panels from `_meth_sources`,
         with one colorbar on a common color scale; `starts` gives each
         panel's `(ref_chrom, ref_start)` (from `_coord_starts`), or is
-        None for 0-based positions.
+        None for 0-based positions; `figsize` is the whole figure's size.
         """
         if starts is None:
             starts = [None] * len(sources)
@@ -414,6 +423,7 @@ class MethPlot:
             len(sources),
             [5, 1, 0.25] if sorted_rows else [20, 1],
             dendrogram=sorted_rows,
+            figsize=figsize,
         )
         for source, matrix, panel, start in zip(
             sources, matrices, panels, starts
@@ -505,6 +515,7 @@ class MethPlot:
         link_mat: np.ndarray | dict | None = None,
         sharex: bool = False,
         coords: bool | pd.DataFrame | None = None,
+        figsize: tuple[float, float] | None = None,
         show: bool = True,
     ):
         """
@@ -560,6 +571,8 @@ class MethPlot:
             If True, all panels span the widest region.
         coords : bool or pd.DataFrame, optional
             Genomic position labels; see `plot_meth_prob`.
+        figsize : (float, float), optional
+            Size of the whole figure in inches; see `plot_meth_prob`.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
@@ -573,13 +586,14 @@ class MethPlot:
         ValueError
             If neither `data` nor `exp`, `regions`, and `data_name` are
             given, if `data` is combined with any of them, or for an
-            invalid `regions`, `link_mat` or `coords` (see
+            invalid `regions`, `link_mat`, `coords` or `figsize` (see
             `plot_meth_prob`).
         """
         if data is None and exp is not None and data_name is None:
             raise ValueError(
                 "provide either 'data', or 'exp', 'regions' and 'data_name'"
             )
+        _check_figsize(figsize)
         starts = _coord_starts(coords, exp, regions)
         sources = self._meth_sources(
             data,
@@ -620,6 +634,7 @@ class MethPlot:
             cbar_label=cbar_label,
             sharex=sharex,
             starts=starts,
+            figsize=figsize,
             show=show,
             out_file=out_file,
         )
@@ -634,6 +649,7 @@ class MethPlot:
         pooled: bool = True,
         split_by: str | None = None,
         out_file: str | Path | None = None,
+        figsize: tuple[float, float] | None = None,
         show: bool = True,
     ):
         """
@@ -664,6 +680,9 @@ class MethPlot:
         out_file : str or pathlib.Path, optional
             Path to save the generated figure. Directories are
             created if they do not exist.
+        figsize : (float, float), optional
+            Size of the whole figure (width, height) in inches. If None,
+            sized from matplotlib's `figure.figsize` and the panels.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
@@ -675,10 +694,12 @@ class MethPlot:
         Raises
         ------
         ValueError
-            If `regions` is empty, `split_by` is invalid, or some
-            region in `regions` has no matching entries in
-            `dropout_fractions`.
+            If `regions` is empty, `split_by` is invalid, some region
+            in `regions` has no matching entries in
+            `dropout_fractions`, or `figsize` is not two positive
+            numbers.
         """
+        _check_figsize(figsize)
         regions = [regions] if isinstance(regions, str) else list(regions)
         if not regions:
             raise ValueError("regions must not be empty")
@@ -727,9 +748,9 @@ class MethPlot:
             sharex=True,
             sharey=True,
             squeeze=False,
-            figsize=(
-                width * scale * ncols,
-                height * scale * nrows + extra,
+            figsize=_figsize(
+                figsize,
+                (width * scale * ncols, height * scale * nrows + extra),
             ),
         )
         labels = list(

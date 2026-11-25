@@ -114,6 +114,7 @@ def _panel_grid(
     extra_rows=(),
     scale_w=1.0,
     scale_h=1.0,
+    figsize=None,
 ):
     """
     Create a figure with one heatmap panel per region.
@@ -140,6 +141,9 @@ def _panel_grid(
     scale_w, scale_h : float, default 1.0
         Factors applied to the default figure width and height, per
         panel column and per panel row.
+    figsize : (float, float), optional
+        Size of the whole figure (inches); replaces the default size
+        from `figure.figsize`, `scale_w` and `scale_h`.
 
     Returns
     -------
@@ -173,7 +177,7 @@ def _panel_grid(
             ),
         },
         squeeze=False,
-        figsize=(w * scale_w * ncols, h * scale_h * nrows),
+        figsize=_figsize(figsize, (w * scale_w * ncols, h * scale_h * nrows)),
         layout="constrained" if nregion > 1 else None,
     )
     side_ax = ax[0, -1]
@@ -484,6 +488,35 @@ def _colorbar(fig, panels, mappable, label):
     cbar = fig.colorbar(mappable, cax=panels[0]["side_ax"])
     cbar.set_label(label, rotation=270, labelpad=15)
     return cbar
+
+
+def _check_figsize(figsize):
+    """
+    Check `figsize`: None, or a (width, height) pair of positive numbers.
+
+    Raises
+    ------
+    ValueError
+        If `figsize` is neither None nor such a pair.
+    """
+    if figsize is None:
+        return
+    try:
+        width, height = figsize
+        valid = float(width) > 0 and float(height) > 0
+    except (TypeError, ValueError):
+        valid = False
+    if not valid:
+        raise ValueError(
+            "figsize must be (width, height) in inches with positive "
+            f"values, got {figsize!r}"
+        )
+
+
+def _figsize(figsize, default):
+    """`figsize` (checked) as a tuple, or `default` if it is None."""
+    _check_figsize(figsize)
+    return default if figsize is None else tuple(map(float, figsize))
 
 
 def _finish(fig, show, out_file, **savefig_kwargs):

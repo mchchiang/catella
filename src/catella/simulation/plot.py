@@ -20,8 +20,10 @@ from catella._plotting import (
     _MAX_PANELS,
     _MCS_UNITS,
     _PANELS_PER_ROW,
+    _check_figsize,
     _colorbar,
     _draw_mean,
+    _figsize,
     _finish,
     _leaf_order,
     _left_ylabels,
@@ -275,6 +277,7 @@ class SimPlot:
         tstart: int | None = None,
         tend: int | None = None,
         out_file: str | Path | None = None,
+        figsize: tuple[float, float] | None = None,
         show: bool = True,
     ):
         """
@@ -301,6 +304,9 @@ class SimPlot:
         out_file : str or Path, optional
             Path to save the generated figure. Directories are created if
             they do not exist.
+        figsize : (float, float), optional
+            Size of the figure (width, height) in inches. If None,
+            matplotlib's `figure.figsize`.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
@@ -313,7 +319,8 @@ class SimPlot:
         Raises
         ------
         ValueError
-            If `tend` < `tstart`.
+            If `tend` < `tstart`, or if `figsize` is not two positive
+            numbers.
 
         Notes
         -----
@@ -324,6 +331,7 @@ class SimPlot:
         # Check the time values are valid
         if tstart is not None and tend is not None and tend < tstart:
             raise ValueError("'tend' must be greater than 'tstart'")
+        _check_figsize(figsize)
 
         # Retrieve the data
         data = dataset.raw[region, mol, run]
@@ -339,7 +347,7 @@ class SimPlot:
         time = data.time[start_idx:end_idx]
         energy = data.energy[start_idx:end_idx]
 
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=figsize)
         ax.plot(time, energy)
 
         _unit_axis(ax.xaxis, _MCS_UNITS, label="Time $t$ [{unit}]")
@@ -364,6 +372,7 @@ class SimPlot:
         out_file: str | Path | None = None,
         plot_edata: bool = False,
         coords: pd.DataFrame | None = None,
+        figsize: tuple[float, float] | None = None,
         show: bool = True,
     ):
         """
@@ -426,6 +435,10 @@ class SimPlot:
             Genomic coordinates of the regions, e.g. the experiment's
             `MethPrintExperiment.region_coords`, to label positions on
             the reference instead of from 0.
+        figsize : (float, float), optional
+            Size of the whole figure (width, height) in inches. If None,
+            each panel gets matplotlib's `figure.figsize`, scaled for
+            its extra rows.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
@@ -442,9 +455,10 @@ class SimPlot:
             with no data; if `tstart` or `tend` is used with
             `over="runs"`; if a TM dataset stores no samples; if `tend` <
             `tstart`; if `max_rows` or `downsample_how` is invalid; if
-            `plot_edata` is True and the dataset stores no energies; or
-            if `coords` does not match `region` (missing, other `nbp`,
-            no coordinates, or folded with `wrap`).
+            `plot_edata` is True and the dataset stores no energies; if
+            `coords` does not match `region` (missing, other `nbp`, no
+            coordinates, or folded with `wrap`); or if `figsize` is not
+            two positive numbers.
 
         Warns
         -----
@@ -460,6 +474,7 @@ class SimPlot:
         _check_downsample(max_rows, downsample_how)
         _check_edata(dataset, plot_edata)
         start = _sim_starts(coords, dataset, [region])[region]
+        _check_figsize(figsize)
         if over is None:
             over = "time" if dataset.method == "mcmc" else "runs"
         if over not in ("time", "runs"):
@@ -545,6 +560,7 @@ class SimPlot:
             binary=matrix.dtype == np.int8,
             dendrogram=False,
             extra_rows=("edata",) if plot_edata else (),
+            figsize=figsize,
         )
         im = self._draw_footprints(
             panel,
@@ -585,6 +601,7 @@ class SimPlot:
         link_mat: np.ndarray | dict | None = None,
         sharex: bool = False,
         coords: pd.DataFrame | None = None,
+        figsize: tuple[float, float] | None = None,
         show: bool = True,
     ):
         """
@@ -657,6 +674,8 @@ class SimPlot:
             own region.
         coords : pd.DataFrame, optional
             Genomic coordinates of the regions; see `plot_samples`.
+        figsize : (float, float), optional
+            Size of the whole figure in inches; see `plot_samples`.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
@@ -704,6 +723,7 @@ class SimPlot:
         _check_downsample(max_rows, downsample_how)
         _check_edata(dataset, plot_edata)
         starts = _sim_starts(coords, dataset, regions)
+        _check_figsize(figsize)
 
         def shown_rows(region):
             nrow = dataset.nmol[region] if mols[region] is None else len(
@@ -744,6 +764,7 @@ class SimPlot:
                 for name, on in (("mean", plot_mean), ("edata", plot_edata))
                 if on
             ],
+            figsize=figsize,
         )
         for region, d, panel in zip(regions, data, panels):
             im = self._draw_footprints(
@@ -843,7 +864,9 @@ class SimPlot:
             "link_mat": link_mat,
         }
 
-    def _footprint_grid(self, nregion, *, binary, dendrogram, extra_rows):
+    def _footprint_grid(
+        self, nregion, *, binary, dendrogram, extra_rows, figsize=None
+    ):
         """
         Create the figure for footprint panels (see `_panel_grid`).
 
@@ -860,6 +883,7 @@ class SimPlot:
             extra_rows=extra_rows,
             scale_w=1.2 if binary else 1.0,
             scale_h=1 + 0.25 * len(extra_rows),
+            figsize=figsize,
         )
 
     def _draw_footprints(
@@ -1008,6 +1032,7 @@ class SimPlot:
         link_mat: np.ndarray | dict | None = None,
         sharex: bool = False,
         coords: pd.DataFrame | None = None,
+        figsize: tuple[float, float] | None = None,
         show: bool = True,
     ):
         """
@@ -1065,6 +1090,8 @@ class SimPlot:
             own region.
         coords : pd.DataFrame, optional
             Genomic coordinates of the regions; see `plot_samples`.
+        figsize : (float, float), optional
+            Size of the whole figure in inches; see `plot_samples`.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
@@ -1097,6 +1124,7 @@ class SimPlot:
         }
         link_mat = _per_region(link_mat, regions, "link_mat")
         starts = _sim_starts(coords, dataset, regions)
+        _check_figsize(figsize)
         _warn_if_large(
             sum(
                 dataset.nmol[r] if mols[r] is None else len(mols[r])
@@ -1121,6 +1149,7 @@ class SimPlot:
             extra_rows=extra_rows,
             scale_w=1.25 if extra_rows else 1.0,
             scale_h=1 + 0.25 * len(extra_rows),
+            figsize=figsize,
         )
         for region, panel in zip(regions, panels):
             im = self._draw_occup(
@@ -1272,6 +1301,7 @@ class SimPlot:
         plot_stats: bool = True,
         logy: bool = False,
         out_file: str | Path | None = None,
+        figsize: tuple[float, float] | None = None,
         show: bool = True,
     ):
         """
@@ -1315,6 +1345,9 @@ class SimPlot:
         out_file : str or Path, optional
             Path to save the generated figure. Directories are created if
             they do not exist.
+        figsize : (float, float), optional
+            Size of the whole figure (width, height) in inches. If None,
+            sized from matplotlib's `figure.figsize` and the panels.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
@@ -1328,8 +1361,9 @@ class SimPlot:
         KeyError
             If no histogram is stored under `name` for a region.
         ValueError
-            If `regions` is empty, or `mols` is not a dict with several
-            regions or is out of range.
+            If `regions` is empty, if `mols` is not a dict with several
+            regions or is out of range, or if `figsize` is not two
+            positive numbers.
 
         Warns
         -----
@@ -1340,6 +1374,7 @@ class SimPlot:
         """
         regions = _region_list(regions)
         mols = _per_region(mols, regions, "mols")
+        _check_figsize(figsize)
         if len(regions) > _MAX_PANELS:
             _warn(
                 f"plotting {len(regions)} regions in one figure; "
@@ -1373,7 +1408,7 @@ class SimPlot:
 
         ylabel = "Fraction of linkers" if density else "Linkers per molecule"
         if panels:
-            fig, axes = self._linker_panels(len(regions), sharey)
+            fig, axes = self._linker_panels(len(regions), sharey, figsize)
             for ax, region in zip(axes, regions):
                 ax.set_title(region)
                 if region not in curves:
@@ -1395,7 +1430,7 @@ class SimPlot:
                 axes[0].set_xlabel("Linker length [bp]")
                 axes[0].set_ylabel(ylabel)
         else:
-            fig, ax = plt.subplots()
+            fig, ax = plt.subplots(figsize=figsize)
             axes = [ax]
             for i, region in enumerate(regions):
                 if region not in curves:
@@ -1415,7 +1450,7 @@ class SimPlot:
                 ax.set_yscale("log")
         return _finish(fig, show, out_file)
 
-    def _linker_panels(self, npanel, sharey):
+    def _linker_panels(self, npanel, sharey, figsize=None):
         """
         Create one panel per region, at most 4 per row.
 
@@ -1425,6 +1460,8 @@ class SimPlot:
             The number of panels.
         sharey : bool
             Whether the panels share the y-axis.
+        figsize : (float, float), optional
+            Size of the whole figure in inches; None for the default.
 
         Returns
         -------
@@ -1443,7 +1480,9 @@ class SimPlot:
             sharex=True,
             sharey=sharey,
             squeeze=False,
-            figsize=(width * scale * ncols, height * scale * nrows),
+            figsize=_figsize(
+                figsize, (width * scale * ncols, height * scale * nrows)
+            ),
             layout="constrained",
         )
         for idx in range(npanel, nrows * ncols):

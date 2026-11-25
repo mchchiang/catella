@@ -31,6 +31,28 @@ def _load_source(source_file: Path, kind: "SourceKind"):
     return SimDataset.load(source_file)
 
 
+def figsize_parser(value: str | None):
+    if value is None:
+        return None
+    try:
+        width, height = (float(v) for v in value.split(","))
+    except ValueError:
+        raise typer.BadParameter(
+            f"figsize must be W,H in inches, got {value!r}"
+        )
+    return width, height
+
+
+# Option of the plots: whole-figure size in inches
+_Figsize = Annotated[
+    str | None,
+    typer.Option(
+        callback=figsize_parser,
+        help="Figure width,height in inches (e.g. 10,3)",
+    ),
+]
+
+
 # Option of the simulation plots: an experiment file for genomic labels
 _CoordsFrom = Annotated[
     Path | None,
@@ -483,6 +505,7 @@ def plot_dropout_ecdf(
             help="Path to save the figure", file_okay=True, dir_okay=False
         ),
     ] = None,
+    figsize: _Figsize = None,
     show: Annotated[bool, typer.Option(help="Display the figure")] = True,
     span: Annotated[
         str,
@@ -502,6 +525,7 @@ def plot_dropout_ecdf(
         pooled=pooled,
         split_by=split_by,
         out_file=out_file,
+        figsize=figsize,
         show=show,
         span=span,
     )
@@ -1252,6 +1276,7 @@ def plot_config(
         typer.Option(help="Put all panels on the longest region's scale"),
     ] = False,
     coords_from: _CoordsFrom = None,
+    figsize: _Figsize = None,
     show: Annotated[bool, typer.Option(help="Display the figure")] = True,
 ):
     """
@@ -1282,6 +1307,7 @@ def plot_config(
         out_file=out_file,
         sharex=sharex,
         coords=_region_coords(coords_from),
+        figsize=figsize,
         show=show,
     )
 
@@ -1346,6 +1372,7 @@ def plot_occup(
         typer.Option(help="Put all panels on the longest region's scale"),
     ] = False,
     coords_from: _CoordsFrom = None,
+    figsize: _Figsize = None,
     show: Annotated[bool, typer.Option(help="Display the figure")] = True,
 ):
     """
@@ -1375,6 +1402,7 @@ def plot_occup(
         link_mat=link_mat,
         sharex=sharex,
         coords=_region_coords(coords_from),
+        figsize=figsize,
         show=show,
     )
 
@@ -1485,6 +1513,7 @@ def plot_meth(
             "--coords", help="Label positions in genomic coordinates"
         ),
     ] = False,
+    figsize: _Figsize = None,
     show: Annotated[bool, typer.Option(help="Display the figure")] = True,
 ):
     """
@@ -1519,6 +1548,7 @@ def plot_meth(
         link_mat=link_mat,
         sharex=sharex,
         coords=coords,
+        figsize=figsize,
         show=show,
     )
 

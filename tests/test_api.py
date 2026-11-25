@@ -1537,6 +1537,33 @@ class TestPlotReturnsFigure:
         assert fig is plt.gcf()
         assert call(show=True) is None
 
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "plot_meth",
+            "plot_dropout_ecdf",
+            "plot_config",
+            "plot_occup",
+            "plot_linker_hist",
+        ],
+    )
+    def test_figsize_sets_whole_figure(self, tmp_path, name):
+        call = _plot_calls(tmp_path)[name]
+        fig = call(figsize=(9, 3.5), show=False)
+        assert tuple(fig.get_size_inches()) == pytest.approx((9, 3.5))
+
+    @pytest.mark.parametrize("figsize", [(0, 3), (5,), "big", (5, -1)])
+    def test_invalid_figsize_raises(self, figsize):
+        with pytest.raises(ValueError, match="figsize must be"):
+            catella.plot_meth(
+                np.full((2, 10), 0.5), figsize=figsize, show=False
+            )
+
+    def test_default_size_unchanged(self):
+        fig = catella.plot_meth(np.full((2, 10), 0.5), show=False)
+        expected = tuple(plt.rcParams["figure.figsize"])
+        assert tuple(fig.get_size_inches()) == pytest.approx(expected)
+
     def test_saving_still_works(self, tmp_path):
         out_file = tmp_path / "meth.png"
         fig = catella.plot_meth(

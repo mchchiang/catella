@@ -805,6 +805,7 @@ def plot_dropout_ecdf(
     pooled: bool = True,
     split_by: str | None = None,
     out_file: str | Path | None = None,
+    figsize: tuple[float, float] | None = None,
     show: bool = True,
     span: str = "full",
 ):
@@ -837,6 +838,9 @@ def plot_dropout_ecdf(
     out_file : str or pathlib.Path, optional
         Path to save the generated figure. Directories are created if
         they do not exist.
+    figsize : (float, float), optional
+        Size of the whole figure (width, height) in inches. If None,
+        the default size (matplotlib's `figure.figsize` per panel).
     show : bool, default True
         Whether to display the plot using `plt.show()`.
     span : {"full", "calls", "read"}, default "full"
@@ -871,6 +875,7 @@ def plot_dropout_ecdf(
         pooled=pooled,
         split_by=split_by,
         out_file=out_file,
+        figsize=figsize,
         show=show,
     )
 
@@ -1378,6 +1383,7 @@ def plot_config(
     link_mat: np.ndarray | pd.DataFrame | dict | None = None,
     sharex: bool = False,
     coords: pd.DataFrame | None = None,
+    figsize: tuple[float, float] | None = None,
     show: bool = True,
 ):
     """
@@ -1448,6 +1454,9 @@ def plot_config(
         Genomic coordinates of the regions, e.g. `exp.region_coords` of
         the experiment the simulation was run on, to label positions on
         the reference instead of from 0.
+    figsize : (float, float), optional
+        Size of the whole figure (width, height) in inches. If None,
+        the default size (matplotlib's `figure.figsize` per panel).
     show : bool, default True
         Whether to display the figure.
 
@@ -1494,6 +1503,7 @@ def plot_config(
         link_mat=link_mat,
         sharex=sharex,
         coords=coords,
+        figsize=figsize,
         show=show,
     )
 
@@ -1512,6 +1522,7 @@ def plot_occup(
     link_mat: np.ndarray | dict | None = None,
     sharex: bool = False,
     coords: pd.DataFrame | None = None,
+    figsize: tuple[float, float] | None = None,
     show: bool = True,
 ):
     """
@@ -1567,6 +1578,9 @@ def plot_occup(
         region.
     coords : pd.DataFrame, optional
         Genomic coordinates of the regions; see `plot_config`.
+    figsize : (float, float), optional
+        Size of the whole figure (width, height) in inches. If None,
+        the default size (matplotlib's `figure.figsize` per panel).
     show : bool, default True
         If True, invokes the active plotting backend to display the
         figure immediately.
@@ -1609,6 +1623,7 @@ def plot_occup(
         link_mat=link_mat,
         sharex=sharex,
         coords=coords,
+        figsize=figsize,
         show=show,
     )
 
@@ -1625,6 +1640,7 @@ def plot_linker_hist(
     plot_stats: bool = True,
     logy: bool = False,
     out_file: str | Path | None = None,
+    figsize: tuple[float, float] | None = None,
     show: bool = True,
 ):
     """
@@ -1668,6 +1684,9 @@ def plot_linker_hist(
     out_file : str or Path, optional
         Path where the generated plot will be saved. If None, the plot is
         not saved to disk.
+    figsize : (float, float), optional
+        Size of the whole figure (width, height) in inches. If None,
+        the default size (matplotlib's `figure.figsize` per panel).
     show : bool, default True
         If True, invokes the active plotting backend to display the
         figure immediately.
@@ -1702,6 +1721,7 @@ def plot_linker_hist(
         plot_stats=plot_stats,
         logy=logy,
         out_file=out_file,
+        figsize=figsize,
         show=show,
     )
 
@@ -1727,6 +1747,7 @@ def plot_meth(
     link_mat: np.ndarray | dict | None = None,
     sharex: bool = False,
     coords: bool | pd.DataFrame | None = None,
+    figsize: tuple[float, float] | None = None,
     show: bool = True,
 ):
     """
@@ -1818,6 +1839,9 @@ def plot_meth(
         `exp.region_coords`; a table like it is used as given. None or
         False labels 0-based region positions. Requires `exp` and
         `regions`.
+    figsize : (float, float), optional
+        Size of the whole figure (width, height) in inches. If None,
+        the default size (matplotlib's `figure.figsize` per panel).
     show : bool, default True
         Whether to display the figure using the active plotting
         backend.
@@ -1863,6 +1887,7 @@ def plot_meth(
         "link_mat": link_mat,
         "sharex": sharex,
         "coords": coords,
+        "figsize": figsize,
         "show": show,
     }
     if cbar_label is not None:

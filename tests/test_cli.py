@@ -2522,6 +2522,35 @@ class TestPlotMeth:
         assert result.exit_code == 0, result.output
         assert seen["coords"] is True
 
+    @pytest.mark.parametrize(
+        ("value", "ok"), [("10,3", True), ("10", False), ("a,b", False)]
+    )
+    def test_figsize_option(self, tmp_path, monkeypatch, value, ok):
+        exp_file = self._two_region_exp_file(tmp_path)
+        seen = {}
+        monkeypatch.setattr(
+            catella, "plot_meth", lambda **kwargs: seen.update(kwargs)
+        )
+        result = runner.invoke(
+            app,
+            [
+                "plot_meth",
+                str(exp_file),
+                "chr1",
+                "--raw-which",
+                "test",
+                "--figsize",
+                value,
+                "--no-show",
+            ],
+        )
+        if ok:
+            assert result.exit_code == 0, result.output
+            assert seen["figsize"] == (10.0, 3.0)
+        else:
+            assert result.exit_code != 0
+            assert "figsize must be W,H" in result.output
+
     def test_several_regions_with_raw_which(self, tmp_path):
         exp_file = self._two_region_exp_file(tmp_path)
         out_file = tmp_path / "methmap_two_raw.png"

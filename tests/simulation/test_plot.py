@@ -590,6 +590,20 @@ class TestPositionalDatasetArg:
         assert fig is plt.gcf()
 
     @pytest.mark.parametrize("method", ["plot_energy", "plot_samples"])
+    def test_figsize(self, tmp_path, method):
+        dataset = _make_dataset(tmp_path, nmol=2, nbp=20)
+        kwargs = {"run": 0} if method == "plot_energy" else {}
+        fig = getattr(SimPlot(), method)(
+            dataset,
+            region="chr1",
+            mol=0,
+            figsize=(8, 2.5),
+            show=False,
+            **kwargs,
+        )
+        assert tuple(fig.get_size_inches()) == pytest.approx((8, 2.5))
+
+    @pytest.mark.parametrize("method", ["plot_energy", "plot_samples"])
     def test_tscale_removed(self, tmp_path, method):
         dataset = _make_dataset(tmp_path, nmol=2, nbp=20)
         kwargs = {"run": 0} if method == "plot_energy" else {}

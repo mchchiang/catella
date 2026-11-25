@@ -249,7 +249,8 @@ def _decimals(values, most=6):
 
 class _ShiftedLocator(Locator):
     """
-    Ticks at round values of `start + x`, for an axis drawn in `x`.
+    Ticks at round whole values of `start + x`, for an axis drawn in
+    `x` (positions in bp and times in MCS are whole numbers).
 
     Parameters
     ----------
@@ -259,7 +260,9 @@ class _ShiftedLocator(Locator):
 
     def __init__(self, start=0):
         self.start = start
-        self._base = MaxNLocator(nbins="auto", steps=[1, 2, 2.5, 5, 10])
+        self._base = MaxNLocator(
+            nbins="auto", steps=[1, 2, 2.5, 5, 10], integer=True
+        )
 
     def set_axis(self, axis):
         super().set_axis(axis)

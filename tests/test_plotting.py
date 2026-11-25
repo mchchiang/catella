@@ -93,3 +93,8 @@ class TestShiftedLocator:
     def test_no_start_matches_plain_ticks(self):
         ticks = _ShiftedLocator().tick_values(0, 100)
         assert np.allclose(np.mod(ticks, 5), 0)
+
+    @pytest.mark.parametrize("vmax", [3, 20, 25])
+    def test_whole_number_ticks(self, vmax):
+        ticks = _ShiftedLocator(1000000).tick_values(0, vmax)
+        assert np.allclose(ticks, np.round(ticks))

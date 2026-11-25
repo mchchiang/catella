@@ -5,7 +5,7 @@ import pandas as pd
 
 from catella._batches import _row_batches
 from catella.experiment._dropout import _apply_keep_mask
-from catella.experiment._reads import _gap_mask, _window_covered
+from catella.experiment._reads import _gap_mask, _window_spanned
 from catella.h5_array import H5Array
 
 
@@ -289,7 +289,7 @@ def _write_empirical_prob(
     batch_size,
     tmp_dir,
     eps,
-    coverage=None,
+    span_spec=None,
     lnuc=1,
 ):
     """
@@ -298,7 +298,7 @@ def _write_empirical_prob(
 
     Interior gaps are filled with 0.5, positions from `end_idx` on with
     `fill_edge`, and all-nan (dropped) molecules stay all nan. Windows
-    without a covered position (see `_coverage_spec`) are nan.
+    without a spanned position (see `_span_spec`) are nan.
 
     Parameters
     ----------
@@ -321,10 +321,10 @@ def _write_empirical_prob(
     eps : float
         Floor on `vmax - vmin`, also forwarded to
         `_normalize_to_controls`.
-    coverage : tuple, optional
-        From `_coverage_spec`; None if every position is covered.
+    span_spec : tuple, optional
+        From `_span_spec`; None if every position is spanned.
     lnuc : int, default 1
-        Window size, for `_window_covered`.
+        Window size, for `_window_spanned`.
 
     Returns
     -------
@@ -345,15 +345,15 @@ def _write_empirical_prob(
         prob[:, :end_idx] = np.where(np.isnan(interior), 0.5, interior)
         if end_idx is not None:
             prob[:, end_idx:] = fill_edge
-        if coverage is not None:
-            covered = _covered_positions(coverage, start, stop, nbp)
-            prob[~_window_covered(covered, lnuc)] = np.nan
+        if span_spec is not None:
+            spanned = _spanned_positions(span_spec, start, stop, nbp)
+            prob[~_window_spanned(spanned, lnuc)] = np.nan
         prob[masked, :] = np.nan
         out.write_batch(start, stop, prob)
     return out
 
 
-def _coverage_spec(raw, region, span):
+def _span_spec(raw, region, span):
     """
     Per-molecule span and gaps of the test source, for
     `_write_empirical_prob`.
@@ -372,7 +372,7 @@ def _coverage_spec(raw, region, span):
     -------
     tuple or None
         `(lo, hi, gaps)`: int64 bounds per molecule and `(gaps,
-        offset)` or None; None if every position is covered ("full"
+        offset)` or None; None if every position is spanned ("full"
         without gaps).
 
     Raises
@@ -409,11 +409,11 @@ def _coverage_spec(raw, region, span):
     return lo, hi, gaps
 
 
-def _covered_positions(coverage, start, stop, nbp):
-    """Positions covered by molecules `start:stop` (see `_coverage_spec`)."""
-    lo, hi, gaps = coverage
+def _spanned_positions(span_spec, start, stop, nbp):
+    """Positions spanned by molecules `start:stop` (see `_span_spec`)."""
+    lo, hi, gaps = span_spec
     idx = np.arange(nbp)[None, :]
-    covered = (idx >= lo[start:stop, None]) & (idx < hi[start:stop, None])
+    spanned = (idx >= lo[start:stop, None]) & (idx < hi[start:stop, None])
     if gaps is not None:
-        covered &= ~_gap_mask(gaps[0], gaps[1], start, stop, nbp)
-    return covered
+        spanned &= ~_gap_mask(gaps[0], gaps[1], start, stop, nbp)
+    return spanned

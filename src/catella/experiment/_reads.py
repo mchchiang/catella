@@ -123,14 +123,14 @@ def _span_mask(called, span, extent=None):
     return (idx >= start[:, None]) & (idx < end[:, None])
 
 
-def _window_covered(covered, lnuc):
+def _window_spanned(spanned, lnuc):
     """
-    Whether each left-aligned window holds a covered position.
+    Whether each left-aligned window holds a spanned position.
 
     Parameters
     ----------
-    covered : np.ndarray
-        bool, (n_mol, L), positions each molecule covers.
+    spanned : np.ndarray
+        bool, (n_mol, L), positions each molecule spans.
     lnuc : int
         Window size; window i is `[i, min(i + lnuc, L))`.
 
@@ -139,9 +139,9 @@ def _window_covered(covered, lnuc):
     np.ndarray
         bool, (n_mol, L).
     """
-    n_mol, L = covered.shape
+    n_mol, L = spanned.shape
     cum = np.zeros((n_mol, L + 1), dtype=np.int32)
-    np.cumsum(covered, axis=1, dtype=np.int32, out=cum[:, 1:])
+    np.cumsum(spanned, axis=1, dtype=np.int32, out=cum[:, 1:])
     idx = np.arange(L)
     end = np.minimum(idx + lnuc, L)
     return cum[:, end] > cum[:, idx]
@@ -159,7 +159,7 @@ class _ReadBatch(NamedTuple):
     called: np.ndarray
     blank: np.ndarray
     frac: dict
-    covered: np.ndarray | None = None
+    spanned: np.ndarray | None = None
 
 
 def _accumulate_call_frac(stats, b, assay, ctx, channels):
@@ -340,8 +340,8 @@ def _iter_read_sites(
         `blank`, bool per molecule, kept molecules with neither a
         strand nor a call (only with `span="full"`); `frac`, the
         fraction of kept stranded molecules on each strand ("+"/"-");
-        and `covered`, bool (n_mol, L), positions inside the span and
-        outside gaps (None if every position is covered).
+        and `spanned`, bool (n_mol, L), positions inside the span and
+        outside gaps (None if every position is spanned).
 
     Raises
     ------
@@ -390,14 +390,14 @@ def _iter_read_sites(
         blank = keep & (labels == ".") & ~read.any(axis=1)
         if span != "full":
             blank[:] = False
-        covered = None
+        spanned = None
         if span != "full" or gap is not None:
             in_span = _span_mask(~np.isnan(batch) & ctx_ok[None, :], span, ext)
-            covered = np.ones(batch.shape, dtype=bool)
+            spanned = np.ones(batch.shape, dtype=bool)
             if in_span is not None:
-                covered = in_span
+                spanned = in_span
             if gap is not None:
-                covered = covered & ~gap
+                spanned = spanned & ~gap
         yield _ReadBatch(
-            start, stop, keep, labels, q, read, called, blank, frac, covered
+            start, stop, keep, labels, q, read, called, blank, frac, spanned
         )

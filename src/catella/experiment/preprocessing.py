@@ -29,9 +29,9 @@ from catella.experiment._dropout import _strand_of_mol
 from catella.experiment._empirical import (
     _clip_bounds,
     _control_means,
-    _coverage_spec,
     _masked_smoothed,
     _smooth_source,
+    _span_spec,
     _write_empirical_prob,
 )
 from catella.experiment._eta import (
@@ -295,8 +295,8 @@ class MethPrintAnalysis:
         """
 
         _check_span(span)
-        coverage = {
-            region: _coverage_spec(exp.raw[region], region, span)
+        span_specs = {
+            region: _span_spec(exp.raw[region], region, span)
             for region in exp.regions
         }
         tmp_dir = exp.resolve_tmp_dir()
@@ -356,7 +356,7 @@ class MethPrintAnalysis:
                 batch_size=batch_size,
                 tmp_dir=tmp_dir,
                 eps=self._EPSILON,
-                coverage=coverage[region],
+                span_spec=span_specs[region],
                 lnuc=lnuc,
             )
 

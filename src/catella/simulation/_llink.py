@@ -15,7 +15,7 @@ from catella._warnings import _warn
 from catella.simulation._inputs import (
     _check_fill_nan,
     _is_valid_llink,
-    _prepare_rows,
+    _prepare_block,
     _resolve_settings,
 )
 
@@ -53,14 +53,14 @@ def _region_rows(
     arr, keep, max_nmol, rng, batch_size, lnuc, region, fill_nan
 ):
     """
-    Rows of one region to use: kept, with data at the nucleosome
-    start positions, and at most `max_nmol` of them, drawn at random.
+    Rows of one region to use: kept, with data (a spanned base pair),
+    and at most `max_nmol` of them, drawn at random.
     Partly-nan rows raise unless `fill_nan` is given.
     """
     usable = []
     for start, stop in _row_batches(0, arr.shape[0], batch_size):
         block = np.asarray(arr[start:stop, :], dtype=np.float64)
-        _, no_data = _prepare_rows(block, lnuc, region, fill_nan)
+        _, no_data, _ = _prepare_block(block, lnuc, region, fill_nan)
         has_data = ~no_data
         if keep is not None:
             has_data &= keep[start:stop]
@@ -103,7 +103,9 @@ def _chunk_jobs(exp, settings, candidates, prob_name, selected, fill_nan):
         for start in range(0, len(rows), _CHUNK_NMOL):
             chunk = rows[start : start + _CHUNK_NMOL]
             block = np.asarray(arr[chunk, :], dtype=np.float64)
-            block, _ = _prepare_rows(block, settings.lnuc, region, fill_nan)
+            block, _, _ = _prepare_block(
+                block, settings.lnuc, region, fill_nan
+            )
             yield region, block, log_z0
 
 

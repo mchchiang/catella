@@ -23,9 +23,8 @@ from catella.simulation._inputs import (
     _normalize_meth_prob,
     _normalize_mols,
     _parse_out_types,
-    _prepare_rows,
+    _prepare_block,
     _resolve_settings,
-    _spanned_intervals,
 )
 from catella.simulation._io import (
     _write_mcmc_data,
@@ -78,7 +77,8 @@ def _prepare_meth_prob(meth_prob, regions, lnuc, fill_nan=None):
     meth_prob : dict of str to np.ndarray
         The 2D array of each region; a filled copy where needed.
     no_data : dict of str to np.ndarray
-        bool, True for each molecule with no data.
+        bool, True for each molecule with no data (no spanned base
+        pair).
     spanned : dict of str to tuple or None
         The spanned intervals of each region (see `_spanned_intervals`).
 
@@ -92,9 +92,8 @@ def _prepare_meth_prob(meth_prob, regions, lnuc, fill_nan=None):
     no_data = {}
     spanned = {}
     for region in regions:
-        spanned[region] = _spanned_intervals(meth_prob[region], lnuc)
-        meth_prob[region], no_data[region] = _prepare_rows(
-            meth_prob[region], lnuc, region, fill_nan
+        meth_prob[region], no_data[region], spanned[region] = (
+            _prepare_block(meth_prob[region], lnuc, region, fill_nan)
         )
     return meth_prob, no_data, spanned
 
@@ -236,11 +235,10 @@ class SimManager:
         meth_prob : np.ndarray or dict
             The probability of methylation. If multiple regions are
             provided, this must be a mapping of {region_name: data}. Data can
-            be NumPy arrays or Pandas DataFrames. Molecules that are nan at
-            every nucleosome start position (the first `nbp - lnuc + 1`
-            base pairs; e.g., molecules masked by `filter_dropout`) have
-            no data and are not simulated; see `SimDataset.no_data`. Nan
-            beyond the last start position is ignored.
+            be NumPy arrays or Pandas DataFrames. Molecules that span no
+            base pair (e.g., masked by `filter_dropout`) have no data and
+            are not simulated; see `SimDataset.no_data`. Nan beyond the
+            last start position (`nbp - lnuc`) is ignored.
         out_dir : str or Path
             Directory where the simulation dataset will be initialized. The
             raw simulation data will be stored with a sub-directory called
@@ -514,7 +512,7 @@ class SimManager:
         fill_nan : {"mean"}, float, or None, default None
             How to treat molecules that are nan at some but not all
             nucleosome start positions; see `run`. Molecules with no data
-            (nan at every start position) are always left out.
+            (no spanned base pair) are always left out.
 
         Returns
         -------

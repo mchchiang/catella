@@ -1,9 +1,11 @@
 # test_spanned.py
 
+import warnings
+
 import numpy as np
 import pytest
 from catella.simulation import _inputs
-from catella.simulation._inputs import _spanned_intervals
+from catella.simulation._inputs import _prepare_block, _spanned_intervals
 
 
 def _windows_from_read(read_mask, lnuc, seed=0):
@@ -142,3 +144,44 @@ class TestSpannedIntervals:
         batched = _spanned_intervals(block, 4)
         np.testing.assert_array_equal(batched[0], single[0])
         np.testing.assert_array_equal(batched[1], single[1])
+
+
+def _scattered_block():
+    block = np.full((3, 20), 0.5)
+    block[0, :] = np.nan
+    block[0, 7] = 0.5
+    block[1, :] = np.nan
+    return block
+
+
+class TestPrepareBlock:
+    def test_unspanned_molecule_has_no_data(self):
+        block = _scattered_block()
+        with pytest.warns(UserWarning, match="1 molecule.*span no base"):
+            out, no_data, spanned = _prepare_block(
+                block, 5, "chr1", fill_nan=0.5
+            )
+        assert no_data.tolist() == [True, True, False]
+        assert np.isnan(out[0]).all()
+        assert spanned[1].tolist() == [0, 0, 0, 1]
+
+    def test_input_is_not_modified(self):
+        block = _scattered_block()
+        with pytest.warns(UserWarning, match="span no base"):
+            _prepare_block(block, 5, "chr1", fill_nan=0.5)
+        assert block[0, 7] == 0.5
+
+    def test_read_derived_nan_does_not_warn(self):
+        mask = _read_mask(50, [[(12, 30)], [], [(0, 50)]])
+        block = _windows_from_read(mask, 5)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            _, no_data, _ = _prepare_block(block, 5, "chr1", fill_nan=0.5)
+        assert no_data.tolist() == [False, True, False]
+
+    def test_matches_prepare_rows_without_nan(self):
+        block = np.random.default_rng(0).uniform(size=(3, 20))
+        out, no_data, spanned = _prepare_block(block, 5, "chr1")
+        assert out is block
+        assert not no_data.any()
+        assert spanned is None

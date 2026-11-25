@@ -121,6 +121,24 @@ class TestEvidence:
             want["evidence"].iloc[0]
         )
 
+    def test_unspanned_rows_are_skipped(self):
+        probs = _random_probs()
+        scattered = np.full((1, probs.shape[1]), np.nan)
+        scattered[0, 5] = 0.5
+        with_scattered = np.vstack([probs, scattered])
+        with pytest.warns(UserWarning, match="span no base pair"):
+            got = _llink_evidence(
+                _exp({"c": with_scattered}),
+                _settings(),
+                llinks=[5],
+                fill_nan=0.5,
+            )
+        want = _llink_evidence(_exp({"c": probs}), _settings(), llinks=[5])
+        assert got["nmol"].iloc[0] == 8
+        assert got["evidence"].iloc[0] == pytest.approx(
+            want["evidence"].iloc[0]
+        )
+
     def test_trailing_nan_is_allowed(self):
         probs = _random_probs()
         probs[:, -19:] = np.nan

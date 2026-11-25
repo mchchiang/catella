@@ -602,7 +602,7 @@ def estimate_llink(
     fill_nan : {"mean"}, float, or None, default None
         How to treat molecules that are nan at some but not all
         nucleosome start positions; see `run`. Molecules with no data
-        (nan at every start position) are always left out.
+        (no spanned base pair) are always left out.
 
     Returns
     -------
@@ -899,9 +899,9 @@ def run(
     meth_prob : np.ndarray or Mapping[str, np.ndarray | pd.DataFrame]
         Probability of methylation. If multiple regions are provided, this
         must be a mapping of {region_name: data}. Data can be NumPy arrays or
-        Pandas DataFrames. Molecules that are nan at every nucleosome start
-        position (e.g., molecules masked by `filter_dropout`) have no data
-        and are not simulated; see `SimDataset.no_data`. Molecules that are
+        Pandas DataFrames. Molecules that span no base pair (e.g., masked
+        by `filter_dropout`) have no data and are not simulated; see
+        `SimDataset.no_data`. Molecules that are
         nan at only some start positions are handled by `fill_nan`.
     out_dir : str or Path
         Directory or file prefix where simulation results will be stored.

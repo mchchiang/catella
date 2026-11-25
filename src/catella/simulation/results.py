@@ -1436,10 +1436,9 @@ class SimDataset:
         """
         The molecules that were not simulated for lack of data.
 
-        A molecule has no data if its methylation probability is nan at
-        every nucleosome start position, e.g. a molecule masked by
-        `filter_dropout`. Such molecules have no raw files, and their
-        analysis results are nan.
+        A molecule has no data if it spans no base pair (see
+        `spanned`), e.g. a molecule masked by `filter_dropout`. Such
+        molecules have no raw files, and their analysis results are nan.
 
         Returns
         -------

@@ -260,6 +260,59 @@ def _spanned_intervals(block, lnuc):
     return np.concatenate(chunks).astype(np.int64), offset
 
 
+def _prepare_block(block, lnuc, region, fill_nan=None):
+    """
+    Find the spanned base pairs and the molecules with no data of
+    `block`, and fill the others.
+
+    A molecule that spans no base pair is set to nan (in a copy), so it
+    is handled like any molecule with no data.
+
+    Parameters
+    ----------
+    block : np.ndarray
+        2D methylation probability, molecules by base pairs.
+    lnuc : int
+        The nucleosome footprint size.
+    region : str
+        The region of `block`, for messages.
+    fill_nan : None, "mean", or float, default None
+        See `_prepare_rows`.
+
+    Returns
+    -------
+    block : np.ndarray
+        `block` if nothing is changed, else a filled copy.
+    no_data : np.ndarray
+        bool, True for each molecule with no data.
+    spanned : tuple of np.ndarray or None
+        See `_spanned_intervals`.
+
+    Raises
+    ------
+    ValueError
+        See `_prepare_rows`.
+
+    Warns
+    -----
+    UserWarning
+        If a molecule with finite start positions spans no base pair.
+    """
+    spanned = _spanned_intervals(block, lnuc)
+    if spanned is not None:
+        has_data = ~np.isnan(_start_positions(block, lnuc)).all(axis=1)
+        unspanned = has_data & (np.diff(spanned[1]) == 0)
+        if unspanned.any():
+            _warn(
+                f"{int(unspanned.sum())} molecule(s) of region '{region}' "
+                "span no base pair; treated as having no data"
+            )
+            block = np.array(block, dtype=np.float64)
+            block[unspanned] = np.nan
+    block, no_data = _prepare_rows(block, lnuc, region, fill_nan)
+    return block, no_data, spanned
+
+
 def _normalize_mols(mols, regions):
     """
     Return the molecule selection of each region.

@@ -1083,6 +1083,18 @@ class TestSpanned:
         with pytest.raises(ValueError, match="spanned positions differ"):
             manager.rerun(dataset=dataset, meth_prob=other)
 
+    def test_unspanned_molecule_is_not_simulated(self, tmp_path):
+        meth_prob = _partial_read_meth_prob()
+        meth_prob[2] = np.nan
+        meth_prob[2, 12] = 0.5
+        with pytest.warns(UserWarning, match="span no base pair"):
+            dataset = self._run(tmp_path, meth_prob, nsim=2)
+        assert dataset.no_data["chr1"].tolist() == [False, True, True]
+        assert not dataset.tm_file("chr1", 2).exists()
+        SimAnalysis().compute_occup(dataset=dataset)
+        occup = np.asarray(dataset.analysis["chr1"]["occup"])
+        assert np.isnan(occup[2]).all()
+
     def test_old_dataset_loads_without_spanned(self, tmp_path):
         dataset = self._run(tmp_path, _partial_read_meth_prob())
         with h5py.File(dataset._dataset_file, "a") as f:

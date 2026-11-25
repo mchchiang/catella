@@ -860,6 +860,7 @@ def _stream_rows_to_staging(
     ignore_strand=False,
     min_gap=None,
     count_5hmc=False,
+    source=None,
 ):
     """
     Stream full rows, transform them, and append to per-region
@@ -923,6 +924,9 @@ def _stream_rows_to_staging(
         `_GapTracker`). None records no gaps.
     count_5hmc : bool, default False
         If True, 'CG' and 'GC' also accept 5hmC calls.
+    source : str or pathlib.Path, optional
+        File name used in messages (e.g., the original of a
+        decompressed `data_file`); defaults to `data_file`.
 
     Returns
     -------
@@ -1022,11 +1026,12 @@ def _stream_rows_to_staging(
                 if out is not None:
                     appenders[region].append(out)
 
-    stats.report(data_file, mtase)
+    source = data_file if source is None else source
+    stats.report(source, mtase)
     if n_non_primary:
         _warn(
             f"dropped {n_non_primary} row(s) of secondary or "
-            f"supplementary alignments in {data_file}"
+            f"supplementary alignments in {source}"
         )
     for chrom, n in n_out.items():
         length = (chrom_sizes or {}).get(chrom)
@@ -1046,7 +1051,7 @@ def _stream_rows_to_staging(
         n_unordered += n_bad
     if n_unordered:
         _warn(
-            f"{n_unordered} molecule(s) in {data_file} have rows not "
+            f"{n_unordered} molecule(s) in {source} have rows not "
             "ordered along the reference; no internal gaps are inferred "
             "for them (sort the file by read and reference position, or "
             "pass gaps_bed)"
@@ -1822,6 +1827,7 @@ def _ingest_into(
             ignore_strand=ignore_strand,
             min_gap=min_gap,
             count_5hmc=count_5hmc,
+            source=data_file,
         )
         if gaps_bed and not wrap:
             gaps = _apply_bed_gaps(

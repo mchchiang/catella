@@ -1,5 +1,6 @@
 # test_load_raw.py
 
+import gzip
 import warnings
 from unittest.mock import patch
 
@@ -1156,6 +1157,35 @@ class TestModCodes:
         assert dense.shape == (1, 4)
         assert dense.iloc[0, 0] == pytest.approx(0.5)
         assert np.isnan(dense.iloc[0, 1])
+        exp.close()
+
+    def test_warning_names_original_gzip_file(self, tmp_path):
+        plain = tmp_path / "plain.tsv"
+        _write_tsv(
+            plain,
+            [
+                ("m0", 0, "chr1", "+", 0.5, "a"),
+                ("m0", 1, "chr1", "+", 0.1, "m"),
+            ],
+        )
+        test_file = tmp_path / "test.tsv.gz"
+        with open(plain, "rb") as src, gzip.open(test_file, "wb") as dst:
+            dst.write(src.read())
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chr1": 4})
+        fasta_file = tmp_path / "ref.fa"
+        _write_fasta(fasta_file, {"chr1": "AAAA"})
+        with pytest.warns(UserWarning) as record:
+            exp = MethPrintExperiment.load_raw(
+                chromsize=chromsize,
+                test_file=test_file,
+                fasta_file=fasta_file,
+                mtase="A",
+            )
+        message = next(
+            str(w.message) for w in record if "mod_code" in str(w.message)
+        )
+        assert message.endswith(f"in {test_file}")
         exp.close()
 
     def test_chebi_code_kept(self, tmp_path):

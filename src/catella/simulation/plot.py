@@ -31,6 +31,7 @@ from catella._plotting import (
 )
 from catella._regions import _per_region, _region_list
 from catella._warnings import _warn
+from catella.experiment._reads import _window_spanned
 from catella.mapping import CoordsTransform
 from catella.simulation._exact import _spanned_rows
 from catella.simulation.analysis import NucFiberMap, SimAnalysis
@@ -140,6 +141,21 @@ def _footprints(configs, nbp, lnuc, spanned_rows=None):
     if spanned_rows is not None:
         out[~np.broadcast_to(spanned_rows, out.shape)] = -1
     return out
+
+
+def _spanned_edata(dataset, region, mol_ids):
+    """
+    Return the data energy of molecules `mol_ids`, nan at start
+    positions whose footprint holds no spanned base pair.
+    """
+    mol_ids = list(mol_ids)
+    edata = np.array(
+        np.asarray(dataset.edata[region])[mol_ids], dtype=np.float64
+    )
+    rows = _spanned_rows(dataset.spanned[region], mol_ids, edata.shape[1])
+    if rows is not None:
+        edata[~_window_spanned(rows, dataset.settings["lnuc"])] = np.nan
+    return edata
 
 
 def _merge_rows(matrix, max_rows, how):
@@ -412,7 +428,8 @@ class SimPlot:
             Path to save the figure. Directories are created if they do
             not exist.
         plot_edata : bool, default False
-            Whether to plot the data energy of `mol` below the heatmap.
+            Whether to plot the data energy of `mol` below the heatmap,
+            leaving out unspanned start positions.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
@@ -522,7 +539,9 @@ class SimPlot:
             ylabel = _rows_label(unit, ntotal, matrix.shape[0])
             invert_y = False
 
-        edata = dataset.edata[region][mol, :] if plot_edata else None
+        edata = (
+            _spanned_edata(dataset, region, [mol])[0] if plot_edata else None
+        )
         fig, (panel,) = self._footprint_grid(
             1,
             binary=matrix.dtype == np.int8,
@@ -623,8 +642,8 @@ class SimPlot:
             merging, so each shown molecule counts once.
         plot_edata : bool, default False
             Whether to plot the data energy, averaged over the shown
-            molecules, below the heatmap (and below the
-            mean, if both are plotted).
+            molecules at their spanned start positions, below the
+            heatmap (and below the mean, if both are plotted).
         link_mat : np.ndarray, pd.DataFrame, or dict, optional
             Linkage matrix of these molecules (as returned or stored by
             `sort_by_linkage`). If given, the molecules are put in its
@@ -803,7 +822,7 @@ class SimPlot:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", category=RuntimeWarning)
                 edata = np.nanmean(
-                    np.asarray(dataset.edata[region])[mol_ids], 0
+                    _spanned_edata(dataset, region, mol_ids), 0
                 )
         ylabel = (
             _rows_label("molecule", ntotal, matrix.shape[0])
@@ -1028,8 +1047,8 @@ class SimPlot:
             heatmap.
         plot_edata : bool, default False
             Whether to plot the data energy, averaged across all
-            molecules, below the heatmap (and
-            below the mean, if both are plotted).
+            molecules at their spanned start positions, below the
+            heatmap (and below the mean, if both are plotted).
         link_mat : np.ndarray, pd.DataFrame, or dict, optional
             Linkage matrix of these molecules (as returned or stored by
             `SimAnalysis.sort_by_linkage`). If given, the rows are put in
@@ -1205,9 +1224,11 @@ class SimPlot:
 
         # Plot the data energy if needed
         if plot_edata:
-            edata_src = dataset.edata[region]
-            if mols is not None:
-                edata_src = np.asarray(edata_src)[list(mols)]
+            edata_src = _spanned_edata(
+                dataset,
+                region,
+                range(dataset.nmol[region]) if mols is None else mols,
+            )
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", category=RuntimeWarning)
                 edata = np.nanmean(edata_src, axis=0)

@@ -15,7 +15,7 @@ from catella.h5_array import H5Array
 from catella.simulation.analysis import NucFiberMap, SimAnalysis
 from catella.simulation.config import SimSettings
 from catella.simulation.engine import SimManager
-from catella.simulation.plot import SimPlot, _merge_rows
+from catella.simulation.plot import SimPlot, _merge_rows, _spanned_edata
 
 
 def _make_settings(**overrides):
@@ -929,6 +929,35 @@ class TestFootprintsUnspanned:
             (img < 0).all(axis=0), _unspanned()[1]
         )
         assert (img[:, ~_unspanned()[1]] >= 0).all()
+
+    def test_spanned_edata_nan_at_unspanned_starts(self, tmp_path):
+        dataset = _partial_dataset(tmp_path, "tm")
+        got = _spanned_edata(dataset, "chr1", [0, 1, 2])
+        expected = np.zeros((3, 20), dtype=bool)
+        expected[0, :6] = True
+        expected[1, 8:12] = True
+        np.testing.assert_array_equal(np.isnan(got), expected)
+        edata = np.asarray(dataset.edata["chr1"])
+        np.testing.assert_array_equal(got[~expected], edata[~expected])
+
+    def test_energy_panels_draw_with_partial_reads(self, tmp_path):
+        dataset = _partial_dataset(tmp_path, "tm")
+        SimAnalysis().compute_occup(dataset=dataset)
+        plot = SimPlot()
+        plot.plot_samples(
+            dataset,
+            region="chr1",
+            mol=0,
+            over="runs",
+            plot_edata=True,
+            show=False,
+        )
+        plot.plot_config(
+            dataset, regions="chr1", run=0, plot_edata=True, show=False
+        )
+        plot.plot_occup(
+            dataset, regions="chr1", plot_edata=True, show=False
+        )
 
     def test_plot_mean_ignores_unspanned(self, tmp_path):
         dataset = _partial_dataset(tmp_path, "tm")

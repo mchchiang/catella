@@ -304,6 +304,12 @@ class SimPlot:
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
+        Returns
+        -------
+        matplotlib.figure.Figure or None
+            The figure if `show` is False, else None (so that Jupyter
+            does not display it twice).
+
         Raises
         ------
         ValueError
@@ -338,17 +344,7 @@ class SimPlot:
 
         _unit_axis(ax.xaxis, _MCS_UNITS, label="Time $t$ [{unit}]")
         ax.set_ylabel(r"Energy [$k_BT$]")
-
-        fig.tight_layout()
-
-        if show:
-            plt.show()
-
-        if out_file is not None:
-            out_file = Path(out_file)
-            out_dir = out_file.parents[0]
-            out_dir.mkdir(exist_ok=True, parents=True)
-            fig.savefig(out_file)
+        return _finish(fig, show, out_file)
 
     @_apply_style
     def plot_samples(
@@ -432,6 +428,11 @@ class SimPlot:
             the reference instead of from 0.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
+
+        Returns
+        -------
+        matplotlib.figure.Figure or None
+            The figure if `show` is False, else None.
 
         Raises
         ------
@@ -563,7 +564,7 @@ class SimPlot:
             )
         self._footprint_side(fig, [panel], im, [matrix], cmap)
         panel["hm_ax"].set_title(region, pad=12)
-        _finish(fig, show, out_file)
+        return _finish(fig, show, out_file)
 
     @_apply_style
     def plot_config(
@@ -658,6 +659,11 @@ class SimPlot:
             Genomic coordinates of the regions; see `plot_samples`.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
+
+        Returns
+        -------
+        matplotlib.figure.Figure or None
+            The figure if `show` is False, else None.
 
         Raises
         ------
@@ -759,7 +765,7 @@ class SimPlot:
         _left_ylabels(panels)
         if sharex:
             _share_xlim(panels, max(dataset.nbp[r] for r in regions))
-        _finish(fig, show, out_file)
+        return _finish(fig, show, out_file)
 
     def _config_panel(
         self,
@@ -1062,6 +1068,11 @@ class SimPlot:
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
+        Returns
+        -------
+        matplotlib.figure.Figure or None
+            The figure if `show` is False, else None.
+
         Raises
         ------
         ValueError
@@ -1128,7 +1139,7 @@ class SimPlot:
         _left_ylabels(panels)
         if sharex:
             _share_xlim(panels, max(dataset.nbp[r] for r in regions))
-        _finish(fig, show, out_file)
+        return _finish(fig, show, out_file)
 
     def _draw_occup(
         self,
@@ -1307,6 +1318,11 @@ class SimPlot:
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
+        Returns
+        -------
+        matplotlib.figure.Figure or None
+            The figure if `show` is False, else None.
+
         Raises
         ------
         KeyError
@@ -1397,7 +1413,7 @@ class SimPlot:
         if logy:
             for ax in axes:
                 ax.set_yscale("log")
-        _finish(fig, show, out_file)
+        return _finish(fig, show, out_file)
 
     def _linker_panels(self, npanel, sharey):
         """

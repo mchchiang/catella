@@ -842,6 +842,12 @@ def plot_dropout_ecdf(
     span : {"full", "calls", "read"}, default "full"
         As in `filter_dropout`.
 
+    Returns
+    -------
+    matplotlib.figure.Figure or None
+        The figure if `show` is False, else None (so that Jupyter does
+        not display it twice).
+
     Raises
     ------
     ValueError
@@ -858,7 +864,7 @@ def plot_dropout_ecdf(
         span=span,
     )
     methplot = MethPlot()
-    methplot.plot_dropout_ecdf(
+    return methplot.plot_dropout_ecdf(
         fractions,
         regions,
         which=which,
@@ -1445,6 +1451,11 @@ def plot_config(
     show : bool, default True
         Whether to display the figure.
 
+    Returns
+    -------
+    matplotlib.figure.Figure or None
+        The figure if `show` is False, else None.
+
     Raises
     ------
     ValueError
@@ -1467,7 +1478,7 @@ def plot_config(
         memory (pass `max_rows` or `mols` to reduce it), or if more than
         10 regions are plotted in one figure.
     """
-    SimPlot().plot_config(
+    return SimPlot().plot_config(
         dataset,
         regions=regions,
         name=name,
@@ -1560,6 +1571,11 @@ def plot_occup(
         If True, invokes the active plotting backend to display the
         figure immediately.
 
+    Returns
+    -------
+    matplotlib.figure.Figure or None
+        The figure if `show` is False, else None.
+
     Raises
     ------
     ValueError
@@ -1580,7 +1596,7 @@ def plot_occup(
     `compute_occup` does, without the mean nucleosome count).
     """
     simplot = SimPlot()
-    simplot.plot_occup(
+    return simplot.plot_occup(
         regions=regions,
         dataset=dataset,
         time=time,
@@ -1656,6 +1672,11 @@ def plot_linker_hist(
         If True, invokes the active plotting backend to display the
         figure immediately.
 
+    Returns
+    -------
+    matplotlib.figure.Figure or None
+        The figure if `show` is False, else None.
+
     Raises
     ------
     KeyError
@@ -1670,7 +1691,7 @@ def plot_linker_hist(
         If more than 10 regions are plotted in one figure, or a region
         has no linkers up to `lmax` (it is then not plotted).
     """
-    SimPlot().plot_linker_hist(
+    return SimPlot().plot_linker_hist(
         dataset,
         regions=regions,
         name=name,
@@ -1801,6 +1822,12 @@ def plot_meth(
         Whether to display the figure using the active plotting
         backend.
 
+    Returns
+    -------
+    matplotlib.figure.Figure or None
+        The figure if `show` is False, else None (so that Jupyter does
+        not display it twice).
+
     Raises
     ------
     ValueError
@@ -1844,19 +1871,18 @@ def plot_meth(
     if value == "prob":
         if emax is not None:
             raise ValueError('emax is only valid with value="energy"')
-        methplot.plot_meth_prob(
+        return methplot.plot_meth_prob(
             data,
             raw_which=raw_which,
             mols=mols,
             mask_name=mask_name,
             **kwargs,
         )
-        return
     if any(v is not None for v in (raw_which, mols, mask_name)):
         raise ValueError(
             'value="energy" does not support raw_which, mols or mask_name'
         )
-    methplot.plot_meth_energy(data, emax=emax, **kwargs)
+    return methplot.plot_meth_energy(data, emax=emax, **kwargs)
 
 
 def downsample(

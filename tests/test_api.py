@@ -1485,3 +1485,62 @@ class TestComputeOccup:
         dataset = _make_dataset(tmp_path)
         with pytest.raises(ValueError, match="nworker > 1 requires"):
             catella.compute_occup(dataset, nworker=2)
+
+
+def _plot_calls(tmp_path):
+    nbp = 10
+    exp = _make_experiment(
+        nmol=6, nbp=nbp, seed=3, refseq="A" * nbp, mtase=("A",)
+    )
+    dataset = _make_tm_dataset(tmp_path)
+    catella.compute_linker_hist(dataset, lmax=3, regions="chr1")
+    SimAnalysis().compute_best_match_config(dataset=dataset, name="bm")
+    return {
+        "plot_meth": lambda **kw: catella.plot_meth(
+            np.full((2, 10), 0.5), **kw
+        ),
+        "plot_dropout_ecdf": lambda **kw: catella.plot_dropout_ecdf(
+            exp, regions="chr1", which="test", **kw
+        ),
+        "plot_config": lambda **kw: catella.plot_config(
+            dataset, regions="chr1", name="bm", **kw
+        ),
+        "plot_occup": lambda **kw: catella.plot_occup(
+            dataset, regions="chr1", **kw
+        ),
+        "plot_linker_hist": lambda **kw: catella.plot_linker_hist(
+            dataset, regions="chr1", **kw
+        ),
+    }
+
+
+@pytest.mark.filterwarnings("ignore:FigureCanvasAgg is non-interactive")
+@pytest.mark.filterwarnings(
+    "ignore:__array__ implementation doesn't accept a copy keyword"
+    ":DeprecationWarning"
+)
+class TestPlotReturnsFigure:
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "plot_meth",
+            "plot_dropout_ecdf",
+            "plot_config",
+            "plot_occup",
+            "plot_linker_hist",
+        ],
+    )
+    def test_figure_without_show(self, tmp_path, name):
+        call = _plot_calls(tmp_path)[name]
+        fig = call(show=False)
+        assert isinstance(fig, plt.Figure)
+        assert fig is plt.gcf()
+        assert call(show=True) is None
+
+    def test_saving_still_works(self, tmp_path):
+        out_file = tmp_path / "meth.png"
+        fig = catella.plot_meth(
+            np.full((2, 10), 0.5), out_file=out_file, show=False
+        )
+        assert out_file.exists()
+        assert isinstance(fig, plt.Figure)

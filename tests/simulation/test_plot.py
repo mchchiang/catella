@@ -581,6 +581,15 @@ class TestPositionalDatasetArg:
         assert ax.get_xlabel().endswith("MCS]")
 
     @pytest.mark.parametrize("method", ["plot_energy", "plot_samples"])
+    def test_returns_figure_without_show(self, tmp_path, method):
+        dataset = _make_dataset(tmp_path, nmol=2, nbp=20)
+        kwargs = {"run": 0} if method == "plot_energy" else {}
+        fig = getattr(SimPlot(), method)(
+            dataset, region="chr1", mol=0, show=False, **kwargs
+        )
+        assert fig is plt.gcf()
+
+    @pytest.mark.parametrize("method", ["plot_energy", "plot_samples"])
     def test_tscale_removed(self, tmp_path, method):
         dataset = _make_dataset(tmp_path, nmol=2, nbp=20)
         kwargs = {"run": 0} if method == "plot_energy" else {}

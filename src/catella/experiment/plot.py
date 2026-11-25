@@ -223,6 +223,12 @@ class MethPlot:
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
+        Returns
+        -------
+        matplotlib.figure.Figure or None
+            The figure if `show` is False, else None (so that Jupyter
+            does not display it twice).
+
         Raises
         ------
         ValueError
@@ -264,7 +270,7 @@ class MethPlot:
             link_mat=link_mat,
         )
         try:
-            self._plot_panels(
+            return self._plot_panels(
                 sources,
                 max_rows=max_rows,
                 downsample_how=downsample_how,
@@ -427,7 +433,7 @@ class MethPlot:
         _left_ylabels(panels)
         if sharex:
             _share_xlim(panels, max(m.shape[1] for m in matrices))
-        _finish(fig, show, out_file)
+        return _finish(fig, show, out_file)
 
     def _draw_meth(
         self, panel, matrix, *, vmin, vmax, cmap, link_mat, start=None
@@ -557,6 +563,11 @@ class MethPlot:
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
+        Returns
+        -------
+        matplotlib.figure.Figure or None
+            The figure if `show` is False, else None.
+
         Raises
         ------
         ValueError
@@ -599,7 +610,7 @@ class MethPlot:
         if halfrange is not None:
             vmin, vmax = -halfrange, halfrange
 
-        self._plot_panels(
+        return self._plot_panels(
             sources,
             max_rows=max_rows,
             downsample_how=downsample_how,
@@ -655,6 +666,11 @@ class MethPlot:
             created if they do not exist.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
+
+        Returns
+        -------
+        matplotlib.figure.Figure or None
+            The figure if `show` is False, else None.
 
         Raises
         ------
@@ -761,13 +777,4 @@ class MethPlot:
                 bbox_to_anchor=(1, 0.5),
                 frameon=False,
             )
-        fig.tight_layout()
-
-        if show:
-            plt.show()
-
-        if out_file is not None:
-            out_file = Path(out_file)
-            out_dir = out_file.parents[0]
-            out_dir.mkdir(exist_ok=True, parents=True)
-            fig.savefig(out_file, bbox_inches="tight")
+        return _finish(fig, show, out_file, bbox_inches="tight")

@@ -486,12 +486,19 @@ def _colorbar(fig, panels, mappable, label):
     return cbar
 
 
-def _finish(fig, show, out_file):
+def _finish(fig, show, out_file, **savefig_kwargs):
     """
     Lay out `fig`, then show it and/or save it to `out_file`.
 
     Figures without a layout engine get `tight_layout`. Directories of
-    `out_file` are created if they do not exist.
+    `out_file` are created if they do not exist; `savefig_kwargs` go to
+    `fig.savefig`.
+
+    Returns
+    -------
+    matplotlib.figure.Figure or None
+        `fig` if `show` is False, else None (in Jupyter, a returned
+        figure would be displayed a second time).
     """
     if fig.get_layout_engine() is None:
         fig.tight_layout()
@@ -500,4 +507,5 @@ def _finish(fig, show, out_file):
     if out_file is not None:
         out_file = Path(out_file)
         out_file.parents[0].mkdir(exist_ok=True, parents=True)
-        fig.savefig(out_file)
+        fig.savefig(out_file, **savefig_kwargs)
+    return None if show else fig

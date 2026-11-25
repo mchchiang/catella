@@ -2111,6 +2111,45 @@ class TestPlotOccup:
         assert result.exit_code == 0, result.output
         assert out_file.exists()
 
+    @pytest.mark.parametrize("command", ["plot_occup", "plot_config"])
+    def test_coords_from_experiment_file(
+        self, tmp_path, monkeypatch, command
+    ):
+        dataset = _make_dataset(tmp_path, nmol=2, nbp=10)
+        test_file = tmp_path / "test.tsv"
+        _write_tsv(
+            test_file,
+            [("m0", 500 + p, "chrA", "+", 0.5, "a") for p in range(10)],
+        )
+        chromsize = tmp_path / "sizes.tsv"
+        _write_chromsize(chromsize, {"chrA": 1000})
+        exp = catella.load_raw(
+            chromsize=chromsize,
+            test_file=test_file,
+            regions=[("chrA", 500, 510, "chr1")],
+        )
+        exp_file = tmp_path / "exp.h5"
+        exp.save(exp_file)
+        exp.close()
+        seen = {}
+        monkeypatch.setattr(
+            catella, command, lambda *args, **kwargs: seen.update(kwargs)
+        )
+        result = runner.invoke(
+            app,
+            [
+                command,
+                "chr1",
+                str(dataset._dataset_file),
+                "--coords-from",
+                str(exp_file),
+                "--no-show",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert seen["coords"].loc["chr1", "ref_start"] == 500
+        assert seen["coords"].loc["chr1", "ref_chrom"] == "chrA"
+
     @pytest.mark.filterwarnings(
         "ignore:__array__ implementation doesn't accept a copy keyword"
         ":DeprecationWarning"

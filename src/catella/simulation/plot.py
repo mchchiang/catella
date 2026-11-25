@@ -9,6 +9,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import scipy.cluster.hierarchy as sch
 from matplotlib.colors import Normalize
 from matplotlib.patches import Patch
@@ -26,6 +27,7 @@ from catella._plotting import (
     _left_ylabels,
     _panel_grid,
     _position_xaxis,
+    _region_starts,
     _row_axes,
     _share_xlim,
     _unit_axis,
@@ -59,6 +61,28 @@ def _check_edata(dataset, plot_edata):
         raise ValueError(
             "plot_edata requires stored energies; run with store_edata=True"
         )
+
+
+def _sim_starts(coords, dataset, regions):
+    """
+    Per region, its `(ref_chrom, ref_start)` from `coords` (checked
+    against `dataset.nbp`), or None for all if `coords` is None.
+    """
+    if coords is None:
+        return dict.fromkeys(regions)
+    return _region_starts(
+        pd.DataFrame(coords), {r: dataset.nbp[r] for r in regions}
+    )
+
+
+def _start_xaxis(panel, start):
+    """Position ticks and label on the bottom axis of `panel`, genomic
+    if `start` is `(ref_chrom, ref_start)`."""
+    label_ax = _row_axes(panel)[-1]
+    if start is None:
+        _position_xaxis(panel, label_ax)
+    else:
+        _position_xaxis(panel, label_ax, start=start[1], chrom=start[0])
 
 
 def _stride_step(nrow, max_rows):
@@ -343,6 +367,7 @@ class SimPlot:
         cmap: str | None = None,
         out_file: str | Path | None = None,
         plot_edata: bool = False,
+        coords: pd.DataFrame | None = None,
         show: bool = True,
     ):
         """
@@ -401,6 +426,10 @@ class SimPlot:
         plot_edata : bool, default False
             Whether to plot the data energy of `mol` below the heatmap,
             leaving out unspanned start positions.
+        coords : pd.DataFrame, optional
+            Genomic coordinates of the regions, e.g. the experiment's
+            `MethPrintExperiment.region_coords`, to label positions on
+            the reference instead of from 0.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
@@ -411,8 +440,10 @@ class SimPlot:
             dataset, with several `runs`, with `time`, or for a molecule
             with no data; if `tstart` or `tend` is used with
             `over="runs"`; if a TM dataset stores no samples; if `tend` <
-            `tstart`; if `max_rows` or `downsample_how` is invalid; or if
-            `plot_edata` is True and the dataset stores no energies.
+            `tstart`; if `max_rows` or `downsample_how` is invalid; if
+            `plot_edata` is True and the dataset stores no energies; or
+            if `coords` does not match `region` (missing, other `nbp`,
+            no coordinates, or folded with `wrap`).
 
         Warns
         -----
@@ -427,6 +458,7 @@ class SimPlot:
         """
         _check_downsample(max_rows, downsample_how)
         _check_edata(dataset, plot_edata)
+        start = _sim_starts(coords, dataset, [region])[region]
         if over is None:
             over = "time" if dataset.method == "mcmc" else "runs"
         if over not in ("time", "runs"):
@@ -523,6 +555,7 @@ class SimPlot:
             cmap=cmap,
             edata=edata,
             edata_label=r"$E^{\text{data}}$ [$k_BT$]",
+            start=start,
         )
         if over == "time":
             _unit_axis(
@@ -550,6 +583,7 @@ class SimPlot:
         plot_edata: bool = False,
         link_mat: np.ndarray | dict | None = None,
         sharex: bool = False,
+        coords: pd.DataFrame | None = None,
         show: bool = True,
     ):
         """
@@ -620,6 +654,8 @@ class SimPlot:
             If True, all panels span the length of the longest region,
             so they share one bp scale. If False, each panel spans its
             own region.
+        coords : pd.DataFrame, optional
+            Genomic coordinates of the regions; see `plot_samples`.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
@@ -631,7 +667,8 @@ class SimPlot:
             energies, if `mols` or
             `link_mat` is not a dict with several regions, if `link_mat`
             is combined with `mols` or does not match the number of
-            molecules, or for invalid arguments of
+            molecules, if `coords` does not match a region (see
+            `plot_samples`), or for invalid arguments of
             `SimAnalysis.extract_config`.
         KeyError
             If no calls are stored under `name` for a region.
@@ -660,6 +697,7 @@ class SimPlot:
         link_mat = _per_region(link_mat, regions, "link_mat")
         _check_downsample(max_rows, downsample_how)
         _check_edata(dataset, plot_edata)
+        starts = _sim_starts(coords, dataset, regions)
 
         def shown_rows(region):
             nrow = dataset.nmol[region] if mols[region] is None else len(
@@ -714,6 +752,7 @@ class SimPlot:
                 edata_label=r"$\langle E^{\text{data}} \rangle$ [$k_BT$]",
                 link_mat=d["link_mat"],
                 mean=d["mean"],
+                start=starts[region],
             )
             panel["hm_ax"].set_title(region, pad=12)
         self._footprint_side(fig, panels, im, matrices, cmap)
@@ -831,6 +870,7 @@ class SimPlot:
         edata_label,
         link_mat=None,
         mean=None,
+        start=None,
     ):
         """
         Draw a footprint matrix (1 occupied, 0 linker, -1 or nan no data)
@@ -841,6 +881,8 @@ class SimPlot:
         If `extent_y` is None, the y-axis counts rows: row i is centered
         on y = i, with integer ticks. `link_mat` (rows already in its
         leaf order) is drawn as a dendrogram next to the heatmap.
+        `start` is `(ref_chrom, ref_start)` for genomic position labels,
+        or None.
 
         Returns
         -------
@@ -903,7 +945,7 @@ class SimPlot:
             edata_ax.set_ylabel(edata_label)
             edata_ax.set_xlim(0, nbp)
 
-        _position_xaxis(panel, _row_axes(panel)[-1])
+        _start_xaxis(panel, start)
         return im
 
     def _footprint_cmap(self, cmap):
@@ -959,6 +1001,7 @@ class SimPlot:
         plot_edata: bool = False,
         link_mat: np.ndarray | dict | None = None,
         sharex: bool = False,
+        coords: pd.DataFrame | None = None,
         show: bool = True,
     ):
         """
@@ -1014,6 +1057,8 @@ class SimPlot:
             If True, all panels span the length of the longest region,
             so they share one bp scale. If False, each panel spans its
             own region.
+        coords : pd.DataFrame, optional
+            Genomic coordinates of the regions; see `plot_samples`.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
@@ -1022,9 +1067,10 @@ class SimPlot:
         ValueError
             If `regions` is empty, if the occupancy is missing and no
             `time` is provided for computation, if `mols` or `link_mat`
-            is not a dict with several regions, or if `link_mat` is
+            is not a dict with several regions, if `link_mat` is
             combined with `mols` or does not match the number of
-            molecules.
+            molecules, or if `coords` does not match a region (see
+            `plot_samples`).
 
         Warns
         -----
@@ -1039,6 +1085,7 @@ class SimPlot:
             for r, m in _per_region(mols, regions, "mols").items()
         }
         link_mat = _per_region(link_mat, regions, "link_mat")
+        starts = _sim_starts(coords, dataset, regions)
         _warn_if_large(
             sum(
                 dataset.nmol[r] if mols[r] is None else len(mols[r])
@@ -1075,6 +1122,7 @@ class SimPlot:
                 cmap=cmap,
                 plot_edata=plot_edata,
                 link_mat=link_mat[region],
+                start=starts[region],
             )
         _colorbar(fig, panels, im, "Occupancy")
         _left_ylabels(panels)
@@ -1094,6 +1142,7 @@ class SimPlot:
         cmap,
         plot_edata,
         link_mat,
+        start=None,
     ):
         """
         Draw the occupancy of one region into the axes of `panel`
@@ -1193,7 +1242,7 @@ class SimPlot:
             edata_ax.set_ylabel(r"$\langle E^{\text{data}} \rangle$ [$k_BT$]")
             edata_ax.set_xlim(0, nbp)
 
-        _position_xaxis(panel, _row_axes(panel)[-1])
+        _start_xaxis(panel, start)
 
         hm_ax.set_title(region, pad=12)
         return im

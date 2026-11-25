@@ -1671,3 +1671,73 @@ class TestMergeRows:
     )
     def test_returns_matrix_as_is(self, max_rows, how):
         assert _merge_rows(_FOOTPRINTS, max_rows, how) is _FOOTPRINTS
+
+
+def _coords(nbp, start=1000000, region="chr1"):
+    return pd.DataFrame(
+        {
+            "ref_chrom": ["chrX"],
+            "ref_start": [start],
+            "ref_end": [start + nbp],
+            "ref_strand": ["+"],
+            "nbp": [nbp],
+        },
+        index=pd.Index([region], name="region"),
+    )
+
+
+def _bottom_label(fig):
+    fig.canvas.draw()
+    return [ax.get_xlabel() for ax in fig.axes if ax.get_xlabel()]
+
+
+@pytest.mark.filterwarnings(
+    "ignore:__array__ implementation doesn't accept a copy keyword"
+    ":DeprecationWarning"
+)
+class TestSimCoords:
+    def test_plot_occup(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=4, nbp=20)
+        SimPlot().plot_occup(
+            dataset, regions="chr1", coords=_coords(20), show=False
+        )
+        fig = plt.gcf()
+        assert _bottom_label(fig) == ["Position on chrX [bp]"]
+        ticks = [t.get_text() for t in fig.axes[0].get_xticklabels()]
+        assert "1,000,000" in ticks
+
+    def test_plot_config(self, tmp_path):
+        dataset = _tm_two_region_dataset(tmp_path)
+        SimPlot().plot_config(
+            dataset,
+            regions="chr2",
+            name="bm",
+            coords=_coords(30, region="chr2"),
+            show=False,
+        )
+        assert _bottom_label(plt.gcf()) == ["Position on chrX [bp]"]
+
+    def test_plot_samples(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=2, nbp=20)
+        SimPlot().plot_samples(
+            dataset, region="chr1", mol=0, coords=_coords(20), show=False
+        )
+        assert "Position on chrX [bp]" in _bottom_label(plt.gcf())
+
+    def test_nbp_mismatch_raises(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=2, nbp=20)
+        with pytest.raises(ValueError, match="coords has nbp 30"):
+            SimPlot().plot_occup(
+                dataset, regions="chr1", coords=_coords(30), show=False
+            )
+
+    def test_missing_region_raises(self, tmp_path):
+        dataset = _make_dataset(tmp_path, nmol=2, nbp=20)
+        with pytest.raises(ValueError, match="coords has no region 'chr1'"):
+            SimPlot().plot_samples(
+                dataset,
+                region="chr1",
+                mol=0,
+                coords=_coords(20, region="chr9"),
+                show=False,
+            )

@@ -31,6 +31,30 @@ def _load_source(source_file: Path, kind: "SourceKind"):
     return SimDataset.load(source_file)
 
 
+# Option of the simulation plots: an experiment file for genomic labels
+_CoordsFrom = Annotated[
+    Path | None,
+    typer.Option(
+        help="Experiment file whose region coordinates label positions",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+    ),
+]
+
+
+def _region_coords(exp_file: Path | None) -> pd.DataFrame | None:
+    """The `region_coords` of an experiment file, or None."""
+    if exp_file is None:
+        return None
+    exp = MethPrintExperiment.load(exp_file)
+    try:
+        return exp.region_coords
+    finally:
+        exp.close()
+
+
 # Helper to parse a comma-separated option value into a list. Used as
 # a `callback` (not `parser`) so it runs once on the final string
 # value; `typer.Option(parser=...)` on a list[T]-typed option instead
@@ -1227,6 +1251,7 @@ def plot_config(
         bool,
         typer.Option(help="Put all panels on the longest region's scale"),
     ] = False,
+    coords_from: _CoordsFrom = None,
     show: Annotated[bool, typer.Option(help="Display the figure")] = True,
 ):
     """
@@ -1256,6 +1281,7 @@ def plot_config(
         link_mat=link_mat,
         out_file=out_file,
         sharex=sharex,
+        coords=_region_coords(coords_from),
         show=show,
     )
 
@@ -1319,6 +1345,7 @@ def plot_occup(
         bool,
         typer.Option(help="Put all panels on the longest region's scale"),
     ] = False,
+    coords_from: _CoordsFrom = None,
     show: Annotated[bool, typer.Option(help="Display the figure")] = True,
 ):
     """
@@ -1347,6 +1374,7 @@ def plot_occup(
         plot_edata=plot_edata,
         link_mat=link_mat,
         sharex=sharex,
+        coords=_region_coords(coords_from),
         show=show,
     )
 

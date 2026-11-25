@@ -1371,6 +1371,7 @@ def plot_config(
     plot_edata: bool = False,
     link_mat: np.ndarray | pd.DataFrame | dict | None = None,
     sharex: bool = False,
+    coords: pd.DataFrame | None = None,
     show: bool = True,
 ):
     """
@@ -1437,6 +1438,10 @@ def plot_config(
     sharex : bool, default False
         If True, all panels span the length of the longest region, so they
         share one bp scale. If False, each panel spans its own region.
+    coords : pd.DataFrame, optional
+        Genomic coordinates of the regions, e.g. `exp.region_coords` of
+        the experiment the simulation was run on, to label positions on
+        the reference instead of from 0.
     show : bool, default True
         Whether to display the figure.
 
@@ -1447,8 +1452,9 @@ def plot_config(
         invalid, if `plot_edata` is True and the dataset stores no
         energies, if `mols` or `link_mat` is not a dict with several
         regions, if `link_mat` is combined with `mols` or does not match
-        the number of molecules, or for invalid arguments of
-        `extract_config`.
+        the number of molecules, if `coords` does not match a region
+        (missing, other `nbp`, no coordinates, or folded with `wrap`), or
+        for invalid arguments of `extract_config`.
     KeyError
         If no calls are stored under `name` for a region.
     IndexError
@@ -1476,6 +1482,7 @@ def plot_config(
         plot_edata=plot_edata,
         link_mat=link_mat,
         sharex=sharex,
+        coords=coords,
         show=show,
     )
 
@@ -1493,6 +1500,7 @@ def plot_occup(
     plot_edata: bool = False,
     link_mat: np.ndarray | dict | None = None,
     sharex: bool = False,
+    coords: pd.DataFrame | None = None,
     show: bool = True,
 ):
     """
@@ -1546,6 +1554,8 @@ def plot_occup(
         If True, all panels span the length of the longest region, so
         they share one bp scale. If False, each panel spans its own
         region.
+    coords : pd.DataFrame, optional
+        Genomic coordinates of the regions; see `plot_config`.
     show : bool, default True
         If True, invokes the active plotting backend to display the
         figure immediately.
@@ -1554,8 +1564,9 @@ def plot_occup(
     ------
     ValueError
         If `regions` is empty, if the occupancy is missing and no `time`
-        is provided for computation, or if `mols` or `link_mat` is not
-        a dict with several regions.
+        is provided for computation, if `mols` or `link_mat` is not a
+        dict with several regions, or if `coords` does not match a
+        region (see `plot_config`).
 
     Warns
     -----
@@ -1581,6 +1592,7 @@ def plot_occup(
         plot_edata=plot_edata,
         link_mat=link_mat,
         sharex=sharex,
+        coords=coords,
         show=show,
     )
 

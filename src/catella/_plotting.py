@@ -6,7 +6,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import scipy.cluster.hierarchy as sch
+from matplotlib.axis import XAxis
+from matplotlib.font_manager import FontProperties
 from matplotlib.ticker import Formatter, Locator, MaxNLocator
+from matplotlib.transforms import Bbox
 
 from catella._warnings import _warn
 
@@ -21,6 +24,12 @@ _MCS_UNITS = (
 
 # Most decimals in tick labels of an automatic unit
 _MAX_UNIT_DECIMALS = 1
+
+# Estimated width of a tick label character, as a share of its font size
+_CHAR_WIDTH = 0.6
+
+# Most passes lowering the tick count to fit x tick labels
+_MAX_TICK_PASSES = 5
 
 # Estimated peak memory of rendering and saving one heatmap cell
 # (measured with matplotlib 3.10 Agg: ~70 B PNG, ~30 B PDF, whatever
@@ -250,7 +259,10 @@ def _decimals(values, most=6):
 class _ShiftedLocator(Locator):
     """
     Ticks at round whole values of `start + x`, for an axis drawn in
-    `x` (positions in bp and times in MCS are whole numbers).
+    `x` (positions in bp and times in MCS are whole numbers). On an
+    x-axis with a `_UnitFormatter`, fewer ticks are placed until each
+    label (width estimated from its characters) has a slot of at least
+    twice its width, keeping at least two ticks.
 
     Parameters
     ----------
@@ -260,21 +272,76 @@ class _ShiftedLocator(Locator):
 
     def __init__(self, start=0):
         self.start = start
-        self._base = MaxNLocator(
-            nbins="auto", steps=[1, 2, 2.5, 5, 10], integer=True
-        )
-
-    def set_axis(self, axis):
-        super().set_axis(axis)
-        self._base.set_axis(axis)
 
     def __call__(self):
         vmin, vmax = self.axis.get_view_interval()
         return self.tick_values(vmin, vmax)
 
+    def _ticks(self, vmin, vmax, nbins):
+        base = MaxNLocator(
+            nbins=nbins, steps=[1, 2, 2.5, 5, 10], integer=True
+        )
+        if nbins == "auto":
+            base.set_axis(self.axis)
+        return base.tick_values(vmin + self.start, vmax + self.start) - (
+            self.start
+        )
+
     def tick_values(self, vmin, vmax):
-        shifted = self._base.tick_values(vmin + self.start, vmax + self.start)
-        return shifted - self.start
+        ticks = self._ticks(vmin, vmax, "auto")
+        fmt = None if self.axis is None else self.axis.get_major_formatter()
+        if not isinstance(self.axis, XAxis) or not isinstance(
+            fmt, _UnitFormatter
+        ):
+            return ticks
+        # Fewer ticks until each label has a slot of twice its width
+        length, size = _axis_points(self.axis)
+        lo, hi = sorted((vmin, vmax))
+        for _ in range(_MAX_TICK_PASSES):
+            shown = ticks[(ticks >= lo) & (ticks <= hi)]
+            if len(shown) <= 2 or hi <= lo:
+                break
+            labels = fmt.labels(shown)
+            width = max(len(s) for s in labels) * _CHAR_WIDTH * size
+            gap = length * (shown[1] - shown[0]) / (hi - lo)
+            if gap >= 2 * width:
+                break
+            ticks = self._ticks(vmin, vmax, len(shown) - 2)
+        return ticks
+
+
+def _axis_points(axis):
+    """Length (points) of an x-axis and the font size of its labels."""
+    ax = axis.axes
+    ends = Bbox.unit().transformed(
+        ax.transAxes - ax.get_figure(root=False).dpi_scale_trans
+    )
+    size = (
+        axis.majorTicks[0].label1.get_size()
+        if axis.majorTicks
+        else FontProperties(size=plt.rcParams["xtick.labelsize"]).get_size()
+    )
+    return ends.width * 72, size
+
+
+def _choose_unit(values, units):
+    """
+    The largest unit whose labels of `values` need at most one decimal.
+
+    Returns
+    -------
+    factor : float
+    name : str
+    ndec : int
+        Decimals the labels need in that unit.
+    """
+    factor, name = units[0]
+    ndec = _decimals(values / factor)
+    for unit_factor, unit_name in units[1:]:
+        unit_ndec = _decimals(values / unit_factor)
+        if unit_ndec <= _MAX_UNIT_DECIMALS:
+            factor, name, ndec = unit_factor, unit_name, unit_ndec
+    return factor, name, ndec
 
 
 class _UnitFormatter(Formatter):
@@ -302,15 +369,15 @@ class _UnitFormatter(Formatter):
     def set_locs(self, locs):
         super().set_locs(locs)
         values = np.asarray(locs, dtype=float) + self.start
-        factor, name = self.units[0]
-        ndec = _decimals(values / factor)
-        for unit_factor, unit_name in self.units[1:]:
-            unit_ndec = _decimals(values / unit_factor)
-            if unit_ndec <= _MAX_UNIT_DECIMALS:
-                factor, name, ndec = unit_factor, unit_name, unit_ndec
-        self.factor, self.ndec = factor, ndec
+        self.factor, name, self.ndec = _choose_unit(values, self.units)
         if self.label is not None and self.axis is not None:
             self.axis.set_label_text(self.label.replace("{unit}", name))
+
+    def labels(self, locs):
+        """Labels of `locs` in the unit they would get, without state."""
+        values = np.asarray(locs, dtype=float) + self.start
+        factor, _, ndec = _choose_unit(values, self.units)
+        return [f"{v / factor:,.{ndec}f}" for v in values]
 
     def __call__(self, x, pos=None):
         return f"{(x + self.start) / self.factor:,.{self.ndec}f}"

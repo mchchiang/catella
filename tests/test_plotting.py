@@ -1,5 +1,7 @@
 # test_plotting.py
 
+from itertools import pairwise
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -98,3 +100,45 @@ class TestShiftedLocator:
     def test_whole_number_ticks(self, vmax):
         ticks = _ShiftedLocator(1000000).tick_values(0, vmax)
         assert np.allclose(ticks, np.round(ticks))
+
+
+def _drawn_ticks(width=6.4, start=0, vmax=10000, axis="x"):
+    with plt.rc_context({"font.size": 14}):
+        fig, ax = plt.subplots(figsize=(width, 4.8))
+        if axis == "x":
+            ax.set_xlim(0, vmax)
+            _unit_axis(ax.xaxis, _BP_UNITS, start=start, label="[{unit}]")
+            ticklabels = ax.get_xticklabels
+        else:
+            ax.set_ylim(0, vmax)
+            _unit_axis(ax.yaxis, _BP_UNITS, start=start, label="[{unit}]")
+            ticklabels = ax.get_yticklabels
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        shown = [t for t in ticklabels() if t.get_text()]
+        texts = [t.get_text() for t in shown]
+        boxes = [t.get_window_extent(renderer) for t in shown]
+    plt.close(fig)
+    return texts, boxes
+
+
+class TestTickSpacing:
+    def test_genomic_labels_spaced_by_width(self):
+        texts, boxes = _drawn_ticks(start=3170000)
+        assert texts == ["3,170", "3,175", "3,180"]
+        gaps = [b.x0 - a.x1 for a, b in pairwise(boxes)]
+        assert min(gaps) >= max(b.width for b in boxes)
+
+    def test_short_labels_keep_default_ticks(self):
+        texts, _ = _drawn_ticks()
+        assert texts == ["0", "2", "4", "6", "8", "10"]
+
+    def test_narrower_axis_fewer_ticks(self):
+        wide, _ = _drawn_ticks(width=12, start=3170000)
+        narrow, _ = _drawn_ticks(width=3, start=3170000)
+        assert len(narrow) < len(wide)
+        assert len(narrow) >= 2
+
+    def test_y_axis_not_thinned(self):
+        texts, _ = _drawn_ticks(start=3170000, axis="y")
+        assert len(texts) > 3

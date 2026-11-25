@@ -860,7 +860,9 @@ def _stream_rows_to_staging(
     Rows with a canonical call (`mod_code` of '-', i.e. no methylation
     signal) are dropped, since the emission model only considers sites
     with an actual modification call. With `mtase`, a row is kept only
-    if some label accepts both its `mod_code` and its position.
+    if some label accepts both its `mod_code` and its position. Calls
+    of different mod codes at one read and position are summed into
+    one row (see `_merge_codes`).
 
     Parameters
     ----------
@@ -935,7 +937,8 @@ def _stream_rows_to_staging(
     ------
     ValueError
         If `mtase` is given and the file has calls of accepted
-        molecules, but none with a mod code of `mtase`.
+        molecules, but none with a mod code of `mtase`. Also if a read
+        has two calls of the same mod code at one position.
     """
     n_out = {}
     trackers = None
@@ -959,8 +962,16 @@ def _stream_rows_to_staging(
     if trackers is not None:
         needed.append("read_pos")
     n_non_primary = 0
-    for batch_df in _iter_csv_chunks(
-        data_file, header_names, name_for, sep, needed, chunk_size, block_size
+    for batch_df in _whole_bases(
+        _iter_csv_chunks(
+            data_file,
+            header_names,
+            name_for,
+            sep,
+            needed,
+            chunk_size,
+            block_size,
+        )
     ):
         if "flag" in batch_df:
             primary = _is_primary(batch_df)
@@ -1001,8 +1012,7 @@ def _stream_rows_to_staging(
                 if out is not None:
                     appenders[region].append(out)
 
-    if mtase is not None:
-        stats.report(data_file, mtase)
+    stats.report(data_file, mtase)
     if n_non_primary:
         _warn(
             f"dropped {n_non_primary} row(s) of secondary or "
@@ -1034,14 +1044,47 @@ def _stream_rows_to_staging(
     return gaps
 
 
+def _whole_bases(chunks):
+    """
+    Re-chunk rows so the rows of one read at one position (e.g., its
+    calls of several mod codes) are never split across chunks.
+
+    Parameters
+    ----------
+    chunks : iterable of pd.DataFrame
+        Row-chunks with `mol_id` and `upos` columns.
+
+    Yields
+    ------
+    pd.DataFrame
+        The same rows in the same order; each chunk's trailing rows of
+        its last read and position are moved to the next chunk.
+    """
+    carry = None
+    for df in chunks:
+        if carry is not None:
+            df = pd.concat([carry, df], ignore_index=True)
+        if len(df) == 0:
+            continue
+        mol_id = df["mol_id"].to_numpy()
+        upos = df["upos"].to_numpy()
+        last = (mol_id == mol_id[-1]) & (upos == upos[-1])
+        head = 0 if last.all() else len(df) - int(np.argmin(last[::-1]))
+        carry = df.iloc[head:]
+        if head:
+            yield df.iloc[:head]
+    if carry is not None and len(carry):
+        yield carry
+
+
 class _CodeStats:
     """
-    Counts of the calls of one file checked against `mtase` labels.
+    Counts of the calls of one file, for its mod code checks.
 
     Attributes
     ----------
     nseen : int
-        Calls (not '-') of accepted molecules.
+        Calls (not '-') of accepted molecules, counted with `mtase`.
     nknown : int
         Of those, calls whose mod code some label accepts.
     codes : set of str
@@ -1049,6 +1092,9 @@ class _CodeStats:
     dropped : dict of str to int
         Per mod code, calls at a position methylatable by some label
         but dropped for their mod code.
+    nrepeat : int
+        Kept calls repeating the mod code of another call at the same
+        read and position.
     """
 
     def __init__(self):
@@ -1056,6 +1102,7 @@ class _CodeStats:
         self.nknown = 0
         self.codes = set()
         self.dropped = {}
+        self.nrepeat = 0
 
     def update(self, code, seen, known, dropped):
         """Add the counts of one batch of rows (bool masks)."""
@@ -1067,7 +1114,14 @@ class _CodeStats:
             self.dropped[name] = self.dropped.get(name, 0) + n
 
     def report(self, data_file, mtase):
-        """Raise if no call has a known mod code; warn about drops."""
+        """Raise on repeats or no known mod code; warn about drops."""
+        if self.nrepeat:
+            raise ValueError(
+                f"{self.nrepeat} call(s) in {data_file} repeat a mod_code "
+                "at the same read and position"
+            )
+        if mtase is None:
+            return
         if self.nseen and not self.nknown:
             raise ValueError(
                 f"no call in {data_file} has a mod_code of mtase "
@@ -1103,13 +1157,14 @@ def _stage_region_rows(
     fold_length : int or None
         Unfolded length, if positions are folded (`wrap`).
     stats : _CodeStats, optional
-        Updated with the mod code counts if `labels` is given.
+        Updated with the mod code counts (if `labels` is given) and the
+        repeated mod codes.
 
     Returns
     -------
     pd.DataFrame or None
-        The staged rows (`_RAW_COLUMN_SPEC` columns), or None if none
-        are kept.
+        The staged rows (`_RAW_COLUMN_SPEC` columns), one per molecule
+        and position (see `_merge_codes`), or None if none are kept.
     """
     mol_index = rows["mol_id"].map(index)
     code = rows["mod_code"].to_numpy().astype(str)
@@ -1136,22 +1191,54 @@ def _stage_region_rows(
     if not keep.any():
         return None
     rows = rows.loc[keep]
-    upos = rows["upos"].to_numpy()
+    out, nrepeat = _merge_codes(
+        pd.DataFrame(
+            {
+                "mol_index": mol_index[keep].astype(np.int64).to_numpy(),
+                "pos": rows["upos"].to_numpy().astype(np.int64),
+                "strand": rows["strand"].to_numpy(),
+                "mod_qual": rows["mod_qual"].astype(np.float64).to_numpy(),
+                "mod_code": rows["mod_code"].to_numpy(),
+            }
+        )
+    )
+    if stats is not None:
+        stats.nrepeat += nrepeat
     if fold_length is not None:
-        pos = np.where(
+        upos = out["pos"].to_numpy()
+        out["pos"] = np.where(
             upos > (fold_length - 1) / 2, fold_length - upos - 1, upos
         )
-    else:
-        pos = upos
-    return pd.DataFrame(
-        {
-            "mol_index": mol_index[keep].astype(np.int64).to_numpy(),
-            "pos": pos.astype(np.int64),
-            "strand": rows["strand"].to_numpy(),
-            "mod_qual": rows["mod_qual"].astype(np.float64).to_numpy(),
-            "mod_code": rows["mod_code"].to_numpy(),
-        }
-    )
+    return out
+
+
+def _merge_codes(df):
+    """
+    Merge the calls of one read at one position into one row.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Staged rows, with unfolded positions in `pos`.
+
+    Returns
+    -------
+    df : pd.DataFrame
+        One row per `mol_index` and `pos`: `mod_qual` summed over the
+        mod codes (at most 1), the other columns from the first row.
+    nrepeat : int
+        Rows repeating the mod code of an earlier row at the same
+        `mol_index` and `pos`.
+    """
+    key = ["mol_index", "pos"]
+    first = ~df.duplicated(key).to_numpy()
+    if first.all():
+        return df, 0
+    nrepeat = int(df.duplicated([*key, "mod_code"]).sum())
+    total = df.groupby(key, sort=False)["mod_qual"].transform("sum")
+    out = df.loc[first].copy()
+    out["mod_qual"] = np.minimum(total.to_numpy()[first], 1.0)
+    return out.reset_index(drop=True), nrepeat
 
 
 class _GapTracker:

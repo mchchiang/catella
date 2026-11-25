@@ -4,6 +4,7 @@ from concurrent.futures import ProcessPoolExecutor
 from unittest.mock import patch
 
 import numpy as np
+import pandas as pd
 import pytest
 from catella.experiment._ingest import (
     _ensure_fasta_index,
@@ -12,6 +13,7 @@ from catella.experiment._ingest import (
     _load_refseqs,
     _read_chromsize,
     _resolve_modkit_schema,
+    _whole_bases,
 )
 
 
@@ -33,6 +35,36 @@ def _track(chunks, nmol=1, min_gap=20, nbp=1000):
         )
     gaps, offset, n_bad = tracker.result(nbp)
     return gaps.tolist(), offset.tolist(), n_bad
+
+
+class TestWholeBases:
+    def _rows(self, keys):
+        return pd.DataFrame(
+            {
+                "mol_id": [k[0] for k in keys],
+                "upos": [k[1] for k in keys],
+                "row": range(len(keys)),
+            }
+        )
+
+    @pytest.mark.parametrize("size", [1, 2, 3, 7])
+    def test_no_base_split_and_order_kept(self, size):
+        keys = [("r0", 1), ("r0", 1), ("r0", 2), ("r1", 2), ("r1", 2),
+                ("r1", 2), ("r1", 5)]
+        df = self._rows(keys)
+        chunks = [df.iloc[i:i + size] for i in range(0, len(df), size)]
+        out = list(_whole_bases(chunks))
+        assert pd.concat(out)["row"].tolist() == list(range(len(keys)))
+        seen = set()
+        for chunk in out:
+            bases = set(zip(chunk["mol_id"], chunk["upos"]))
+            assert not bases & seen
+            seen |= bases
+
+    def test_empty_chunks_skipped(self):
+        df = self._rows([("r0", 1), ("r0", 2)])
+        out = list(_whole_bases([df.iloc[:0], df, df.iloc[:0]]))
+        assert pd.concat(out)["row"].tolist() == [0, 1]
 
 
 class TestGapTracker:

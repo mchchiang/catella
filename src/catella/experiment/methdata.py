@@ -617,7 +617,9 @@ class MethPrintExperiment:
             labels, or None (default) if unspecified. If given, a call
             is kept only if some label accepts both its position (with
             `fasta_file`) and its `mod_code`: 'a' or '28871' (6mA) for
-            'A', 'm' or '27551' (5mC) for 'CG' and 'GC'.
+            'A', 'm' or '27551' (5mC) for 'CG' and 'GC'. Kept calls of
+            different mod codes at one read and position are summed
+            into one (`mod_qual` at most 1).
         regions : str, pathlib.Path, or iterable, optional
             Regions to analyze: None (default) for every chromosome in
             `chromsize`; chromosome name(s), each a whole region; a
@@ -710,7 +712,8 @@ class MethPrintExperiment:
             if no interval region has molecules in every given file, or
             if `min_overlap` is negative, not an integer, or positive
             with `wrap` True, or if `mtase` is given and a file has
-            calls but none with a `mod_code` of `mtase`.
+            calls but none with a `mod_code` of `mtase`, or if a read
+            has two calls of the same `mod_code` at one position.
         TypeError
             If `regions` has an unsupported type or mixes names and
             tuples.

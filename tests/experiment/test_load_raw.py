@@ -1211,6 +1211,38 @@ class TestModCodes:
         assert self._calls(exp) == [(0, "a"), (1, "m"), (2, "x")]
         exp.close()
 
+    def test_codes_at_one_base_summed(self, tmp_path):
+        rows = [
+            ("m0", 1, "chr1", "+", 0.3, "a"),
+            ("m0", 1, "chr1", "+", 0.4, "m"),
+            ("m0", 2, "chr1", "+", 0.2, "a"),
+            ("m1", 1, "chr1", "+", 0.1, "m"),
+        ]
+        exp = self._load(tmp_path, rows, seq="AAAA", mtase=None)
+        df = exp.raw["chr1"].test.data.sort_values(["mol_index", "pos"])
+        assert df["pos"].tolist() == [1, 2, 1]
+        assert df["mod_qual"].tolist() == pytest.approx([0.7, 0.2, 0.1])
+        assert df["mod_code"].astype(str).tolist() == ["a", "a", "m"]
+        assert exp.to_dense("chr1", which="test").shape == (2, 4)
+        exp.close()
+
+    def test_summed_qual_at_most_one(self, tmp_path):
+        rows = [
+            ("m0", 1, "chr1", "+", 0.8, "a"),
+            ("m0", 1, "chr1", "+", 0.4, "m"),
+        ]
+        exp = self._load(tmp_path, rows, seq="AAAA", mtase=None)
+        assert exp.raw["chr1"].test.data["mod_qual"].tolist() == [1.0]
+        exp.close()
+
+    def test_repeated_code_raises(self, tmp_path):
+        rows = [
+            ("m0", 1, "chr1", "+", 0.3, "a"),
+            ("m0", 1, "chr1", "+", 0.4, "a"),
+        ]
+        with pytest.raises(ValueError, match="repeat a mod_code"):
+            self._load(tmp_path, rows, seq="AAAA")
+
 
 class TestMtase:
     def test_no_mtase_defaults_to_none(self, tmp_path):

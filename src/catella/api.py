@@ -22,6 +22,15 @@ from catella.simulation.results import SimDataset
 from catella.utils import IndexType
 
 
+def _plotter(cls, fontsize):
+    """A `MethPlot` or `SimPlot`, with `fontsize` if given (checked)."""
+    if fontsize is None:
+        return cls()
+    if isinstance(fontsize, bool) or not fontsize > 0:
+        raise ValueError(f"fontsize must be positive, got {fontsize!r}")
+    return cls(fontsize=fontsize)
+
+
 def load_raw(
     *,
     chromsize: str | Path,
@@ -806,6 +815,7 @@ def plot_dropout_ecdf(
     split_by: str | None = None,
     out_file: str | Path | None = None,
     figsize: tuple[float, float] | None = None,
+    fontsize: float | None = None,
     show: bool = True,
     span: str = "full",
 ):
@@ -841,6 +851,9 @@ def plot_dropout_ecdf(
     figsize : (float, float), optional
         Size of the whole figure (width, height) in inches. If None,
         the default size (matplotlib's `figure.figsize` per panel).
+    fontsize : float, optional
+        Base font size (points) of labels, ticks and titles. If None,
+        the plot class default (14).
     show : bool, default True
         Whether to display the plot using `plt.show()`.
     span : {"full", "calls", "read"}, default "full"
@@ -867,7 +880,7 @@ def plot_dropout_ecdf(
         unmapped_strand=unmapped_strand,
         span=span,
     )
-    methplot = MethPlot()
+    methplot = _plotter(MethPlot, fontsize)
     return methplot.plot_dropout_ecdf(
         fractions,
         regions,
@@ -1384,6 +1397,7 @@ def plot_config(
     sharex: bool = False,
     coords: pd.DataFrame | None = None,
     figsize: tuple[float, float] | None = None,
+    fontsize: float | None = None,
     show: bool = True,
 ):
     """
@@ -1457,6 +1471,9 @@ def plot_config(
     figsize : (float, float), optional
         Size of the whole figure (width, height) in inches. If None,
         the default size (matplotlib's `figure.figsize` per panel).
+    fontsize : float, optional
+        Base font size (points) of labels, ticks and titles. If None,
+        the plot class default (14).
     show : bool, default True
         Whether to display the figure.
 
@@ -1487,7 +1504,7 @@ def plot_config(
         memory (pass `max_rows` or `mols` to reduce it), or if more than
         10 regions are plotted in one figure.
     """
-    return SimPlot().plot_config(
+    return _plotter(SimPlot, fontsize).plot_config(
         dataset,
         regions=regions,
         name=name,
@@ -1523,6 +1540,7 @@ def plot_occup(
     sharex: bool = False,
     coords: pd.DataFrame | None = None,
     figsize: tuple[float, float] | None = None,
+    fontsize: float | None = None,
     show: bool = True,
 ):
     """
@@ -1581,6 +1599,9 @@ def plot_occup(
     figsize : (float, float), optional
         Size of the whole figure (width, height) in inches. If None,
         the default size (matplotlib's `figure.figsize` per panel).
+    fontsize : float, optional
+        Base font size (points) of labels, ticks and titles. If None,
+        the plot class default (14).
     show : bool, default True
         If True, invokes the active plotting backend to display the
         figure immediately.
@@ -1609,7 +1630,7 @@ def plot_occup(
     If `occup_name` is missing, the occupancy is computed first (as
     `compute_occup` does, without the mean nucleosome count).
     """
-    simplot = SimPlot()
+    simplot = _plotter(SimPlot, fontsize)
     return simplot.plot_occup(
         regions=regions,
         dataset=dataset,
@@ -1641,6 +1662,7 @@ def plot_linker_hist(
     logy: bool = False,
     out_file: str | Path | None = None,
     figsize: tuple[float, float] | None = None,
+    fontsize: float | None = None,
     show: bool = True,
 ):
     """
@@ -1687,6 +1709,9 @@ def plot_linker_hist(
     figsize : (float, float), optional
         Size of the whole figure (width, height) in inches. If None,
         the default size (matplotlib's `figure.figsize` per panel).
+    fontsize : float, optional
+        Base font size (points) of labels, ticks and titles. If None,
+        the plot class default (14).
     show : bool, default True
         If True, invokes the active plotting backend to display the
         figure immediately.
@@ -1710,7 +1735,7 @@ def plot_linker_hist(
         If more than 10 regions are plotted in one figure, or a region
         has no linkers up to `lmax` (it is then not plotted).
     """
-    return SimPlot().plot_linker_hist(
+    return _plotter(SimPlot, fontsize).plot_linker_hist(
         dataset,
         regions=regions,
         name=name,
@@ -1748,6 +1773,7 @@ def plot_meth(
     sharex: bool = False,
     coords: bool | pd.DataFrame | None = None,
     figsize: tuple[float, float] | None = None,
+    fontsize: float | None = None,
     show: bool = True,
 ):
     """
@@ -1842,6 +1868,9 @@ def plot_meth(
     figsize : (float, float), optional
         Size of the whole figure (width, height) in inches. If None,
         the default size (matplotlib's `figure.figsize` per panel).
+    fontsize : float, optional
+        Base font size (points) of labels, ticks and titles. If None,
+        the plot class default (14).
     show : bool, default True
         Whether to display the figure using the active plotting
         backend.
@@ -1892,7 +1921,7 @@ def plot_meth(
     }
     if cbar_label is not None:
         kwargs["cbar_label"] = cbar_label
-    methplot = MethPlot()
+    methplot = _plotter(MethPlot, fontsize)
     if value == "prob":
         if emax is not None:
             raise ValueError('emax is only valid with value="energy"')

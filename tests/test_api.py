@@ -1559,6 +1559,36 @@ class TestPlotReturnsFigure:
                 np.full((2, 10), 0.5), figsize=figsize, show=False
             )
 
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "plot_meth",
+            "plot_dropout_ecdf",
+            "plot_config",
+            "plot_occup",
+            "plot_linker_hist",
+        ],
+    )
+    def test_fontsize(self, tmp_path, name):
+        call = _plot_calls(tmp_path)[name]
+        fig = call(fontsize=9, show=False)
+        fig.canvas.draw()
+        ax = next(a for a in fig.axes if a.get_xticklabels())
+        sizes = {t.get_fontsize() for t in ax.get_xticklabels()}
+        assert sizes == {9}
+
+    def test_default_fontsize(self):
+        fig = catella.plot_meth(np.full((2, 10), 0.5), show=False)
+        fig.canvas.draw()
+        assert fig.axes[0].get_xticklabels()[0].get_fontsize() == 14
+
+    @pytest.mark.parametrize("fontsize", [0, -2, True])
+    def test_invalid_fontsize_raises(self, fontsize):
+        with pytest.raises(ValueError, match="fontsize must be positive"):
+            catella.plot_meth(
+                np.full((2, 10), 0.5), fontsize=fontsize, show=False
+            )
+
     def test_default_size_unchanged(self):
         fig = catella.plot_meth(np.full((2, 10), 0.5), show=False)
         expected = tuple(plt.rcParams["figure.figsize"])

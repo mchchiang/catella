@@ -2551,6 +2551,28 @@ class TestPlotMeth:
             assert result.exit_code != 0
             assert "figsize must be W,H" in result.output
 
+    def test_fontsize_option(self, tmp_path, monkeypatch):
+        exp_file = self._two_region_exp_file(tmp_path)
+        seen = {}
+        monkeypatch.setattr(
+            catella, "plot_meth", lambda **kwargs: seen.update(kwargs)
+        )
+        result = runner.invoke(
+            app,
+            [
+                "plot_meth",
+                str(exp_file),
+                "chr1",
+                "--raw-which",
+                "test",
+                "--fontsize",
+                "11",
+                "--no-show",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert seen["fontsize"] == 11.0
+
     def test_several_regions_with_raw_which(self, tmp_path):
         exp_file = self._two_region_exp_file(tmp_path)
         out_file = tmp_path / "methmap_two_raw.png"

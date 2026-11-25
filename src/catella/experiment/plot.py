@@ -90,7 +90,7 @@ class MethPlot:
     linewidth: int = 1.0
     """The border and axis line thickness for all plots."""
 
-    fontsize: int = 14
+    fontsize: float = 14
     """The base font size for labels, ticks, and titles."""
 
     cmap: str = "OrRd"

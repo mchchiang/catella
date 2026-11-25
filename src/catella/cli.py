@@ -506,6 +506,10 @@ def plot_dropout_ecdf(
         ),
     ] = None,
     figsize: _Figsize = None,
+    fontsize: Annotated[
+        float | None,
+        typer.Option(help="Base font size (points) of labels and ticks"),
+    ] = None,
     show: Annotated[bool, typer.Option(help="Display the figure")] = True,
     span: Annotated[
         str,
@@ -526,6 +530,7 @@ def plot_dropout_ecdf(
         split_by=split_by,
         out_file=out_file,
         figsize=figsize,
+        fontsize=fontsize,
         show=show,
         span=span,
     )
@@ -1277,6 +1282,10 @@ def plot_config(
     ] = False,
     coords_from: _CoordsFrom = None,
     figsize: _Figsize = None,
+    fontsize: Annotated[
+        float | None,
+        typer.Option(help="Base font size (points) of labels and ticks"),
+    ] = None,
     show: Annotated[bool, typer.Option(help="Display the figure")] = True,
 ):
     """
@@ -1308,6 +1317,7 @@ def plot_config(
         sharex=sharex,
         coords=_region_coords(coords_from),
         figsize=figsize,
+        fontsize=fontsize,
         show=show,
     )
 
@@ -1373,6 +1383,10 @@ def plot_occup(
     ] = False,
     coords_from: _CoordsFrom = None,
     figsize: _Figsize = None,
+    fontsize: Annotated[
+        float | None,
+        typer.Option(help="Base font size (points) of labels and ticks"),
+    ] = None,
     show: Annotated[bool, typer.Option(help="Display the figure")] = True,
 ):
     """
@@ -1403,6 +1417,7 @@ def plot_occup(
         sharex=sharex,
         coords=_region_coords(coords_from),
         figsize=figsize,
+        fontsize=fontsize,
         show=show,
     )
 
@@ -1514,6 +1529,10 @@ def plot_meth(
         ),
     ] = False,
     figsize: _Figsize = None,
+    fontsize: Annotated[
+        float | None,
+        typer.Option(help="Base font size (points) of labels and ticks"),
+    ] = None,
     show: Annotated[bool, typer.Option(help="Display the figure")] = True,
 ):
     """
@@ -1549,6 +1568,7 @@ def plot_meth(
         sharex=sharex,
         coords=coords,
         figsize=figsize,
+        fontsize=fontsize,
         show=show,
     )
 

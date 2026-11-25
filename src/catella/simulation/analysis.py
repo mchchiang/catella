@@ -16,6 +16,7 @@ from catella.h5_array import H5Array
 from catella.simulation._exact import (
     TM_BATCH_SIZE,
     TMStat,
+    _nan_unspanned,
     _region_settings,
     _reject_time,
     _require_edata,
@@ -522,7 +523,8 @@ class SimAnalysis:
         axis, solving each molecule only once. Molecules are processed
         in batches and streamed to a disk-backed array so that peak
         memory scales with `batch_size` rather than the total number of
-        molecules.
+        molecules. Occupancy is nan at base pairs a molecule does not
+        span (see `SimDataset.spanned`).
 
         Parameters
         ----------
@@ -645,6 +647,7 @@ class SimAnalysis:
                         block[i] = row
                     elif not skipped[i]:
                         n_missing += 1
+                _nan_unspanned(block, dataset.spanned[region], start, stop)
                 out.write_batch(start, stop, block)
             if n_missing:
                 print(
@@ -792,7 +795,8 @@ class SimAnalysis:
         Closed form (occup*(1-occup)): a bp can be covered by at most
         one nucleosome, so occupancy there is Bernoulli. Uncertainty
         has no MCMC equivalent computed here; only available for
-        `dataset.method == "tm"` datasets.
+        `dataset.method == "tm"` datasets. Nan at base pairs a molecule
+        does not span.
 
         Parameters
         ----------

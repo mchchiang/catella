@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from catella_cpp import NucPosTM
 
-from catella._jagged import _pack_jagged
+from catella._jagged import _interval_mask, _pack_jagged
 from catella.h5_array import H5Array
 from catella.simulation._inputs import _start_positions
 from catella.simulation._parallel import _process_map
@@ -334,6 +334,26 @@ def _batch_intervals(spanned, start, stop):
     return np.array(intervals[lo:hi]), offset[start : stop + 1] - lo
 
 
+def _nan_unspanned(block, spanned, start, stop):
+    """
+    Set the values of `block` at unspanned base pairs to nan, in place.
+
+    Parameters
+    ----------
+    block : np.ndarray
+        float, (stop - start, nbp), per-bp values of molecules
+        `start:stop`.
+    spanned : tuple of np.ndarray or None
+        `(intervals, offset)` of the region (see `SimDataset.spanned`);
+        nothing is changed if None.
+    start, stop : int
+        The molecule range of `block`.
+    """
+    if spanned is not None:
+        mask = _interval_mask(*spanned, start, stop, block.shape[1])
+        block[~mask] = np.nan
+
+
 def _iter_tm_batches(dataset, regions, getters, batch_size, nworker):
     """
     Solve every molecule of `regions` once, in batches, possibly in parallel.
@@ -402,7 +422,8 @@ def _tm_stats(
     Per-molecule quantities are stored as DataFrames, and per-bp and
     fixed-width ones as H5Arrays. Each batch is written as soon as it
     arrives, so peak memory scales with `2 * nworker * batch_size`
-    molecules. Molecules with no data get nan.
+    molecules. Molecules with no data get nan, and per-bp quantities are
+    nan at unspanned base pairs.
 
     Parameters
     ----------
@@ -451,6 +472,8 @@ def _tm_stats(
                 [fill if r is None else r[i] for r in results],
                 dtype=np.float64,
             )
+            if stat.per_bp:
+                _nan_unspanned(block, dataset.spanned[region], start, stop)
             if width is None:
                 arr[start:stop] = block
             else:

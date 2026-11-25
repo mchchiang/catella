@@ -797,6 +797,69 @@ class TestComputeVarOccup:
             ana.compute_var_occup(dataset=dataset)
 
 
+def _partial_meth_prob(seed=3):
+    meth_prob = np.random.default_rng(seed).uniform(0.05, 0.95, (3, 20))
+    meth_prob[0, :6] = np.nan
+    meth_prob[1, 8:12] = np.nan
+    return meth_prob
+
+
+def _expected_spanned():
+    mask = np.ones((3, 20), dtype=bool)
+    mask[0, :8] = False
+    mask[1, 8:14] = False
+    return mask
+
+
+def _run_partial(tmp_path, method):
+    if method == "tm":
+        settings = _make_tm_settings()
+        nsim = 0
+    else:
+        settings = _make_settings(lnuc=3, llink=2)
+        nsim = 2
+    return SimManager(nworker=1, verbose=False).run(
+        regions="chr1",
+        nsim=nsim,
+        method=method,
+        settings=settings,
+        meth_prob=_partial_meth_prob(),
+        out_dir=tmp_path / f"partial_{method}",
+        seed=1,
+        fill_nan=0.5,
+    )
+
+
+class TestOccupSpanned:
+    @pytest.mark.parametrize("method", ["tm", "mcmc"])
+    def test_occup_nan_exactly_at_unspanned_bp(self, tmp_path, method):
+        dataset = _run_partial(tmp_path, method)
+        SimAnalysis().compute_occup(dataset=dataset)
+        occup = dataset.analysis["chr1"]["occup"].to_numpy()
+        np.testing.assert_array_equal(~np.isnan(occup), _expected_spanned())
+
+    def test_tm_spanned_values_unchanged(self, tmp_path):
+        dataset = _run_partial(tmp_path, "tm")
+        SimAnalysis().compute_occup(dataset=dataset, compute_var=True)
+        occup = dataset.analysis["chr1"]["occup"].to_numpy()
+        var_occup = dataset.analysis["chr1"]["var_occup"].to_numpy()
+        mask = _expected_spanned()
+        for mol in range(3):
+            tm = _direct_tm(dataset, mol, _make_tm_settings())
+            np.testing.assert_allclose(
+                occup[mol, mask[mol]], np.asarray(tm.getOccup())[mask[mol]]
+            )
+        np.testing.assert_array_equal(~np.isnan(var_occup), mask)
+
+    def test_compute_var_occup_nan_at_unspanned_bp(self, tmp_path):
+        dataset = _run_partial(tmp_path, "tm")
+        SimAnalysis().compute_var_occup(dataset=dataset)
+        var_occup = dataset.analysis["chr1"]["var_occup"].to_numpy()
+        np.testing.assert_array_equal(
+            ~np.isnan(var_occup), _expected_spanned()
+        )
+
+
 def _direct_tm(dataset, mol, settings):
     tm = NucPosTM(
         settings.lnuc,

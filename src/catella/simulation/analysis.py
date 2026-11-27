@@ -12,6 +12,7 @@ from catella import utils
 from catella._batches import _row_batches
 from catella._regions import _normalize_regions, _per_region
 from catella._warnings import _warn
+from catella.experiment._reads import _dense_batches, _mol_strand
 from catella.h5_array import H5Array
 from catella.simulation._exact import (
     TM_BATCH_SIZE,
@@ -33,6 +34,12 @@ from catella.simulation._parallel import _threaded_map
 from catella.simulation.results import SimDataset, SimMCMCData
 
 MCMC_BATCH_SIZE = 20000
+
+# Accepted values of `sites` in `extract_meth_occup`
+_METH_SITES = ("auto", "all")
+
+# Columns returned by `extract_meth_occup`
+_METH_OCCUP_COLUMNS = ("sum_q", "ncall", "occup_meth", "occup_all", "ratio")
 
 
 def _stored_configs(dataset, region, name, mol_ids):
@@ -300,6 +307,161 @@ def _mol_mask(mols, nmol, region):
     mask = np.zeros(nmol, dtype=bool)
     mask[idx] = True
     return mask
+
+
+def _meth_sites(exp, region, *, nmol, nbp, prob_name, sites):
+    """
+    Check the test data of `region` and find the sites to keep.
+
+    Parameters
+    ----------
+    exp : MethPrintExperiment
+        The experiment the simulation was run on.
+    region : str
+        Region identifier.
+    nmol, nbp : int
+        The number of molecules and base pairs of `region` in the
+        simulation.
+    prob_name : str
+        The probability the simulation was run on.
+    sites : {"auto", "all"}
+        As in `SimAnalysis.extract_meth_occup`.
+
+    Returns
+    -------
+    dict
+        "data" (the raw test table), "informative" (bool, length
+        `nbp`, or a dict of such keyed by strand '+'/'-', or None for
+        all sites), "strand" (per-molecule strand if "informative" is
+        a dict, else None) and "q_thres" (float, or None if the calls
+        are not binarized).
+
+    Raises
+    ------
+    ValueError
+        If `sites` is invalid, if `region` is not in `exp` or has no
+        test data, or if its `nmol` or `nbp` differ from `exp`.
+    KeyError
+        If `sites` is "auto" and no parameters are stored under
+        `prob_name`, or those of `model_prob` lack their per-position
+        table.
+    """
+    if sites not in _METH_SITES:
+        raise ValueError(
+            f"sites must be one of {_METH_SITES}, got {sites!r}"
+        )
+    if region not in exp.raw:
+        raise ValueError(f"region '{region}' not in exp")
+    raw = exp.raw[region]
+    source = raw.sources.get("test")
+    if source is None:
+        raise ValueError(f"no 'test' data available for region '{region}'")
+    if raw.nbp != nbp:
+        raise ValueError(
+            f"region '{region}' has nbp {raw.nbp} in exp, got {nbp}"
+        )
+    if source.nmol != nmol:
+        raise ValueError(
+            f"region '{region}' has {source.nmol} test molecules in exp, "
+            f"got {nmol}; the simulation must use exp's molecules in order"
+        )
+    out = {
+        "data": source.data,
+        "informative": None,
+        "strand": None,
+        "q_thres": None,
+    }
+    if sites == "all":
+        return out
+    params = exp.global_analysis.get(f"{prob_name}_params")
+    if params is None:
+        raise KeyError(
+            f"no '{prob_name}_params' found; run model_prob or "
+            f"empirical_prob with prob_name='{prob_name}', or pass "
+            "sites='all'"
+        )
+    if "smoothed_name" in params.columns:
+        return out
+    theta = exp.analysis[region].get(f"{prob_name}_theta")
+    if theta is None:
+        raise KeyError(
+            f"no '{prob_name}_theta' found for region '{region}'; rerun "
+            "model_prob or pass sites='all'"
+        )
+    q_thres = params.get("q_thres", pd.Series([np.nan])).iloc[0]
+    out["q_thres"] = None if pd.isna(q_thres) else float(q_thres)
+    if "informative" in theta.columns:
+        out["informative"] = theta["informative"].to_numpy(dtype=bool)
+    else:
+        out["informative"] = {
+            "+": theta["informative_pos"].to_numpy(dtype=bool),
+            "-": theta["informative_neg"].to_numpy(dtype=bool),
+        }
+        out["strand"] = _mol_strand(exp, region, "test")
+    return out
+
+
+def _mask_sites(q, site_info, mol_ids):
+    """
+    Keep the calls of dense `q` (rows `mol_ids`) at the sites of
+    `site_info` (from `_meth_sites`), binarized by its `q_thres`.
+    """
+    q = np.array(q, dtype=np.float64)
+    informative = site_info["informative"]
+    if isinstance(informative, dict):
+        strand = site_info["strand"][mol_ids]
+        keep = np.zeros(q.shape, dtype=bool)
+        for s, mask in informative.items():
+            keep[strand == s] = mask
+        q[~keep] = np.nan
+    elif informative is not None:
+        q[:, ~informative] = np.nan
+    if site_info["q_thres"] is not None:
+        q = np.where(np.isnan(q), np.nan, q >= site_info["q_thres"])
+    return q
+
+
+def _meth_sums(occ, q):
+    """
+    Per row, the sums `_meth_occup` is computed from, over the calls of
+    dense `q` at base pairs with a finite occupancy `occ`.
+    """
+    occ = np.asarray(occ, dtype=np.float64)
+    called = ~np.isnan(q) & np.isfinite(occ)
+    o = np.where(called, occ, 0.0)
+    q = np.where(called, q, 0.0)
+    return {
+        "sum_q": q.sum(axis=1),
+        "ncall": called.sum(axis=1),
+        "sum_oq": (o * q).sum(axis=1),
+        "sum_o": o.sum(axis=1),
+    }
+
+
+def _divide(num, den):
+    """`num / den` as float64, nan where `den` is not positive."""
+    num = np.asarray(num, dtype=np.float64)
+    den = np.asarray(den, dtype=np.float64)
+    out = np.full(np.broadcast(num, den).shape, np.nan)
+    np.divide(num, den, out=out, where=den > 0)
+    return out
+
+
+def _meth_occup(sums):
+    """
+    Occupancy at the methylated calls relative to all calls, from the
+    sums of `_meth_sums` (possibly added over rows), as a dict of the
+    columns of `SimAnalysis.extract_meth_occup`.
+    """
+    occup_meth = _divide(sums["sum_oq"], sums["sum_q"])
+    occup_all = _divide(sums["sum_o"], sums["ncall"])
+    return {
+        "sum_q": np.asarray(sums["sum_q"], dtype=np.float64),
+        "ncall": np.asarray(sums["ncall"], dtype=np.int64),
+        "occup_meth": occup_meth,
+        "occup_all": occup_all,
+        "ratio": _divide(occup_meth, occup_all),
+    }
 
 
 def _linker_moments(counts):
@@ -1271,6 +1433,176 @@ class SimAnalysis:
             )
             return pd.DataFrame(columns=columns, index=index, dtype=float)
         return pd.concat(frames)
+
+    def extract_meth_occup(
+        self,
+        dataset: SimDataset,
+        exp,
+        *,
+        regions: str | Iterable[str] | None = None,
+        occup_name: str = "occup",
+        time: int | None = None,
+        mols: Iterable[int] | dict | None = None,
+        prob_name: str = "meth_prob",
+        sites: str = "auto",
+        pooled: bool = False,
+        batch_size: int = 20000,
+    ) -> pd.DataFrame:
+        """
+        Compare the nucleosome occupancy at methylated sites with that
+        at all called sites.
+
+        Checks how well the nucleosomes avoid the methylated sites of
+        the experiment the simulation was run on. For each raw test
+        call with methylation confidence `q` (`mod_qual`) at a base pair
+        with occupancy `o`, the mean occupancy at the methylated calls
+        is weighted by `q`, so no threshold is needed:
+
+        - `occup_meth` = sum(o * q) / sum(q)
+        - `occup_all` = sum(o) / ncall
+        - `ratio` = `occup_meth` / `occup_all`
+
+        A ratio of 1 means the nucleosomes do not avoid the methylated
+        sites; the lower it is, the better they avoid them.
+
+        Parameters
+        ----------
+        dataset : SimDataset
+            The dataset holding the occupancy.
+        exp : MethPrintExperiment
+            The experiment the simulation was run on; its test molecules
+            must be those of `dataset`, in order.
+        regions : str or iterable of str, optional
+            The region(s) to use. If None (default), all regions in the
+            dataset.
+        occup_name : str, default "occup"
+            The key of the occupancy in `dataset.analysis`. If missing,
+            it is computed with `compute_occup` and stored under it.
+        time : int, optional
+            The time point of the occupancy if it is computed; see
+            `compute_occup`.
+        mols : iterable of int or dict, optional
+            The molecules to use (duplicates are counted once). If None
+            (default), all molecules. With several regions, a dict keyed
+            by region (regions not in it use all molecules; extra keys
+            are ignored).
+        prob_name : str, default "meth_prob"
+            The probability the simulation was run on; see `sites`.
+        sites : {"auto", "all"}, default "auto"
+            The calls to use. "auto" uses those the probability
+            `prob_name` was computed from: all calls for
+            `empirical_prob`; for `model_prob`, the calls at informative
+            positions, binarized by its `q_thres` if one was used. "all"
+            uses all calls as they are.
+        pooled : bool, default False
+            If False, one row per molecule. If True, one row per region,
+            from the calls of all selected molecules pooled together.
+        batch_size : int, default 20000
+            Number of molecules read (and held in memory) per batch.
+
+        Returns
+        -------
+        pd.DataFrame
+            Columns "sum_q" (expected number of methylated calls),
+            "ncall" (number of calls), "occup_meth", "occup_all" and
+            "ratio". Indexed by (region, mol) if `pooled` is False,
+            otherwise by region. Values are nan where undefined (e.g.,
+            molecules with no data or no methylated calls).
+
+        Raises
+        ------
+        ValueError
+            If `sites` is invalid; if a region is not in `exp`, has no
+            test data, or differs from `dataset` in its number of
+            molecules or base pairs; if `mols` is not a dict with
+            several regions or is out of range; or if the occupancy is
+            missing and cannot be computed.
+        KeyError
+            If `sites` is "auto" and no parameters are stored under
+            `prob_name` in `exp.global_analysis`, or the per-position
+            table of `model_prob` is missing for a region.
+
+        Notes
+        -----
+        This checks the consistency of the simulation with the data it
+        was fitted to; it is not a validation on held-out data. Only
+        called sites are used, whereas `model_prob` also counts read
+        sites without a call as unmethylated. The ratio stays above 0
+        even for perfectly positioned nucleosomes, since protected sites
+        still get some false-positive calls; compare it across regions
+        or settings rather than against 0.
+        """
+        regions = _normalize_regions(regions, default_regions=dataset.regions)
+        mols = _per_region(mols, regions, "mols")
+        site_infos = {
+            region: _meth_sites(
+                exp,
+                region,
+                nmol=dataset.nmol[region],
+                nbp=dataset.nbp[region],
+                prob_name=prob_name,
+                sites=sites,
+            )
+            for region in regions
+        }
+        frames, totals = [], []
+        for region in regions:
+            if occup_name not in dataset.analysis[region]:
+                self.compute_occup(
+                    dataset=dataset,
+                    time=time,
+                    regions=region,
+                    name=occup_name,
+                    mean_nnuc_name=None,
+                )
+            occup = dataset.analysis[region][occup_name]
+            nmol, nbp = dataset.nmol[region], dataset.nbp[region]
+            mask = _mol_mask(mols[region], nmol, region)
+            site_info = site_infos[region]
+            region_sums = []
+            for start, stop, q in _dense_batches(
+                site_info["data"], nmol, nbp, batch_size
+            ):
+                mol_ids = np.arange(start, stop)
+                if mask is not None:
+                    mol_ids = mol_ids[mask[start:stop]]
+                if not mol_ids.size:
+                    continue
+                q = _mask_sites(q[mol_ids - start], site_info, mol_ids)
+                occ = np.asarray(occup.iloc[start:stop, :])[mol_ids - start]
+                sums = _meth_sums(occ, q)
+                region_sums.append(sums)
+                if not pooled:
+                    index = pd.MultiIndex.from_arrays(
+                        [[region] * len(mol_ids), mol_ids],
+                        names=["region", "mol"],
+                    )
+                    frames.append(
+                        pd.DataFrame(_meth_occup(sums), index=index)
+                    )
+            totals.append(
+                {
+                    key: sum(float(s[key].sum()) for s in region_sums)
+                    for key in ("sum_q", "ncall", "sum_oq", "sum_o")
+                }
+            )
+        columns = list(_METH_OCCUP_COLUMNS)
+        if pooled:
+            stats = _meth_occup(
+                {
+                    key: np.array([t[key] for t in totals])
+                    for key in totals[0]
+                }
+            )
+            return pd.DataFrame(
+                stats, index=pd.Index(regions, name="region")
+            )[columns]
+        if not frames:
+            index = pd.MultiIndex.from_arrays(
+                [[], []], names=["region", "mol"]
+            )
+            return pd.DataFrame(columns=columns, index=index, dtype=float)
+        return pd.concat(frames)[columns]
 
     def extract_config(
         self,

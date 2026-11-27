@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from catella import utils
+from catella.experiment.methdata import MethPrintData, MethPrintExperiment
 from catella.h5_array import H5Array
 from catella.simulation.analysis import NucFiberMap, SimAnalysis
 from catella.simulation.config import SimSettings
@@ -1591,3 +1592,220 @@ class TestExtractLinkerStats:
             np.testing.assert_allclose(
                 got.loc[("chr1", mol)], [mean, sd, c.sum()]
             )
+
+
+_CALLS = [
+    (0, 2, "+", 0.0),
+    (0, 12, "+", 1.0),
+    (0, 15, "+", 0.5),
+    (1, 1, "-", 0.8),
+    (1, 3, "-", 0.2),
+]
+
+
+def _meth_exp(calls=_CALLS, nmol=3, nbp=20, region="chr1"):
+    df = pd.DataFrame(
+        [(m, p, s, q, 0) for m, p, s, q in calls],
+        columns=["mol_index", "pos", "strand", "mod_qual", "mod_code"],
+    )
+    raw = MethPrintData._create(
+        region=region,
+        nbp=nbp,
+        test_mol_id=np.array([f"m{i}" for i in range(nmol)], dtype=object),
+        test_data=df,
+        meth_mol_id=None,
+        meth_data=None,
+        unmeth_mol_id=None,
+        unmeth_data=None,
+    )
+    return MethPrintExperiment._create(_raw_data={region: raw})
+
+
+def _meth_occ():
+    occ = np.zeros((3, 20))
+    occ[0, :10] = 1.0
+    occ[1] = 0.5
+    return occ
+
+
+def _put_occ(dataset, occ, name="occ"):
+    arr = H5Array.create(occ.shape)
+    arr.write_batch(0, occ.shape[0], occ)
+    dataset.analysis["chr1"][name] = arr
+
+
+def _empirical_params(exp, prob_name="meth_prob"):
+    exp.global_analysis[f"{prob_name}_params"] = pd.DataFrame(
+        [{"lnuc": 147, "smoothed_name": "smoothed"}]
+    )
+
+
+def _model_params(exp, q_thres=np.nan, theta=None, drop_q_thres=False):
+    row = {"q_thres": q_thres, "channels": "GCH"}
+    if drop_q_thres:
+        del row["q_thres"]
+    exp.global_analysis["meth_prob_params"] = pd.DataFrame([row])
+    if theta is not None:
+        exp.analysis["chr1"]["meth_prob_theta"] = pd.DataFrame(theta)
+
+
+class TestExtractMethOccup:
+    def _run(self, tmp_path, exp=None, occ=None, **kwargs):
+        dataset = _make_tm_dataset(tmp_path)
+        _put_occ(dataset, _meth_occ() if occ is None else occ)
+        exp = _meth_exp() if exp is None else exp
+        kwargs.setdefault("sites", "all")
+        return SimAnalysis().extract_meth_occup(
+            dataset, exp, occup_name="occ", **kwargs
+        )
+
+    def test_columns_and_index(self, tmp_path):
+        got = self._run(tmp_path)
+        assert list(got.columns) == [
+            "sum_q",
+            "ncall",
+            "occup_meth",
+            "occup_all",
+            "ratio",
+        ]
+        assert got.index.names == ["region", "mol"]
+        assert list(got.index) == [("chr1", 0), ("chr1", 1), ("chr1", 2)]
+
+    def test_weighted_ratio_per_molecule(self, tmp_path):
+        got = self._run(tmp_path)
+        np.testing.assert_allclose(
+            got.loc[("chr1", 0)], [1.5, 3, 0.0, 1 / 3, 0.0]
+        )
+        np.testing.assert_allclose(
+            got.loc[("chr1", 1)], [1.0, 2, 0.5, 0.5, 1.0]
+        )
+
+    def test_molecule_without_calls_is_nan(self, tmp_path):
+        row = self._run(tmp_path).loc[("chr1", 2)]
+        assert row["sum_q"] == 0
+        assert row["ncall"] == 0
+        assert np.isnan(row[["occup_meth", "occup_all", "ratio"]]).all()
+
+    def test_pooled(self, tmp_path):
+        got = self._run(tmp_path, pooled=True)
+        assert list(got.index) == ["chr1"]
+        assert got.index.name == "region"
+        np.testing.assert_allclose(
+            got.loc["chr1"], [2.5, 5, 0.2, 0.4, 0.5]
+        )
+
+    def test_nan_occupancy_drops_calls(self, tmp_path):
+        occ = _meth_occ()
+        occ[0, 15] = np.nan
+        row = self._run(tmp_path, occ=occ).loc[("chr1", 0)]
+        assert row["ncall"] == 2
+        assert row["sum_q"] == 1.0
+
+    def test_mols_subset(self, tmp_path):
+        got = self._run(tmp_path, mols=[1])
+        assert list(got.index) == [("chr1", 1)]
+
+    def test_batches_match_single_batch(self, tmp_path):
+        one = self._run(tmp_path / "a")
+        many = self._run(tmp_path / "b", batch_size=1)
+        pd.testing.assert_frame_equal(one, many)
+
+    def test_auto_empirical_uses_all_calls(self, tmp_path):
+        exp = _meth_exp()
+        _empirical_params(exp)
+        auto = self._run(tmp_path / "a", exp=exp, sites="auto")
+        every = self._run(tmp_path / "b", sites="all")
+        pd.testing.assert_frame_equal(auto, every)
+
+    def test_auto_model_keeps_informative(self, tmp_path):
+        exp = _meth_exp()
+        informative = np.ones(20, dtype=bool)
+        informative[[12, 3]] = False
+        theta = {"pos": range(20), "informative": informative}
+        _model_params(exp, theta=theta)
+        got = self._run(tmp_path, exp=exp, sites="auto")
+        assert got.loc[("chr1", 0), "ncall"] == 2
+        assert got.loc[("chr1", 0), "sum_q"] == 0.5
+        assert got.loc[("chr1", 1), "ncall"] == 1
+
+    def test_auto_model_by_strand(self, tmp_path):
+        exp = _meth_exp()
+        pos_ok = np.ones(20, dtype=bool)
+        neg_ok = np.ones(20, dtype=bool)
+        pos_ok[2] = False
+        neg_ok[2] = False
+        neg_ok[1] = False
+        _model_params(
+            exp,
+            theta={
+                "pos": range(20),
+                "informative_pos": pos_ok,
+                "informative_neg": neg_ok,
+            },
+        )
+        got = self._run(tmp_path, exp=exp, sites="auto")
+        assert got.loc[("chr1", 0), "ncall"] == 2
+        assert got.loc[("chr1", 1), "ncall"] == 1
+
+    def test_auto_model_binarizes_by_q_thres(self, tmp_path):
+        exp = _meth_exp()
+        theta = {"pos": range(20), "informative": np.ones(20, dtype=bool)}
+        _model_params(exp, q_thres=0.6, theta=theta)
+        got = self._run(tmp_path, exp=exp, sites="auto")
+        assert got.loc[("chr1", 0), "sum_q"] == 1.0
+        assert got.loc[("chr1", 1), "sum_q"] == 1.0
+
+    @pytest.mark.parametrize("drop", [False, True])
+    def test_auto_model_without_q_thres_keeps_q(self, tmp_path, drop):
+        exp = _meth_exp()
+        theta = {"pos": range(20), "informative": np.ones(20, dtype=bool)}
+        _model_params(exp, theta=theta, drop_q_thres=drop)
+        got = self._run(tmp_path, exp=exp, sites="auto")
+        assert got.loc[("chr1", 0), "sum_q"] == 1.5
+
+    def test_all_ignores_params(self, tmp_path):
+        exp = _meth_exp()
+        theta = {"pos": range(20), "informative": np.zeros(20, dtype=bool)}
+        _model_params(exp, q_thres=0.6, theta=theta)
+        got = self._run(tmp_path, exp=exp, sites="all")
+        assert got.loc[("chr1", 0), "sum_q"] == 1.5
+
+    def test_invalid_sites_raises(self, tmp_path):
+        with pytest.raises(ValueError, match="sites must be one of"):
+            self._run(tmp_path, sites="some")
+
+    def test_auto_without_params_raises(self, tmp_path):
+        with pytest.raises(KeyError, match="meth_prob_params"):
+            self._run(tmp_path, sites="auto")
+
+    def test_auto_model_without_theta_raises(self, tmp_path):
+        exp = _meth_exp()
+        _model_params(exp)
+        with pytest.raises(KeyError, match="meth_prob_theta"):
+            self._run(tmp_path, exp=exp, sites="auto")
+
+    def test_prob_name_selects_params(self, tmp_path):
+        exp = _meth_exp()
+        _empirical_params(exp, prob_name="emp")
+        got = self._run(tmp_path, exp=exp, sites="auto", prob_name="emp")
+        assert got.loc[("chr1", 0), "ncall"] == 3
+
+    def test_nmol_mismatch_raises(self, tmp_path):
+        with pytest.raises(ValueError, match="test molecules in exp"):
+            self._run(tmp_path, exp=_meth_exp(nmol=4))
+
+    def test_nbp_mismatch_raises(self, tmp_path):
+        with pytest.raises(ValueError, match="nbp 30 in exp, got 20"):
+            self._run(tmp_path, exp=_meth_exp(nbp=30))
+
+    def test_region_not_in_exp_raises(self, tmp_path):
+        with pytest.raises(ValueError, match="region 'chr1' not in exp"):
+            self._run(tmp_path, exp=_meth_exp(region="chr2"))
+
+    def test_computes_missing_occupancy(self, tmp_path):
+        dataset = _make_tm_dataset(tmp_path)
+        got = SimAnalysis().extract_meth_occup(
+            dataset, _meth_exp(), sites="all"
+        )
+        assert "occup" in dataset.analysis["chr1"]
+        assert got.shape == (3, 5)

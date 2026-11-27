@@ -1574,6 +1574,11 @@ def plot_occup(
     coords: pd.DataFrame | None = None,
     figsize: tuple[float, float] | None = None,
     fontsize: float | None = None,
+    exp: MethPrintExperiment | None = None,
+    prob_name: str = "meth_prob",
+    sites: str = "auto",
+    meth_thres: float = 0.5,
+    overlay_alpha: float = 0.35,
     show: bool = True,
 ):
     """
@@ -1635,6 +1640,22 @@ def plot_occup(
     fontsize : float, optional
         Base font size (points) of labels, ticks and titles. If None,
         the plot class default (14).
+    exp : MethPrintExperiment, optional
+        The experiment the simulation was run on. If given, its raw test
+        calls of the shown molecules are drawn under their occupancy
+        (methylated, unmethylated, or no call), with the occupancy drawn
+        translucent on top, and each title gives the ratio of
+        `SimAnalysis.extract_meth_occup` over the shown molecules.
+    prob_name : str, default "meth_prob"
+        Only used with `exp`; see `SimAnalysis.extract_meth_occup`.
+    sites : {"auto", "all"}, default "auto"
+        Only used with `exp`; see `SimAnalysis.extract_meth_occup`.
+    meth_thres : float, default 0.5
+        Only used with `exp`: the `mod_qual` from which a call is drawn
+        as methylated. It does not change the ratio.
+    overlay_alpha : float, default 0.35
+        Only used with `exp`: the opacity, from 0 to 1, of an occupancy
+        of 1 drawn over the calls.
     show : bool, default True
         If True, invokes the active plotting backend to display the
         figure immediately.
@@ -1650,7 +1671,11 @@ def plot_occup(
         If `regions` is empty, if the occupancy is missing and no `time`
         is provided for computation, if `mols` or `link_mat` is not a
         dict with several regions, or if `coords` does not match a
-        region (see `plot_config`).
+        region (see `plot_config`). With `exp`, also if `meth_thres` or
+        `overlay_alpha` is not in [0, 1], or for invalid arguments of
+        `SimAnalysis.extract_meth_occup`.
+    KeyError
+        With `exp`, as in `SimAnalysis.extract_meth_occup`.
 
     Warns
     -----
@@ -1678,6 +1703,11 @@ def plot_occup(
         sharex=sharex,
         coords=coords,
         figsize=figsize,
+        exp=exp,
+        prob_name=prob_name,
+        sites=sites,
+        meth_thres=meth_thres,
+        overlay_alpha=overlay_alpha,
         show=show,
     )
 

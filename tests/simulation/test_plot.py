@@ -1531,7 +1531,10 @@ def _expected_base(rows, meth_thres=0.5):
 
 
 def _expected_ratio(rows):
-    occ = np.where(rows < 0, np.nan, rows.astype(float))
+    return _occ_ratio(np.where(rows < 0, np.nan, rows.astype(float)))
+
+
+def _occ_ratio(occ):
     sum_q = ncall = sum_oq = sum_o = 0.0
     for m, p, _, q in _PLOT_CALLS:
         if np.isfinite(occ[m, p]):
@@ -1679,6 +1682,122 @@ class TestPlotConfigMeth:
         rows = _config_rows(dataset, "chr1")
         base, _ = _meth_images()
         np.testing.assert_array_equal(base, _expected_base(rows, 0.95))
+        assert fig.axes[0].get_title().startswith("chr1 (ratio ")
+
+
+def _planted_occ(dataset, seed=11):
+    occ = np.random.default_rng(seed).random((5, 20))
+    occ[1] = np.nan
+    arr = H5Array.create(occ.shape)
+    arr.write_batch(0, occ.shape[0], occ)
+    dataset.analysis["chr1"]["occ"] = arr
+    return occ
+
+
+def _occ_rows(occ):
+    return np.where(np.isnan(occ), -1, 0)
+
+
+@pytest.mark.filterwarnings(
+    "ignore:__array__ implementation doesn't accept a copy keyword"
+    ":DeprecationWarning"
+)
+class TestPlotOccupMeth:
+    def _plot(self, dataset, **kwargs):
+        kwargs.setdefault("sites", "all")
+        return SimPlot().plot_occup(
+            dataset,
+            regions="chr1",
+            occup_name="occ",
+            exp=_plot_exp(),
+            show=False,
+            **kwargs,
+        )
+
+    def test_base_layer_categories(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        occ = _planted_occ(dataset)
+        self._plot(dataset)
+        base, _ = _meth_images()
+        np.testing.assert_array_equal(base, _expected_base(_occ_rows(occ)))
+
+    def test_overlay_opacity_follows_occupancy(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        occ = _planted_occ(dataset)
+        self._plot(dataset, overlay_alpha=0.5)
+        _, overlay = _meth_images()
+        np.testing.assert_allclose(overlay[..., 3], 0.5 * np.nan_to_num(occ))
+
+    def test_title_gives_ratio(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        occ = _planted_occ(dataset)
+        fig = self._plot(dataset)
+        assert fig.axes[0].get_title() == f"chr1 (ratio {_occ_ratio(occ):.2f})"
+
+    def test_legend_and_colorbar(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        _planted_occ(dataset)
+        fig = self._plot(dataset)
+        assert _side_legend_labels(fig) == [
+            "Methylated",
+            "Unmethylated",
+            "No call",
+            "No data",
+        ]
+        insets = [child for ax in fig.axes for child in ax.child_axes]
+        assert [ax.get_ylabel() for ax in insets] == ["Occupancy"]
+
+    def test_mols_order(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        occ = _planted_occ(dataset)
+        self._plot(dataset, mols=[4, 0])
+        base, _ = _meth_images()
+        expected = _expected_base(_occ_rows(occ))[[4, 0]]
+        np.testing.assert_array_equal(base, expected)
+
+    def test_link_mat_orders_calls(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        occ = _planted_occ(dataset)
+        _, link_mat = utils.compute_linkage(np.nan_to_num(occ))
+        self._plot(dataset, link_mat=link_mat)
+        order = sch.leaves_list(link_mat)
+        base, _ = _meth_images()
+        expected = _expected_base(_occ_rows(occ))[order]
+        np.testing.assert_array_equal(base, expected)
+
+    @pytest.mark.parametrize(
+        ("name", "value"), [("meth_thres", -0.2), ("overlay_alpha", 2.0)]
+    )
+    def test_out_of_range_raises(self, tmp_path, name, value):
+        dataset = _tm_calls_dataset(tmp_path)
+        _planted_occ(dataset)
+        with pytest.raises(ValueError, match=f"{name} must be in"):
+            self._plot(dataset, **{name: value})
+
+    def test_without_exp_unchanged(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        _planted_occ(dataset)
+        fig = SimPlot().plot_occup(
+            dataset, regions="chr1", occup_name="occ", show=False
+        )
+        assert len(fig.axes[0].images) == 1
+        assert fig.axes[0].get_title() == "chr1"
+
+    def test_api_passes_overlay(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        occ = _planted_occ(dataset)
+        fig = api.plot_occup(
+            dataset,
+            regions="chr1",
+            occup_name="occ",
+            exp=_plot_exp(),
+            sites="all",
+            meth_thres=0.95,
+            show=False,
+        )
+        base, _ = _meth_images()
+        expected = _expected_base(_occ_rows(occ), 0.95)
+        np.testing.assert_array_equal(base, expected)
         assert fig.axes[0].get_title().startswith("chr1 (ratio ")
 
 

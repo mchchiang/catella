@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import scipy.cluster.hierarchy as sch
+from matplotlib.cm import ScalarMappable
 from matplotlib.colors import ListedColormap, Normalize
 from matplotlib.patches import Patch
 from matplotlib.ticker import MaxNLocator
@@ -63,6 +64,50 @@ def _check_unit(name, value):
     """Raise ValueError if `value` is not in [0, 1]."""
     if not 0.0 <= value <= 1.0:
         raise ValueError(f"{name} must be in [0, 1], got {value}")
+
+
+def _meth_handles(nan_color, missing):
+    """Legend entries of the methylation calls (and of no data if
+    `missing`)."""
+    style = {"edgecolor": "black", "linewidth": 0.5}
+    unmeth, methylated, no_call = _METH_COLORS
+    handles = [
+        Patch(facecolor=methylated, label="Methylated", **style),
+        Patch(facecolor=unmeth, label="Unmethylated", **style),
+        Patch(facecolor=no_call, label="No call", **style),
+    ]
+    if missing:
+        handles.append(Patch(facecolor=nan_color, label="No data", **style))
+    return handles
+
+
+def _draw_meth_layers(ax, base, opacity, color, nan_color, **image):
+    """
+    Draw the call categories `base` (from `_meth_layer`) on `ax`, with
+    `color` on top at the per-cell `opacity`; `image` holds the extent
+    and other `imshow` arguments.
+
+    Returns
+    -------
+    matplotlib.image.AxesImage
+        The top layer.
+    """
+    ax.imshow(
+        base,
+        cmap=ListedColormap([*_METH_COLORS, nan_color]),
+        norm=Normalize(vmin=-0.5, vmax=3.5),
+        **image,
+    )
+    overlay = np.zeros((*base.shape, 4))
+    overlay[..., :3] = color[:3]
+    overlay[..., 3] = opacity
+    return ax.imshow(overlay, **image)
+
+
+def _alpha_cmap(color, alpha):
+    """Colormap of `color` at opacity 0 to `alpha` over white."""
+    weight = np.linspace(0.0, alpha, 256)[:, None]
+    return ListedColormap(1.0 - weight + weight * np.asarray(color[:3]))
 
 
 def _meth_layer(
@@ -1109,16 +1154,14 @@ class SimPlot:
                 **image,
             )
         else:
-            hm_ax.imshow(
+            im = _draw_meth_layers(
+                hm_ax,
                 meth,
-                cmap=ListedColormap([*_METH_COLORS, self.nan_color]),
-                norm=Normalize(vmin=-0.5, vmax=3.5),
+                overlay_alpha * (matrix == 1),
+                cmap_obj(_OVERLAY_CMAP_POINT),
+                self.nan_color,
                 **image,
             )
-            overlay = np.zeros((*matrix.shape, 4))
-            overlay[..., :3] = cmap_obj(_OVERLAY_CMAP_POINT)[:3]
-            overlay[..., 3] = overlay_alpha * (matrix == 1)
-            im = hm_ax.imshow(overlay, **image)
         if rows_axis:
             hm_ax.yaxis.set_major_locator(MaxNLocator(integer=True))
         if invert_y:
@@ -1178,15 +1221,8 @@ class SimPlot:
             (m < 0).any() or np.isnan(m).any() for m in matrices
         )
         if meth:
-            unmeth, methylated, no_call = _METH_COLORS
             nuc = (*cmap_obj(_OVERLAY_CMAP_POINT)[:3], overlay_alpha)
-            handles = [
-                Patch(facecolor=methylated, label="Methylated", **style),
-                Patch(facecolor=unmeth, label="Unmethylated", **style),
-                Patch(facecolor=no_call, label="No call", **style),
-            ]
-            if missing:
-                handles.append(no_data)
+            handles = _meth_handles(self.nan_color, missing)
             handles.append(Patch(facecolor=nuc, label="Nucleosome", **style))
             side_ax.axis("off")
             side_ax.legend(handles=handles, loc="center left", frameon=False)
@@ -1224,6 +1260,11 @@ class SimPlot:
         sharex: bool = False,
         coords: pd.DataFrame | None = None,
         figsize: tuple[float, float] | None = None,
+        exp=None,
+        prob_name: str = "meth_prob",
+        sites: str = "auto",
+        meth_thres: float = 0.5,
+        overlay_alpha: float = 0.35,
         show: bool = True,
     ):
         """
@@ -1283,6 +1324,23 @@ class SimPlot:
             Genomic coordinates of the regions; see `plot_samples`.
         figsize : (float, float), optional
             Size of the whole figure in inches; see `plot_samples`.
+        exp : MethPrintExperiment, optional
+            The experiment the simulation was run on. If given, its raw
+            test calls of the shown molecules are drawn under their
+            occupancy (methylated, unmethylated, or no call), with the
+            occupancy drawn translucent on top, and each title gives the
+            ratio of `SimAnalysis.extract_meth_occup` over the shown
+            molecules.
+        prob_name : str, default "meth_prob"
+            Only used with `exp`; see `SimAnalysis.extract_meth_occup`.
+        sites : {"auto", "all"}, default "auto"
+            Only used with `exp`; see `SimAnalysis.extract_meth_occup`.
+        meth_thres : float, default 0.5
+            Only used with `exp`: the `mod_qual` from which a call is
+            drawn as methylated. It does not change the ratio.
+        overlay_alpha : float, default 0.35
+            Only used with `exp`: the opacity, from 0 to 1, of an
+            occupancy of 1 drawn over the calls.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
@@ -1299,7 +1357,11 @@ class SimPlot:
             is not a dict with several regions, if `link_mat` is
             combined with `mols` or does not match the number of
             molecules, or if `coords` does not match a region (see
-            `plot_samples`).
+            `plot_samples`). With `exp`, also if `meth_thres` or
+            `overlay_alpha` is not in [0, 1], or for invalid arguments
+            of `SimAnalysis.extract_meth_occup`.
+        KeyError
+            With `exp`, as in `SimAnalysis.extract_meth_occup`.
 
         Warns
         -----
@@ -1316,6 +1378,16 @@ class SimPlot:
         link_mat = _per_region(link_mat, regions, "link_mat")
         starts = _sim_starts(coords, dataset, regions)
         _check_figsize(figsize)
+        meth = None
+        if exp is not None:
+            _check_unit("meth_thres", meth_thres)
+            _check_unit("overlay_alpha", overlay_alpha)
+            meth = {
+                "exp": exp,
+                "prob_name": prob_name,
+                "sites": sites,
+                "meth_thres": meth_thres,
+            }
         _warn_if_large(
             sum(
                 dataset.nmol[r] if mols[r] is None else len(mols[r])
@@ -1330,20 +1402,26 @@ class SimPlot:
             for name, on in (("mean", plot_mean), ("edata", plot_edata))
             if on
         ]
-        # The rightmost column is a dedicated, narrow slot for the
-        # colorbar, so it appears to the right of the dendrogram (when
-        # shown) instead of shrinking hm_ax.
+        # The rightmost column is a dedicated slot for the colorbar (and
+        # the call legend with `exp`), right of the dendrogram if shown.
+        if meth is None:
+            width_ratios = [5, 1, 0.25] if sort_data else [20, 1]
+            scale_w = 1.25 if extra_rows else 1.0
+        else:
+            width_ratios = [4, 0.8, 1] if sort_data else [4, 1]
+            scale_w = 1.2
         fig, panels = _panel_grid(
             len(regions),
-            [5, 1, 0.25] if sort_data else [20, 1],
+            width_ratios,
             dendrogram=sort_data,
             extra_rows=extra_rows,
-            scale_w=1.25 if extra_rows else 1.0,
+            scale_w=scale_w,
             scale_h=1 + 0.25 * len(extra_rows),
             figsize=figsize,
         )
+        missing = False
         for region, panel in zip(regions, panels):
-            im = self._draw_occup(
+            im, region_missing = self._draw_occup(
                 panel,
                 dataset,
                 region,
@@ -1354,8 +1432,14 @@ class SimPlot:
                 plot_edata=plot_edata,
                 link_mat=link_mat[region],
                 start=starts[region],
+                meth=meth,
+                overlay_alpha=overlay_alpha,
             )
-        _colorbar(fig, panels, im, "Occupancy")
+            missing = missing or region_missing
+        if meth is None:
+            _colorbar(fig, panels, im, "Occupancy")
+        else:
+            self._meth_occup_side(fig, panels, cmap, overlay_alpha, missing)
         _left_ylabels(panels)
         if sharex:
             _share_xlim(panels, max(dataset.nbp[r] for r in regions))
@@ -1374,16 +1458,25 @@ class SimPlot:
         plot_edata,
         link_mat,
         start=None,
+        meth=None,
+        overlay_alpha=0.35,
     ):
         """
         Draw the occupancy of one region into the axes of `panel`
         (from `_panel_grid`), computing it first if missing, with the
         mean across the shown molecules in "mean_ax" if present.
 
+        `meth` holds the `exp`, `prob_name`, `sites` and `meth_thres` of
+        the methylation overlay, or is None for no overlay; with it, the
+        calls are drawn under the occupancy, which is drawn at opacity
+        `overlay_alpha` times the occupancy.
+
         Returns
         -------
-        matplotlib.image.AxesImage
+        im : matplotlib.image.AxesImage
             The heatmap, for the colorbar drawn by the caller.
+        missing : bool
+            Whether, with `meth`, any shown base pair has no data.
         """
         hm_ax = panel["hm_ax"]
         dend_ax, edata_ax = panel["dend_ax"], panel["edata_ax"]
@@ -1403,6 +1496,7 @@ class SimPlot:
         occup = dataset.analysis[region][occup_name]
         if mols is not None:
             mols = list(mols)
+        mol_ids = list(range(occup.shape[0])) if mols is None else mols
         order = None
         if link_mat is not None:
             link_mat, order = _leaf_order(link_mat, occup.shape[0], mols)
@@ -1410,6 +1504,7 @@ class SimPlot:
             occup = np.asarray(occup)[mols]
         if order is not None:
             occup = np.asarray(occup)[order]
+            mol_ids = [mol_ids[i] for i in order]
         sort_data = link_mat is not None
 
         # Plot the nucleosome position as a heat map
@@ -1417,15 +1512,38 @@ class SimPlot:
         norm = Normalize(vmin=0, vmax=1)
         cmap_obj = plt.get_cmap(cmap if cmap is not None else self.cmap)
         cmap_obj = cmap_obj.with_extremes(bad=self.nan_color)
-        im = hm_ax.imshow(
-            occup,
-            cmap=cmap_obj,
-            norm=norm,
-            aspect="auto",
-            origin="lower",
-            interpolation="none",
-            extent=[0, occup.shape[1], 0, occup.shape[0]],
-        )
+        image = {
+            "aspect": "auto",
+            "origin": "lower",
+            "interpolation": "none",
+            "extent": [0, occup.shape[1], 0, occup.shape[0]],
+        }
+        missing = False
+        title = region
+        if meth is None:
+            im = hm_ax.imshow(occup, cmap=cmap_obj, norm=norm, **image)
+        else:
+            occ = np.asarray(occup, dtype=np.float64)
+            base, ratio = _meth_layer(
+                meth["exp"],
+                region,
+                mol_ids,
+                occ,
+                nmol=dataset.nmol[region],
+                prob_name=meth["prob_name"],
+                sites=meth["sites"],
+                meth_thres=meth["meth_thres"],
+            )
+            im = _draw_meth_layers(
+                hm_ax,
+                base,
+                overlay_alpha * np.nan_to_num(occ),
+                cmap_obj(_OVERLAY_CMAP_POINT),
+                self.nan_color,
+                **image,
+            )
+            missing = bool((base == 3).any())
+            title = f"{region} (ratio {ratio:.2f})"
         hm_ax.set_xlim(0, nbp)
         if plot_edata or mean_ax is not None:
             hm_ax.get_xaxis().set_visible(False)
@@ -1475,8 +1593,31 @@ class SimPlot:
 
         _start_xaxis(panel, start)
 
-        hm_ax.set_title(region, pad=12)
-        return im
+        hm_ax.set_title(title, pad=12)
+        return im, missing
+
+    def _meth_occup_side(self, fig, panels, cmap, overlay_alpha, missing):
+        """
+        Draw the side legend of `plot_occup` with the methylation overlay:
+        the call categories (and no data if `missing`) above an occupancy
+        colorbar of the overlay color at opacity 0 to `overlay_alpha`
+        over white.
+        """
+        side_ax = panels[0]["side_ax"]
+        side_ax.axis("off")
+        side_ax.legend(
+            handles=_meth_handles(self.nan_color, missing),
+            loc="upper left",
+            frameon=False,
+        )
+        cmap_obj = plt.get_cmap(cmap if cmap is not None else self.cmap)
+        mappable = ScalarMappable(
+            norm=Normalize(vmin=0, vmax=1),
+            cmap=_alpha_cmap(cmap_obj(_OVERLAY_CMAP_POINT), overlay_alpha),
+        )
+        cax = side_ax.inset_axes([0.05, 0.0, 0.1, 0.45])
+        cbar = fig.colorbar(mappable, cax=cax)
+        cbar.set_label("Occupancy", rotation=270, labelpad=15)
 
     @_apply_style
     def plot_linker_hist(

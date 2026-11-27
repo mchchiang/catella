@@ -225,7 +225,8 @@ class MethPlot:
             False labels 0-based region positions.
         figsize : (float, float), optional
             Size of the whole figure (width, height) in inches. If None,
-            each panel gets matplotlib's `figure.figsize`.
+            each panel gets matplotlib's `figure.figsize`, 1.5 times
+            as wide for one panel per row (tapering to 1 for 4).
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 

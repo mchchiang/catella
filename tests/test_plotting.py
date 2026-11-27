@@ -11,6 +11,7 @@ import pytest
 from catella._plotting import (
     _BP_UNITS,
     _MCS_UNITS,
+    _panel_grid,
     _ShiftedLocator,
     _unit_axis,
     _UnitFormatter,
@@ -142,3 +143,35 @@ class TestTickSpacing:
     def test_y_axis_not_thinned(self):
         texts, _ = _drawn_ticks(start=3170000, axis="y")
         assert len(texts) > 3
+
+
+class TestPanelGridSize:
+    @pytest.mark.parametrize(
+        ("nregion", "factor"), [(1, 1.5), (2, 4 / 3), (3, 7 / 6), (4, 1.0)]
+    )
+    def test_default_width_tapers(self, nregion, factor):
+        w, h = plt.rcParams["figure.figsize"]
+        fig, _ = _panel_grid(nregion, [20, 1], dendrogram=False)
+        width, height = fig.get_size_inches()
+        assert width == pytest.approx(w * factor * nregion)
+        assert height == pytest.approx(h)
+        plt.close(fig)
+
+    def test_more_rows_keep_four_column_width(self):
+        w, h = plt.rcParams["figure.figsize"]
+        fig, _ = _panel_grid(6, [20, 1], dendrogram=False)
+        assert tuple(fig.get_size_inches()) == pytest.approx((4 * w, 2 * h))
+        plt.close(fig)
+
+    def test_scale_w_multiplies_width(self):
+        w, _ = plt.rcParams["figure.figsize"]
+        fig, _ = _panel_grid(1, [20, 1], dendrogram=False, scale_w=1.2)
+        assert fig.get_size_inches()[0] == pytest.approx(w * 1.5 * 1.2)
+        plt.close(fig)
+
+    def test_figsize_overrides_default(self):
+        fig, _ = _panel_grid(
+            1, [20, 1], dendrogram=False, figsize=(7, 3)
+        )
+        assert tuple(fig.get_size_inches()) == pytest.approx((7, 3))
+        plt.close(fig)

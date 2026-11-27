@@ -437,8 +437,9 @@ class SimPlot:
             the reference instead of from 0.
         figsize : (float, float), optional
             Size of the whole figure (width, height) in inches. If None,
-            each panel gets matplotlib's `figure.figsize`, scaled for
-            its extra rows.
+            each panel gets matplotlib's `figure.figsize`, 1.5 times
+            as wide for one panel per row (tapering to 1 for 4) and
+            scaled for its extra rows.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 

@@ -45,6 +45,16 @@ _MAX_PANELS = 10
 # Region panels per row (as in MethPlot.plot_dropout_ecdf)
 _PANELS_PER_ROW = 4
 
+# Default width factor of one heatmap panel column, tapering to 1 at
+# _PANELS_PER_ROW columns
+_MAX_WIDTH_FACTOR = 1.5
+
+
+def _width_factor(ncols):
+    """Default width factor of heatmap panels laid out in `ncols` columns."""
+    step = (_MAX_WIDTH_FACTOR - 1) / (_PANELS_PER_ROW - 1)
+    return _MAX_WIDTH_FACTOR - step * (ncols - 1)
+
 
 def _warn_if_large(nrow, ncol, hint):
     """
@@ -140,7 +150,8 @@ def _panel_grid(
         across molecules, "edata" for the data energy.
     scale_w, scale_h : float, default 1.0
         Factors applied to the default figure width and height, per
-        panel column and per panel row.
+        panel column and per panel row. The default width is also
+        widened by 1.5 for one panel column, tapering to 1 for 4.
     figsize : (float, float), optional
         Size of the whole figure (inches); replaces the default size
         from `figure.figsize`, `scale_w` and `scale_h`.
@@ -167,6 +178,7 @@ def _panel_grid(
     panel_ratios = list(width_ratios[:-1])
     width = len(panel_ratios)
     w, h = plt.rcParams["figure.figsize"]
+    w *= _width_factor(ncols)
     fig, ax = plt.subplots(
         nrows=nrows * nsub,
         ncols=width * ncols + 1,

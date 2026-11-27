@@ -1470,7 +1470,8 @@ def plot_config(
         the reference instead of from 0.
     figsize : (float, float), optional
         Size of the whole figure (width, height) in inches. If None,
-        the default size (matplotlib's `figure.figsize` per panel).
+        the default size (matplotlib's `figure.figsize` per panel,
+        1.5 times as wide for one panel per row, tapering to 1 for 4).
     fontsize : float, optional
         Base font size (points) of labels, ticks and titles. If None,
         the plot class default (14).
@@ -1598,7 +1599,7 @@ def plot_occup(
         Genomic coordinates of the regions; see `plot_config`.
     figsize : (float, float), optional
         Size of the whole figure (width, height) in inches. If None,
-        the default size (matplotlib's `figure.figsize` per panel).
+        the default size; see `plot_config`.
     fontsize : float, optional
         Base font size (points) of labels, ticks and titles. If None,
         the plot class default (14).
@@ -1867,7 +1868,8 @@ def plot_meth(
         `regions`.
     figsize : (float, float), optional
         Size of the whole figure (width, height) in inches. If None,
-        the default size (matplotlib's `figure.figsize` per panel).
+        the default size (matplotlib's `figure.figsize` per panel,
+        1.5 times as wide for one panel per row, tapering to 1 for 4).
     fontsize : float, optional
         Base font size (points) of labels, ticks and titles. If None,
         the plot class default (14).

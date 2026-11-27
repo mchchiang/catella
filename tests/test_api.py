@@ -1589,10 +1589,10 @@ class TestPlotReturnsFigure:
                 np.full((2, 10), 0.5), fontsize=fontsize, show=False
             )
 
-    def test_default_size_unchanged(self):
+    def test_default_size_widened_for_one_panel(self):
         fig = catella.plot_meth(np.full((2, 10), 0.5), show=False)
-        expected = tuple(plt.rcParams["figure.figsize"])
-        assert tuple(fig.get_size_inches()) == pytest.approx(expected)
+        w, h = plt.rcParams["figure.figsize"]
+        assert tuple(fig.get_size_inches()) == pytest.approx((1.5 * w, h))
 
     def test_saving_still_works(self, tmp_path):
         out_file = tmp_path / "meth.png"

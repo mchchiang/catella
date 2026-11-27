@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import scipy.cluster.hierarchy as sch
-from matplotlib.colors import Normalize
+from matplotlib.colors import ListedColormap, Normalize
 from matplotlib.patches import Patch
 from matplotlib.ticker import MaxNLocator
 
@@ -40,10 +40,80 @@ from catella._warnings import _warn
 from catella.experiment._reads import _window_spanned
 from catella.mapping import CoordsTransform
 from catella.simulation._exact import _spanned_rows
-from catella.simulation.analysis import NucFiberMap, SimAnalysis
+from catella.simulation.analysis import (
+    NucFiberMap,
+    SimAnalysis,
+    _mask_sites,
+    _meth_occup,
+    _meth_sites,
+    _meth_sums,
+)
 from catella.simulation.results import SimDataset
 
 _PLOT_DOWNSAMPLE_HOW = ("stride", "mean", "max")
+
+# Colors of the methylation calls: unmethylated, methylated, no call
+_METH_COLORS = ("#9e9ac8", "#01665e", "#ffffff")
+
+# Point of the colormap used for the nucleosomes drawn over the calls
+_OVERLAY_CMAP_POINT = 0.85
+
+
+def _check_unit(name, value):
+    """Raise ValueError if `value` is not in [0, 1]."""
+    if not 0.0 <= value <= 1.0:
+        raise ValueError(f"{name} must be in [0, 1], got {value}")
+
+
+def _meth_layer(
+    exp, region, mol_ids, occ, *, nmol, prob_name, sites, meth_thres
+):
+    """
+    Methylation calls of molecules `mol_ids` of `region`, drawn under
+    their occupancy `occ`.
+
+    Parameters
+    ----------
+    exp : MethPrintExperiment
+        The experiment the simulation was run on.
+    region : str
+        Region identifier.
+    mol_ids : sequence of int
+        The molecules of the rows of `occ`.
+    occ : np.ndarray
+        float, (len(mol_ids), nbp): occupancy; nan where no data.
+    nmol : int
+        The number of molecules of `region` in the simulation.
+    prob_name, sites : str
+        As in `SimAnalysis.extract_meth_occup`.
+    meth_thres : float
+        The `mod_qual` from which a call is drawn as methylated.
+
+    Returns
+    -------
+    base : np.ndarray
+        int8, the shape of `occ`: 0 unmethylated, 1 methylated, 2 no
+        call, 3 no data.
+    ratio : float
+        The ratio of `SimAnalysis.extract_meth_occup` over all rows.
+    """
+    site_info = _meth_sites(
+        exp,
+        region,
+        nmol=nmol,
+        nbp=occ.shape[1],
+        prob_name=prob_name,
+        sites=sites,
+    )
+    q = exp.to_dense(
+        region, which="test", mols=list(mol_ids), as_h5array=False
+    ).to_numpy()
+    q = _mask_sites(q, site_info, np.asarray(mol_ids, dtype=np.int64))
+    base = np.where(np.isnan(q), 2, q >= meth_thres).astype(np.int8)
+    base[np.isnan(occ)] = 3
+    sums = _meth_sums(occ, q)
+    ratio = _meth_occup({k: v.sum() for k, v in sums.items()})["ratio"]
+    return base, float(ratio)
 
 
 def _check_downsample(max_rows, how):
@@ -603,6 +673,11 @@ class SimPlot:
         sharex: bool = False,
         coords: pd.DataFrame | None = None,
         figsize: tuple[float, float] | None = None,
+        exp=None,
+        prob_name: str = "meth_prob",
+        sites: str = "auto",
+        meth_thres: float = 0.5,
+        overlay_alpha: float = 0.35,
         show: bool = True,
     ):
         """
@@ -677,6 +752,24 @@ class SimPlot:
             Genomic coordinates of the regions; see `plot_samples`.
         figsize : (float, float), optional
             Size of the whole figure in inches; see `plot_samples`.
+        exp : MethPrintExperiment, optional
+            The experiment the simulation was run on. If given, its raw
+            test calls of the shown molecules are drawn under their
+            configurations (methylated, unmethylated, or no call), with
+            the nucleosomes drawn translucent on top, and each title
+            gives the ratio of `SimAnalysis.extract_meth_occup` over
+            the shown molecules. Requires unmerged rows: with
+            `max_rows`, use `downsample_how="stride"`.
+        prob_name : str, default "meth_prob"
+            Only used with `exp`; see `SimAnalysis.extract_meth_occup`.
+        sites : {"auto", "all"}, default "auto"
+            Only used with `exp`; see `SimAnalysis.extract_meth_occup`.
+        meth_thres : float, default 0.5
+            Only used with `exp`: the `mod_qual` from which a call is
+            drawn as methylated. It does not change the ratio.
+        overlay_alpha : float, default 0.35
+            Only used with `exp`: the opacity, from 0 to 1, of the
+            nucleosomes drawn over the calls.
         show : bool, default True
             Whether to display the plot using `plt.show()`.
 
@@ -695,9 +788,13 @@ class SimPlot:
             is combined with `mols` or does not match the number of
             molecules, if `coords` does not match a region (see
             `plot_samples`), or for invalid arguments of
-            `SimAnalysis.extract_config`.
+            `SimAnalysis.extract_config`. With `exp`, also if
+            `meth_thres` or `overlay_alpha` is not in [0, 1], if rows
+            would be merged with "mean" or "max", or for invalid
+            arguments of `SimAnalysis.extract_meth_occup`.
         KeyError
-            If no calls are stored under `name` for a region.
+            If no calls are stored under `name` for a region, or, with
+            `exp`, as in `SimAnalysis.extract_meth_occup`.
         IndexError
             If a molecule or `run` is out of range.
 
@@ -725,6 +822,16 @@ class SimPlot:
         _check_edata(dataset, plot_edata)
         starts = _sim_starts(coords, dataset, regions)
         _check_figsize(figsize)
+        meth = None
+        if exp is not None:
+            _check_unit("meth_thres", meth_thres)
+            _check_unit("overlay_alpha", overlay_alpha)
+            meth = {
+                "exp": exp,
+                "prob_name": prob_name,
+                "sites": sites,
+                "meth_thres": meth_thres,
+            }
 
         def shown_rows(region):
             nrow = dataset.nmol[region] if mols[region] is None else len(
@@ -752,6 +859,7 @@ class SimPlot:
                 plot_mean=plot_mean,
                 plot_edata=plot_edata,
                 link_mat=link_mat[region],
+                meth=meth,
             )
             for region in regions
         ]
@@ -781,9 +889,22 @@ class SimPlot:
                 link_mat=d["link_mat"],
                 mean=d["mean"],
                 start=starts[region],
+                meth=d["meth"],
+                overlay_alpha=overlay_alpha,
             )
-            panel["hm_ax"].set_title(region, pad=12)
-        self._footprint_side(fig, panels, im, matrices, cmap)
+            title = region
+            if d["meth"] is not None:
+                title = f"{region} (ratio {d['ratio']:.2f})"
+            panel["hm_ax"].set_title(title, pad=12)
+        self._footprint_side(
+            fig,
+            panels,
+            im,
+            matrices,
+            cmap,
+            meth=meth is not None,
+            overlay_alpha=overlay_alpha,
+        )
         _left_ylabels(panels)
         if sharex:
             _share_xlim(panels, max(dataset.nbp[r] for r in regions))
@@ -803,9 +924,13 @@ class SimPlot:
         plot_mean,
         plot_edata,
         link_mat,
+        meth=None,
     ):
         """
         Read the footprints of one region for `plot_config`.
+
+        `meth` holds the `exp`, `prob_name`, `sites` and `meth_thres` of
+        the methylation overlay, or is None for no overlay.
 
         Returns
         -------
@@ -814,7 +939,9 @@ class SimPlot:
             of the shown molecules with a nucleosome at each base,
             before merging and ignoring molecules without data, or
             None), "edata" (mean energy of the shown molecules, or None),
-            "ylabel", and "link_mat" (as a float array, or None).
+            "ylabel", "link_mat" (as a float array, or None), and, with
+            `meth`, "meth" (call categories, see `_meth_layer`, else
+            None) and "ratio".
         """
         mol_ids = (
             list(range(dataset.nmol[region]))
@@ -825,6 +952,17 @@ class SimPlot:
             link_mat, order = _leaf_order(link_mat, len(mol_ids), mols)
             mol_ids = [int(m) for m in order]
         ntotal = len(mol_ids)
+        if (
+            meth is not None
+            and downsample_how != "stride"
+            and max_rows is not None
+            and ntotal > max_rows
+        ):
+            raise ValueError(
+                f"exp cannot be drawn with downsample_how="
+                f"{downsample_how!r}, which merges molecules; use "
+                "downsample_how='stride' or a larger max_rows"
+            )
         if downsample_how == "stride":
             mol_ids = mol_ids[:: _stride_step(len(mol_ids), max_rows)]
         nbp = dataset.nbp[region]
@@ -843,6 +981,19 @@ class SimPlot:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", category=RuntimeWarning)
                 mean = np.nanmean(calls, axis=0)
+        meth_base, ratio = None, None
+        if meth is not None:
+            occ = np.where(matrix < 0, np.nan, matrix.astype(np.float64))
+            meth_base, ratio = _meth_layer(
+                meth["exp"],
+                region,
+                mol_ids,
+                occ,
+                nmol=dataset.nmol[region],
+                prob_name=meth["prob_name"],
+                sites=meth["sites"],
+                meth_thres=meth["meth_thres"],
+            )
         matrix = _merge_rows(matrix, max_rows, downsample_how)
 
         edata = None
@@ -863,6 +1014,8 @@ class SimPlot:
             "edata": edata,
             "ylabel": ylabel,
             "link_mat": link_mat,
+            "meth": meth_base,
+            "ratio": ratio,
         }
 
     def _footprint_grid(
@@ -902,6 +1055,8 @@ class SimPlot:
         link_mat=None,
         mean=None,
         start=None,
+        meth=None,
+        overlay_alpha=0.35,
     ):
         """
         Draw a footprint matrix (1 occupied, 0 linker, -1 or nan no data)
@@ -913,7 +1068,9 @@ class SimPlot:
         on y = i, with integer ticks. `link_mat` (rows already in its
         leaf order) is drawn as a dendrogram next to the heatmap.
         `start` is `(ref_chrom, ref_start)` for genomic position labels,
-        or None.
+        or None. If `meth` (call categories from `_meth_layer`, rows as
+        in `matrix`) is given, it is drawn instead, with the nucleosomes
+        on top at opacity `overlay_alpha`.
 
         Returns
         -------
@@ -938,15 +1095,30 @@ class SimPlot:
         rows_axis = extent_y is None
         if rows_axis:
             extent_y = (-0.5, matrix.shape[0] - 0.5)
-        im = hm_ax.imshow(
-            matrix,
-            cmap=cmap_obj,
-            norm=Normalize(vmin=0, vmax=1),
-            aspect="auto",
-            origin="lower",
-            interpolation="none",
-            extent=[0, nbp, *extent_y],
-        )
+        image = {
+            "aspect": "auto",
+            "origin": "lower",
+            "interpolation": "none",
+            "extent": [0, nbp, *extent_y],
+        }
+        if meth is None:
+            im = hm_ax.imshow(
+                matrix,
+                cmap=cmap_obj,
+                norm=Normalize(vmin=0, vmax=1),
+                **image,
+            )
+        else:
+            hm_ax.imshow(
+                meth,
+                cmap=ListedColormap([*_METH_COLORS, self.nan_color]),
+                norm=Normalize(vmin=-0.5, vmax=3.5),
+                **image,
+            )
+            overlay = np.zeros((*matrix.shape, 4))
+            overlay[..., :3] = cmap_obj(_OVERLAY_CMAP_POINT)[:3]
+            overlay[..., 3] = overlay_alpha * (matrix == 1)
+            im = hm_ax.imshow(overlay, **image)
         if rows_axis:
             hm_ax.yaxis.set_major_locator(MaxNLocator(integer=True))
         if invert_y:
@@ -984,15 +1156,19 @@ class SimPlot:
         cmap_obj = plt.get_cmap(cmap if cmap is not None else self.cmap)
         return cmap_obj.with_extremes(under=self.nan_color, bad=self.nan_color)
 
-    def _footprint_side(self, fig, panels, im, matrices, cmap):
+    def _footprint_side(
+        self, fig, panels, im, matrices, cmap, meth=False, overlay_alpha=0.35
+    ):
         """
         Draw the legend or colorbar of footprint panels.
 
         If all `matrices` are int8 (0/1 calls), a legend of nucleosome,
         linker, and (if any) no-data colors; otherwise a colorbar of the
         occupied share, which also covers 0/1 matrices (plus a no-data
-        entry if any data is missing with several panels). It goes next
-        to the top-right heatmap, shared by all panels.
+        entry if any data is missing with several panels). With `meth`
+        (the methylation overlay), a legend of the call categories and
+        of the nucleosomes at opacity `overlay_alpha`. It goes next to
+        the top-right heatmap, shared by all panels.
         """
         cmap_obj = self._footprint_cmap(cmap)
         side_ax = panels[0]["side_ax"]
@@ -1001,6 +1177,20 @@ class SimPlot:
         missing = any(
             (m < 0).any() or np.isnan(m).any() for m in matrices
         )
+        if meth:
+            unmeth, methylated, no_call = _METH_COLORS
+            nuc = (*cmap_obj(_OVERLAY_CMAP_POINT)[:3], overlay_alpha)
+            handles = [
+                Patch(facecolor=methylated, label="Methylated", **style),
+                Patch(facecolor=unmeth, label="Unmethylated", **style),
+                Patch(facecolor=no_call, label="No call", **style),
+            ]
+            if missing:
+                handles.append(no_data)
+            handles.append(Patch(facecolor=nuc, label="Nucleosome", **style))
+            side_ax.axis("off")
+            side_ax.legend(handles=handles, loc="center left", frameon=False)
+            return
         if all(m.dtype == np.int8 for m in matrices):
             handles = [
                 Patch(facecolor=cmap_obj(1.0), label="Nucleosome", **style),

@@ -1398,6 +1398,11 @@ def plot_config(
     coords: pd.DataFrame | None = None,
     figsize: tuple[float, float] | None = None,
     fontsize: float | None = None,
+    exp: MethPrintExperiment | None = None,
+    prob_name: str = "meth_prob",
+    sites: str = "auto",
+    meth_thres: float = 0.5,
+    overlay_alpha: float = 0.35,
     show: bool = True,
 ):
     """
@@ -1475,6 +1480,24 @@ def plot_config(
     fontsize : float, optional
         Base font size (points) of labels, ticks and titles. If None,
         the plot class default (14).
+    exp : MethPrintExperiment, optional
+        The experiment the simulation was run on. If given, its raw test
+        calls of the shown molecules are drawn under their configurations
+        (methylated, unmethylated, or no call), with the nucleosomes drawn
+        translucent on top, and each title gives the ratio of
+        `SimAnalysis.extract_meth_occup` over the shown molecules.
+        Requires unmerged rows: with `max_rows`, use
+        `downsample_how="stride"`.
+    prob_name : str, default "meth_prob"
+        Only used with `exp`; see `SimAnalysis.extract_meth_occup`.
+    sites : {"auto", "all"}, default "auto"
+        Only used with `exp`; see `SimAnalysis.extract_meth_occup`.
+    meth_thres : float, default 0.5
+        Only used with `exp`: the `mod_qual` from which a call is drawn
+        as methylated. It does not change the ratio.
+    overlay_alpha : float, default 0.35
+        Only used with `exp`: the opacity, from 0 to 1, of the
+        nucleosomes drawn over the calls.
     show : bool, default True
         Whether to display the figure.
 
@@ -1492,9 +1515,13 @@ def plot_config(
         regions, if `link_mat` is combined with `mols` or does not match
         the number of molecules, if `coords` does not match a region
         (missing, other `nbp`, no coordinates, or folded with `wrap`), or
-        for invalid arguments of `extract_config`.
+        for invalid arguments of `extract_config`. With `exp`, also if
+        `meth_thres` or `overlay_alpha` is not in [0, 1], if rows would
+        be merged with "mean" or "max", or for invalid arguments of
+        `SimAnalysis.extract_meth_occup`.
     KeyError
-        If no calls are stored under `name` for a region.
+        If no calls are stored under `name` for a region, or, with
+        `exp`, as in `SimAnalysis.extract_meth_occup`.
     IndexError
         If a molecule or `run` is out of range.
 
@@ -1522,6 +1549,11 @@ def plot_config(
         sharex=sharex,
         coords=coords,
         figsize=figsize,
+        exp=exp,
+        prob_name=prob_name,
+        sites=sites,
+        meth_thres=meth_thres,
+        overlay_alpha=overlay_alpha,
         show=show,
     )
 

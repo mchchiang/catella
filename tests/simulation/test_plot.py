@@ -10,12 +10,14 @@ import numpy as np
 import pandas as pd
 import pytest
 import scipy.cluster.hierarchy as sch
-from catella import utils
+from catella import api, utils
 from catella.h5_array import H5Array
 from catella.simulation.analysis import NucFiberMap, SimAnalysis
 from catella.simulation.config import SimSettings
 from catella.simulation.engine import SimManager
 from catella.simulation.plot import SimPlot, _merge_rows, _spanned_edata
+
+from tests.simulation.test_analysis import _meth_exp
 
 
 def _make_settings(**overrides):
@@ -1505,6 +1507,179 @@ class TestPlotConfigMultiRegion:
             SimPlot().plot_config(
                 dataset, regions=["chr1", "chr2"], name="bm", show=False
             )
+
+
+_PLOT_CALLS = [
+    (0, 2, "+", 0.9),
+    (0, 5, "+", 0.1),
+    (1, 3, "+", 0.9),
+    (2, 7, "+", 0.6),
+    (4, 0, "+", 0.4),
+]
+
+
+def _plot_exp():
+    return _meth_exp(calls=_PLOT_CALLS, nmol=5)
+
+
+def _expected_base(rows, meth_thres=0.5):
+    base = np.full(rows.shape, 2, dtype=np.int8)
+    for m, p, _, q in _PLOT_CALLS:
+        base[m, p] = q >= meth_thres
+    base[rows < 0] = 3
+    return base
+
+
+def _expected_ratio(rows):
+    occ = np.where(rows < 0, np.nan, rows.astype(float))
+    sum_q = ncall = sum_oq = sum_o = 0.0
+    for m, p, _, q in _PLOT_CALLS:
+        if np.isfinite(occ[m, p]):
+            sum_q += q
+            ncall += 1
+            sum_oq += occ[m, p] * q
+            sum_o += occ[m, p]
+    return (sum_oq / sum_q) / (sum_o / ncall)
+
+
+def _meth_images():
+    images = plt.gcf().axes[0].images
+    return np.ma.getdata(images[0].get_array()), np.asarray(
+        images[1].get_array()
+    )
+
+
+def _side_legend_labels(fig):
+    return [
+        t.get_text()
+        for ax in fig.axes
+        if ax.get_legend() is not None
+        for t in ax.get_legend().get_texts()
+    ]
+
+
+@pytest.mark.filterwarnings(
+    "ignore:__array__ implementation doesn't accept a copy keyword"
+    ":DeprecationWarning"
+)
+class TestPlotConfigMeth:
+    def _plot(self, dataset, **kwargs):
+        kwargs.setdefault("sites", "all")
+        return SimPlot().plot_config(
+            dataset,
+            regions="chr1",
+            name="bm",
+            exp=_plot_exp(),
+            show=False,
+            **kwargs,
+        )
+
+    def test_base_layer_categories(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        self._plot(dataset)
+        rows = _config_rows(dataset, "chr1")
+        base, _ = _meth_images()
+        np.testing.assert_array_equal(base, _expected_base(rows))
+
+    def test_overlay_marks_nucleosomes(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        self._plot(dataset, overlay_alpha=0.4)
+        rows = _config_rows(dataset, "chr1")
+        _, overlay = _meth_images()
+        np.testing.assert_allclose(overlay[..., 3], 0.4 * (rows == 1))
+
+    def test_title_gives_ratio(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        fig = self._plot(dataset)
+        ratio = _expected_ratio(_config_rows(dataset, "chr1"))
+        assert fig.axes[0].get_title() == f"chr1 (ratio {ratio:.2f})"
+
+    def test_meth_thres_changes_base_not_ratio(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        title = self._plot(dataset).axes[0].get_title()
+        fig = self._plot(dataset, meth_thres=0.95)
+        rows = _config_rows(dataset, "chr1")
+        base, _ = _meth_images()
+        np.testing.assert_array_equal(base, _expected_base(rows, 0.95))
+        assert fig.axes[0].get_title() == title
+
+    def test_legend(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        fig = self._plot(dataset)
+        assert _side_legend_labels(fig) == [
+            "Methylated",
+            "Unmethylated",
+            "No call",
+            "No data",
+            "Nucleosome",
+        ]
+
+    def test_mols_order(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        self._plot(dataset, mols=[4, 0])
+        rows = _config_rows(dataset, "chr1")
+        base, _ = _meth_images()
+        np.testing.assert_array_equal(base, _expected_base(rows)[[4, 0]])
+
+    def test_link_mat_orders_calls(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        rows = _config_rows(dataset, "chr1")
+        _, link_mat = utils.compute_linkage(
+            np.where(rows < 0, 0, rows).astype(float)
+        )
+        self._plot(dataset, link_mat=link_mat)
+        order = sch.leaves_list(link_mat)
+        base, _ = _meth_images()
+        np.testing.assert_array_equal(base, _expected_base(rows)[order])
+
+    def test_stride_picks_calls(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        self._plot(dataset, max_rows=3)
+        rows = _config_rows(dataset, "chr1")
+        base, _ = _meth_images()
+        np.testing.assert_array_equal(base, _expected_base(rows)[[0, 2, 4]])
+
+    @pytest.mark.parametrize("how", ["mean", "max"])
+    def test_merged_rows_raise(self, tmp_path, how):
+        dataset = _tm_calls_dataset(tmp_path)
+        with pytest.raises(ValueError, match="exp cannot be drawn"):
+            self._plot(dataset, max_rows=2, downsample_how=how)
+
+    def test_mean_without_merging_is_allowed(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        self._plot(dataset, max_rows=10, downsample_how="mean")
+        rows = _config_rows(dataset, "chr1")
+        base, _ = _meth_images()
+        np.testing.assert_array_equal(base, _expected_base(rows))
+
+    @pytest.mark.parametrize(
+        ("name", "value"), [("meth_thres", 1.5), ("overlay_alpha", -0.1)]
+    )
+    def test_out_of_range_raises(self, tmp_path, name, value):
+        dataset = _tm_calls_dataset(tmp_path)
+        with pytest.raises(ValueError, match=f"{name} must be in"):
+            self._plot(dataset, **{name: value})
+
+    def test_auto_without_params_raises(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        with pytest.raises(KeyError, match="meth_prob_params"):
+            self._plot(dataset, sites="auto")
+
+    def test_api_passes_overlay(self, tmp_path):
+        dataset = _tm_calls_dataset(tmp_path)
+        fig = api.plot_config(
+            dataset,
+            regions="chr1",
+            name="bm",
+            exp=_plot_exp(),
+            sites="all",
+            meth_thres=0.95,
+            show=False,
+        )
+        rows = _config_rows(dataset, "chr1")
+        base, _ = _meth_images()
+        np.testing.assert_array_equal(base, _expected_base(rows, 0.95))
+        assert fig.axes[0].get_title().startswith("chr1 (ratio ")
 
 
 _LINKER_ROWS = np.array(
